@@ -1,0 +1,2425 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MetaForce · Control de Clientes Tigo</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  body { margin: 0; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useMemo, useRef } = React;
+
+// ---------- Conexión a Supabase ----------
+const SUPABASE_URL = "https://byudndybtvpozhytmxgw.supabase.co";
+const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dWRuZHlidHZwb3poeXRteGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3ODc0NDIsImV4cCI6MjA5OTM2MzQ0Mn0.94KZqhFex0iEc0-bpmv5oVh5net66Dgu6Xf3NMvedYk";
+const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ---------- Almacenamiento en la nube (reemplaza window.storage / localStorage) ----------
+const storage = {
+  async get(key) {
+    try {
+      const { data, error } = await supabaseClient
+        .from("kv_store")
+        .select("value")
+        .eq("key", key)
+        .maybeSingle();
+      if (error) throw error;
+      if (!data) return null;
+      return { key, value: data.value, shared: true };
+    } catch (e) {
+      console.error("Error leyendo de Supabase:", e);
+      return null;
+    }
+  },
+  async set(key, value) {
+    try {
+      const { error } = await supabaseClient
+        .from("kv_store")
+        .upsert({ key, value, updated_at: new Date().toISOString() });
+      if (error) throw error;
+      return { key, value, shared: true };
+    } catch (e) {
+      console.error("Error guardando en Supabase:", e);
+      return null;
+    }
+  },
+};
+
+// ---------- Helpers de fecha ----------
+const toISO = (d) => {
+  const dt = new Date(d);
+  return dt.toISOString().slice(0, 10);
+};
+const addDays = (dateStr, n) => {
+  const dt = new Date(dateStr + "T00:00:00");
+  dt.setDate(dt.getDate() + n);
+  return toISO(dt);
+};
+const daysInMonth = (year, monthIndex) => new Date(year, monthIndex + 1, 0).getDate();
+const addMonthsKeepDay = (dateStr, monthsToAdd, targetDay) => {
+  const dt = new Date(dateStr + "T00:00:00");
+  const totalMonth = dt.getMonth() + monthsToAdd;
+  const year = dt.getFullYear() + Math.floor(totalMonth / 12);
+  const month = ((totalMonth % 12) + 12) % 12;
+  const lastDay = daysInMonth(year, month);
+  const day = Math.min(targetDay || dt.getDate(), lastDay);
+  return toISO(new Date(year, month, day));
+};
+const daysFromToday = (dateStr) => {
+  const today = new Date(toISO(new Date()) + "T00:00:00");
+  const target = new Date(dateStr + "T00:00:00");
+  return Math.round((target - today) / 86400000);
+};
+const fmtFecha = (dateStr) => {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-");
+  return `${d}/${m}/${y}`;
+};
+const MESES = [
+  "enero", "febrero", "marzo", "abril", "mayo", "junio",
+  "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre",
+];
+const fmtFechaLarga = (dateStr) => {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-");
+  return `${parseInt(d, 10)} de ${MESES[parseInt(m, 10) - 1]}`;
+};
+const mesLabel = (valorMes) => {
+  if (!valorMes) return "—";
+  const [y, m] = valorMes.split("-");
+  const nombre = MESES[parseInt(m, 10) - 1] || "";
+  return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} ${y}`;
+};
+// Período de comisión: instalados del 21 del mes anterior al 20 del mes actual
+// se cuentan como "del mes actual" (el día 21 ya arranca el período siguiente).
+function periodoComision(fechaISO) {
+  if (!fechaISO) return null;
+  const [y, m, d] = fechaISO.split("-").map(Number);
+  let year = y;
+  let month = m;
+  if (d >= 21) {
+    month += 1;
+    if (month > 12) { month = 1; year += 1; }
+  }
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+// Suma (o resta) meses a una clave "YYYY-MM", para navegar entre períodos de comisión.
+function sumarMesClave(mesKey, delta) {
+  const [y, m] = mesKey.split("-").map(Number);
+  const total = y * 12 + (m - 1) + delta;
+  const newY = Math.floor(total / 12);
+  const newM = (((total % 12) + 12) % 12) + 1;
+  return `${newY}-${String(newM).padStart(2, "0")}`;
+}
+// Lee una meta (clientes o dinero) de un mes, compatible con el formato viejo
+// donde metas[mes] era un número simple (solo meta de clientes).
+function leerMeta(metas, mes, campo) {
+  const m = metas[mes];
+  if (m == null) return undefined;
+  if (typeof m === "number") return campo === "clientes" ? m : undefined;
+  return m[campo];
+}
+const fmtMonto = (n) => `$${Number(n || 0).toFixed(2)}`;
+const ORDINAL = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta" };
+// Ciclo de estados al hacer clic en el indicador de una factura: sin marcar → pendiente → pagada → sin marcar.
+function siguienteEstadoFactura(actual) {
+  if (actual === "pagada") return "";
+  if (actual === "pendiente") return "pagada";
+  return "pendiente";
+}
+
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+const ESTADOS = ["Pendiente", "Pagado", "Atrasado", "Suspendido"];
+const CICLOS = [
+  { value: "1", label: "Ciclo 1 (factura el 1, cubre 1–fin de mes)" },
+  { value: "6", label: "Ciclo 6 (factura el 6, cubre 6–5 del sig. mes)" },
+  { value: "15", label: "Ciclo 15 (factura el 15, cubre 15–14 del sig. mes)" },
+  { value: "21", label: "Ciclo 21 (factura el 21, cubre 21–20 del sig. mes)" },
+];
+const TIPOS_PLAN = ["SINGLE", "DOBLE"];
+const VELOCIDADES = ["150 Megas", "300 Megas", "500 Megas", "750 Megas", "1000 Megas"];
+const TIPOS_TV = ["COMBO PACK", "TV PERFECTO"];
+const planLabel = (c) => {
+  if (!c.planTipo || !c.velocidad) return "";
+  if (c.planTipo === "DOBLE") {
+    return `${c.planTipo} ${c.velocidad}${c.planTV ? " + " + c.planTV : ""}`;
+  }
+  return `${c.planTipo} ${c.velocidad}`;
+};
+const planLabelMensaje = (c) => {
+  if (!c.planTipo || !c.velocidad) return "";
+  const nombre = c.planTipo === "SINGLE" ? "Single" : "Doble";
+  return `${nombre} ${c.velocidad}`;
+};
+// Versión resumida para la tabla de Clientes: solo tipo de plan + costo, sin velocidad ni TV.
+const planResumen = (c) => {
+  if (!c.planTipo) return "—";
+  const nombre = c.planTipo === "SINGLE" ? "Single" : "Doble";
+  return `${nombre} · ${fmtMonto(c.montoMensual)}`;
+};
+const cicloCorto = (c) => (c.cicloFacturacion ? `Ciclo ${c.cicloFacturacion}` : "—");
+
+// Limpia el teléfono y le antepone el código de país de Panamá (507) si no lo tiene.
+function telefonoWhatsapp(telefono) {
+  const digits = (telefono || "").replace(/\D/g, "");
+  if (digits.startsWith("507")) return digits;
+  return `507${digits}`;
+}
+function whatsappLink(cliente, milestone) {
+  return `https://wa.me/${telefonoWhatsapp(cliente.telefono)}?text=${encodeURIComponent(milestone.texto)}`;
+}
+
+function calcularPrimeraFactura(fechaInstalacion, cicloDia, montoMensual) {
+  if (!fechaInstalacion || !cicloDia) return null;
+  const dt = new Date(fechaInstalacion + "T00:00:00");
+  const day = dt.getDate();
+  let year = dt.getFullYear();
+  let month = dt.getMonth();
+  if (day >= cicloDia) {
+    month += 1;
+    if (month > 11) { month = 0; year += 1; }
+  }
+  const lastDay = daysInMonth(year, month);
+  const diaFactura = Math.min(cicloDia, lastDay);
+  const fecha1raFactura = toISO(new Date(year, month, diaFactura));
+  const dias = Math.round((new Date(fecha1raFactura + "T00:00:00") - dt) / 86400000);
+  const monto = montoMensual ? +((Number(montoMensual) * dias) / 30).toFixed(2) : "";
+  return { fecha1raFactura, monto1raFactura: monto, dias };
+}
+
+// ---------- Plantillas de mensajes por tipo de aviso ----------
+// Extrae el primer nombre de forma robusta: ignora espacios extra al inicio/fin
+// y entre palabras, y da un saludo genérico si el nombre viniera vacío.
+// Nombre completo del cliente, recortando espacios extra; da un saludo
+// genérico si el nombre viniera vacío.
+function nombreCompleto(c) {
+  const n = (c.nombre || "").trim();
+  return n || "estimado cliente";
+}
+
+// Frase de vencimiento calculada según los días reales que faltan hoy
+// (no un número fijo), con casos especiales para "vence hoy" y atrasos.
+function fraseVencimiento(dias) {
+  if (dias > 0) return `vence en ${dias} día${dias !== 1 ? "s" : ""}`;
+  if (dias === 0) return "vence hoy";
+  const atraso = Math.abs(dias);
+  return `venció hace ${atraso} día${atraso !== 1 ? "s" : ""}`;
+}
+
+function textoD1(c, n) {
+  const nombre = nombreCompleto(c);
+  if (n === 1) {
+    const finProrrateo = addDays(c.fecha1raFactura, -1);
+    return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
+
+Le confirmo que su primera factura ya fue generada:
+📋 Plan: ${c.plan}
+📅 Prorrateo: ${fmtFechaLarga(c.fechaInstalacion)} al ${fmtFechaLarga(finProrrateo)}
+📅 Mensualidad regular: ${fmtFechaLarga(c.fecha1raFactura)} al ${fmtFechaLarga(c._venc)}
+💳 Último día de pago: *${fmtFechaLarga(c._venc)}*
+🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+Este cobro incluye ambos períodos: el prorrateo desde su instalación y su primera mensualidad regular completa. Por eso el monto de esta factura difiere de las próximas, que solo cobrarán la mensualidad regular.
+
+Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier duda, quedo atento.`;
+  }
+  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
+}
+function textoT15(c, n) {
+  const nombre = nombreCompleto(c);
+  const dias = daysFromToday(c._venc);
+  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
+
+Le recuerdo que su factura ${fraseVencimiento(dias)}:
+💳 Vence: *${fmtFechaLarga(c._venc)}*
+🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier consulta sobre su plan, con gusto le ayudo.`;
+}
+function textoT3(c, n) {
+  const nombre = nombreCompleto(c);
+  const dias = daysFromToday(c._venc);
+  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
+
+Su factura ${fraseVencimiento(dias)}:
+💳 Vence: *${fmtFechaLarga(c._venc)}*
+🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+Le recomiendo realizar el pago a tiempo para evitar la suspensión del servicio. Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`;
+}
+
+const MILESTONE_TYPES = [
+  { type: "d1", tag: "D+1", label: "Factura generada", color: "#2F9E6E", bg: "#EAF7F0", getTexto: textoD1 },
+  { type: "t15", tag: "T-15", label: "15 días antes del vencimiento", color: "#B8791F", bg: "#FBF1DE", getTexto: textoT15 },
+  { type: "t3", tag: "T-3", label: "3 días antes del vencimiento", color: "#C23B3B", bg: "#FBEAEA", getTexto: textoT3 },
+];
+
+const emptyForm = () => ({
+  nombre: "",
+  numeroSuscriptor: "",
+  telefono: "",
+  cicloFacturacion: "",
+  planTipo: "",
+  velocidad: "",
+  planTV: "",
+  montoMensual: "",
+  fechaInstalacion: toISO(new Date()),
+  fecha1raFactura: toISO(new Date()),
+  monto1raFactura: "",
+  estadoPago: "Pendiente",
+  observaciones: "",
+});
+
+function calcularFacturas(cliente) {
+  if (!cliente.fechaInstalacion) return [];
+  const cicloDia = parseInt(cliente.cicloFacturacion, 10) || null;
+  const facturas = [];
+  for (let n = 1; n <= 4; n++) {
+    const generada =
+      n === 1
+        ? cliente.fecha1raFactura
+        : cicloDia
+        ? addMonthsKeepDay(cliente.fecha1raFactura, n - 1, cicloDia)
+        : addDays(cliente.fecha1raFactura, 30 * (n - 1));
+    const siguienteGenerada = cicloDia
+      ? addMonthsKeepDay(generada, 1, cicloDia)
+      : addDays(generada, 30);
+    const vencimiento = addDays(siguienteGenerada, -1);
+    const milestones = MILESTONE_TYPES.map((mt) => {
+      const key = `f${n}_${mt.type}`;
+      const triggerDate =
+        mt.type === "d1" ? addDays(generada, 1) :
+        mt.type === "t15" ? addDays(vencimiento, -15) :
+        addDays(vencimiento, -3);
+      const enviado = !!cliente[key];
+      const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado;
+      const texto = mt.getTexto({ ...cliente, _venc: vencimiento, plan: planLabelMensaje(cliente) }, n);
+      return { ...mt, key, n, triggerDate, enviado, pendienteHoy, texto };
+    });
+    facturas.push({ n, generada, vencimiento, milestones });
+  }
+  return facturas;
+}
+
+function facturaActual(facturas) {
+  if (!facturas.length) return null;
+  for (let i = facturas.length - 1; i >= 0; i--) {
+    if (daysFromToday(facturas[i].generada) <= 0) return facturas[i];
+  }
+  return facturas[0];
+}
+
+// ---------- Componente principal ----------
+function App() {
+  const [autenticado, setAutenticado] = useState(() => {
+    try {
+      return localStorage.getItem("antichurn_auth") === "1";
+    } catch (e) {
+      return false;
+    }
+  });
+  const [clientes, setClientes] = useState([]);
+  const [loaded, setLoaded] = useState(false);
+  const [tab, setTab] = useState("dashboard");
+  const [form, setForm] = useState(emptyForm());
+  const [editingId, setEditingId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [copiedKey, setCopiedKey] = useState(null);
+  const [copiedSubKey, setCopiedSubKey] = useState(null);
+  const [saveError, setSaveError] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(null);
+  const [clienteDetalleId, setClienteDetalleId] = useState(null);
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [historial, setHistorial] = useState([]);
+  const [metas, setMetas] = useState({});
+  const [metasLoaded, setMetasLoaded] = useState(false);
+  const [convergencias, setConvergencias] = useState([]);
+  const [convergenciasLoaded, setConvergenciasLoaded] = useState(false);
+  const [mostrarConvergencias, setMostrarConvergencias] = useState(false);
+  const [eliminados, setEliminados] = useState([]);
+  const [eliminadosLoaded, setEliminadosLoaded] = useState(false);
+  const importInputRef = useRef(null);
+  const sonidoReproducidoRef = useRef(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("clientes-churn");
+        if (res && res.value) setClientes(JSON.parse(res.value));
+      } catch (e) {}
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    (async () => {
+      try {
+        const r = await storage.set("clientes-churn", JSON.stringify(clientes));
+        setSaveError(!r);
+      } catch (e) {
+        setSaveError(true);
+      }
+    })();
+  }, [clientes, loaded]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("metas-mensuales");
+        if (res && res.value) setMetas(JSON.parse(res.value));
+      } catch (e) {}
+      setMetasLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!metasLoaded) return;
+    (async () => {
+      try {
+        await storage.set("metas-mensuales", JSON.stringify(metas));
+      } catch (e) {}
+    })();
+  }, [metas, metasLoaded]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("convergencias-churn");
+        if (res && res.value) setConvergencias(JSON.parse(res.value));
+      } catch (e) {}
+      setConvergenciasLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!convergenciasLoaded) return;
+    (async () => {
+      try {
+        await storage.set("convergencias-churn", JSON.stringify(convergencias));
+      } catch (e) {}
+    })();
+  }, [convergencias, convergenciasLoaded]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("clientes-eliminados");
+        if (res && res.value) setEliminados(JSON.parse(res.value));
+      } catch (e) {}
+      setEliminadosLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!eliminadosLoaded) return;
+    (async () => {
+      try {
+        await storage.set("clientes-eliminados", JSON.stringify(eliminados));
+      } catch (e) {}
+    })();
+  }, [eliminados, eliminadosLoaded]);
+
+  const clientesCalc = useMemo(() => {
+    return clientes.map((c) => {
+      const facturas = calcularFacturas(c);
+      return { ...c, facturas, actual: facturaActual(facturas) };
+    });
+  }, [clientes]);
+
+  const clienteDetalle = useMemo(
+    () => clientesCalc.find((c) => c.id === clienteDetalleId) || null,
+    [clientesCalc, clienteDetalleId]
+  );
+
+  const alertasHoy = useMemo(() => {
+    const list = [];
+    clientesCalc.forEach((c) => {
+      c.facturas.forEach((f) => {
+        f.milestones.forEach((m) => {
+          if (m.pendienteHoy) list.push({ cliente: c, factura: f, milestone: m });
+        });
+      });
+    });
+    const orden = { t3: 0, t15: 1, d1: 2 };
+    list.sort((a, b) => {
+      if (orden[a.milestone.type] !== orden[b.milestone.type])
+        return orden[a.milestone.type] - orden[b.milestone.type];
+      return daysFromToday(a.milestone.triggerDate) - daysFromToday(b.milestone.triggerDate);
+    });
+    return list;
+  }, [clientesCalc]);
+
+  // Deja una sola alerta por cliente: la más reciente/urgente (T-3 > T-15 > D+1;
+  // a igual prioridad, la de fecha de disparo más reciente).
+  const alertasPorCliente = useMemo(() => {
+    const orden = { t3: 0, t15: 1, d1: 2 };
+    const porCliente = new Map();
+    alertasHoy.forEach(({ cliente, factura, milestone }) => {
+      const actual = porCliente.get(cliente.id);
+      if (!actual) {
+        porCliente.set(cliente.id, { cliente, factura, milestone });
+        return;
+      }
+      const prioridadActual = orden[actual.milestone.type];
+      const prioridadNueva = orden[milestone.type];
+      const esMasReciente =
+        prioridadNueva < prioridadActual ||
+        (prioridadNueva === prioridadActual && milestone.triggerDate > actual.milestone.triggerDate);
+      if (esMasReciente) porCliente.set(cliente.id, { cliente, factura, milestone });
+    });
+    return Array.from(porCliente.values());
+  }, [alertasHoy]);
+
+  const filteredClientes = useMemo(() => {
+    if (!search.trim()) return clientesCalc;
+    const q = search.toLowerCase();
+    return clientesCalc.filter(
+      (c) =>
+        c.nombre.toLowerCase().includes(q) ||
+        c.numeroSuscriptor.toLowerCase().includes(q) ||
+        c.telefono.toLowerCase().includes(q) ||
+        planLabel(c).toLowerCase().includes(q)
+    );
+  }, [clientesCalc, search]);
+
+  const stats = useMemo(() => {
+    const total = clientes.length;
+    const alHoy = alertasPorCliente.length;
+    const proximos7 = clientesCalc.filter((c) =>
+      c.facturas.some((f) =>
+        f.milestones.some((m) => !m.enviado && daysFromToday(m.triggerDate) > 0 && daysFromToday(m.triggerDate) <= 7)
+      )
+    ).length;
+    const atrasados = clientes.filter((c) => c.estadoPago === "Atrasado").length;
+    return { total, alHoy, proximos7, atrasados };
+  }, [clientes, alertasPorCliente, clientesCalc]);
+
+  useEffect(() => {
+    if (!loaded || stats.alHoy === 0 || sonidoReproducidoRef.current) return;
+    sonidoReproducidoRef.current = true;
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.frequency.value = 880;
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      gain.gain.setValueAtTime(0.15, ctx.currentTime);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.2);
+    } catch (e) {}
+  }, [loaded, stats.alHoy]);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [tab]);
+
+  function resetForm() {
+    setForm(emptyForm());
+    setEditingId(null);
+  }
+
+  function irANuevoConSuscriptor(numero) {
+    setForm({ ...emptyForm(), numeroSuscriptor: numero });
+    setEditingId(null);
+    setTab("nuevo");
+  }
+
+  function actualizarMeta(mes, campo, valor) {
+    setMetas((prev) => {
+      const actual = typeof prev[mes] === "object" && prev[mes] !== null ? prev[mes] : {};
+      return { ...prev, [mes]: { ...actual, [campo]: valor === "" ? undefined : Number(valor) } };
+    });
+  }
+
+  function agregarConvergencia(nombre, telefono) {
+    setConvergencias((prev) => [...prev, { id: uid(), nombre, telefono, creadoEn: new Date().toISOString() }]);
+  }
+
+  function editarConvergencia(id, datos) {
+    setConvergencias((prev) => prev.map((c) => (c.id === id ? { ...c, ...datos } : c)));
+  }
+
+  function eliminarConvergencia(id) {
+    setConvergencias((prev) => prev.filter((c) => c.id !== id));
+  }
+
+  // Aplica un cambio a la lista de clientes, guardando el estado anterior
+  // en el historial para poder deshacerlo.
+  function actualizarClientes(updater) {
+    setHistorial((h) => [...h, clientes].slice(-20));
+    setClientes(updater);
+  }
+
+  function deshacerUltimaAccion() {
+    setHistorial((h) => {
+      if (h.length === 0) return h;
+      const anterior = h[h.length - 1];
+      setClientes(anterior);
+      return h.slice(0, -1);
+    });
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    const obligatorios = [
+      form.numeroSuscriptor,
+      form.nombre,
+      form.telefono,
+      form.cicloFacturacion,
+      form.planTipo,
+      form.velocidad,
+      form.montoMensual,
+    ];
+    if (form.planTipo === "DOBLE") obligatorios.push(form.planTV);
+    if (obligatorios.some((v) => !String(v ?? "").trim())) return;
+
+    const otros = clientes.filter((c) => c.id !== editingId);
+    const numSusc = form.numeroSuscriptor.trim();
+    const nombreNorm = form.nombre.trim().toLowerCase();
+    const telDigits = form.telefono.replace(/\D/g, "");
+    const duplicado = otros.find(
+      (c) =>
+        (c.numeroSuscriptor || "").trim() === numSusc ||
+        (c.nombre || "").trim().toLowerCase() === nombreNorm ||
+        (c.telefono || "").replace(/\D/g, "") === telDigits
+    );
+    if (duplicado) {
+      const campo =
+        (duplicado.numeroSuscriptor || "").trim() === numSusc
+          ? "número de suscriptor"
+          : (duplicado.nombre || "").trim().toLowerCase() === nombreNorm
+          ? "nombre"
+          : "teléfono";
+      const continuar = window.confirm(
+        `Ya existe un cliente con el mismo ${campo}: ${duplicado.nombre} (suscriptor ${duplicado.numeroSuscriptor || "—"}).\n\n¿Querés guardar este cliente de todas formas?`
+      );
+      if (!continuar) return;
+    }
+
+    if (editingId) {
+      actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+    } else {
+      actualizarClientes((prev) => [...prev, { id: uid(), ...form, creadoEn: new Date().toISOString() }]);
+    }
+    resetForm();
+    setTab("clientes");
+  }
+
+  function startEdit(c) {
+    setForm({
+      nombre: c.nombre,
+      numeroSuscriptor: c.numeroSuscriptor,
+      telefono: c.telefono,
+      cicloFacturacion: c.cicloFacturacion,
+      planTipo: c.planTipo,
+      velocidad: c.velocidad,
+      planTV: c.planTV,
+      montoMensual: c.montoMensual,
+      fechaInstalacion: c.fechaInstalacion,
+      fecha1raFactura: c.fecha1raFactura,
+      monto1raFactura: c.monto1raFactura,
+      estadoPago: c.estadoPago,
+      observaciones: c.observaciones,
+    });
+    setEditingId(c.id);
+    setTab("nuevo");
+  }
+
+  function toggleMilestone(clienteId, key) {
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? { ...c, [key]: !c[key] } : c)));
+  }
+
+  function marcarFacturaPagada(clienteId, n) {
+    actualizarClientes((prev) =>
+      prev.map((c) =>
+        c.id === clienteId
+          ? { ...c, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada", estadoPago: "Pagado" }
+          : c
+      )
+    );
+  }
+
+  // Cambia el estado de pago de una factura puntual: "pagada", "pendiente" o "" (sin marcar).
+  // Al marcar como pagada, silencia sus 3 avisos; al desmarcar, los reactiva por si
+  // corresponde que sigan recordándole al cliente.
+  function actualizarEstadoFactura(clienteId, n, nuevoEstado) {
+    actualizarClientes((prev) =>
+      prev.map((c) => {
+        if (c.id !== clienteId) return c;
+        const marcarEnviado = nuevoEstado === "pagada";
+        return {
+          ...c,
+          [`f${n}_estado`]: nuevoEstado,
+          [`f${n}_d1`]: marcarEnviado,
+          [`f${n}_t15`]: marcarEnviado,
+          [`f${n}_t3`]: marcarEnviado,
+          ...(marcarEnviado ? { estadoPago: "Pagado" } : {}),
+        };
+      })
+    );
+  }
+
+  function deleteClient(id) {
+    const cliente = clientes.find((c) => c.id === id);
+    actualizarClientes((prev) => prev.filter((c) => c.id !== id));
+    if (cliente) {
+      setEliminados((prev) => [...prev, { ...cliente, eliminadoEn: new Date().toISOString() }]);
+    }
+    setConfirmDelete(null);
+  }
+
+  function recuperarCliente(id) {
+    const cliente = eliminados.find((c) => c.id === id);
+    if (!cliente) return;
+    setEliminados((prev) => prev.filter((c) => c.id !== id));
+    const { eliminadoEn, ...resto } = cliente;
+    actualizarClientes((prev) => [...prev, resto]);
+  }
+
+  function copyMessage(cliente, milestone) {
+    navigator.clipboard?.writeText(milestone.texto).catch(() => {});
+    setCopiedKey(cliente.id + milestone.key);
+    setTimeout(() => setCopiedKey(null), 1500);
+  }
+
+  function copySuscriptor(cliente) {
+    navigator.clipboard?.writeText(cliente.numeroSuscriptor || "").catch(() => {});
+    setCopiedSubKey(cliente.id);
+    setTimeout(() => setCopiedSubKey(null), 1500);
+  }
+
+  function exportarRespaldo() {
+    const blob = new Blob([JSON.stringify(clientes, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `metaforce-respaldo-${toISO(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function importarRespaldo(e) {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const importados = JSON.parse(reader.result);
+        if (!Array.isArray(importados)) {
+          alert("El archivo no tiene el formato esperado.");
+          return;
+        }
+        actualizarClientes((prev) => {
+          const idsExistentes = new Set(prev.map((c) => c.id));
+          const nuevos = importados.filter((c) => c && c.id && !idsExistentes.has(c.id));
+          alert(`Se importaron ${nuevos.length} cliente(s) nuevo(s) de ${importados.length} en el archivo.`);
+          return [...prev, ...nuevos];
+        });
+      } catch (err) {
+        alert("No se pudo leer el archivo. Verificá que sea un respaldo válido (.json).");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  }
+
+  const navItems = [
+    { key: "dashboard", label: "Dashboard" },
+    { key: "clientes", label: "Clientes" },
+    { key: "alertas", label: "Alertas de hoy", badge: stats.alHoy },
+    { key: "precierre", label: "Precierre" },
+  ];
+
+  if (!autenticado) {
+    return (
+      <LoginScreen
+        onSuccess={() => {
+          try {
+            localStorage.setItem("antichurn_auth", "1");
+          } catch (e) {}
+          setAutenticado(true);
+        }}
+      />
+    );
+  }
+
+  return (
+    <div className="min-h-screen flex flex-col md:flex-row font-sans" style={{ background: "#F4F6FA", color: "#001E62" }}>
+      <div className="md:hidden flex items-center justify-between px-4 py-3" style={{ background: "#001E62" }}>
+        <div className="flex items-center gap-2">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
+          <span className="text-white font-semibold tracking-wide text-lg">MetaForce</span>
+        </div>
+        <button
+          onClick={() => setMobileMenuOpen((v) => !v)}
+          className="text-white text-2xl leading-none px-2 py-1"
+          aria-label="Abrir menú"
+        >
+          {mobileMenuOpen ? "✕" : "☰"}
+        </button>
+      </div>
+
+      <aside
+        className={(mobileMenuOpen ? "flex " : "hidden ") + "md:flex w-full md:w-56 md:shrink-0 flex-col justify-between"}
+        style={{ background: "#001E62" }}
+      >
+        <div>
+          <div className="hidden md:block px-5 pt-6 pb-8">
+            <div className="flex items-center gap-2">
+              <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
+              <span className="text-white font-semibold tracking-wide text-lg">MetaForce</span>
+            </div>
+            <p className="text-[11px] mt-1" style={{ color: "#7C89B0" }}>
+              CONTROL DE CLIENTES &amp; EARLY CHURN - TEAM AZUERO
+            </p>
+          </div>
+          <nav className="flex flex-col gap-1 px-3 pt-3 md:pt-0">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                onClick={() => {
+                  if (item.key === "nuevo" && !editingId) resetForm();
+                  setTab(item.key);
+                }}
+                className="text-left px-3 py-2.5 rounded-md text-sm flex items-center justify-between transition-colors"
+                style={{
+                  background: tab === item.key ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: tab === item.key ? "#FFFFFF" : "#8593B8",
+                  fontWeight: tab === item.key ? 600 : 500,
+                }}
+              >
+                {item.label}
+                {!!item.badge && (
+                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded animate-pulse" style={{ background: "#C23B3B", color: "white" }}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            ))}
+            <button
+              onClick={() => {
+                resetForm();
+                setTab("nuevo");
+              }}
+              className="text-left px-3 py-2.5 rounded-md text-sm font-medium mt-1"
+              style={{ background: "#2F9E6E", color: "white" }}
+            >
+              + Nuevo cliente
+            </button>
+          </nav>
+        </div>
+        <div className="px-5 pb-5 flex flex-col gap-2">
+          <button
+            onClick={deshacerUltimaAccion}
+            disabled={historial.length === 0}
+            className="text-xs font-medium text-left px-2 py-1.5 rounded-md disabled:opacity-40"
+            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
+          >
+            ↩️ Deshacer última acción
+          </button>
+          <button
+            onClick={exportarRespaldo}
+            disabled={clientes.length === 0}
+            className="text-xs font-medium text-left px-2 py-1.5 rounded-md disabled:opacity-40"
+            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
+          >
+            ⬇️ Exportar respaldo (.json)
+          </button>
+          <button
+            onClick={() => importInputRef.current && importInputRef.current.click()}
+            className="text-xs font-medium text-left px-2 py-1.5 rounded-md"
+            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
+          >
+            ⬆️ Importar respaldo (.json)
+          </button>
+          <input
+            type="file"
+            accept="application/json"
+            ref={importInputRef}
+            onChange={importarRespaldo}
+            style={{ display: "none" }}
+          />
+          <div className="text-[11px]" style={{ color: "#5C6480" }}>
+            {saveError ? "⚠️ error al guardar" : "guardado automático activo (en la nube)"}
+          </div>
+          <button
+            onClick={() => {
+              try {
+                localStorage.removeItem("antichurn_auth");
+              } catch (e) {}
+              setAutenticado(false);
+            }}
+            className="text-[11px] text-left underline"
+            style={{ color: "#5C6480" }}
+          >
+            Cerrar sesión
+          </button>
+          <div className="text-[10px] text-center pt-1" style={{ color: "#3A4258" }}>JRS~</div>
+        </div>
+      </aside>
+
+      <main className="flex-1 w-full px-4 py-5 sm:px-8 sm:py-7 max-w-5xl">
+        {stats.alHoy > 0 && !bannerDismissed && tab !== "alertas" && (
+          <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={{ background: "#FBEAEA", borderColor: "#F3C6C6" }}>
+            <span className="text-sm font-medium" style={{ color: "#C23B3B" }}>
+              🔔 Tenés {stats.alHoy} alerta{stats.alHoy !== 1 ? "s" : ""} pendiente{stats.alHoy !== 1 ? "s" : ""} para hoy.
+            </span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setTab("alertas")} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={{ background: "#C23B3B" }}>
+                Ver alertas
+              </button>
+              <button onClick={() => setBannerDismissed(true)} className="text-xs font-medium px-2" style={{ color: "#6B7280" }}>
+                ✕
+              </button>
+            </div>
+          </div>
+        )}
+        {tab === "dashboard" && (
+          <Dashboard
+            stats={stats}
+            clientes={clientesCalc}
+            metas={metas}
+            onActualizarMeta={actualizarMeta}
+            convergencias={convergencias}
+            onAbrirConvergencias={() => setMostrarConvergencias(true)}
+            onNuevo={() => {
+              resetForm();
+              setTab("nuevo");
+            }}
+          />
+        )}
+        {tab === "clientes" && (
+          <ClientesTab
+            clientes={filteredClientes}
+            search={search}
+            setSearch={setSearch}
+            onEdit={startEdit}
+            onDelete={(id) => setConfirmDelete(id)}
+            onMarcarPagada={marcarFacturaPagada}
+            onActualizarEstadoFactura={actualizarEstadoFactura}
+            onVerDetalle={(c) => {
+              setClienteDetalleId(c.id);
+              setTab("detalle");
+            }}
+            onNuevo={() => {
+              resetForm();
+              setTab("nuevo");
+            }}
+            eliminados={eliminados}
+            onRecuperar={recuperarCliente}
+          />
+        )}
+        {tab === "detalle" && (
+          <ClienteDetalle
+            cliente={clienteDetalle}
+            onVolver={() => setTab("clientes")}
+            onEditar={startEdit}
+            onMarcarPagada={marcarFacturaPagada}
+            onActualizarEstadoFactura={actualizarEstadoFactura}
+            onCopiarMensaje={copyMessage}
+            copiedKey={copiedKey}
+            onMarcarEnviado={toggleMilestone}
+            onCopiarSuscriptor={copySuscriptor}
+            copiedSubKey={copiedSubKey}
+          />
+        )}
+        {tab === "alertas" && (
+          <AlertasTab
+            alertasHoy={alertasPorCliente}
+            onMarcar={toggleMilestone}
+            onCopiarSuscriptor={copySuscriptor}
+            copiedSubKey={copiedSubKey}
+            onPagoRealizado={marcarFacturaPagada}
+            onVerDetalle={(c) => {
+              setClienteDetalleId(c.id);
+              setTab("detalle");
+            }}
+          />
+        )}
+        {tab === "precierre" && (
+          <PrecierreTab clientes={clientesCalc} onIrNuevo={irANuevoConSuscriptor} />
+        )}
+        {tab === "nuevo" && (
+          <FormularioCliente
+            form={form}
+            setForm={setForm}
+            onSubmit={handleSubmit}
+            editing={!!editingId}
+            onCancel={() => {
+              resetForm();
+              setTab("clientes");
+            }}
+          />
+        )}
+      </main>
+
+      {confirmDelete && <ConfirmModal onCancel={() => setConfirmDelete(null)} onConfirm={() => deleteClient(confirmDelete)} />}
+      {mostrarConvergencias && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">Convergencias</h3>
+              <button onClick={() => setMostrarConvergencias(false)} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+            </div>
+            <ConvergenciasPanel
+              convergencias={convergencias}
+              onAgregar={agregarConvergencia}
+              onEditar={editarConvergencia}
+              onEliminar={eliminarConvergencia}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Clave de acceso simple para esta app. Cambiala por la que prefieras.
+const CLAVE_ACCESO = "tigo507";
+
+function LoginScreen({ onSuccess }) {
+  const [clave, setClave] = useState("");
+  const [error, setError] = useState(false);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (clave === CLAVE_ACCESO) {
+      onSuccess();
+    } else {
+      setError(true);
+    }
+  }
+
+  return (
+    <div className="min-h-screen flex items-center justify-center font-sans" style={{ background: "#F4F6FA" }}>
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-8 w-full max-w-sm">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF" }} />
+          <span className="font-semibold text-lg" style={{ color: "#001E62" }}>MetaForce</span>
+        </div>
+        <p className="text-sm mb-4" style={{ color: "#6B7280" }}>Ingresá la clave de acceso para continuar.</p>
+        <input
+          type="password"
+          value={clave}
+          onChange={(e) => {
+            setClave(e.target.value);
+            setError(false);
+          }}
+          placeholder="Clave de acceso"
+          autoFocus
+          className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-2"
+          style={{ borderColor: error ? "#C23B3B" : "#D1D5DB" }}
+        />
+        {error && (
+          <p className="text-xs mb-2" style={{ color: "#C23B3B" }}>
+            Clave incorrecta.
+          </p>
+        )}
+        <button type="submit" className="w-full text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+          Ingresar
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo }) {
+  const periodoActual = periodoComision(toISO(new Date()));
+  const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
+  const esActual = periodoVisto === periodoActual;
+
+  const metaClientes = leerMeta(metas, periodoVisto, "clientes");
+  const metaDinero = leerMeta(metas, periodoVisto, "dinero");
+  const metaArpu = leerMeta(metas, periodoVisto, "arpu");
+
+  // Todo lo que sigue se agrupa por período de comisión (instalados del 21 al 20),
+  // no por mes calendario ni por fecha de ingreso.
+  const clientesDelPeriodo = useMemo(
+    () => clientes.filter((c) => periodoComision(c.fechaInstalacion) === periodoVisto),
+    [clientes, periodoVisto]
+  );
+  const dineroDelPeriodo = useMemo(
+    () => clientesDelPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0),
+    [clientesDelPeriodo]
+  );
+  const arpuPeriodo = useMemo(() => {
+    if (clientesDelPeriodo.length === 0) return 0;
+    return dineroDelPeriodo / clientesDelPeriodo.length;
+  }, [clientesDelPeriodo, dineroDelPeriodo]);
+  const singlesInstalados = useMemo(
+    () => clientesDelPeriodo.filter((c) => c.planTipo === "SINGLE").length,
+    [clientesDelPeriodo]
+  );
+  const doblesInstalados = useMemo(
+    () => clientesDelPeriodo.filter((c) => c.planTipo === "DOBLE").length,
+    [clientesDelPeriodo]
+  );
+  // Los pendientes de instalación no pertenecen a ningún período todavía (no tienen
+  // fecha), así que se muestran como un total aparte, sin importar qué período mires.
+  const pendientesAhora = useMemo(() => clientes.filter((c) => !c.fechaInstalacion).length, [clientes]);
+
+  const mesActualCalendario = toISO(new Date()).slice(0, 7);
+  const convergenciasMes = useMemo(
+    () => convergencias.filter((c) => (c.creadoEn || "").slice(0, 7) === mesActualCalendario).length,
+    [convergencias, mesActualCalendario]
+  );
+
+  const historialPeriodos = useMemo(() => {
+    const out = [];
+    for (let i = 0; i < 6; i++) out.push(sumarMesClave(periodoActual, -i));
+    return out;
+  }, [periodoActual]);
+
+  const progresoClientesPct = metaClientes ? Math.round((clientesDelPeriodo.length / metaClientes) * 100) : null;
+  const progresoDineroPct = metaDinero ? Math.round((dineroDelPeriodo / metaDinero) * 100) : null;
+  const progresoArpuPct = metaArpu ? Math.round((arpuPeriodo / metaArpu) * 100) : null;
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-2xl font-semibold">Dashboard</h1>
+        <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+          + Nuevo cliente
+        </button>
+      </div>
+      <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
+        Resumen por período de comisión: clientes instalados del 21 del mes anterior al 20 de cada mes.
+      </p>
+
+      <div className="flex items-center gap-2 mb-6 flex-wrap">
+        <button
+          onClick={() => setPeriodoVisto((p) => sumarMesClave(p, -1))}
+          className="text-sm font-medium px-3 py-1.5 rounded-md border"
+          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+        >
+          ← Período anterior
+        </button>
+        <span className="text-sm font-semibold px-2" style={{ color: "#001E62" }}>
+          Comisión de {mesLabel(periodoVisto)}
+        </span>
+        <button
+          onClick={() => setPeriodoVisto((p) => sumarMesClave(p, 1))}
+          className="text-sm font-medium px-3 py-1.5 rounded-md border"
+          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+        >
+          Período siguiente →
+        </button>
+        {!esActual && (
+          <button
+            onClick={() => setPeriodoVisto(periodoActual)}
+            className="text-sm font-medium px-3 py-1.5 rounded-md"
+            style={{ color: "#0072CE" }}
+          >
+            Volver al período actual
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-semibold text-sm">Meta de clientes</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
+              <input
+                type="number"
+                min="0"
+                value={metaClientes ?? ""}
+                onChange={(e) => onActualizarMeta(periodoVisto, "clientes", e.target.value)}
+                placeholder="0"
+                className="w-16 px-2 py-1 rounded-md border text-sm outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              />
+            </div>
+          </div>
+          {metaClientes ? (
+            <>
+              <p className="text-sm mb-2" style={{ color: "#374151" }}>
+                <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientes}</span> ·{" "}
+                <span className="font-semibold" style={{ color: progresoClientesPct >= 100 ? "#2F9E6E" : "#0072CE" }}>
+                  {progresoClientesPct}%
+                </span>
+              </p>
+              <div className="w-full h-2 rounded-full" style={{ background: "#E3EDFA" }}>
+                <div
+                  className="h-2 rounded-full"
+                  style={{
+                    width: `${Math.min(100, progresoClientesPct)}%`,
+                    background: clientesDelPeriodo.length >= metaClientes ? "#2F9E6E" : "#0072CE",
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de clientes de este período.</p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-semibold text-sm">Meta de dinero</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
+              <input
+                type="number"
+                min="0"
+                value={metaDinero ?? ""}
+                onChange={(e) => onActualizarMeta(periodoVisto, "dinero", e.target.value)}
+                placeholder="0"
+                className="w-20 px-2 py-1 rounded-md border text-sm outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              />
+            </div>
+          </div>
+          {metaDinero ? (
+            <>
+              <p className="text-sm mb-2" style={{ color: "#374151" }}>
+                <span className="font-semibold">{fmtMonto(dineroDelPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
+                <span className="font-semibold" style={{ color: progresoDineroPct >= 100 ? "#2F9E6E" : "#0072CE" }}>
+                  {progresoDineroPct}%
+                </span>
+              </p>
+              <div className="w-full h-2 rounded-full" style={{ background: "#E3EDFA" }}>
+                <div
+                  className="h-2 rounded-full"
+                  style={{
+                    width: `${Math.min(100, progresoDineroPct)}%`,
+                    background: dineroDelPeriodo >= metaDinero ? "#2F9E6E" : "#0072CE",
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de dinero de este período.</p>
+          )}
+        </div>
+
+        <div className="bg-white rounded-lg border border-gray-200 p-5">
+          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+            <h2 className="font-semibold text-sm">Meta de ARPU</h2>
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={metaArpu ?? ""}
+                onChange={(e) => onActualizarMeta(periodoVisto, "arpu", e.target.value)}
+                placeholder="0"
+                className="w-20 px-2 py-1 rounded-md border text-sm outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              />
+            </div>
+          </div>
+          {metaArpu ? (
+            <>
+              <p className="text-sm mb-2" style={{ color: "#374151" }}>
+                <span className="font-semibold">{fmtMonto(arpuPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaArpu)}</span> ·{" "}
+                <span className="font-semibold" style={{ color: progresoArpuPct >= 100 ? "#2F9E6E" : "#0072CE" }}>
+                  {progresoArpuPct}%
+                </span>
+              </p>
+              <div className="w-full h-2 rounded-full" style={{ background: "#E3EDFA" }}>
+                <div
+                  className="h-2 rounded-full"
+                  style={{
+                    width: `${Math.min(100, progresoArpuPct)}%`,
+                    background: arpuPeriodo >= metaArpu ? "#2F9E6E" : "#0072CE",
+                  }}
+                />
+              </div>
+            </>
+          ) : (
+            <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de ARPU de este período.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="text-lg font-mono font-semibold" style={{ color: "#001E62" }}>
+            {singlesInstalados} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>Single</span> · {doblesInstalados} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>Doble</span>
+          </div>
+          <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Instalados en este período por tipo de plan</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="text-3xl font-mono font-semibold" style={{ color: "#B8791F" }}>{pendientesAhora}</div>
+          <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Pendientes de instalación (ahora mismo)</div>
+        </div>
+        <div className="bg-white rounded-lg border border-gray-200 p-4">
+          <div className="text-3xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{stats.atrasados}</div>
+          <div className="text-xs mt-1" style={{ color: "#6B7280" }}>En atraso (ahora mismo)</div>
+        </div>
+      </div>
+
+      <button
+        onClick={onAbrirConvergencias}
+        className="bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-gray-300 transition-colors w-full mb-6"
+      >
+        <div className="text-3xl font-mono font-semibold" style={{ color: "#001E62" }}>{convergenciasMes}</div>
+        <div className="text-xs mt-1 flex items-center justify-between" style={{ color: "#6B7280" }}>
+          <span>Convergencias este mes calendario</span>
+          <span style={{ color: "#0072CE" }}>Ver detalle →</span>
+        </div>
+      </button>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <h2 className="font-semibold text-sm mb-1">Historial por período de comisión</h2>
+        <p className="text-xs mb-3" style={{ color: "#9CA3AF" }}>Tocá un período para verlo arriba.</p>
+        <div className="flex flex-col gap-2">
+          {historialPeriodos.map((key) => {
+            const metaClientesP = leerMeta(metas, key, "clientes");
+            const metaDineroP = leerMeta(metas, key, "dinero");
+            const metaArpuP = leerMeta(metas, key, "arpu");
+            const delPeriodo = clientes.filter((c) => periodoComision(c.fechaInstalacion) === key);
+            const cantidad = delPeriodo.length;
+            const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+            const arpu = cantidad > 0 ? dinero / cantidad : 0;
+            const pctClientes = metaClientesP ? Math.round((cantidad / metaClientesP) * 100) : null;
+            const pctDinero = metaDineroP ? Math.round((dinero / metaDineroP) * 100) : null;
+            const pctArpu = metaArpuP ? Math.round((arpu / metaArpuP) * 100) : null;
+            return (
+              <button
+                key={key}
+                onClick={() => setPeriodoVisto(key)}
+                className="flex items-center justify-between text-sm text-left flex-wrap gap-1 px-2 py-1.5 rounded-md"
+                style={{ background: key === periodoVisto ? "#E3EDFA" : "transparent" }}
+              >
+                <span style={{ color: "#374151" }}>{mesLabel(key)}{key === periodoActual ? " (actual)" : ""}</span>
+                <span style={{ color: "#6B7280" }}>
+                  {cantidad} clientes{metaClientesP ? ` / ${metaClientesP}` : ""}
+                  {pctClientes !== null && (
+                    <span className="ml-1 font-semibold" style={{ color: pctClientes >= 100 ? "#2F9E6E" : "#B8791F" }}>({pctClientes}%)</span>
+                  )}
+                  <span className="mx-2">·</span>
+                  {fmtMonto(dinero)}{metaDineroP ? ` / ${fmtMonto(metaDineroP)}` : ""}
+                  {pctDinero !== null && (
+                    <span className="ml-1 font-semibold" style={{ color: pctDinero >= 100 ? "#2F9E6E" : "#B8791F" }}>({pctDinero}%)</span>
+                  )}
+                  <span className="mx-2">·</span>
+                  ARPU {fmtMonto(arpu)}{metaArpuP ? ` / ${fmtMonto(metaArpuP)}` : ""}
+                  {pctArpu !== null && (
+                    <span className="ml-1 font-semibold" style={{ color: pctArpu >= 100 ? "#2F9E6E" : "#B8791F" }}>({pctArpu}%)</span>
+                  )}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle }) {
+  const [expandidos, setExpandidos] = useState(new Set());
+
+  function toggleExpandido(id) {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold mb-1">Alertas de hoy</h1>
+      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
+        Una alerta por cliente — la más reciente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
+      </p>
+      {alertasHoy.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-10 text-center">
+          <p className="text-sm" style={{ color: "#6B7280" }}>No tenés alertas pendientes en este momento.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {alertasHoy.map(({ cliente, factura, milestone }) => {
+            return (
+              <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" }}>
+                  <div>
+                    <button
+                      onClick={() => onVerDetalle(cliente)}
+                      className="font-semibold text-sm text-left hover:underline"
+                      style={{ color: "#001E62" }}
+                    >
+                      {cliente.nombre}
+                    </button>
+                    <div className="text-xs" style={{ color: "#6B7280" }}>
+                      {cliente.telefono} · {cliente.plan} · {ORDINAL[factura.n]} factura
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => onCopiarSuscriptor(cliente)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                    >
+                      {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm(`¿Confirmás que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
+                          onPagoRealizado(cliente.id, factura.n);
+                        }
+                      }}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                      style={{ background: "#2F9E6E" }}
+                    >
+                      Pago realizado
+                    </button>
+                  </div>
+                </div>
+                <div className="p-4">
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: milestone.bg, color: milestone.color }}>
+                        {milestone.tag}
+                      </span>
+                      <span className="text-xs" style={{ color: "#6B7280" }}>{milestone.label}</span>
+                    </div>
+                    <button
+                      onClick={() => toggleExpandido(cliente.id)}
+                      className="text-xs font-medium"
+                      style={{ color: "#0072CE" }}
+                    >
+                      {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
+                    </button>
+                  </div>
+                  {expandidos.has(cliente.id) && (
+                    <div className="text-sm rounded-md p-3 mb-3" style={{ background: "#F4F6FA", color: "#374151" }}>
+                      {milestone.texto}
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <a
+                      href={whatsappLink(cliente, milestone)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                      style={{ background: "#25D366" }}
+                    >
+                      Enviar por WhatsApp
+                    </a>
+                    <button
+                      onClick={() => {
+                        if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
+                          onMarcar(cliente.id, milestone.key);
+                        }
+                      }}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                    >
+                      Marcar como enviado
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ultimosMeses(count) {
+  const MESES_CAP = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+  const hoy = new Date();
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    out.push({ key, label: MESES_CAP[d.getMonth()], anio: d.getFullYear() });
+  }
+  return out;
+}
+
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar }) {
+  const meses = useMemo(() => ultimosMeses(5), []);
+  const mesActualKey = meses[0].key;
+  const [mesActivo, setMesActivo] = useState(mesActualKey);
+  const [ordenarPor, setOrdenarPor] = useState("creadoEn");
+  const [ordenDireccion, setOrdenDireccion] = useState("desc");
+  const [filtroEstado, setFiltroEstado] = useState("");
+  const [filtroInstalacion, setFiltroInstalacion] = useState("");
+  const [copiedCell, setCopiedCell] = useState(null);
+  const [papeleraAbierta, setPapeleraAbierta] = useState(false);
+
+  function copiarCelda(texto, id, campo) {
+    navigator.clipboard?.writeText(texto || "").catch(() => {});
+    setCopiedCell(id + campo);
+    setTimeout(() => setCopiedCell(null), 1200);
+  }
+
+  const clientesDelMes = useMemo(() => {
+    const instalados = clientes.filter((c) => periodoComision(c.fechaInstalacion) === mesActivo);
+    if (mesActivo === mesActualKey) {
+      const pendientes = clientes.filter((c) => !c.fechaInstalacion);
+      return [...instalados, ...pendientes];
+    }
+    return instalados;
+  }, [clientes, mesActivo, mesActualKey]);
+  const visibles = search.trim() ? clientes : clientesDelMes;
+  const visiblesOrdenados = useMemo(() => {
+    const arr = [...visibles];
+    arr.sort((a, b) => {
+      let cmp = 0;
+      if (ordenarPor === "numeroSuscriptor") {
+        cmp = (a.numeroSuscriptor || "").localeCompare(b.numeroSuscriptor || "", undefined, { numeric: true });
+      } else {
+        const va = ordenarPor === "creadoEn" ? (a.creadoEn || "") : (a.fechaInstalacion || "");
+        const vb = ordenarPor === "creadoEn" ? (b.creadoEn || "") : (b.fechaInstalacion || "");
+        cmp = va < vb ? -1 : va > vb ? 1 : 0;
+      }
+      return ordenDireccion === "asc" ? cmp : -cmp;
+    });
+    return arr;
+  }, [visibles, ordenarPor, ordenDireccion]);
+  const visiblesFinal = useMemo(() => {
+    let arr = filtroEstado ? visiblesOrdenados.filter((c) => c.estadoPago === filtroEstado) : visiblesOrdenados;
+    if (filtroInstalacion === "instalados") arr = arr.filter((c) => !!c.fechaInstalacion);
+    if (filtroInstalacion === "pendientes") arr = arr.filter((c) => !c.fechaInstalacion);
+    return arr;
+  }, [visiblesOrdenados, filtroEstado, filtroInstalacion]);
+  const arpu = useMemo(() => {
+    const soloInstalados = clientesDelMes.filter((c) => c.fechaInstalacion);
+    if (soloInstalados.length === 0) return 0;
+    const suma = soloInstalados.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+    return suma / soloInstalados.length;
+  }, [clientesDelMes]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
+        <h1 className="text-2xl font-semibold">Clientes</h1>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPapeleraAbierta(true)}
+            className="text-sm font-medium px-3 py-2 rounded-md border flex items-center gap-1.5"
+            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+            title="Ver clientes eliminados"
+          >
+            🗑️ Papelera{eliminados.length > 0 ? ` (${eliminados.length})` : ""}
+          </button>
+          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+            + Nuevo cliente
+          </button>
+        </div>
+      </div>
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-1">
+        <p className="text-sm" style={{ color: "#6B7280" }}>
+          {search.trim()
+            ? `${visiblesFinal.length} resultado${visiblesFinal.length !== 1 ? "s" : ""}`
+            : `${visiblesFinal.length} cliente${visiblesFinal.length !== 1 ? "s" : ""} · ${mesActivo === mesActualKey ? "instalados o pendientes en" : "instalados en"} ${meses.find((m) => m.key === mesActivo).label}`}
+        </p>
+        {!search.trim() && clientesDelMes.length > 0 && (
+          <p className="text-sm font-mono" style={{ color: "#001E62" }}>
+            ARPU: <span className="font-semibold">{fmtMonto(arpu)}</span>
+          </p>
+        )}
+      </div>
+
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+        {meses.map((m, i) => (
+          <button
+            key={m.key}
+            onClick={() => setMesActivo(m.key)}
+            className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors"
+            style={{
+              borderColor: mesActivo === m.key ? "#001E62" : "#D1D5DB",
+              background: mesActivo === m.key ? "#001E62" : "white",
+              color: mesActivo === m.key ? "white" : "#374151",
+            }}
+          >
+            {m.label.toUpperCase()}{i === 0 ? " (actual)" : ""}
+          </button>
+        ))}
+      </div>
+
+      <div className="relative mb-4">
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Buscar en todos los meses por nombre, teléfono, suscriptor o plan…"
+          className="w-full px-3 py-2 pr-9 rounded-md border text-sm outline-none"
+          style={{ borderColor: "#D1D5DB" }}
+        />
+        {search && (
+          <button
+            onClick={() => setSearch("")}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-sm font-medium px-1.5"
+            style={{ color: "#9CA3AF" }}
+            title="Limpiar búsqueda"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Ordenar por:</span>
+        <select
+          value={ordenarPor}
+          onChange={(e) => setOrdenarPor(e.target.value)}
+          className="text-xs px-2 py-1.5 rounded-md border outline-none"
+          style={{ borderColor: "#D1D5DB" }}
+        >
+          <option value="fechaInstalacion">Fecha de instalación</option>
+          <option value="numeroSuscriptor">Número de suscriptor</option>
+          <option value="creadoEn">Fecha de ingreso</option>
+        </select>
+        <button
+          type="button"
+          onClick={() => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"))}
+          className="text-xs font-medium px-2 py-1.5 rounded-md border"
+          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+          title={ordenDireccion === "asc" ? "Ascendente" : "Descendente"}
+        >
+          {ordenDireccion === "asc" ? "↑ Ascendente" : "↓ Descendente"}
+        </button>
+        <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Instalación:</span>
+        <select
+          value={filtroInstalacion}
+          onChange={(e) => setFiltroInstalacion(e.target.value)}
+          className="text-xs px-2 py-1.5 rounded-md border outline-none"
+          style={{ borderColor: "#D1D5DB" }}
+        >
+          <option value="">Todos</option>
+          <option value="instalados">Instalados</option>
+          <option value="pendientes">Pendientes de instalación</option>
+        </select>
+        <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Estado:</span>
+        <select
+          value={filtroEstado}
+          onChange={(e) => setFiltroEstado(e.target.value)}
+          className="text-xs px-2 py-1.5 rounded-md border outline-none"
+          style={{ borderColor: "#D1D5DB" }}
+        >
+          <option value="">Todos</option>
+          {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+        </select>
+      </div>
+
+      {visiblesFinal.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-10 text-center">
+          <p className="text-sm" style={{ color: "#6B7280" }}>
+            {filtroEstado || filtroInstalacion
+              ? "No hay clientes con ese filtro."
+              : search.trim()
+              ? "Sin resultados para esa búsqueda."
+              : "No hay clientes en este mes."}
+          </p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left" style={{ background: "#F4F6FA" }}>
+                {["Número de suscriptor", "Nombre de Cliente", "Plan", "Ciclo", "Instalado", "Facturas", "Estado", ""].map((h) => (
+                  <th key={h} className="px-4 py-2.5 font-medium text-xs" style={{ color: "#6B7280" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {visiblesFinal.map((c) => (
+                <tr key={c.id} className="border-t" style={{ borderColor: "#F0F0EF" }}>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <span>{c.numeroSuscriptor}</span>
+                      <button
+                        onClick={() => copiarCelda(c.numeroSuscriptor, c.id, "sub")}
+                        title="Copiar número de suscriptor"
+                        className="text-xs"
+                        style={{ color: copiedCell === c.id + "sub" ? "#2F9E6E" : "#9CA3AF" }}
+                      >
+                        {copiedCell === c.id + "sub" ? "✓" : "📋"}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <button
+                      onClick={() => onVerDetalle(c)}
+                      className="font-medium text-left hover:underline"
+                      style={{ color: "#001E62" }}
+                    >
+                      {c.nombre}
+                    </button>
+                    <div className="text-xs font-mono flex items-center gap-1.5" style={{ color: "#9CA3AF" }}>
+                      <span>{c.telefono}</span>
+                      <button
+                        onClick={() => copiarCelda(c.telefono, c.id, "tel")}
+                        title="Copiar teléfono"
+                        className="text-xs"
+                        style={{ color: copiedCell === c.id + "tel" ? "#2F9E6E" : "#9CA3AF" }}
+                      >
+                        {copiedCell === c.id + "tel" ? "✓" : "📋"}
+                      </button>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">{planResumen(c)}</td>
+                  <td className="px-4 py-3 font-mono text-xs">{cicloCorto(c)}</td>
+                  <td className="px-4 py-3 font-mono text-xs">
+                    {c.fechaInstalacion ? (
+                      fmtFecha(c.fechaInstalacion)
+                    ) : (
+                      <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: "#F59E0B", color: "white" }}>
+                        ⚠️ PENDIENTE POR INSTALAR
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3">
+                    {c.facturas.filter((f) => daysFromToday(f.generada) <= 0).length > 0 ? (
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>
+                          {c.facturas.filter((f) => daysFromToday(f.generada) <= 0).length}/4
+                        </span>
+                        <div className="flex items-center gap-1">
+                          {c.facturas
+                            .filter((f) => daysFromToday(f.generada) <= 0)
+                            .map((f) => (
+                              <FacturaDot key={f.n} cliente={c} n={f.n} onCambiar={onActualizarEstadoFactura} />
+                            ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <span className="text-xs" style={{ color: "#9CA3AF" }}>—</span>
+                    )}
+                  </td>
+                  <td className="px-4 py-3"><EstadoBadge estado={c.estadoPago} /></td>
+                  <td className="px-4 py-3 text-right whitespace-nowrap">
+                    {c.actual && (
+                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={{ color: "#2F9E6E" }}>Marcar pagada</button>
+                    )}
+                    <button onClick={() => onEdit(c)} className="text-xs font-medium mr-3" style={{ color: "#0072CE" }}>Editar</button>
+                    <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={{ color: "#C23B3B" }}>Eliminar</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {papeleraAbierta && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold">Clientes eliminados</h3>
+              <button onClick={() => setPapeleraAbierta(false)} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+            </div>
+            {eliminados.length === 0 ? (
+              <p className="text-sm" style={{ color: "#6B7280" }}>No hay clientes eliminados.</p>
+            ) : (
+              <div className="flex flex-col gap-2">
+                {eliminados.map((c) => (
+                  <div key={c.id} className="flex items-center justify-between rounded-md border p-3" style={{ borderColor: "#F0F0EF" }}>
+                    <div>
+                      <div className="text-sm font-medium">{c.nombre}</div>
+                      <div className="text-xs font-mono" style={{ color: "#9CA3AF" }}>
+                        {c.numeroSuscriptor} · eliminado el {fmtFecha((c.eliminadoEn || "").slice(0, 10))}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onRecuperar(c.id)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                      style={{ background: "#2F9E6E" }}
+                    >
+                      Recuperar
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActualizarEstadoFactura, onCopiarMensaje, copiedKey, onMarcarEnviado, onCopiarSuscriptor, copiedSubKey }) {
+  if (!cliente) {
+    return (
+      <div className="max-w-2xl">
+        <button onClick={onVolver} className="text-xs font-medium mb-4" style={{ color: "#0072CE" }}>
+          ← Volver a Clientes
+        </button>
+        <div className="bg-white rounded-lg border border-gray-200 p-10 text-center">
+          <p className="text-sm" style={{ color: "#6B7280" }}>No se encontró el cliente (puede haber sido eliminado).</p>
+        </div>
+      </div>
+    );
+  }
+
+  const cicloLabel = (CICLOS.find((c) => c.value === cliente.cicloFacturacion) || {}).label || "—";
+
+  return (
+    <div className="max-w-2xl">
+      <button onClick={onVolver} className="text-xs font-medium mb-4" style={{ color: "#0072CE" }}>
+        ← Volver a Clientes
+      </button>
+
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-2xl font-semibold">{cliente.nombre}</h1>
+        <button
+          onClick={() => onEditar(cliente)}
+          className="text-sm font-medium px-4 py-2 rounded-md border"
+          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+        >
+          Editar cliente
+        </button>
+      </div>
+      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>{planLabel(cliente)}</p>
+
+      <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Número de suscriptor</div>
+          <div className="font-medium flex items-center gap-1.5">
+            <span>{cliente.numeroSuscriptor || "—"}</span>
+            {cliente.numeroSuscriptor && (
+              <button
+                onClick={() => onCopiarSuscriptor(cliente)}
+                title="Copiar número de suscriptor"
+                className="text-xs"
+                style={{ color: copiedSubKey === cliente.id ? "#2F9E6E" : "#9CA3AF" }}
+              >
+                {copiedSubKey === cliente.id ? "✓" : "📋"}
+              </button>
+            )}
+          </div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Teléfono</div>
+          <div className="font-medium">{cliente.telefono || "—"}</div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Ciclo de facturación</div>
+          <div className="font-medium">{cicloLabel}</div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Fecha de instalación</div>
+          <div className="font-medium">{fmtFecha(cliente.fechaInstalacion)}</div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Monto mensual recurrente</div>
+          <div className="font-medium">{fmtMonto(cliente.montoMensual)}</div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Monto 1ra factura</div>
+          <div className="font-medium">{fmtMonto(cliente.monto1raFactura)}</div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Estado de pago</div>
+          <div><EstadoBadge estado={cliente.estadoPago} /></div>
+        </div>
+        <div>
+          <div className="text-xs" style={{ color: "#6B7280" }}>Fecha de ingreso</div>
+          <div className="font-medium">{cliente.creadoEn ? fmtFecha(cliente.creadoEn.slice(0, 10)) : "—"}</div>
+        </div>
+      </div>
+
+      {cliente.observaciones && (
+        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 text-sm">
+          <div className="text-xs font-medium mb-1" style={{ color: "#6B7280" }}>Observaciones</div>
+          {cliente.observaciones}
+        </div>
+      )}
+
+      <h2 className="text-sm font-semibold mb-2">Facturas</h2>
+      {cliente.facturas.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
+          <p className="text-sm" style={{ color: "#B8791F" }}>
+            Este cliente está <strong>pendiente de instalación</strong>, todavía no tiene fecha cargada. Editalo para asignarle la fecha de instalación y así empezar a generar sus facturas.
+          </p>
+        </div>
+      ) : (
+      <div className="flex flex-col gap-2">
+        {cliente.facturas.map((f) => {
+          const estadoFactura = cliente[`f${f.n}_estado`] || "";
+          return (
+            <div key={f.n} className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <div className="font-medium text-sm">{ORDINAL[f.n]} factura</div>
+                  <div className="text-xs" style={{ color: "#6B7280" }}>
+                    Generada: {fmtFecha(f.generada)} · Vence: {fmtFecha(f.vencimiento)}
+                  </div>
+                </div>
+                {estadoFactura === "pagada" ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ background: "#E3EDFA", color: "#0072CE" }}>
+                      Pagada ✓
+                    </span>
+                    <button
+                      onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pendiente")}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                    >
+                      Desmarcar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    {estadoFactura === "pendiente" && (
+                      <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ background: "#FBF1DE", color: "#B8791F" }}>
+                        Pendiente
+                      </span>
+                    )}
+                    <button
+                      onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                      style={{ background: "#2F9E6E" }}
+                    >
+                      Marcar como pagada
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {(() => {
+                const alertasActivas = f.milestones.filter((m) => m.pendienteHoy);
+                if (alertasActivas.length === 0) {
+                  return (
+                    <p className="text-xs" style={{ color: "#9CA3AF" }}>
+                      Sin alertas activas en esta factura por el momento.
+                    </p>
+                  );
+                }
+                return (
+                  <div className="flex flex-col gap-3">
+                    {alertasActivas.map((m) => {
+                      const key = cliente.id + m.key;
+                      return (
+                        <div key={m.key} className="rounded-md border p-3" style={{ borderColor: "#F0F0EF" }}>
+                          <div className="flex items-center gap-2 mb-2">
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: m.bg, color: m.color }}>
+                              {m.tag}
+                            </span>
+                            <span className="text-xs" style={{ color: "#6B7280" }}>{m.label}</span>
+                          </div>
+                          <div className="text-sm rounded-md p-3 mb-3" style={{ background: "#F4F6FA", color: "#374151" }}>
+                            {m.texto}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <a
+                              href={whatsappLink(cliente, m)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                              style={{ background: "#25D366" }}
+                            >
+                              Enviar por WhatsApp
+                            </a>
+                            <button
+                              onClick={() => onCopiarMensaje(cliente, m)}
+                              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                              style={{ background: "#001E62" }}
+                            >
+                              {copiedKey === key ? "Copiado ✓" : "Copiar mensaje"}
+                            </button>
+                            <button
+                              onClick={() => onMarcarEnviado(cliente.id, m.key)}
+                              className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                              style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                            >
+                              Marcar como enviado
+                            </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+                );
+              })()}
+            </div>
+          );
+        })}
+      </div>
+      )}
+    </div>
+  );
+}
+
+function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) {
+  const [nombre, setNombre] = useState("");
+  const [telefono, setTelefono] = useState("");
+  const [editingId, setEditingId] = useState(null);
+  const [mesExpandido, setMesExpandido] = useState(null);
+  const meses = useMemo(() => ultimosMeses(6), []);
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!nombre.trim() || !telefono.trim()) return;
+    if (editingId) {
+      onEditar(editingId, { nombre: nombre.trim(), telefono: telefono.trim() });
+    } else {
+      onAgregar(nombre.trim(), telefono.trim());
+    }
+    setNombre("");
+    setTelefono("");
+    setEditingId(null);
+  }
+
+  function startEdit(c) {
+    setNombre(c.nombre);
+    setTelefono(c.telefono);
+    setEditingId(c.id);
+  }
+
+  function cancelEdit() {
+    setNombre("");
+    setTelefono("");
+    setEditingId(null);
+  }
+
+  return (
+    <div>
+      <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
+        <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar convergencia" : "Nueva convergencia"}</h2>
+        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
+          <div className="flex-1">
+            <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>Nombre</label>
+            <input
+              required
+              value={nombre}
+              onChange={(e) => setNombre(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border text-sm outline-none"
+              style={{ borderColor: "#D1D5DB" }}
+            />
+          </div>
+          <div className="flex-1">
+            <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>Número de celular</label>
+            <input
+              required
+              value={telefono}
+              onChange={(e) => setTelefono(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border text-sm outline-none"
+              style={{ borderColor: "#D1D5DB" }}
+            />
+          </div>
+          <div className="flex gap-2">
+            <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+              {editingId ? "Guardar" : "Agregar"}
+            </button>
+            {editingId && (
+              <button type="button" onClick={cancelEdit} className="text-sm font-medium px-4 py-2 rounded-md border" style={{ borderColor: "#D1D5DB" }}>
+                Cancelar
+              </button>
+            )}
+          </div>
+        </form>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        {meses.map((m, i) => {
+          const delMes = convergencias.filter((c) => (c.creadoEn || "").slice(0, 7) === m.key);
+          const abierto = mesExpandido === m.key;
+          return (
+            <div key={m.key} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => setMesExpandido(abierto ? null : m.key)}
+                className="w-full flex items-center justify-between px-4 py-3 text-left"
+              >
+                <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
+                <span className="text-sm font-mono flex items-center gap-2" style={{ color: "#001E62" }}>
+                  {delMes.length} convergencia{delMes.length !== 1 ? "s" : ""}
+                  <span style={{ color: "#9CA3AF" }}>{abierto ? "▲" : "▼"}</span>
+                </span>
+              </button>
+              {abierto && (
+                <div className="border-t" style={{ borderColor: "#F0F0EF" }}>
+                  {delMes.length === 0 ? (
+                    <p className="text-sm px-4 py-3" style={{ color: "#6B7280" }}>Sin convergencias este mes.</p>
+                  ) : (
+                    delMes.map((c) => (
+                      <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "#F0F0EF" }}>
+                        <div>
+                          <div className="text-sm font-medium">{c.nombre}</div>
+                          <div className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{c.telefono}</div>
+                        </div>
+                        <div className="flex gap-3">
+                          <button onClick={() => startEdit(c)} className="text-xs font-medium" style={{ color: "#0072CE" }}>Editar</button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`¿Eliminar a ${c.nombre} de convergencias?`)) onEliminar(c.id);
+                            }}
+                            className="text-xs font-medium"
+                            style={{ color: "#C23B3B" }}
+                          >
+                            Eliminar
+                          </button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FacturaDot({ cliente, n, onCambiar }) {
+  const estado = cliente[`f${n}_estado`] || "";
+  const estilos = {
+    pagada: { background: "#0072CE", borderColor: "#0072CE" },
+    pendiente: { background: "#F59E0B", borderColor: "#F59E0B" },
+    "": { background: "white", borderColor: "#D1D5DB" },
+  };
+  const etiquetas = { pagada: "Pagada", pendiente: "Pendiente", "": "Sin marcar" };
+  return (
+    <button
+      onClick={() => onCambiar(cliente.id, n, siguienteEstadoFactura(estado))}
+      title={`${ORDINAL[n]} factura: ${etiquetas[estado]} (clic para cambiar)`}
+      className="w-4 h-4 rounded-full border-2"
+      style={estilos[estado]}
+    />
+  );
+}
+
+function EstadoBadge({ estado }) {
+  const map = {
+    Pendiente: { bg: "#FBF1DE", color: "#B8791F" },
+    Pagado: { bg: "#EAF7F0", color: "#2F9E6E" },
+    Atrasado: { bg: "#FBEAEA", color: "#C23B3B" },
+    Suspendido: { bg: "#EFEFEF", color: "#4B5563" },
+  };
+  const s = map[estado] || map["Pendiente"];
+  return <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>{estado}</span>;
+}
+
+function PrecierreTab({ clientes, onIrNuevo }) {
+  const [texto, setTexto] = useState("");
+  const [mesPrecierre, setMesPrecierre] = useState(() => toISO(new Date()).slice(0, 7));
+  const [resultado, setResultado] = useState(null);
+
+  function validar() {
+    const numeros = Array.from(new Set((texto.match(/\d+/g) || []).map((n) => n.trim()).filter(Boolean)));
+    const existentes = new Set(clientes.map((c) => (c.numeroSuscriptor || "").trim()).filter(Boolean));
+    const faltantes = numeros.filter((n) => !existentes.has(n));
+    const encontrados = numeros.filter((n) => existentes.has(n));
+
+    // "Sobrantes": clientes instalados EN el mes del precierre (mes exacto, no acumulado)
+    // cuyo número de suscriptor no aparece en la lista pegada.
+    const instaladosEseMes = clientes.filter(
+      (c) => c.fechaInstalacion && periodoComision(c.fechaInstalacion) === mesPrecierre
+    );
+    const sobrantes = instaladosEseMes.filter(
+      (c) => c.numeroSuscriptor && !numeros.includes(c.numeroSuscriptor.trim())
+    );
+
+    setResultado({ mes: mesPrecierre, total: numeros.length, faltantes, encontrados, sobrantes });
+  }
+
+  return (
+    <div className="max-w-3xl">
+      <h1 className="text-2xl font-semibold mb-1">Validar precierre del mes</h1>
+      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
+        Pega aquí los números de suscriptor del archivo de precierre (uno por línea, o como vengan copiados desde Excel). La app detecta cuáles ya están cargados y cuáles faltan.
+      </p>
+
+      <div className="mb-4">
+        <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>
+          Mes al que corresponde este precierre
+        </label>
+        <input
+          type="month"
+          value={mesPrecierre}
+          onChange={(e) => setMesPrecierre(e.target.value)}
+          className="px-3 py-2 rounded-md border text-sm outline-none"
+          style={{ borderColor: "#D1D5DB" }}
+        />
+      </div>
+
+      <textarea
+        value={texto}
+        onChange={(e) => setTexto(e.target.value)}
+        rows={10}
+        placeholder="Pega aquí la lista de suscriptores del precierre…"
+        className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 font-mono"
+        style={{ borderColor: "#D1D5DB" }}
+      />
+      <button
+        onClick={validar}
+        disabled={!texto.trim()}
+        className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
+        style={{ background: "#001E62" }}
+      >
+        Validar precierre
+      </button>
+
+      {resultado && (
+        <div className="mt-6 flex flex-col gap-4">
+          <p className="text-sm font-medium" style={{ color: "#374151" }}>
+            Resultado del precierre de {mesLabel(resultado.mes)}
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-2xl font-mono font-semibold" style={{ color: "#001E62" }}>{resultado.total}</div>
+              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Suscriptores en el precierre</div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-2xl font-mono font-semibold" style={{ color: "#2F9E6E" }}>{resultado.encontrados.length}</div>
+              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Ya cargados en la app</div>
+            </div>
+            <div className="bg-white rounded-lg border border-gray-200 p-4">
+              <div className="text-2xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{resultado.faltantes.length}</div>
+              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Faltan por cargar</div>
+            </div>
+          </div>
+
+          {resultado.faltantes.length > 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 p-5">
+              <h2 className="text-sm font-semibold mb-3" style={{ color: "#C23B3B" }}>
+                ⚠️ Suscriptores del precierre que no están en la app
+              </h2>
+              <div className="flex flex-col gap-2">
+                {resultado.faltantes.map((n) => (
+                  <div
+                    key={n}
+                    className="flex items-center justify-between rounded-md border p-3"
+                    style={{ borderColor: "#F3C6C6", background: "#FBEAEA" }}
+                  >
+                    <span className="font-mono text-sm">{n}</span>
+                    <button
+                      onClick={() => onIrNuevo(n)}
+                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                      style={{ background: "#001E62" }}
+                    >
+                      + Agregar cliente
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
+              <p className="text-sm" style={{ color: "#2F9E6E" }}>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
+            </div>
+          )}
+
+          {resultado.sobrantes.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 p-5">
+              <h2 className="text-sm font-semibold mb-1" style={{ color: "#B8791F" }}>
+                Instalados en {mesLabel(resultado.mes)} que no aparecen en este precierre
+              </h2>
+              <p className="text-xs mb-3" style={{ color: "#6B7280" }}>
+                Revisá si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
+              </p>
+              <div className="flex flex-col gap-2">
+                {resultado.sobrantes.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-md border p-3"
+                    style={{ borderColor: "#F3E3C3", background: "#FFFBF2" }}
+                  >
+                    <div>
+                      <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
+                      <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
+                    </div>
+                    <span className="text-xs font-mono" style={{ color: "#B8791F" }}>
+                      Instalado: {fmtFecha(c.fechaInstalacion)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
+  const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const inputClass = "w-full px-3 py-2 rounded-md border text-sm outline-none focus:ring-2";
+  const inputStyle = { borderColor: "#D1D5DB" };
+  const lockedStyle = { borderColor: "#D1D5DB", background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" };
+  const [diasProrrateo, setDiasProrrateo] = useState(null);
+
+  function calcularAuto() {
+    const r = calcularPrimeraFactura(form.fechaInstalacion, parseInt(form.cicloFacturacion, 10), form.montoMensual);
+    if (!r) return;
+    const totalPrimeraFactura = +((Number(form.montoMensual) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
+    setForm((f) => ({ ...f, fecha1raFactura: r.fecha1raFactura, monto1raFactura: totalPrimeraFactura }));
+    setDiasProrrateo(r.dias);
+  }
+
+  return (
+    <div className="max-w-2xl">
+      <h1 className="text-2xl font-semibold mb-1">{editing ? "Editar cliente" : "Nuevo cliente"}</h1>
+      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
+        Se hace seguimiento a las primeras 4 facturas. Las fechas de la 2da, 3ra y 4ta se calculan con el día del Ciclo de Facturación. Todos los campos son obligatorios.
+      </p>
+      <form onSubmit={onSubmit} className="bg-white rounded-lg border border-gray-200 p-6 flex flex-col gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Número de suscriptor *">
+            <input required value={form.numeroSuscriptor} onChange={set("numeroSuscriptor")} className={inputClass} style={inputStyle} />
+          </Field>
+          <Field label="Nombre y apellido *">
+            <input required value={form.nombre} onChange={set("nombre")} className={inputClass} style={inputStyle} />
+          </Field>
+          <Field label="Teléfono *">
+            <input required value={form.telefono} onChange={set("telefono")} className={inputClass} style={inputStyle} />
+          </Field>
+          <Field label="Ciclo de facturación *">
+            <select required value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
+              <option value="">Seleccionar…</option>
+              {CICLOS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Fecha de instalación">
+            <input
+              type="date"
+              value={form.fechaInstalacion}
+              onChange={set("fechaInstalacion")}
+              disabled={!form.fechaInstalacion}
+              required={!!form.fechaInstalacion}
+              className={inputClass}
+              style={!form.fechaInstalacion ? lockedStyle : inputStyle}
+            />
+            <label className="flex items-center gap-2 mt-1.5 text-xs" style={{ color: "#6B7280" }}>
+              <input
+                type="checkbox"
+                checked={!form.fechaInstalacion}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, fechaInstalacion: e.target.checked ? "" : toISO(new Date()) }))
+                }
+              />
+              Pendiente de instalación (todavía no tiene fecha)
+            </label>
+          </Field>
+          <Field label="Tipo de plan *">
+            <select
+              required
+              value={form.planTipo}
+              onChange={(e) => setForm((f) => ({ ...f, planTipo: e.target.value, planTV: e.target.value === "SINGLE" ? "" : f.planTV }))}
+              className={inputClass}
+              style={inputStyle}
+            >
+              <option value="">Seleccionar…</option>
+              {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </Field>
+          <Field label="Velocidad *">
+            <select required value={form.velocidad} onChange={set("velocidad")} className={inputClass} style={inputStyle}>
+              <option value="">Seleccionar…</option>
+              {VELOCIDADES.map((v) => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </Field>
+          {form.planTipo === "DOBLE" && (
+            <Field label="Plan de TV *">
+              <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
+                <option value="">Seleccionar…</option>
+                {TIPOS_TV.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+          )}
+          <Field label="Monto mensual recurrente *">
+            <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
+          </Field>
+        </div>
+
+        <div className="rounded-md p-3 flex items-center justify-between" style={{ background: "#F4F6FA" }}>
+          <div>
+            <div className="text-xs font-medium" style={{ color: "#374151" }}>
+              Fecha y monto de la 1ra factura (recurrente + prorrateo)
+            </div>
+            <div className="text-xs mt-0.5" style={{ color: "#9CA3AF" }}>
+              {diasProrrateo != null
+                ? `Calculado: ${diasProrrateo} día${diasProrrateo !== 1 ? "s" : ""} de prorrateo`
+                : "Se calcula con fecha de instalación + ciclo + monto mensual"}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={calcularAuto}
+            disabled={!form.fechaInstalacion || !form.cicloFacturacion || !form.montoMensual}
+            className="text-xs font-medium px-3 py-1.5 rounded-md text-white disabled:opacity-40"
+            style={{ background: "#001E62" }}
+          >
+            Calcular automáticamente
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <Field label="Fecha 1ra factura (automática)">
+            <input disabled type="date" value={form.fecha1raFactura} className={inputClass} style={lockedStyle} />
+          </Field>
+          <Field label="Monto 1ra factura (recurrente + prorrateo)">
+            <input type="number" step="0.01" value={form.monto1raFactura} onChange={set("monto1raFactura")} className={inputClass} style={inputStyle} />
+          </Field>
+          <Field label="Estado de pago">
+            <select value={form.estadoPago} onChange={set("estadoPago")} className={inputClass} style={inputStyle}>
+              {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+            </select>
+          </Field>
+        </div>
+        <Field label="Observaciones">
+          <textarea value={form.observaciones} onChange={set("observaciones")} rows={3} className={inputClass} style={inputStyle} />
+        </Field>
+        <div className="flex gap-2 pt-2">
+          <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+            {editing ? "Guardar cambios" : "Registrar cliente"}
+          </button>
+          <button type="button" onClick={onCancel} className="text-sm font-medium px-4 py-2 rounded-md border" style={{ borderColor: "#D1D5DB" }}>
+            Cancelar
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium" style={{ color: "#6B7280" }}>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function ConfirmModal({ onCancel, onConfirm }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+        <h3 className="font-semibold mb-2">¿Eliminar cliente?</h3>
+        <p className="text-sm mb-5" style={{ color: "#6B7280" }}>Esta acción no se puede deshacer.</p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded-md border" style={{ borderColor: "#D1D5DB" }}>Cancelar</button>
+          <button onClick={onConfirm} className="text-sm px-3 py-1.5 rounded-md text-white" style={{ background: "#C23B3B" }}>Eliminar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
