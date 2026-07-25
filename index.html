@@ -121,6 +121,16 @@ function sumarMesClave(mesKey, delta) {
   const newM = (((total % 12) + 12) % 12) + 1;
   return `${newY}-${String(newM).padStart(2, "0")}`;
 }
+// Lista de períodos de comisión recientes (el actual primero), según la fecha de hoy.
+function periodosRecientes(count) {
+  const actual = periodoComision(toISO(new Date()));
+  const out = [];
+  for (let i = 0; i < count; i++) {
+    const key = sumarMesClave(actual, -i);
+    out.push({ key, label: mesLabel(key) });
+  }
+  return out;
+}
 // Lee una meta (clientes o dinero) de un mes, compatible con el formato viejo
 // donde metas[mes] era un número simple (solo meta de clientes).
 function leerMeta(metas, mes, campo) {
@@ -1074,10 +1084,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   // fecha), así que se muestran como un total aparte, sin importar qué período mires.
   const pendientesAhora = useMemo(() => clientes.filter((c) => !c.fechaInstalacion).length, [clientes]);
 
-  const mesActualCalendario = toISO(new Date()).slice(0, 7);
-  const convergenciasMes = useMemo(
-    () => convergencias.filter((c) => (c.creadoEn || "").slice(0, 7) === mesActualCalendario).length,
-    [convergencias, mesActualCalendario]
+  const convergenciasPeriodo = useMemo(
+    () => convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto).length,
+    [convergencias, periodoVisto]
   );
 
   const historialPeriodos = useMemo(() => {
@@ -1113,13 +1122,15 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         <span className="text-sm font-semibold px-2" style={{ color: "#001E62" }}>
           Comisión de {mesLabel(periodoVisto)}
         </span>
-        <button
-          onClick={() => setPeriodoVisto((p) => sumarMesClave(p, 1))}
-          className="text-sm font-medium px-3 py-1.5 rounded-md border"
-          style={{ borderColor: "#D1D5DB", color: "#374151" }}
-        >
-          Período siguiente →
-        </button>
+        {!esActual && (
+          <button
+            onClick={() => setPeriodoVisto((p) => sumarMesClave(p, 1))}
+            className="text-sm font-medium px-3 py-1.5 rounded-md border"
+            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+          >
+            Período siguiente →
+          </button>
+        )}
         {!esActual && (
           <button
             onClick={() => setPeriodoVisto(periodoActual)}
@@ -1272,9 +1283,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         onClick={onAbrirConvergencias}
         className="bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-gray-300 transition-colors w-full mb-6"
       >
-        <div className="text-3xl font-mono font-semibold" style={{ color: "#001E62" }}>{convergenciasMes}</div>
+        <div className="text-3xl font-mono font-semibold" style={{ color: "#001E62" }}>{convergenciasPeriodo}</div>
         <div className="text-xs mt-1 flex items-center justify-between" style={{ color: "#6B7280" }}>
-          <span>Convergencias este mes calendario</span>
+          <span>Convergencias en este período</span>
           <span style={{ color: "#0072CE" }}>Ver detalle →</span>
         </div>
       </button>
@@ -1454,7 +1465,7 @@ function ultimosMeses(count) {
 }
 
 function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar }) {
-  const meses = useMemo(() => ultimosMeses(5), []);
+  const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const [mesActivo, setMesActivo] = useState(mesActualKey);
   const [ordenarPor, setOrdenarPor] = useState("creadoEn");
@@ -1964,7 +1975,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
   const [telefono, setTelefono] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [mesExpandido, setMesExpandido] = useState(null);
-  const meses = useMemo(() => ultimosMeses(6), []);
+  const meses = useMemo(() => periodosRecientes(6), []);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -2031,7 +2042,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
 
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
-          const delMes = convergencias.filter((c) => (c.creadoEn || "").slice(0, 7) === m.key);
+          const delMes = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === m.key);
           const abierto = mesExpandido === m.key;
           return (
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
