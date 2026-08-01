@@ -148,6 +148,39 @@ function siguienteEstadoFactura(actual) {
   return "pendiente";
 }
 
+// ---------- Cálculo de comisión ----------
+// Monto base según el % de logro en ingresos ($ de clientes) del período actual.
+const TABLA_COMISION_BASE = [
+  { min: 80, max: 89.9999, monto: 550 },
+  { min: 90, max: 99.9999, monto: 750 },
+  { min: 100, max: 109.9999, monto: 950 },
+  { min: 110, max: 119.9999, monto: 1150 },
+  { min: 120, max: 129.9999, monto: 1300 },
+  { min: 130, max: 139.9999, monto: 1500 },
+  { min: 140, max: Infinity, monto: 1700 },
+];
+function montoBaseComision(pctIngreso) {
+  if (pctIngreso == null || pctIngreso < 80) return 0;
+  const tramo = TABLA_COMISION_BASE.find((t) => pctIngreso >= t.min && pctIngreso <= t.max);
+  return tramo ? tramo.monto : 1700;
+}
+// Comisión final = monto base (según % ingreso) × (% ARPU / 100) × (% clientes / 100).
+// Si el % de clientes instalados supera 90%, el ingreso del período suma también
+// los montos de las convergencias FULL TIGO de ese mismo período.
+function calcularComision({ dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesInstalados, metaClientes, bonoFullTigo }) {
+  const pctClientes = metaClientes ? (clientesInstalados / metaClientes) * 100 : null;
+  const aplicaBono = pctClientes !== null && pctClientes > 90;
+  const dineroAjustado = dineroDelPeriodo + (aplicaBono ? bonoFullTigo : 0);
+  const pctIngreso = metaDinero ? (dineroAjustado / metaDinero) * 100 : null;
+  const pctArpu = metaArpu ? (arpuPeriodo / metaArpu) * 100 : null;
+  const montoBase = montoBaseComision(pctIngreso);
+  const factorArpu = pctArpu != null ? pctArpu / 100 : 0;
+  const factorClientes = pctClientes != null ? pctClientes / 100 : 0;
+  const completo = pctIngreso != null && pctArpu != null && pctClientes != null;
+  const total = completo ? montoBase * factorArpu * factorClientes : 0;
+  return { total, montoBase, pctIngreso, pctArpu, pctClientes, aplicaBono, bonoFullTigo, dineroAjustado, completo };
+}
+
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
 const ESTADOS = ["Pendiente", "Pagado", "Atrasado", "Suspendido"];
@@ -626,8 +659,11 @@ function App() {
     });
   }
 
-  function agregarConvergencia(nombre, telefono) {
-    setConvergencias((prev) => [...prev, { id: uid(), nombre, telefono, creadoEn: new Date().toISOString() }]);
+  function agregarConvergencia(nombre, telefono, fullTigo, montoPlan) {
+    setConvergencias((prev) => [
+      ...prev,
+      { id: uid(), nombre, telefono, fullTigo: !!fullTigo, montoPlan: fullTigo ? Number(montoPlan) || 0 : null, creadoEn: new Date().toISOString() },
+    ]);
   }
 
   function editarConvergencia(id, datos) {
@@ -1184,6 +1220,27 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const progresoDineroPct = metaDinero ? Math.round((dineroDelPeriodo / metaDinero) * 100) : null;
   const progresoArpuPct = metaArpu ? Math.round((arpuPeriodo / metaArpu) * 100) : null;
 
+  const bonoFullTigo = useMemo(
+    () =>
+      convergencias
+        .filter((c) => c.fullTigo && periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto)
+        .reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
+    [convergencias, periodoVisto]
+  );
+  const comision = useMemo(
+    () =>
+      calcularComision({
+        dineroDelPeriodo,
+        metaDinero,
+        arpuPeriodo,
+        metaArpu,
+        clientesInstalados: clientesDelPeriodo.length,
+        metaClientes,
+        bonoFullTigo,
+      }),
+    [dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesDelPeriodo.length, metaClientes, bonoFullTigo]
+  );
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1">
@@ -1221,6 +1278,29 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           >
             Volver al período actual
           </button>
+        )}
+      </div>
+
+      <div className="rounded-lg p-5 mb-6 text-white" style={{ background: "linear-gradient(135deg, #001E62, #0072CE)" }}>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+          <h2 className="font-semibold text-sm opacity-90">Comisión estimada de {mesLabel(periodoVisto)}</h2>
+          {comision.aplicaBono && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.2)" }}>
+              + bono FULL TIGO aplicado
+            </span>
+          )}
+        </div>
+        {comision.completo ? (
+          <>
+            <div className="text-4xl font-mono font-bold mb-2">{fmtMonto(comision.total)}</div>
+            <div className="text-xs opacity-80 leading-relaxed">
+              Base {fmtMonto(comision.montoBase)} ({comision.pctIngreso.toFixed(1)}% ingresos
+              {comision.aplicaBono ? `, incluye ${fmtMonto(bonoFullTigo)} de convergencias FULL TIGO` : ""}) ×{" "}
+              {comision.pctArpu.toFixed(1)}% ARPU × {comision.pctClientes.toFixed(1)}% clientes
+            </div>
+          </>
+        ) : (
+          <p className="text-sm opacity-80">Cargá las metas de clientes, dinero y ARPU de este período para ver la comisión estimada.</p>
         )}
       </div>
 
@@ -2055,6 +2135,8 @@ function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActuali
 function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) {
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [fullTigo, setFullTigo] = useState(false);
+  const [montoPlan, setMontoPlan] = useState("");
   const [editingId, setEditingId] = useState(null);
   const [mesExpandido, setMesExpandido] = useState(null);
   const meses = useMemo(() => periodosRecientes(6), []);
@@ -2062,25 +2144,37 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
   function handleSubmit(e) {
     e.preventDefault();
     if (!nombre.trim() || !telefono.trim()) return;
+    if (fullTigo && !montoPlan) return;
     if (editingId) {
-      onEditar(editingId, { nombre: nombre.trim(), telefono: telefono.trim() });
+      onEditar(editingId, {
+        nombre: nombre.trim(),
+        telefono: telefono.trim(),
+        fullTigo,
+        montoPlan: fullTigo ? Number(montoPlan) || 0 : null,
+      });
     } else {
-      onAgregar(nombre.trim(), telefono.trim());
+      onAgregar(nombre.trim(), telefono.trim(), fullTigo, montoPlan);
     }
     setNombre("");
     setTelefono("");
+    setFullTigo(false);
+    setMontoPlan("");
     setEditingId(null);
   }
 
   function startEdit(c) {
     setNombre(c.nombre);
     setTelefono(c.telefono);
+    setFullTigo(!!c.fullTigo);
+    setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
     setEditingId(c.id);
   }
 
   function cancelEdit() {
     setNombre("");
     setTelefono("");
+    setFullTigo(false);
+    setMontoPlan("");
     setEditingId(null);
   }
 
@@ -2120,6 +2214,28 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
             )}
           </div>
         </form>
+        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t" style={{ borderColor: "#F0F0EF" }}>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={fullTigo} onChange={(e) => setFullTigo(e.target.checked)} />
+            FULL TIGO
+          </label>
+          {fullTigo && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs" style={{ color: "#6B7280" }}>Monto del plan vendido:</span>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                required
+                value={montoPlan}
+                onChange={(e) => setMontoPlan(e.target.value)}
+                placeholder="$0.00"
+                className="w-28 px-2 py-1 rounded-md border text-sm outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
@@ -2146,7 +2262,14 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
                     delMes.map((c) => (
                       <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "#F0F0EF" }}>
                         <div>
-                          <div className="text-sm font-medium">{c.nombre}</div>
+                          <div className="text-sm font-medium flex items-center gap-2">
+                            {c.nombre}
+                            {c.fullTigo && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: "#E3EDFA", color: "#0072CE" }}>
+                                FULL TIGO · {fmtMonto(c.montoPlan)}
+                              </span>
+                            )}
+                          </div>
                           <div className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{c.telefono}</div>
                         </div>
                         <div className="flex gap-3">
