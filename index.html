@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>MetaForce · Control de Clientes Tigo</title>
+<title>MetaForce CRM · Control de Clientes Tigo</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
@@ -269,6 +269,26 @@ Su factura ${fraseVencimiento(dias)}:
 Le recomiendo realizar el pago a tiempo para evitar la suspensión del servicio. Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`;
 }
 
+// Aviso anticipado (3 días después de instalado) solo para clientes cuyo prorrateo
+// sea igual o mayor al umbral configurado, para que no les tome por sorpresa.
+function textoProrrateoAlto(c) {
+  const nombre = nombreCompleto(c);
+  const finProrrateo = addDays(c.fecha1raFactura, -1);
+  return `Hola ${nombre}. Gracias por adquirir su plan residencial con Tigo Panamá.
+
+📄 Primera factura
+📅 Se generará el ${fmtFechaLarga(c.fecha1raFactura)}.
+💳 Fecha límite de pago: *${fmtFechaLarga(c._venc)}*.
+
+ℹ️ Esta primera factura incluirá el prorrateo correspondiente al período del ${fmtFechaLarga(c.fechaInstalacion)} al ${fmtFechaLarga(finProrrateo)}, por lo que podría ser un poco más alta de lo habitual.
+
+💡 Si lo desea, puede realizar abonos antes de la fecha de vencimiento para que el pago sea más cómodo.
+
+A partir de la segunda factura, solo pagará el valor normal de su plan.
+
+Quedo a la orden para cualquier consulta.`;
+}
+
 const MILESTONE_TYPES = [
   { type: "d1", tag: "D+1", label: "Factura generada", color: "#2F9E6E", bg: "#EAF7F0", getTexto: textoD1 },
   { type: "t15", tag: "T-15", label: "15 días antes del vencimiento", color: "#B8791F", bg: "#FBF1DE", getTexto: textoT15 },
@@ -291,7 +311,7 @@ const emptyForm = () => ({
   observaciones: "",
 });
 
-function calcularFacturas(cliente) {
+function calcularFacturas(cliente, umbralProrrateo) {
   if (!cliente.fechaInstalacion) return [];
   const cicloDia = parseInt(cliente.cicloFacturacion, 10) || null;
   const facturas = [];
@@ -317,6 +337,36 @@ function calcularFacturas(cliente) {
       const texto = mt.getTexto({ ...cliente, _venc: vencimiento, plan: planLabelMensaje(cliente) }, n);
       return { ...mt, key, n, triggerDate, enviado, pendienteHoy, texto };
     });
+
+    // Solo para la 1ra factura: si el prorrateo es igual o mayor al umbral configurado,
+    // se suma un aviso extra 3 días después de la instalación.
+    if (n === 1 && cicloDia && cliente.montoMensual) {
+      const rProrrateo = calcularPrimeraFactura(cliente.fechaInstalacion, cicloDia, cliente.montoMensual);
+      if (rProrrateo && Number(rProrrateo.monto1raFactura) > 0) {
+        const pctProrrateo = (Number(rProrrateo.monto1raFactura) / Number(cliente.montoMensual)) * 100;
+        if (pctProrrateo >= Number(umbralProrrateo ?? 25)) {
+          const key = "aviso_prorrateo";
+          const triggerDate = addDays(cliente.fechaInstalacion, 3);
+          const enviado = !!cliente[key];
+          const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado;
+          const texto = textoProrrateoAlto({ ...cliente, _venc: vencimiento });
+          milestones.push({
+            type: "prorrateo",
+            tag: "D+3",
+            label: "Aviso de prorrateo alto",
+            color: "#7C3AED",
+            bg: "#EDE9FE",
+            key,
+            n,
+            triggerDate,
+            enviado,
+            pendienteHoy,
+            texto,
+          });
+        }
+      }
+    }
+
     facturas.push({ n, generada, vencimiento, milestones });
   }
   return facturas;
@@ -360,6 +410,8 @@ function App() {
   const [mostrarConvergencias, setMostrarConvergencias] = useState(false);
   const [eliminados, setEliminados] = useState([]);
   const [eliminadosLoaded, setEliminadosLoaded] = useState(false);
+  const [umbralProrrateo, setUmbralProrrateo] = useState(25);
+  const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
   const importInputRef = useRef(null);
   const sonidoReproducidoRef = useRef(false);
 
@@ -442,12 +494,31 @@ function App() {
     })();
   }, [eliminados, eliminadosLoaded]);
 
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("umbral-prorrateo");
+        if (res && res.value) setUmbralProrrateo(Number(res.value));
+      } catch (e) {}
+      setUmbralProrrateoLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!umbralProrrateoLoaded) return;
+    (async () => {
+      try {
+        await storage.set("umbral-prorrateo", String(umbralProrrateo));
+      } catch (e) {}
+    })();
+  }, [umbralProrrateo, umbralProrrateoLoaded]);
+
   const clientesCalc = useMemo(() => {
     return clientes.map((c) => {
-      const facturas = calcularFacturas(c);
+      const facturas = calcularFacturas(c, umbralProrrateo);
       return { ...c, facturas, actual: facturaActual(facturas) };
     });
-  }, [clientes]);
+  }, [clientes, umbralProrrateo]);
 
   const clienteDetalle = useMemo(
     () => clientesCalc.find((c) => c.id === clienteDetalleId) || null,
@@ -463,7 +534,7 @@ function App() {
         });
       });
     });
-    const orden = { t3: 0, t15: 1, d1: 2 };
+    const orden = { t3: 0, t15: 1, d1: 2, prorrateo: 3 };
     list.sort((a, b) => {
       if (orden[a.milestone.type] !== orden[b.milestone.type])
         return orden[a.milestone.type] - orden[b.milestone.type];
@@ -475,7 +546,7 @@ function App() {
   // Deja una sola alerta por cliente: la más reciente/urgente (T-3 > T-15 > D+1;
   // a igual prioridad, la de fecha de disparo más reciente).
   const alertasPorCliente = useMemo(() => {
-    const orden = { t3: 0, t15: 1, d1: 2 };
+    const orden = { t3: 0, t15: 1, d1: 2, prorrateo: 3 };
     const porCliente = new Map();
     alertasHoy.forEach(({ cliente, factura, milestone }) => {
       const actual = porCliente.get(cliente.id);
@@ -774,7 +845,7 @@ function App() {
       <div className="md:hidden flex items-center justify-between px-4 py-3" style={{ background: "#001E62" }}>
         <div className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
-          <span className="text-white font-semibold tracking-wide text-lg">MetaForce</span>
+          <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
         </div>
         <button
           onClick={() => setMobileMenuOpen((v) => !v)}
@@ -793,7 +864,7 @@ function App() {
           <div className="hidden md:block px-5 pt-6 pb-8">
             <div className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
-              <span className="text-white font-semibold tracking-wide text-lg">MetaForce</span>
+              <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
             </div>
             <p className="text-[11px] mt-1" style={{ color: "#7C89B0" }}>
               CONTROL DE CLIENTES &amp; EARLY CHURN - TEAM AZUERO
@@ -868,6 +939,20 @@ function App() {
           <div className="text-[11px]" style={{ color: "#5C6480" }}>
             {saveError ? "⚠️ error al guardar" : "guardado automático activo (en la nube)"}
           </div>
+          <div className="flex items-center justify-between gap-2 pt-1">
+            <label className="text-[11px]" style={{ color: "#8593B8" }} title="A partir de qué % de prorrateo se envía el aviso D+3">
+              Umbral prorrateo (%)
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={umbralProrrateo}
+              onChange={(e) => setUmbralProrrateo(e.target.value === "" ? "" : Number(e.target.value))}
+              className="w-14 px-1.5 py-1 rounded-md border text-xs outline-none"
+              style={{ borderColor: "#3A4258", background: "#0B1E4D", color: "white" }}
+            />
+          </div>
           <button
             onClick={() => {
               try {
@@ -888,7 +973,7 @@ function App() {
         {stats.alHoy > 0 && !bannerDismissed && tab !== "alertas" && (
           <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={{ background: "#FBEAEA", borderColor: "#F3C6C6" }}>
             <span className="text-sm font-medium" style={{ color: "#C23B3B" }}>
-              🔔 Tenés {stats.alHoy} alerta{stats.alHoy !== 1 ? "s" : ""} pendiente{stats.alHoy !== 1 ? "s" : ""} para hoy.
+              🔔 Alertas pendientes: {stats.alHoy}
             </span>
             <div className="flex items-center gap-2">
               <button onClick={() => setTab("alertas")} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={{ background: "#C23B3B" }}>
@@ -1021,7 +1106,7 @@ function LoginScreen({ onSuccess }) {
       <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-8 w-full max-w-sm">
         <div className="flex items-center gap-2 mb-1">
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF" }} />
-          <span className="font-semibold text-lg" style={{ color: "#001E62" }}>MetaForce</span>
+          <span className="font-semibold text-lg" style={{ color: "#001E62" }}>MetaForce CRM</span>
         </div>
         <p className="text-sm mb-4" style={{ color: "#6B7280" }}>Ingresá la clave de acceso para continuar.</p>
         <input
@@ -1107,9 +1192,6 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           + Nuevo cliente
         </button>
       </div>
-      <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
-        Resumen por período de comisión: clientes instalados del 21 del mes anterior al 20 de cada mes.
-      </p>
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
         <button
