@@ -140,6 +140,8 @@ function leerMeta(metas, mes, campo) {
   return m[campo];
 }
 const fmtMonto = (n) => `$${Number(n || 0).toFixed(2)}`;
+const EMOJI_DIGITOS = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
+const numeroEmoji = (n) => String(n).split("").map((d) => EMOJI_DIGITOS[Number(d)] ?? d).join("");
 const ORDINAL = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta" };
 // Ciclo de estados al hacer clic en el indicador de una factura: sin marcar → pendiente → pagada → sin marcar.
 function siguienteEstadoFactura(actual) {
@@ -1242,13 +1244,51 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesDelPeriodo.length, metaClientes, bonoFullTigo]
   );
 
+  const [copiadoReporte, setCopiadoReporte] = useState(false);
+
+  function generarReporteDiario() {
+    const hoy = toISO(new Date());
+    const instaladosHoy = clientes.filter((c) => (c.creadoEn || "").slice(0, 10) === hoy);
+    const doblesHoy = instaladosHoy.filter((c) => c.planTipo === "DOBLE");
+    const singlesHoy = instaladosHoy.filter((c) => c.planTipo === "SINGLE");
+    const converHoy = convergencias.filter((c) => (c.creadoEn || "").slice(0, 10) === hoy);
+    const listaSusc = (arr) => arr.map((c) => c.numeroSuscriptor).filter(Boolean).join(", ");
+
+    const texto = `Buenas tardes
+Gestión de hoy
+
+Dobles: ${numeroEmoji(doblesHoy.length)}${doblesHoy.length ? " - " + listaSusc(doblesHoy) : ""}
+Singles: ${numeroEmoji(singlesHoy.length)}${singlesHoy.length ? " - " + listaSusc(singlesHoy) : ""}
+Conver: ${numeroEmoji(converHoy.length)}
+Port: 
+Early: `;
+
+    navigator.clipboard
+      ?.writeText(texto)
+      .then(() => {
+        setCopiadoReporte(true);
+        setTimeout(() => setCopiadoReporte(false), 2000);
+      })
+      .catch(() => {});
+  }
+
   return (
     <div>
-      <div className="flex items-center justify-between mb-1">
+      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
-          + Nuevo cliente
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={generarReporteDiario}
+            className="text-sm font-medium px-4 py-2 rounded-md border"
+            style={{ borderColor: "#001E62", color: "#001E62" }}
+            title="Copia el reporte de la gestión de hoy"
+          >
+            {copiadoReporte ? "Copiado ✓" : "📋 REPORTE DIARIO"}
+          </button>
+          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+            + Nuevo cliente
+          </button>
+        </div>
       </div>
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
@@ -1819,8 +1859,11 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         {search && (
           <button
             onClick={() => setSearch("")}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-sm font-medium px-1.5"
-            style={{ color: "#9CA3AF" }}
+            className="absolute top-1/2 -translate-y-1/2 text-sm font-medium px-1.5"
+            style={{
+              color: "#9CA3AF",
+              left: `min(calc(0.75rem + ${search.length}ch + 0.3rem), calc(100% - 2.1rem))`,
+            }}
             title="Limpiar búsqueda"
           >
             ✕
