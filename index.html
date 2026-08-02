@@ -60,6 +60,16 @@ const toISO = (d) => {
   const dt = new Date(d);
   return dt.toISOString().slice(0, 10);
 };
+// Fecha en el calendario LOCAL del usuario (no UTC). Se usa para comparar
+// "creadoEn" (guardado con hora exacta) contra el día de hoy sin que el
+// cambio de día en UTC desincronice la comparación cerca de medianoche.
+const fechaLocalISO = (d) => {
+  const dt = new Date(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const addDays = (dateStr, n) => {
   const dt = new Date(dateStr + "T00:00:00");
   dt.setDate(dt.getDate() + n);
@@ -140,8 +150,6 @@ function leerMeta(metas, mes, campo) {
   return m[campo];
 }
 const fmtMonto = (n) => `$${Number(n || 0).toFixed(2)}`;
-const EMOJI_DIGITOS = ["0️⃣", "1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣"];
-const numeroEmoji = (n) => String(n).split("").map((d) => EMOJI_DIGITOS[Number(d)] ?? d).join("");
 const ORDINAL = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta" };
 // Ciclo de estados al hacer clic en el indicador de una factura: sin marcar → pendiente → pagada → sin marcar.
 function siguienteEstadoFactura(actual) {
@@ -1247,19 +1255,19 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const [copiadoReporte, setCopiadoReporte] = useState(false);
 
   function generarReporteDiario() {
-    const hoy = toISO(new Date());
-    const instaladosHoy = clientes.filter((c) => (c.creadoEn || "").slice(0, 10) === hoy);
+    const hoy = fechaLocalISO(new Date());
+    const instaladosHoy = clientes.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
     const doblesHoy = instaladosHoy.filter((c) => c.planTipo === "DOBLE");
     const singlesHoy = instaladosHoy.filter((c) => c.planTipo === "SINGLE");
-    const converHoy = convergencias.filter((c) => (c.creadoEn || "").slice(0, 10) === hoy);
+    const converHoy = convergencias.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
     const listaSusc = (arr) => arr.map((c) => c.numeroSuscriptor).filter(Boolean).join(", ");
 
     const texto = `Buenas tardes
 Gestión de hoy
 
-Dobles: ${numeroEmoji(doblesHoy.length)}${doblesHoy.length ? " - " + listaSusc(doblesHoy) : ""}
-Singles: ${numeroEmoji(singlesHoy.length)}${singlesHoy.length ? " - " + listaSusc(singlesHoy) : ""}
-Conver: ${numeroEmoji(converHoy.length)}
+Dobles: ${doblesHoy.length}${doblesHoy.length ? " - " + listaSusc(doblesHoy) : ""}
+Singles: ${singlesHoy.length}${singlesHoy.length ? " - " + listaSusc(singlesHoy) : ""}
+Conver: ${converHoy.length}
 Port: 
 Early: `;
 
