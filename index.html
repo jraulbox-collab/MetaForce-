@@ -445,6 +445,7 @@ function App() {
   const [eliminadosLoaded, setEliminadosLoaded] = useState(false);
   const [umbralProrrateo, setUmbralProrrateo] = useState(25);
   const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
+  const [mostrarConfig, setMostrarConfig] = useState(false);
   const importInputRef = useRef(null);
   const sonidoReproducidoRef = useRef(false);
 
@@ -857,10 +858,10 @@ function App() {
   }
 
   const navItems = [
-    { key: "dashboard", label: "Dashboard" },
-    { key: "clientes", label: "Clientes" },
-    { key: "alertas", label: "Alertas de hoy", badge: stats.alHoy },
-    { key: "precierre", label: "Precierre" },
+    { key: "dashboard", label: "Dashboard", icon: "📊" },
+    { key: "clientes", label: "Clientes", icon: "👥" },
+    { key: "alertas", label: "Alertas de hoy", icon: "🔔", badge: stats.alHoy },
+    { key: "precierre", label: "Precierre", icon: "🧾" },
   ];
 
   if (!autenticado) {
@@ -921,7 +922,10 @@ function App() {
                   fontWeight: tab === item.key ? 600 : 500,
                 }}
               >
-                {item.label}
+                <span className="flex items-center gap-2">
+                  <span aria-hidden="true">{item.icon}</span>
+                  {item.label}
+                </span>
                 {!!item.badge && (
                   <span className="text-[11px] font-mono px-1.5 py-0.5 rounded animate-pulse" style={{ background: "#C23B3B", color: "white" }}>
                     {item.badge}
@@ -942,70 +946,25 @@ function App() {
           </nav>
         </div>
         <div className="px-5 pb-5 flex flex-col gap-2">
-          <button
-            onClick={deshacerUltimaAccion}
-            disabled={historial.length === 0}
-            className="text-xs font-medium text-left px-2 py-1.5 rounded-md disabled:opacity-40"
-            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
-          >
-            ↩️ Deshacer última acción
-          </button>
-          <button
-            onClick={exportarRespaldo}
-            disabled={clientes.length === 0}
-            className="text-xs font-medium text-left px-2 py-1.5 rounded-md disabled:opacity-40"
-            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
-          >
-            ⬇️ Exportar respaldo (.json)
-          </button>
-          <button
-            onClick={() => importInputRef.current && importInputRef.current.click()}
-            className="text-xs font-medium text-left px-2 py-1.5 rounded-md"
-            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
-          >
-            ⬆️ Importar respaldo (.json)
-          </button>
-          <input
-            type="file"
-            accept="application/json"
-            ref={importInputRef}
-            onChange={importarRespaldo}
-            style={{ display: "none" }}
-          />
           <div className="text-[11px]" style={{ color: "#5C6480" }}>
             {saveError ? "⚠️ error al guardar" : "guardado automático activo (en la nube)"}
           </div>
-          <div className="flex items-center justify-between gap-2 pt-1">
-            <label className="text-[11px]" style={{ color: "#8593B8" }} title="A partir de qué % de prorrateo se envía el aviso D+3">
-              Umbral prorrateo (%)
-            </label>
-            <input
-              type="number"
-              min="0"
-              max="100"
-              value={umbralProrrateo}
-              onChange={(e) => setUmbralProrrateo(e.target.value === "" ? "" : Number(e.target.value))}
-              className="w-14 px-1.5 py-1 rounded-md border text-xs outline-none"
-              style={{ borderColor: "#3A4258", background: "#0B1E4D", color: "white" }}
-            />
-          </div>
           <button
-            onClick={() => {
-              try {
-                localStorage.removeItem("antichurn_auth");
-              } catch (e) {}
-              setAutenticado(false);
-            }}
-            className="text-[11px] text-left underline"
-            style={{ color: "#5C6480" }}
+            onClick={() => setMostrarConfig(true)}
+            className="text-xs font-medium text-left px-2 py-1.5 rounded-md flex items-center gap-2"
+            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
           >
-            Cerrar sesión
+            ⚙️ Configuración
           </button>
           <div className="text-[10px] text-center pt-1" style={{ color: "#3A4258" }}>JRS~</div>
         </div>
       </aside>
 
       <main className="flex-1 w-full px-4 py-5 sm:px-8 sm:py-7 max-w-5xl">
+        {!loaded ? (
+          <SkeletonCargando />
+        ) : (
+        <React.Fragment>
         {stats.alHoy > 0 && !bannerDismissed && tab !== "alertas" && (
           <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={{ background: "#FBEAEA", borderColor: "#F3C6C6" }}>
             <span className="text-sm font-medium" style={{ color: "#C23B3B" }}>
@@ -1098,6 +1057,8 @@ function App() {
             }}
           />
         )}
+        </React.Fragment>
+        )}
       </main>
 
       {confirmDelete && <ConfirmModal onCancel={() => setConfirmDelete(null)} onConfirm={() => deleteClient(confirmDelete)} />}
@@ -1117,6 +1078,31 @@ function App() {
           </div>
         </div>
       )}
+      {mostrarConfig && (
+        <ConfigModal
+          onClose={() => setMostrarConfig(false)}
+          onDeshacer={deshacerUltimaAccion}
+          puedeDeshacer={historial.length > 0}
+          onExportar={exportarRespaldo}
+          puedeExportar={clientes.length > 0}
+          onImportarClick={() => importInputRef.current && importInputRef.current.click()}
+          umbralProrrateo={umbralProrrateo}
+          setUmbralProrrateo={setUmbralProrrateo}
+          onCerrarSesion={() => {
+            try {
+              localStorage.removeItem("antichurn_auth");
+            } catch (e) {}
+            setAutenticado(false);
+          }}
+        />
+      )}
+      <input
+        type="file"
+        accept="application/json"
+        ref={importInputRef}
+        onChange={importarRespaldo}
+        style={{ display: "none" }}
+      />
     </div>
   );
 }
@@ -1139,7 +1125,7 @@ function LoginScreen({ onSuccess }) {
 
   return (
     <div className="min-h-screen flex items-center justify-center font-sans" style={{ background: "#F4F6FA" }}>
-      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-8 w-full max-w-sm">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 w-full max-w-sm">
         <div className="flex items-center gap-2 mb-1">
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF" }} />
           <span className="font-semibold text-lg" style={{ color: "#001E62" }}>MetaForce CRM</span>
@@ -1305,7 +1291,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold text-sm">Meta de clientes</h2>
             <div className="flex items-center gap-2">
@@ -1344,7 +1330,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           )}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold text-sm">Meta de dinero</h2>
             <div className="flex items-center gap-2">
@@ -1383,7 +1369,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           )}
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-5">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold text-sm">Meta de ARPU</h2>
             <div className="flex items-center gap-2">
@@ -1425,17 +1411,17 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
           <div className="text-lg font-mono font-semibold" style={{ color: "#001E62" }}>
             {singlesInstalados} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>Single</span> · {doblesInstalados} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>Doble</span>
           </div>
           <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Instalados en este período por tipo de plan</div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
           <div className="text-3xl font-mono font-semibold" style={{ color: "#B8791F" }}>{pendientesAhora}</div>
           <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Pendientes de instalación (ahora mismo)</div>
         </div>
-        <div className="bg-white rounded-lg border border-gray-200 p-4">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
           <div className="text-3xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{stats.atrasados}</div>
           <div className="text-xs mt-1" style={{ color: "#6B7280" }}>En atraso (ahora mismo)</div>
         </div>
@@ -1443,7 +1429,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
       <button
         onClick={onAbrirConvergencias}
-        className="bg-white rounded-lg border border-gray-200 p-4 text-left hover:border-gray-300 transition-colors w-full mb-6"
+        className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 text-left hover:border-gray-300 transition-colors w-full mb-6"
       >
         <div className="text-3xl font-mono font-semibold" style={{ color: "#001E62" }}>{convergenciasPeriodo}</div>
         <div className="text-xs mt-1 flex items-center justify-between" style={{ color: "#6B7280" }}>
@@ -1452,7 +1438,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         </div>
       </button>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-5">
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial por período de comisión</h2>
         <p className="text-xs mb-3" style={{ color: "#9CA3AF" }}>Tocá un período para verlo arriba.</p>
         <div className="flex flex-col gap-2">
@@ -1519,14 +1505,14 @@ function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, on
         Una alerta por cliente — la más reciente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
       </p>
       {alertasHoy.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-10 text-center">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
           <p className="text-sm" style={{ color: "#6B7280" }}>No tenés alertas pendientes en este momento.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-3">
           {alertasHoy.map(({ cliente, factura, milestone }) => {
             return (
-              <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                 <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" }}>
                   <div>
                     <button
@@ -1639,6 +1625,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const rangoActivo = !!(fechaDesde || fechaHasta);
   const [copiedCell, setCopiedCell] = useState(null);
   const [papeleraAbierta, setPapeleraAbierta] = useState(false);
+  const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
 
   function copiarCelda(texto, id, campo) {
     navigator.clipboard?.writeText(texto || "").catch(() => {});
@@ -1684,6 +1671,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
     }
     return arr;
   }, [visiblesOrdenados, filtroEstado, filtroInstalacion, rangoActivo, fechaDesde, fechaHasta]);
+  const filtrosActivos = [filtroEstado, filtroInstalacion, rangoActivo].filter(Boolean).length;
   const arpu = useMemo(() => {
     const soloInstalados = clientesDelMes.filter((c) => c.fechaInstalacion);
     if (soloInstalados.length === 0) return 0;
@@ -1742,41 +1730,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         ))}
       </div>
 
-      <div className="flex items-center gap-2 mb-4 flex-wrap rounded-md p-2.5" style={{ background: rangoActivo ? "#E3EDFA" : "#F4F6FA" }}>
-        <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Rango de fechas (instalación):</span>
-        <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
-          Desde
-          <input
-            type="date"
-            value={fechaDesde}
-            onChange={(e) => setFechaDesde(e.target.value)}
-            className="px-2 py-1 rounded-md border text-xs outline-none"
-            style={{ borderColor: "#D1D5DB" }}
-          />
-        </label>
-        <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
-          Hasta
-          <input
-            type="date"
-            value={fechaHasta}
-            onChange={(e) => setFechaHasta(e.target.value)}
-            className="px-2 py-1 rounded-md border text-xs outline-none"
-            style={{ borderColor: "#D1D5DB" }}
-          />
-        </label>
-        {rangoActivo && (
-          <button
-            type="button"
-            onClick={() => { setFechaDesde(""); setFechaHasta(""); }}
-            className="text-xs font-medium px-2 py-1 rounded-md"
-            style={{ color: "#0072CE" }}
-          >
-            Limpiar rango
-          </button>
-        )}
-      </div>
-
-      <div className="relative mb-4">
+      <div className="relative mb-3">
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -1796,52 +1750,103 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         )}
       </div>
 
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Ordenar por:</span>
-        <select
-          value={ordenarPor}
-          onChange={(e) => setOrdenarPor(e.target.value)}
-          className="text-xs px-2 py-1.5 rounded-md border outline-none"
-          style={{ borderColor: "#D1D5DB" }}
-        >
-          <option value="fechaInstalacion">Fecha de instalación</option>
-          <option value="numeroSuscriptor">Número de suscriptor</option>
-          <option value="creadoEn">Fecha de ingreso</option>
-        </select>
-        <button
-          type="button"
-          onClick={() => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"))}
-          className="text-xs font-medium px-2 py-1.5 rounded-md border"
-          style={{ borderColor: "#D1D5DB", color: "#374151" }}
-          title={ordenDireccion === "asc" ? "Ascendente" : "Descendente"}
-        >
-          {ordenDireccion === "asc" ? "↑ Ascendente" : "↓ Descendente"}
-        </button>
-        <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Instalación:</span>
-        <select
-          value={filtroInstalacion}
-          onChange={(e) => setFiltroInstalacion(e.target.value)}
-          className="text-xs px-2 py-1.5 rounded-md border outline-none"
-          style={{ borderColor: "#D1D5DB" }}
-        >
-          <option value="">Todos</option>
-          <option value="instalados">Instalados</option>
-          <option value="pendientes">Pendientes de instalación</option>
-        </select>
-        <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Estado:</span>
-        <select
-          value={filtroEstado}
-          onChange={(e) => setFiltroEstado(e.target.value)}
-          className="text-xs px-2 py-1.5 rounded-md border outline-none"
-          style={{ borderColor: "#D1D5DB" }}
-        >
-          <option value="">Todos</option>
-          {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
-        </select>
-      </div>
+      <button
+        type="button"
+        onClick={() => setFiltrosAbiertos((v) => !v)}
+        className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5 mb-4"
+        style={{
+          borderColor: filtrosActivos > 0 ? "#0072CE" : "#D1D5DB",
+          color: filtrosActivos > 0 ? "#0072CE" : "#374151",
+          background: filtrosActivos > 0 ? "#E3EDFA" : "white",
+        }}
+      >
+        🔍 Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
+      </button>
+
+      {filtrosAbiertos && (
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex items-center gap-2 flex-wrap rounded-md p-2.5" style={{ background: rangoActivo ? "#E3EDFA" : "#F4F6FA" }}>
+            <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Rango de fechas (instalación):</span>
+            <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
+              Desde
+              <input
+                type="date"
+                value={fechaDesde}
+                onChange={(e) => setFechaDesde(e.target.value)}
+                className="px-2 py-1 rounded-md border text-xs outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              />
+            </label>
+            <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
+              Hasta
+              <input
+                type="date"
+                value={fechaHasta}
+                onChange={(e) => setFechaHasta(e.target.value)}
+                className="px-2 py-1 rounded-md border text-xs outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              />
+            </label>
+            {rangoActivo && (
+              <button
+                type="button"
+                onClick={() => { setFechaDesde(""); setFechaHasta(""); }}
+                className="text-xs font-medium px-2 py-1 rounded-md"
+                style={{ color: "#0072CE" }}
+              >
+                Limpiar rango
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Ordenar por:</span>
+            <select
+              value={ordenarPor}
+              onChange={(e) => setOrdenarPor(e.target.value)}
+              className="text-xs px-2 py-1.5 rounded-md border outline-none"
+              style={{ borderColor: "#D1D5DB" }}
+            >
+              <option value="fechaInstalacion">Fecha de instalación</option>
+              <option value="numeroSuscriptor">Número de suscriptor</option>
+              <option value="creadoEn">Fecha de ingreso</option>
+            </select>
+            <button
+              type="button"
+              onClick={() => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"))}
+              className="text-xs font-medium px-2 py-1.5 rounded-md border"
+              style={{ borderColor: "#D1D5DB", color: "#374151" }}
+              title={ordenDireccion === "asc" ? "Ascendente" : "Descendente"}
+            >
+              {ordenDireccion === "asc" ? "↑ Ascendente" : "↓ Descendente"}
+            </button>
+            <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Instalación:</span>
+            <select
+              value={filtroInstalacion}
+              onChange={(e) => setFiltroInstalacion(e.target.value)}
+              className="text-xs px-2 py-1.5 rounded-md border outline-none"
+              style={{ borderColor: "#D1D5DB" }}
+            >
+              <option value="">Todos</option>
+              <option value="instalados">Instalados</option>
+              <option value="pendientes">Pendientes de instalación</option>
+            </select>
+            <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Estado:</span>
+            <select
+              value={filtroEstado}
+              onChange={(e) => setFiltroEstado(e.target.value)}
+              className="text-xs px-2 py-1.5 rounded-md border outline-none"
+              style={{ borderColor: "#D1D5DB" }}
+            >
+              <option value="">Todos</option>
+              {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+            </select>
+          </div>
+        </div>
+      )}
 
       {visiblesFinal.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-10 text-center">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
           <p className="text-sm" style={{ color: "#6B7280" }}>
             {filtroEstado || filtroInstalacion || rangoActivo
               ? "No hay clientes con ese filtro."
@@ -1851,7 +1856,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 overflow-x-auto">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left" style={{ background: "#F4F6FA" }}>
@@ -1984,7 +1989,7 @@ function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActuali
         <button onClick={onVolver} className="text-xs font-medium mb-4" style={{ color: "#0072CE" }}>
           ← Volver a Clientes
         </button>
-        <div className="bg-white rounded-lg border border-gray-200 p-10 text-center">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
           <p className="text-sm" style={{ color: "#6B7280" }}>No se encontró el cliente (puede haber sido eliminado).</p>
         </div>
       </div>
@@ -2011,7 +2016,7 @@ function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActuali
       </div>
       <p className="text-sm mb-6" style={{ color: "#6B7280" }}>{planLabel(cliente)}</p>
 
-      <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         <div>
           <div className="text-xs" style={{ color: "#6B7280" }}>Número de suscriptor</div>
           <div className="font-medium flex items-center gap-1.5">
@@ -2059,7 +2064,7 @@ function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActuali
       </div>
 
       {cliente.observaciones && (
-        <div className="bg-white rounded-lg border border-gray-200 p-4 mb-4 text-sm">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 text-sm">
           <div className="text-xs font-medium mb-1" style={{ color: "#6B7280" }}>Observaciones</div>
           {cliente.observaciones}
         </div>
@@ -2067,7 +2072,7 @@ function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActuali
 
       <h2 className="text-sm font-semibold mb-2">Facturas</h2>
       {cliente.facturas.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 text-center">
           <p className="text-sm" style={{ color: "#B8791F" }}>
             Este cliente está <strong>pendiente de instalación</strong>, todavía no tiene fecha cargada. Editalo para asignarle la fecha de instalación y así empezar a generar sus facturas.
           </p>
@@ -2077,7 +2082,7 @@ function ClienteDetalle({ cliente, onVolver, onEditar, onMarcarPagada, onActuali
         {cliente.facturas.map((f) => {
           const estadoFactura = cliente[`f${f.n}_estado`] || "";
           return (
-            <div key={f.n} className="bg-white rounded-lg border border-gray-200 p-4">
+            <div key={f.n} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <div className="font-medium text-sm">{ORDINAL[f.n]} factura</div>
@@ -2228,7 +2233,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
 
   return (
     <div>
-      <div className="bg-white rounded-lg border border-gray-200 p-5 mb-4">
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
         <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar convergencia" : "Nueva convergencia"}</h2>
         <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <div className="flex-1">
@@ -2291,7 +2296,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
           const delMes = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === m.key);
           const abierto = mesExpandido === m.key;
           return (
-            <div key={m.key} className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+            <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
               <button
                 onClick={() => setMesExpandido(abierto ? null : m.key)}
                 className="w-full flex items-center justify-between px-4 py-3 text-left"
@@ -2440,22 +2445,22 @@ function PrecierreTab({ clientes, onIrNuevo }) {
             Resultado del precierre de {mesLabel(resultado.mes)}
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
               <div className="text-2xl font-mono font-semibold" style={{ color: "#001E62" }}>{resultado.total}</div>
               <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Suscriptores en el precierre</div>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
               <div className="text-2xl font-mono font-semibold" style={{ color: "#2F9E6E" }}>{resultado.encontrados.length}</div>
               <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Ya cargados en la app</div>
             </div>
-            <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
               <div className="text-2xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{resultado.faltantes.length}</div>
               <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Faltan por cargar</div>
             </div>
           </div>
 
           {resultado.faltantes.length > 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 p-5">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
               <h2 className="text-sm font-semibold mb-3" style={{ color: "#C23B3B" }}>
                 ⚠️ Suscriptores del precierre que no están en la app
               </h2>
@@ -2479,13 +2484,13 @@ function PrecierreTab({ clientes, onIrNuevo }) {
               </div>
             </div>
           ) : (
-            <div className="bg-white rounded-lg border border-gray-200 p-5 text-center">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 text-center">
               <p className="text-sm" style={{ color: "#2F9E6E" }}>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
             </div>
           )}
 
           {resultado.sobrantes.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 p-5">
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
               <h2 className="text-sm font-semibold mb-1" style={{ color: "#B8791F" }}>
                 Instalados en {mesLabel(resultado.mes)} que no aparecen en este precierre
               </h2>
@@ -2538,113 +2543,124 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
       <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
         Se hace seguimiento a las primeras 4 facturas. Las fechas de la 2da, 3ra y 4ta se calculan con el día del Ciclo de Facturación. Todos los campos son obligatorios.
       </p>
-      <form onSubmit={onSubmit} className="bg-white rounded-lg border border-gray-200 p-6 flex flex-col gap-4">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Número de suscriptor *">
-            <input required value={form.numeroSuscriptor} onChange={set("numeroSuscriptor")} className={inputClass} style={inputStyle} />
-          </Field>
-          <Field label="Nombre y apellido *">
-            <input required value={form.nombre} onChange={set("nombre")} className={inputClass} style={inputStyle} />
-          </Field>
-          <Field label="Teléfono *">
-            <input required value={form.telefono} onChange={set("telefono")} className={inputClass} style={inputStyle} />
-          </Field>
-          <Field label="Ciclo de facturación *">
-            <select required value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
-              <option value="">Seleccionar…</option>
-              {CICLOS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Fecha de instalación">
-            <input
-              type="date"
-              value={form.fechaInstalacion}
-              onChange={set("fechaInstalacion")}
-              disabled={!form.fechaInstalacion}
-              required={!!form.fechaInstalacion}
-              className={inputClass}
-              style={!form.fechaInstalacion ? lockedStyle : inputStyle}
-            />
-            <label className="flex items-center gap-2 mt-1.5 text-xs" style={{ color: "#6B7280" }}>
-              <input
-                type="checkbox"
-                checked={!form.fechaInstalacion}
-                onChange={(e) =>
-                  setForm((f) => ({ ...f, fechaInstalacion: e.target.checked ? "" : toISO(new Date()) }))
-                }
-              />
-              Pendiente de instalación (todavía no tiene fecha)
-            </label>
-          </Field>
-          <Field label="Tipo de plan *">
-            <select
-              required
-              value={form.planTipo}
-              onChange={(e) => setForm((f) => ({ ...f, planTipo: e.target.value, planTV: e.target.value === "SINGLE" ? "" : f.planTV }))}
-              className={inputClass}
-              style={inputStyle}
-            >
-              <option value="">Seleccionar…</option>
-              {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t}</option>)}
-            </select>
-          </Field>
-          <Field label="Velocidad *">
-            <select required value={form.velocidad} onChange={set("velocidad")} className={inputClass} style={inputStyle}>
-              <option value="">Seleccionar…</option>
-              {VELOCIDADES.map((v) => <option key={v} value={v}>{v}</option>)}
-            </select>
-          </Field>
-          {form.planTipo === "DOBLE" && (
-            <Field label="Plan de TV *">
-              <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
+      <form onSubmit={onSubmit} className="flex flex-col gap-3">
+        <SeccionFormulario titulo="Datos del cliente">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Número de suscriptor *">
+              <input required value={form.numeroSuscriptor} onChange={set("numeroSuscriptor")} className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Nombre y apellido *">
+              <input required value={form.nombre} onChange={set("nombre")} className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Teléfono *">
+              <input required value={form.telefono} onChange={set("telefono")} className={inputClass} style={inputStyle} />
+            </Field>
+          </div>
+        </SeccionFormulario>
+
+        <SeccionFormulario titulo="Plan y facturación">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <Field label="Ciclo de facturación *">
+              <select required value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
                 <option value="">Seleccionar…</option>
-                {TIPOS_TV.map((t) => <option key={t} value={t}>{t}</option>)}
+                {CICLOS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </Field>
-          )}
-          <Field label="Monto mensual recurrente *">
-            <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
-          </Field>
-        </div>
-
-        <div className="rounded-md p-3 flex items-center justify-between" style={{ background: "#F4F6FA" }}>
-          <div>
-            <div className="text-xs font-medium" style={{ color: "#374151" }}>
-              Fecha y monto de la 1ra factura (recurrente + prorrateo)
-            </div>
-            <div className="text-xs mt-0.5" style={{ color: "#9CA3AF" }}>
-              {diasProrrateo != null
-                ? `Calculado: ${diasProrrateo} día${diasProrrateo !== 1 ? "s" : ""} de prorrateo`
-                : "Se calcula con fecha de instalación + ciclo + monto mensual"}
-            </div>
+            <Field label="Fecha de instalación">
+              <input
+                type="date"
+                value={form.fechaInstalacion}
+                onChange={set("fechaInstalacion")}
+                disabled={!form.fechaInstalacion}
+                required={!!form.fechaInstalacion}
+                className={inputClass}
+                style={!form.fechaInstalacion ? lockedStyle : inputStyle}
+              />
+              <label className="flex items-center gap-2 mt-1.5 text-xs" style={{ color: "#6B7280" }}>
+                <input
+                  type="checkbox"
+                  checked={!form.fechaInstalacion}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, fechaInstalacion: e.target.checked ? "" : toISO(new Date()) }))
+                  }
+                />
+                Pendiente de instalación (todavía no tiene fecha)
+              </label>
+            </Field>
+            <Field label="Tipo de plan *">
+              <select
+                required
+                value={form.planTipo}
+                onChange={(e) => setForm((f) => ({ ...f, planTipo: e.target.value, planTV: e.target.value === "SINGLE" ? "" : f.planTV }))}
+                className={inputClass}
+                style={inputStyle}
+              >
+                <option value="">Seleccionar…</option>
+                {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </Field>
+            <Field label="Velocidad *">
+              <select required value={form.velocidad} onChange={set("velocidad")} className={inputClass} style={inputStyle}>
+                <option value="">Seleccionar…</option>
+                {VELOCIDADES.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </Field>
+            {form.planTipo === "DOBLE" && (
+              <Field label="Plan de TV *">
+                <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
+                  <option value="">Seleccionar…</option>
+                  {TIPOS_TV.map((t) => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </Field>
+            )}
+            <Field label="Monto mensual recurrente *">
+              <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
+            </Field>
           </div>
-          <button
-            type="button"
-            onClick={calcularAuto}
-            disabled={!form.fechaInstalacion || !form.cicloFacturacion || !form.montoMensual}
-            className="text-xs font-medium px-3 py-1.5 rounded-md text-white disabled:opacity-40"
-            style={{ background: "#001E62" }}
-          >
-            Calcular automáticamente
-          </button>
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="Fecha 1ra factura (automática)">
-            <input disabled type="date" value={form.fecha1raFactura} className={inputClass} style={lockedStyle} />
+          <div className="rounded-md p-3 flex items-center justify-between mt-4" style={{ background: "#F4F6FA" }}>
+            <div>
+              <div className="text-xs font-medium" style={{ color: "#374151" }}>
+                Fecha y monto de la 1ra factura (recurrente + prorrateo)
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: "#9CA3AF" }}>
+                {diasProrrateo != null
+                  ? `Calculado: ${diasProrrateo} día${diasProrrateo !== 1 ? "s" : ""} de prorrateo`
+                  : "Se calcula con fecha de instalación + ciclo + monto mensual"}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={calcularAuto}
+              disabled={!form.fechaInstalacion || !form.cicloFacturacion || !form.montoMensual}
+              className="text-xs font-medium px-3 py-1.5 rounded-md text-white disabled:opacity-40"
+              style={{ background: "#001E62" }}
+            >
+              Calcular automáticamente
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+            <Field label="Fecha 1ra factura (automática)">
+              <input disabled type="date" value={form.fecha1raFactura} className={inputClass} style={lockedStyle} />
+            </Field>
+            <Field label="Monto 1ra factura (recurrente + prorrateo)">
+              <input type="number" step="0.01" value={form.monto1raFactura} onChange={set("monto1raFactura")} className={inputClass} style={inputStyle} />
+            </Field>
+            <Field label="Estado de pago">
+              <select value={form.estadoPago} onChange={set("estadoPago")} className={inputClass} style={inputStyle}>
+                {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </Field>
+          </div>
+        </SeccionFormulario>
+
+        <SeccionFormulario titulo="Observaciones" defaultOpen={false}>
+          <Field label="Observaciones">
+            <textarea value={form.observaciones} onChange={set("observaciones")} rows={3} className={inputClass} style={inputStyle} />
           </Field>
-          <Field label="Monto 1ra factura (recurrente + prorrateo)">
-            <input type="number" step="0.01" value={form.monto1raFactura} onChange={set("monto1raFactura")} className={inputClass} style={inputStyle} />
-          </Field>
-          <Field label="Estado de pago">
-            <select value={form.estadoPago} onChange={set("estadoPago")} className={inputClass} style={inputStyle}>
-              {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
-            </select>
-          </Field>
-        </div>
-        <Field label="Observaciones">
-          <textarea value={form.observaciones} onChange={set("observaciones")} rows={3} className={inputClass} style={inputStyle} />
-        </Field>
+        </SeccionFormulario>
+
         <div className="flex gap-2 pt-2">
           <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
             {editing ? "Guardar cambios" : "Registrar cliente"}
@@ -2658,6 +2674,27 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
   );
 }
 
+function SeccionFormulario({ titulo, defaultOpen = true, children }) {
+  const [abierta, setAbierta] = useState(defaultOpen);
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setAbierta((v) => !v)}
+        className="w-full flex items-center justify-between px-5 py-3 text-left"
+      >
+        <span className="text-sm font-semibold" style={{ color: "#001E62" }}>{titulo}</span>
+        <span className="text-xs" style={{ color: "#9CA3AF" }}>{abierta ? "▲" : "▼"}</span>
+      </button>
+      {abierta && (
+        <div className="px-5 pb-5 pt-1 border-t" style={{ borderColor: "#F0F0EF" }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Field({ label, children }) {
   return (
     <label className="flex flex-col gap-1">
@@ -2667,16 +2704,92 @@ function Field({ label, children }) {
   );
 }
 
+function SkeletonCargando() {
+  const bloque = (clases) => (
+    <div className={"animate-pulse rounded-lg bg-gray-200 " + clases} />
+  );
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        {bloque("h-7 w-40")}
+        {bloque("h-9 w-32")}
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {bloque("h-28")}
+        {bloque("h-28")}
+        {bloque("h-28")}
+      </div>
+      <div className="flex flex-col gap-2">
+        {bloque("h-14")}
+        {bloque("h-14")}
+        {bloque("h-14")}
+      </div>
+      <p className="text-xs text-center mt-6" style={{ color: "#9CA3AF" }}>Cargando datos…</p>
+    </div>
+  );
+}
+
 function ConfirmModal({ onCancel, onConfirm }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 max-w-sm w-full">
-        <h3 className="font-semibold mb-2">¿Eliminar cliente?</h3>
+        <h3 className="font-semibold mb-2 flex items-center gap-2">
+          <span aria-hidden="true">⚠️</span> ¿Eliminar cliente?
+        </h3>
         <p className="text-sm mb-5" style={{ color: "#6B7280" }}>Esta acción no se puede deshacer.</p>
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded-md border" style={{ borderColor: "#D1D5DB" }}>Cancelar</button>
-          <button onClick={onConfirm} className="text-sm px-3 py-1.5 rounded-md text-white" style={{ background: "#C23B3B" }}>Eliminar</button>
+          <button onClick={onConfirm} className="text-sm px-3 py-1.5 rounded-md text-white flex items-center gap-1.5" style={{ background: "#C23B3B" }}>
+            <span aria-hidden="true">⚠️</span> Eliminar
+          </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExportar, onImportarClick, umbralProrrateo, setUmbralProrrateo, onCerrarSesion }) {
+  const rowClass = "text-sm font-medium text-left px-3 py-2.5 rounded-md flex items-center gap-2 disabled:opacity-40";
+  const rowStyle = { color: "#374151", border: "1px solid #E5E7EB" };
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-lg flex items-center gap-2">⚙️ Configuración</h3>
+          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+        </div>
+        <div className="flex flex-col gap-2 mb-4">
+          <button onClick={onDeshacer} disabled={!puedeDeshacer} className={rowClass} style={rowStyle}>
+            ↩️ Deshacer última acción
+          </button>
+          <button onClick={onExportar} disabled={!puedeExportar} className={rowClass} style={rowStyle}>
+            ⬇️ Exportar respaldo (.json)
+          </button>
+          <button onClick={onImportarClick} className={rowClass} style={rowStyle}>
+            ⬆️ Importar respaldo (.json)
+          </button>
+        </div>
+        <div className="flex items-center justify-between gap-2 py-3 border-t" style={{ borderColor: "#F0F0EF" }}>
+          <label className="text-xs" style={{ color: "#6B7280" }} title="A partir de qué % de prorrateo se envía el aviso D+3">
+            Umbral de prorrateo (%)
+          </label>
+          <input
+            type="number"
+            min="0"
+            max="100"
+            value={umbralProrrateo}
+            onChange={(e) => setUmbralProrrateo(e.target.value === "" ? "" : Number(e.target.value))}
+            className="w-16 px-2 py-1 rounded-md border text-sm outline-none"
+            style={{ borderColor: "#D1D5DB" }}
+          />
+        </div>
+        <button
+          onClick={onCerrarSesion}
+          className="text-sm text-left underline pt-2"
+          style={{ color: "#C23B3B" }}
+        >
+          Cerrar sesión
+        </button>
       </div>
     </div>
   );
