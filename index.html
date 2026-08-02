@@ -446,6 +446,8 @@ function App() {
   const [umbralProrrateo, setUmbralProrrateo] = useState(25);
   const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
   const [mostrarConfig, setMostrarConfig] = useState(false);
+  const [saltarAMes, setSaltarAMes] = useState(null);
+  const [mostrarSelectorNuevo, setMostrarSelectorNuevo] = useState(false);
   const importInputRef = useRef(null);
   const sonidoReproducidoRef = useRef(false);
 
@@ -880,10 +882,13 @@ function App() {
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans" style={{ background: "#F4F6FA", color: "#001E62" }}>
       <div className="md:hidden flex items-center justify-between px-4 py-3" style={{ background: "#001E62" }}>
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => { setTab("dashboard"); setMobileMenuOpen(false); }}
+          className="flex items-center gap-2"
+        >
           <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
           <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
-        </div>
+        </button>
         <button
           onClick={() => setMobileMenuOpen((v) => !v)}
           className="text-white text-2xl leading-none px-2 py-1"
@@ -899,10 +904,10 @@ function App() {
       >
         <div>
           <div className="hidden md:block px-5 pt-6 pb-8">
-            <div className="flex items-center gap-2">
+            <button onClick={() => setTab("dashboard")} className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
               <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
-            </div>
+            </button>
             <p className="text-[11px] mt-1" style={{ color: "#7C89B0" }}>
               CONTROL DE CLIENTES &amp; EARLY CHURN - TEAM AZUERO
             </p>
@@ -934,10 +939,7 @@ function App() {
               </button>
             ))}
             <button
-              onClick={() => {
-                resetForm();
-                setTab("nuevo");
-              }}
+              onClick={() => setMostrarSelectorNuevo(true)}
               className="text-left px-3 py-2.5 rounded-md text-sm font-medium mt-1"
               style={{ background: "#2F9E6E", color: "white" }}
             >
@@ -988,9 +990,10 @@ function App() {
             onActualizarMeta={actualizarMeta}
             convergencias={convergencias}
             onAbrirConvergencias={() => setMostrarConvergencias(true)}
-            onNuevo={() => {
-              resetForm();
-              setTab("nuevo");
+            onNuevo={() => setMostrarSelectorNuevo(true)}
+            onVerClientes={(periodo) => {
+              setSaltarAMes({ periodo, token: Date.now() });
+              setTab("clientes");
             }}
           />
         )}
@@ -1007,12 +1010,10 @@ function App() {
               setClienteDetalleId(c.id);
               setTab("detalle");
             }}
-            onNuevo={() => {
-              resetForm();
-              setTab("nuevo");
-            }}
+            onNuevo={() => setMostrarSelectorNuevo(true)}
             eliminados={eliminados}
             onRecuperar={recuperarCliente}
+            saltarAMes={saltarAMes}
           />
         )}
         {tab === "detalle" && (
@@ -1077,6 +1078,20 @@ function App() {
             />
           </div>
         </div>
+      )}
+      {mostrarSelectorNuevo && (
+        <SelectorNuevoModal
+          onClose={() => setMostrarSelectorNuevo(false)}
+          onHogar={() => {
+            resetForm();
+            setTab("nuevo");
+            setMostrarSelectorNuevo(false);
+          }}
+          onConvergencia={() => {
+            setMostrarConvergencias(true);
+            setMostrarSelectorNuevo(false);
+          }}
+        />
       )}
       {mostrarConfig && (
         <ConfigModal
@@ -1156,7 +1171,7 @@ function LoginScreen({ onSuccess }) {
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo }) {
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   const esActual = periodoVisto === periodoActual;
@@ -1293,7 +1308,15 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="font-semibold text-sm">Meta de clientes</h2>
+            <button
+              type="button"
+              onClick={() => onVerClientes(periodoVisto)}
+              className="font-semibold text-sm underline-offset-2 hover:underline"
+              style={{ color: "#001E62" }}
+              title="Ver clientes de este período"
+            >
+              CLIENTES →
+            </button>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
               <input
@@ -1332,7 +1355,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="font-semibold text-sm">Meta de dinero</h2>
+            <h2 className="font-semibold text-sm">INGRESO $</h2>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
               <input
@@ -1371,7 +1394,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-            <h2 className="font-semibold text-sm">Meta de ARPU</h2>
+            <h2 className="font-semibold text-sm">ARPU</h2>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
               <input
@@ -1488,6 +1511,15 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
 function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle }) {
   const [expandidos, setExpandidos] = useState(new Set());
+  const [filtroTipo, setFiltroTipo] = useState("");
+
+  const conteosPorTipo = useMemo(() => {
+    const c = {};
+    alertasHoy.forEach(({ milestone }) => { c[milestone.type] = (c[milestone.type] || 0) + 1; });
+    return c;
+  }, [alertasHoy]);
+
+  const alertasFiltradas = filtroTipo ? alertasHoy.filter(({ milestone }) => milestone.type === filtroTipo) : alertasHoy;
 
   function toggleExpandido(id) {
     setExpandidos((prev) => {
@@ -1501,16 +1533,53 @@ function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, on
   return (
     <div>
       <h1 className="text-2xl font-semibold mb-1">Alertas de hoy</h1>
-      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
+      <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
         Una alerta por cliente — la más reciente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
       </p>
+
+      {alertasHoy.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-6">
+          <button
+            onClick={() => setFiltroTipo("")}
+            className="text-xs font-medium px-3 py-1.5 rounded-full border"
+            style={{
+              borderColor: filtroTipo === "" ? "#001E62" : "#D1D5DB",
+              background: filtroTipo === "" ? "#001E62" : "white",
+              color: filtroTipo === "" ? "white" : "#374151",
+            }}
+          >
+            Todas ({alertasHoy.length})
+          </button>
+          {MILESTONE_TYPES.map((m) => (
+            <button
+              key={m.type}
+              onClick={() => setFiltroTipo((t) => (t === m.type ? "" : m.type))}
+              disabled={!conteosPorTipo[m.type]}
+              className="text-xs font-medium px-3 py-1.5 rounded-full border disabled:opacity-30"
+              style={{
+                borderColor: filtroTipo === m.type ? m.color : "#D1D5DB",
+                background: filtroTipo === m.type ? m.bg : "white",
+                color: filtroTipo === m.type ? m.color : "#374151",
+              }}
+              title={m.label}
+            >
+              {m.tag} ({conteosPorTipo[m.type] || 0})
+            </button>
+          ))}
+        </div>
+      )}
+
       {alertasHoy.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
           <p className="text-sm" style={{ color: "#6B7280" }}>No tenés alertas pendientes en este momento.</p>
         </div>
+      ) : alertasFiltradas.length === 0 ? (
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
+          <p className="text-sm" style={{ color: "#6B7280" }}>No hay alertas de este tipo.</p>
+        </div>
       ) : (
         <div className="flex flex-col gap-3">
-          {alertasHoy.map(({ cliente, factura, milestone }) => {
+          {alertasFiltradas.map(({ cliente, factura, milestone }) => {
             return (
               <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                 <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" }}>
@@ -1612,10 +1681,19 @@ function ultimosMeses(count) {
   return out;
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar }) {
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const [mesActivo, setMesActivo] = useState(mesActualKey);
+  useEffect(() => {
+    if (saltarAMes) {
+      setMesActivo(saltarAMes.periodo);
+      setFechaDesde("");
+      setFechaHasta("");
+      setSearch("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [saltarAMes]);
   const [ordenarPor, setOrdenarPor] = useState("creadoEn");
   const [ordenDireccion, setOrdenDireccion] = useState("desc");
   const [filtroEstado, setFiltroEstado] = useState("");
@@ -2537,6 +2615,12 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
     setDiasProrrateo(r.dias);
   }
 
+  useEffect(() => {
+    if (!form.fechaInstalacion || !form.cicloFacturacion || form.montoMensual === "" || form.montoMensual == null) return;
+    calcularAuto();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [form.fechaInstalacion, form.cicloFacturacion, form.montoMensual]);
+
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-semibold mb-1">{editing ? "Editar cliente" : "Nuevo cliente"}</h1>
@@ -2625,8 +2709,8 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
               </div>
               <div className="text-xs mt-0.5" style={{ color: "#9CA3AF" }}>
                 {diasProrrateo != null
-                  ? `Calculado: ${diasProrrateo} día${diasProrrateo !== 1 ? "s" : ""} de prorrateo`
-                  : "Se calcula con fecha de instalación + ciclo + monto mensual"}
+                  ? `Calculado automáticamente: ${diasProrrateo} día${diasProrrateo !== 1 ? "s" : ""} de prorrateo`
+                  : "Se calcula solo al completar fecha de instalación + ciclo + monto mensual"}
               </div>
             </div>
             <button
@@ -2635,8 +2719,9 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
               disabled={!form.fechaInstalacion || !form.cicloFacturacion || !form.montoMensual}
               className="text-xs font-medium px-3 py-1.5 rounded-md text-white disabled:opacity-40"
               style={{ background: "#001E62" }}
+              title="Recalcular por si editaste algo manualmente"
             >
-              Calcular automáticamente
+              🔄 Recalcular
             </button>
           </div>
 
@@ -2725,6 +2810,43 @@ function SkeletonCargando() {
         {bloque("h-14")}
       </div>
       <p className="text-xs text-center mt-6" style={{ color: "#9CA3AF" }}>Cargando datos…</p>
+    </div>
+  );
+}
+
+function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-lg">¿Qué querés agregar?</h3>
+          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+        </div>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={onHogar}
+            className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
+            style={{ borderColor: "#D1D5DB" }}
+          >
+            <span className="text-xl" aria-hidden="true">🏠</span>
+            <span>
+              <span className="block text-sm font-semibold">Cliente de hogar</span>
+              <span className="block text-xs" style={{ color: "#6B7280" }}>Registro completo con facturación y seguimiento</span>
+            </span>
+          </button>
+          <button
+            onClick={onConvergencia}
+            className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
+            style={{ borderColor: "#D1D5DB" }}
+          >
+            <span className="text-xl" aria-hidden="true">🔗</span>
+            <span>
+              <span className="block text-sm font-semibold">Convergencia</span>
+              <span className="block text-xs" style={{ color: "#6B7280" }}>Se agrega al listado de convergencias</span>
+            </span>
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
