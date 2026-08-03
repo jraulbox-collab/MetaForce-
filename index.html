@@ -3213,7 +3213,18 @@ function PrecierreTab({ clientes, onIrNuevo }) {
       (c) => c.numeroSuscriptor && !numeros.includes(c.numeroSuscriptor.trim())
     );
 
-    setResultado({ desde: fechaDesde, hasta: fechaHasta, total: numeros.length, faltantes, encontrados, sobrantes });
+    // "Fuera de rango": suscriptores del precierre que SÍ están en la app,
+    // pero cuya fechaInstalacion cae fuera del rango de fechas seleccionado.
+    const clientesPorNumero = new Map(
+      clientes.filter((c) => c.numeroSuscriptor).map((c) => [c.numeroSuscriptor.trim(), c])
+    );
+    const fueraDeRango = encontrados
+      .map((n) => clientesPorNumero.get(n))
+      .filter(
+        (c) => c && c.fechaInstalacion && (c.fechaInstalacion < fechaDesde || c.fechaInstalacion > fechaHasta)
+      );
+
+    setResultado({ desde: fechaDesde, hasta: fechaHasta, total: numeros.length, faltantes, encontrados, sobrantes, fueraDeRango });
   }
 
   return (
@@ -3337,6 +3348,34 @@ function PrecierreTab({ clientes, onIrNuevo }) {
                       <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
                     </div>
                     <span className="text-xs font-mono" style={{ color: "#B8791F" }}>
+                      Instalado: {fmtFecha(c.fechaInstalacion)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {resultado.fueraDeRango.length > 0 && (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+              <h2 className="text-sm font-semibold mb-1" style={{ color: "#C2761F" }}>
+                ⚠️ Están en el precierre y en la app, pero instalados fuera del rango seleccionado
+              </h2>
+              <p className="text-xs mb-3" style={{ color: "#6B7280" }}>
+                Revisá si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
+              </p>
+              <div className="flex flex-col gap-2">
+                {resultado.fueraDeRango.map((c) => (
+                  <div
+                    key={c.id}
+                    className="flex items-center justify-between rounded-md border p-3"
+                    style={{ borderColor: "#F5D9B8", background: "#FFF6EC" }}
+                  >
+                    <div>
+                      <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
+                      <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
+                    </div>
+                    <span className="text-xs font-mono" style={{ color: "#C2761F" }}>
                       Instalado: {fmtFecha(c.fechaInstalacion)}
                     </span>
                   </div>
