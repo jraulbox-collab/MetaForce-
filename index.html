@@ -338,6 +338,13 @@ const MILESTONE_TYPES = [
   { type: "t3", tag: "T-3", label: "3 días antes del vencimiento", color: "#C23B3B", bg: "#FBEAEA", getTexto: textoT3 },
 ];
 
+// Igual que MILESTONE_TYPES pero incluye también el aviso de prorrateo alto (D+3),
+// que se genera aparte en calcularFacturas y no forma parte de los hitos normales.
+const TIPOS_ALERTA = [
+  ...MILESTONE_TYPES,
+  { type: "prorrateo", tag: "D+3", label: "Prorrateo alto", color: "#7C3AED", bg: "#EDE9FE" },
+];
+
 const emptyForm = () => ({
   nombre: "",
   numeroSuscriptor: "",
@@ -1598,7 +1605,7 @@ function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, on
           >
             Todas ({alertasHoy.length})
           </button>
-          {MILESTONE_TYPES.map((m) => (
+          {TIPOS_ALERTA.map((m) => (
             <button
               key={m.type}
               onClick={() => setFiltroTipo((t) => (t === m.type ? "" : m.type))}
@@ -1729,6 +1736,15 @@ function ultimosMeses(count) {
   return out;
 }
 
+function FiltroCampo({ label, children }) {
+  return (
+    <div className="flex flex-col gap-1 min-w-0">
+      <span className="text-xs font-medium" style={{ color: "#6B7280" }}>{label}</span>
+      {children}
+    </div>
+  );
+}
+
 function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
@@ -1746,6 +1762,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const [ordenDireccion, setOrdenDireccion] = useState("desc");
   const [filtroEstado, setFiltroEstado] = useState("");
   const [filtroInstalacion, setFiltroInstalacion] = useState("");
+  const [filtroPlan, setFiltroPlan] = useState("");
   const [fechaDesde, setFechaDesde] = useState("");
   const [fechaHasta, setFechaHasta] = useState("");
   const rangoActivo = !!(fechaDesde || fechaHasta);
@@ -1787,6 +1804,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
     let arr = filtroEstado ? visiblesOrdenados.filter((c) => c.estadoPago === filtroEstado) : visiblesOrdenados;
     if (filtroInstalacion === "instalados") arr = arr.filter((c) => !!c.fechaInstalacion);
     if (filtroInstalacion === "pendientes") arr = arr.filter((c) => !c.fechaInstalacion);
+    if (filtroPlan) arr = arr.filter((c) => c.planTipo === filtroPlan);
     if (rangoActivo) {
       arr = arr.filter((c) => {
         if (!c.fechaInstalacion) return false;
@@ -1796,8 +1814,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       });
     }
     return arr;
-  }, [visiblesOrdenados, filtroEstado, filtroInstalacion, rangoActivo, fechaDesde, fechaHasta]);
-  const filtrosActivos = [filtroEstado, filtroInstalacion, rangoActivo].filter(Boolean).length;
+  }, [visiblesOrdenados, filtroEstado, filtroInstalacion, filtroPlan, rangoActivo, fechaDesde, fechaHasta]);
+  const filtrosActivos = [filtroEstado, filtroInstalacion, filtroPlan, rangoActivo].filter(Boolean).length;
   const arpu = useMemo(() => {
     const soloInstalados = clientesDelMes.filter((c) => c.fechaInstalacion);
     if (soloInstalados.length === 0) return 0;
@@ -1893,91 +1911,131 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       </button>
 
       {filtrosAbiertos && (
-        <div className="mb-4 flex flex-col gap-3">
-          <div className="flex items-center gap-2 flex-wrap rounded-md p-2.5" style={{ background: rangoActivo ? "#E3EDFA" : "#F4F6FA" }}>
-            <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Rango de fechas (instalación):</span>
-            <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
-              Desde
-              <input
-                type="date"
-                value={fechaDesde}
-                onChange={(e) => setFechaDesde(e.target.value)}
-                className="px-2 py-1 rounded-md border text-xs outline-none"
-                style={{ borderColor: "#D1D5DB" }}
-              />
-            </label>
-            <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
-              Hasta
-              <input
-                type="date"
-                value={fechaHasta}
-                onChange={(e) => setFechaHasta(e.target.value)}
-                className="px-2 py-1 rounded-md border text-xs outline-none"
-                style={{ borderColor: "#D1D5DB" }}
-              />
-            </label>
-            {rangoActivo && (
-              <button
-                type="button"
-                onClick={() => { setFechaDesde(""); setFechaHasta(""); }}
-                className="text-xs font-medium px-2 py-1 rounded-md"
-                style={{ color: "#0072CE" }}
-              >
-                Limpiar rango
-              </button>
-            )}
+        <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
+          <div className="rounded-md p-3" style={{ background: rangoActivo ? "#E3EDFA" : "#F4F6FA" }}>
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
+              <span className="text-xs font-semibold" style={{ color: "#374151" }}>Rango de fechas (instalación)</span>
+              {rangoActivo && (
+                <button
+                  type="button"
+                  onClick={() => { setFechaDesde(""); setFechaHasta(""); }}
+                  className="text-xs font-medium"
+                  style={{ color: "#0072CE" }}
+                >
+                  Limpiar rango
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
+                Desde
+                <input
+                  type="date"
+                  value={fechaDesde}
+                  onChange={(e) => setFechaDesde(e.target.value)}
+                  className="px-2 py-1 rounded-md border text-xs outline-none"
+                  style={{ borderColor: "#D1D5DB" }}
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
+                Hasta
+                <input
+                  type="date"
+                  value={fechaHasta}
+                  onChange={(e) => setFechaHasta(e.target.value)}
+                  className="px-2 py-1 rounded-md border text-xs outline-none"
+                  style={{ borderColor: "#D1D5DB" }}
+                />
+              </label>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-medium" style={{ color: "#6B7280" }}>Ordenar por:</span>
-            <select
-              value={ordenarPor}
-              onChange={(e) => setOrdenarPor(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-md border outline-none"
-              style={{ borderColor: "#D1D5DB" }}
-            >
-              <option value="fechaInstalacion">Fecha de instalación</option>
-              <option value="numeroSuscriptor">Número de suscriptor</option>
-              <option value="creadoEn">Fecha de ingreso</option>
-            </select>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <FiltroCampo label="Ordenar por">
+              <select
+                value={ordenarPor}
+                onChange={(e) => setOrdenarPor(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              >
+                <option value="fechaInstalacion">Fecha de instalación</option>
+                <option value="numeroSuscriptor">Número de suscriptor</option>
+                <option value="creadoEn">Fecha de ingreso</option>
+              </select>
+            </FiltroCampo>
+
+            <FiltroCampo label="Dirección">
+              <button
+                type="button"
+                onClick={() => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"))}
+                className="w-full text-xs font-medium px-2 py-1.5 rounded-md border text-left"
+                style={{ borderColor: "#D1D5DB", color: "#374151" }}
+              >
+                {ordenDireccion === "asc" ? "↑ Ascendente" : "↓ Descendente"}
+              </button>
+            </FiltroCampo>
+
+            <FiltroCampo label="Tipo de plan">
+              <select
+                value={filtroPlan}
+                onChange={(e) => setFiltroPlan(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              >
+                <option value="">Todos</option>
+                {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t === "SINGLE" ? "Single" : "Doble"}</option>)}
+              </select>
+            </FiltroCampo>
+
+            <FiltroCampo label="Instalación">
+              <select
+                value={filtroInstalacion}
+                onChange={(e) => setFiltroInstalacion(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              >
+                <option value="">Todos</option>
+                <option value="instalados">Instalados</option>
+                <option value="pendientes">Pendientes de instalación</option>
+              </select>
+            </FiltroCampo>
+
+            <FiltroCampo label="Estado">
+              <select
+                value={filtroEstado}
+                onChange={(e) => setFiltroEstado(e.target.value)}
+                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+              >
+                <option value="">Todos</option>
+                {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </FiltroCampo>
+          </div>
+
+          {filtrosActivos > 0 && (
             <button
               type="button"
-              onClick={() => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"))}
-              className="text-xs font-medium px-2 py-1.5 rounded-md border"
-              style={{ borderColor: "#D1D5DB", color: "#374151" }}
-              title={ordenDireccion === "asc" ? "Ascendente" : "Descendente"}
+              onClick={() => {
+                setFiltroEstado("");
+                setFiltroInstalacion("");
+                setFiltroPlan("");
+                setFechaDesde("");
+                setFechaHasta("");
+              }}
+              className="text-xs font-medium self-start"
+              style={{ color: "#C23B3B" }}
             >
-              {ordenDireccion === "asc" ? "↑ Ascendente" : "↓ Descendente"}
+              ✕ Limpiar todos los filtros
             </button>
-            <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Instalación:</span>
-            <select
-              value={filtroInstalacion}
-              onChange={(e) => setFiltroInstalacion(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-md border outline-none"
-              style={{ borderColor: "#D1D5DB" }}
-            >
-              <option value="">Todos</option>
-              <option value="instalados">Instalados</option>
-              <option value="pendientes">Pendientes de instalación</option>
-            </select>
-            <span className="text-xs font-medium ml-2" style={{ color: "#6B7280" }}>Estado:</span>
-            <select
-              value={filtroEstado}
-              onChange={(e) => setFiltroEstado(e.target.value)}
-              className="text-xs px-2 py-1.5 rounded-md border outline-none"
-              style={{ borderColor: "#D1D5DB" }}
-            >
-              <option value="">Todos</option>
-              {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
-            </select>
-          </div>
+          )}
         </div>
       )}
 
       {visiblesFinal.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
           <p className="text-sm" style={{ color: "#6B7280" }}>
-            {filtroEstado || filtroInstalacion || rangoActivo
+            {filtroEstado || filtroInstalacion || filtroPlan || rangoActivo
               ? "No hay clientes con ese filtro."
               : search.trim()
               ? "Sin resultados para esa búsqueda."
