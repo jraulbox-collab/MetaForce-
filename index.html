@@ -1008,8 +1008,8 @@ function App() {
             convergencias={convergencias}
             onAbrirConvergencias={() => setMostrarConvergencias(true)}
             onNuevo={() => setMostrarSelectorNuevo(true)}
-            onVerClientes={(periodo) => {
-              setSaltarAMes({ periodo, token: Date.now() });
+            onVerClientes={(payload) => {
+              setSaltarAMes({ ...payload, token: Date.now() });
               setTab("clientes");
             }}
           />
@@ -1185,6 +1185,18 @@ function LoginScreen({ onSuccess }) {
         </button>
       </form>
     </div>
+  );
+}
+
+function MiniStat({ valor, label, color, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      className="bg-white rounded-lg border border-gray-200 shadow-sm px-3 py-3 text-left hover:border-gray-300 transition-colors"
+    >
+      <div className="text-xl font-mono font-semibold" style={{ color }}>{valor}</div>
+      <div className="text-[11px] mt-0.5 leading-tight" style={{ color: "#6B7280" }}>{label}</div>
+    </button>
   );
 }
 
@@ -1402,7 +1414,7 @@ Early: `;
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <button
               type="button"
-              onClick={() => onVerClientes(periodoVisto)}
+              onClick={() => onVerClientes({ periodo: periodoVisto })}
               className="font-semibold text-sm underline-offset-2 hover:underline"
               style={{ color: "#001E62" }}
               title="Ver clientes de este período"
@@ -1525,33 +1537,38 @@ Early: `;
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="text-lg font-mono font-semibold" style={{ color: "#001E62" }}>
-            {singlesInstalados} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>Single</span> · {doblesInstalados} <span style={{ color: "#9CA3AF", fontWeight: 400 }}>Doble</span>
-          </div>
-          <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Instalados en este período por tipo de plan</div>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="text-3xl font-mono font-semibold" style={{ color: "#B8791F" }}>{pendientesAhora}</div>
-          <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Pendientes de instalación (ahora mismo)</div>
-        </div>
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-          <div className="text-3xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{stats.atrasados}</div>
-          <div className="text-xs mt-1" style={{ color: "#6B7280" }}>En atraso (ahora mismo)</div>
-        </div>
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
+        <MiniStat
+          valor={singlesInstalados}
+          label="Singles del período"
+          color="#001E62"
+          onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })}
+        />
+        <MiniStat
+          valor={doblesInstalados}
+          label="Dobles del período"
+          color="#001E62"
+          onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })}
+        />
+        <MiniStat
+          valor={pendientesAhora}
+          label="Pendientes de instalación"
+          color="#B8791F"
+          onClick={() => onVerClientes({ filtroInstalacion: "pendientes", todosLosMeses: true })}
+        />
+        <MiniStat
+          valor={stats.atrasados}
+          label="En atraso (ahora mismo)"
+          color="#C23B3B"
+          onClick={() => onVerClientes({ filtroEstado: "Atrasado", todosLosMeses: true })}
+        />
+        <MiniStat
+          valor={convergenciasPeriodo}
+          label="Convergencias del período"
+          color="#0072CE"
+          onClick={onAbrirConvergencias}
+        />
       </div>
-
-      <button
-        onClick={onAbrirConvergencias}
-        className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 text-left hover:border-gray-300 transition-colors w-full mb-6"
-      >
-        <div className="text-3xl font-mono font-semibold" style={{ color: "#001E62" }}>{convergenciasPeriodo}</div>
-        <div className="text-xs mt-1 flex items-center justify-between" style={{ color: "#6B7280" }}>
-          <span>Convergencias en este período</span>
-          <span style={{ color: "#0072CE" }}>Ver detalle →</span>
-        </div>
-      </button>
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
@@ -1822,12 +1839,18 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const [mesActivo, setMesActivo] = useState(mesActualKey);
+  const [modoVerTodos, setModoVerTodos] = useState(false);
   useEffect(() => {
     if (saltarAMes) {
-      setMesActivo(saltarAMes.periodo);
+      if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
       setFechaDesde("");
       setFechaHasta("");
       setSearch("");
+      setFiltroPlan(saltarAMes.filtroPlan || "");
+      setFiltroInstalacion(saltarAMes.filtroInstalacion || "");
+      setFiltroEstado(saltarAMes.filtroEstado || "");
+      setModoVerTodos(!!saltarAMes.todosLosMeses);
+      setFiltrosAbiertos(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saltarAMes]);
@@ -1857,7 +1880,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
     }
     return instalados;
   }, [clientes, mesActivo, mesActualKey]);
-  const visibles = search.trim() || rangoActivo ? clientes : clientesDelMes;
+  const visibles = search.trim() || rangoActivo || modoVerTodos ? clientes : clientesDelMes;
   const visiblesOrdenados = useMemo(() => {
     const arr = [...visibles];
     arr.sort((a, b) => {
@@ -1920,6 +1943,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             ? `${visiblesFinal.length} resultado${visiblesFinal.length !== 1 ? "s" : ""}`
             : rangoActivo
             ? `${visiblesFinal.length} cliente${visiblesFinal.length !== 1 ? "s" : ""} instalados ${fechaDesde ? `desde ${fmtFecha(fechaDesde)} ` : ""}${fechaHasta ? `hasta ${fmtFecha(fechaHasta)}` : ""}`
+            : modoVerTodos
+            ? `${visiblesFinal.length} cliente${visiblesFinal.length !== 1 ? "s" : ""} en todos los meses`
             : `${visiblesFinal.length} cliente${visiblesFinal.length !== 1 ? "s" : ""} · ${mesActivo === mesActualKey ? "instalados o pendientes en" : "instalados en"} ${meses.find((m) => m.key === mesActivo).label}`}
         </p>
         {!search.trim() && clientesDelMes.length > 0 && (
@@ -1929,12 +1954,26 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         )}
       </div>
 
+      {modoVerTodos && (
+        <div className="flex items-center justify-between gap-2 rounded-md p-2.5 mb-3" style={{ background: "#E3EDFA" }}>
+          <span className="text-xs font-medium" style={{ color: "#0072CE" }}>Mostrando resultados de todos los meses.</span>
+          <button
+            type="button"
+            onClick={() => setModoVerTodos(false)}
+            className="text-xs font-medium"
+            style={{ color: "#0072CE" }}
+          >
+            Volver a vista por mes
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center gap-1.5 mb-4 flex-wrap">
         {meses.map((m, i) => (
           <button
             key={m.key}
-            onClick={() => setMesActivo(m.key)}
-            disabled={rangoActivo}
+            onClick={() => { setMesActivo(m.key); setModoVerTodos(false); }}
+            disabled={rangoActivo || modoVerTodos}
             className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
             style={{
               borderColor: mesActivo === m.key ? "#001E62" : "#D1D5DB",
@@ -2451,7 +2490,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
   const [fullTigo, setFullTigo] = useState(false);
   const [montoPlan, setMontoPlan] = useState("");
   const [editingId, setEditingId] = useState(null);
-  const [mesExpandido, setMesExpandido] = useState(null);
+  const [mesExpandido, setMesExpandido] = useState(() => periodoComision(toISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
 
   function handleSubmit(e) {
