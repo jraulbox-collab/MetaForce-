@@ -131,7 +131,13 @@ function sumarMesClave(mesKey, delta) {
   const newM = (((total % 12) + 12) % 12) + 1;
   return `${newY}-${String(newM).padStart(2, "0")}`;
 }
-// Lista de períodos de comisión recientes (el actual primero), según la fecha de hoy.
+// Rango de fechas (inicio y fin) de un período de comisión "YYYY-MM" (día 21 al 20).
+function rangoCiclo(periodoKey) {
+  const [y, m] = periodoKey.split("-").map(Number);
+  const inicio = new Date(y, m - 2, 21);
+  const fin = new Date(y, m - 1, 20);
+  return { inicio, fin };
+}
 function periodosRecientes(count) {
   const actual = periodoComision(toISO(new Date()));
   const out = [];
@@ -1188,6 +1194,16 @@ function LoginScreen({ onSuccess }) {
   );
 }
 
+function LineaProyeccion({ aunEsTemprano, texto, variant }) {
+  if (!aunEsTemprano && texto == null) return null;
+  const color = variant === "claro" ? "rgba(255,255,255,0.7)" : "#9CA3AF";
+  return (
+    <div className="text-[11px] mt-2" style={{ color }}>
+      {aunEsTemprano ? "↳ Aún es temprano para proyectar" : `↳ Proyección a fin de ciclo: ${texto}`}
+    </div>
+  );
+}
+
 function MiniStat({ valor, label, color, onClick }) {
   return (
     <button
@@ -1208,6 +1224,20 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const metaClientes = leerMeta(metas, periodoVisto, "clientes");
   const metaDinero = leerMeta(metas, periodoVisto, "dinero");
   const metaArpu = leerMeta(metas, periodoVisto, "arpu");
+
+  // Progreso del ciclo actual (día 21 al 20) para poder proyectar a fin de ciclo.
+  const UN_DIA_MS = 24 * 60 * 60 * 1000;
+  const cicloInfo = useMemo(() => {
+    const { inicio, fin } = rangoCiclo(periodoVisto);
+    const hoy = new Date();
+    const totalDias = Math.round((fin - inicio) / UN_DIA_MS) + 1;
+    let diasTranscurridos = Math.round((hoy - inicio) / UN_DIA_MS) + 1;
+    diasTranscurridos = Math.max(0, Math.min(totalDias, diasTranscurridos));
+    return { totalDias, diasTranscurridos, pctTranscurrido: totalDias > 0 ? diasTranscurridos / totalDias : 0 };
+  }, [periodoVisto]);
+  const UMBRAL_PROYECCION = 0.15; // no proyectar antes del 15% del ciclo (muy poco dato, muy inestable)
+  const aunEsTemprano = esActual && cicloInfo.pctTranscurrido < UMBRAL_PROYECCION;
+  const puedeProyectar = esActual && !aunEsTemprano && cicloInfo.diasTranscurridos > 0;
 
   // Todo lo que sigue se agrupa por período de comisión (instalados del 21 al 20),
   // no por mes calendario ni por fecha de ingreso.
@@ -1308,6 +1338,29 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesDelPeriodo.length, metaClientes, bonoFullTigo]
   );
 
+  // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
+  // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
+  // La comisión tampoco se extrapola directo (tiene tramos escalonados) — se vuelve a calcular
+  // con calcularComision() usando los valores ya proyectados.
+  const proyeccion = useMemo(() => {
+    if (!puedeProyectar) return null;
+    const factor = cicloInfo.totalDias / cicloInfo.diasTranscurridos;
+    const clientesProy = Math.round(clientesDelPeriodo.length * factor);
+    const dineroProy = dineroDelPeriodo * factor;
+    const arpuProy = clientesProy > 0 ? dineroProy / clientesProy : 0;
+    const bonoFullTigoProy = bonoFullTigo * factor;
+    const comisionProy = calcularComision({
+      dineroDelPeriodo: dineroProy,
+      metaDinero,
+      arpuPeriodo: arpuProy,
+      metaArpu,
+      clientesInstalados: clientesProy,
+      metaClientes,
+      bonoFullTigo: bonoFullTigoProy,
+    });
+    return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
+  }, [puedeProyectar, cicloInfo, clientesDelPeriodo.length, dineroDelPeriodo, bonoFullTigo, metaDinero, metaArpu, metaClientes]);
+
   const [copiadoReporte, setCopiadoReporte] = useState(false);
 
   function generarReporteDiario() {
@@ -1403,6 +1456,7 @@ Early: `;
               {comision.aplicaBono ? `, incluye ${fmtMonto(bonoFullTigo)} de convergencias FULL TIGO` : ""}) ×{" "}
               {comision.pctArpu.toFixed(1)}% ARPU × {comision.pctClientes.toFixed(1)}% clientes
             </div>
+            <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.comision) : null} variant="claro" />
           </>
         ) : (
           <p className="text-sm opacity-80">Cargá las metas de clientes, dinero y ARPU de este período para ver la comisión estimada.</p>
@@ -1455,6 +1509,7 @@ Early: `;
           ) : (
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de clientes de este período.</p>
           )}
+          <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? String(proyeccion.clientes) : null} />
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
@@ -1494,6 +1549,7 @@ Early: `;
           ) : (
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de dinero de este período.</p>
           )}
+          <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.dinero) : null} />
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
@@ -1534,6 +1590,7 @@ Early: `;
           ) : (
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de ARPU de este período.</p>
           )}
+          <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.arpu) : null} />
         </div>
       </div>
 
