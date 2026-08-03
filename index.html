@@ -1361,6 +1361,32 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
   }, [puedeProyectar, cicloInfo, clientesDelPeriodo.length, dineroDelPeriodo, bonoFullTigo, metaDinero, metaArpu, metaClientes]);
 
+  // Precio promedio real de tus planes SINGLE y DOBLE (según lo que ya cargaste),
+  // para poder recomendar cuántos clientes de cada tipo hacen falta para llegar al ARPU meta.
+  const precioPromedioPlan = useMemo(() => {
+    function promedio(tipo) {
+      const delPeriodo = clientesDelPeriodo.filter((c) => c.planTipo === tipo);
+      const base = delPeriodo.length > 0 ? delPeriodo : clientes.filter((c) => c.planTipo === tipo && c.fechaInstalacion);
+      if (base.length === 0) return null;
+      return base.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0) / base.length;
+    }
+    return { SINGLE: promedio("SINGLE"), DOBLE: promedio("DOBLE") };
+  }, [clientesDelPeriodo, clientes]);
+
+  const recomendacionArpu = useMemo(() => {
+    if (!esActual || !metaArpu) return null;
+    const C = clientesDelPeriodo.length;
+    const D = dineroDelPeriodo;
+    if (C > 0 && D / C >= metaArpu) return { alcanzado: true };
+    function paraTipo(precio) {
+      if (precio == null) return null;
+      if (precio <= metaArpu) return { imposible: true, precio };
+      const n = Math.max(0, Math.ceil((metaArpu * C - D) / (precio - metaArpu)));
+      return { n, precio };
+    }
+    return { alcanzado: false, single: paraTipo(precioPromedioPlan.SINGLE), doble: paraTipo(precioPromedioPlan.DOBLE) };
+  }, [esActual, metaArpu, clientesDelPeriodo.length, dineroDelPeriodo, precioPromedioPlan]);
+
   const [copiadoReporte, setCopiadoReporte] = useState(false);
 
   function generarReporteDiario() {
@@ -1591,6 +1617,24 @@ Early: `;
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de ARPU de este período.</p>
           )}
           <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.arpu) : null} />
+          {recomendacionArpu && (recomendacionArpu.alcanzado || recomendacionArpu.doble || recomendacionArpu.single) && (
+            <div className="text-[11px] mt-1 leading-relaxed" style={{ color: recomendacionArpu.alcanzado ? "#2F9E6E" : "#9CA3AF" }}>
+              {recomendacionArpu.alcanzado
+                ? "✓ Ya alcanzaste el 100% de ARPU"
+                : [
+                    recomendacionArpu.doble &&
+                      (recomendacionArpu.doble.imposible
+                        ? "Doble no alcanza solo"
+                        : `+${recomendacionArpu.doble.n} Doble (~${fmtMonto(recomendacionArpu.doble.precio)} c/u)`),
+                    recomendacionArpu.single &&
+                      (recomendacionArpu.single.imposible
+                        ? "Single no alcanza solo"
+                        : `+${recomendacionArpu.single.n} Single (~${fmtMonto(recomendacionArpu.single.precio)} c/u)`),
+                  ]
+                    .filter(Boolean)
+                    .join("  ·  ")}
+            </div>
+          )}
         </div>
       </div>
 
