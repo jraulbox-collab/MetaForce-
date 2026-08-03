@@ -1234,6 +1234,43 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return out;
   }, [periodoActual]);
 
+  const [hoverPeriodo, setHoverPeriodo] = useState(null);
+
+  // Comisión calculada para cada uno de los últimos 4 períodos, más antiguo primero
+  // (para graficar de izquierda a derecha en orden cronológico).
+  const historialComisiones = useMemo(() => {
+    return historialPeriodos
+      .slice(0, 4)
+      .map((key) => {
+        const metaClientesP = leerMeta(metas, key, "clientes");
+        const metaDineroP = leerMeta(metas, key, "dinero");
+        const metaArpuP = leerMeta(metas, key, "arpu");
+        const delPeriodo = clientes.filter((c) => periodoComision(c.fechaInstalacion) === key);
+        const cantidad = delPeriodo.length;
+        const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+        const arpuP = cantidad > 0 ? dinero / cantidad : 0;
+        const bonoFullTigoP = convergencias
+          .filter((c) => c.fullTigo && periodoComision((c.creadoEn || "").slice(0, 10)) === key)
+          .reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
+        const com = calcularComision({
+          dineroDelPeriodo: dinero,
+          metaDinero: metaDineroP,
+          arpuPeriodo: arpuP,
+          metaArpu: metaArpuP,
+          clientesInstalados: cantidad,
+          metaClientes: metaClientesP,
+          bonoFullTigo: bonoFullTigoP,
+        });
+        return { key, cantidad, dinero, arpu: arpuP, ...com };
+      })
+      .reverse();
+  }, [historialPeriodos, metas, clientes, convergencias]);
+
+  const periodoMostrado = hoverPeriodo || periodoVisto;
+  const idxMostrado = historialComisiones.findIndex((d) => d.key === periodoMostrado);
+  const detalleMostrado = idxMostrado >= 0 ? historialComisiones[idxMostrado] : null;
+  const detalleAnterior = idxMostrado > 0 ? historialComisiones[idxMostrado - 1] : null;
+
   const progresoClientesPct = metaClientes ? Math.round((clientesDelPeriodo.length / metaClientes) * 100) : null;
   const progresoDineroPct = metaDinero ? Math.round((dineroDelPeriodo / metaDinero) * 100) : null;
   const progresoArpuPct = metaArpu ? Math.round((arpuPeriodo / metaArpu) * 100) : null;
@@ -1517,49 +1554,85 @@ Early: `;
       </button>
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-        <h2 className="font-semibold text-sm mb-1">Historial por período de comisión</h2>
-        <p className="text-xs mb-3" style={{ color: "#9CA3AF" }}>Tocá un período para verlo arriba.</p>
-        <div className="flex flex-col gap-2">
-          {historialPeriodos.map((key) => {
-            const metaClientesP = leerMeta(metas, key, "clientes");
-            const metaDineroP = leerMeta(metas, key, "dinero");
-            const metaArpuP = leerMeta(metas, key, "arpu");
-            const delPeriodo = clientes.filter((c) => periodoComision(c.fechaInstalacion) === key);
-            const cantidad = delPeriodo.length;
-            const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
-            const arpu = cantidad > 0 ? dinero / cantidad : 0;
-            const pctClientes = metaClientesP ? Math.round((cantidad / metaClientesP) * 100) : null;
-            const pctDinero = metaDineroP ? Math.round((dinero / metaDineroP) * 100) : null;
-            const pctArpu = metaArpuP ? Math.round((arpu / metaArpuP) * 100) : null;
-            return (
-              <button
-                key={key}
-                onClick={() => setPeriodoVisto(key)}
-                className="flex items-center justify-between text-sm text-left flex-wrap gap-1 px-2 py-1.5 rounded-md"
-                style={{ background: key === periodoVisto ? "#E3EDFA" : "transparent" }}
+        <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
+        <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>Tocá o pasá el mouse sobre una barra para ver el detalle y la comparación.</p>
+
+        <HistorialComisionChart
+          data={historialComisiones}
+          periodoActivo={periodoMostrado}
+          onSelect={(key) => setPeriodoVisto(key)}
+          onHover={setHoverPeriodo}
+        />
+
+        {detalleMostrado && (
+          <div className="rounded-md p-3 mt-4" style={{ background: "#F4F6FA" }}>
+            <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
+              <span className="text-sm font-semibold" style={{ color: "#001E62" }}>
+                {mesLabel(detalleMostrado.key)}{detalleMostrado.key === periodoActual ? " (actual)" : ""}
+              </span>
+              <span className="text-lg font-mono font-bold" style={{ color: "#001E62" }}>{fmtMonto(detalleMostrado.total)}</span>
+            </div>
+            <div className="text-xs" style={{ color: "#6B7280" }}>
+              {detalleMostrado.completo
+                ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
+                : "Faltan metas cargadas en este período para calcular la comisión completa."}
+            </div>
+            <div className="text-xs mt-1" style={{ color: "#9CA3AF" }}>
+              {detalleMostrado.cantidad} clientes · {fmtMonto(detalleMostrado.dinero)} en ingresos · ARPU {fmtMonto(detalleMostrado.arpu)}
+            </div>
+            {detalleAnterior && (
+              <div
+                className="text-xs mt-2 font-semibold flex items-center gap-1"
+                style={{ color: detalleMostrado.total >= detalleAnterior.total ? "#2F9E6E" : "#C23B3B" }}
               >
-                <span style={{ color: "#374151" }}>{mesLabel(key)}{key === periodoActual ? " (actual)" : ""}</span>
-                <span style={{ color: "#6B7280" }}>
-                  {cantidad} clientes{metaClientesP ? ` / ${metaClientesP}` : ""}
-                  {pctClientes !== null && (
-                    <span className="ml-1 font-semibold" style={{ color: pctClientes >= 100 ? "#2F9E6E" : "#B8791F" }}>({pctClientes}%)</span>
-                  )}
-                  <span className="mx-2">·</span>
-                  {fmtMonto(dinero)}{metaDineroP ? ` / ${fmtMonto(metaDineroP)}` : ""}
-                  {pctDinero !== null && (
-                    <span className="ml-1 font-semibold" style={{ color: pctDinero >= 100 ? "#2F9E6E" : "#B8791F" }}>({pctDinero}%)</span>
-                  )}
-                  <span className="mx-2">·</span>
-                  ARPU {fmtMonto(arpu)}{metaArpuP ? ` / ${fmtMonto(metaArpuP)}` : ""}
-                  {pctArpu !== null && (
-                    <span className="ml-1 font-semibold" style={{ color: pctArpu >= 100 ? "#2F9E6E" : "#B8791F" }}>({pctArpu}%)</span>
-                  )}
+                <span>{detalleMostrado.total >= detalleAnterior.total ? "▲" : "▼"}</span>
+                <span>
+                  {fmtMonto(Math.abs(detalleMostrado.total - detalleAnterior.total))} vs {mesLabel(detalleAnterior.key)}
+                  {detalleAnterior.total > 0
+                    ? ` (${detalleMostrado.total >= detalleAnterior.total ? "+" : "-"}${Math.abs(Math.round(((detalleMostrado.total - detalleAnterior.total) / detalleAnterior.total) * 100))}%)`
+                    : ""}
                 </span>
-              </button>
-            );
-          })}
-        </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+    </div>
+  );
+}
+
+function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
+  const max = Math.max(1, ...data.map((d) => d.total));
+  const ALTURA_MAX = 110;
+  return (
+    <div className="flex items-end gap-3 sm:gap-4" style={{ height: ALTURA_MAX + 44 }}>
+      {data.map((d) => {
+        const alturaPx = Math.max(6, Math.round((d.total / max) * ALTURA_MAX));
+        const activo = d.key === periodoActivo;
+        return (
+          <button
+            key={d.key}
+            type="button"
+            onClick={() => onSelect(d.key)}
+            onMouseEnter={() => onHover(d.key)}
+            onMouseLeave={() => onHover(null)}
+            onFocus={() => onHover(d.key)}
+            onBlur={() => onHover(null)}
+            className="flex-1 flex flex-col items-center justify-end gap-1.5"
+          >
+            <span className="text-[11px] font-mono font-semibold whitespace-nowrap" style={{ color: activo ? "#001E62" : "#9CA3AF" }}>
+              {fmtMonto(d.total)}
+            </span>
+            <div
+              className="w-full rounded-t-md transition-all"
+              style={{ height: alturaPx, background: activo ? "#001E62" : "#C7D2E8" }}
+            />
+            <span className="text-[11px] font-medium" style={{ color: activo ? "#001E62" : "#6B7280" }}>
+              {mesLabel(d.key).split(" ")[0].slice(0, 3).toUpperCase()}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
