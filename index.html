@@ -3283,7 +3283,7 @@ function PrecierreTab({ clientes, onIrNuevo }) {
           <p className="text-sm font-medium" style={{ color: "#374151" }}>
             Resultado del precierre del {fmtFecha(resultado.desde)} al {fmtFecha(resultado.hasta)}
           </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
               <div className="text-2xl font-mono font-semibold" style={{ color: "#001E62" }}>{resultado.total}</div>
               <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Suscriptores en el precierre</div>
@@ -3296,95 +3296,129 @@ function PrecierreTab({ clientes, onIrNuevo }) {
               <div className="text-2xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{resultado.faltantes.length}</div>
               <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Faltan por cargar</div>
             </div>
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+              <div className="text-2xl font-mono font-semibold" style={{ color: "#C2761F" }}>{resultado.fueraDeRango.length}</div>
+              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Fuera de rango</div>
+            </div>
           </div>
 
-          {resultado.faltantes.length > 0 ? (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-              <h2 className="text-sm font-semibold mb-3" style={{ color: "#C23B3B" }}>
-                ⚠️ Suscriptores del precierre que no están en la app
-              </h2>
-              <div className="flex flex-col gap-2">
-                {resultado.faltantes.map((n) => (
-                  <div
-                    key={n}
-                    className="flex items-center justify-between rounded-md border p-3"
-                    style={{ borderColor: "#F3C6C6", background: "#FBEAEA" }}
-                  >
-                    <span className="font-mono text-sm">{n}</span>
-                    <button
-                      onClick={() => onIrNuevo(n)}
-                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ background: "#001E62" }}
-                    >
-                      + Agregar cliente
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 text-center">
-              <p className="text-sm" style={{ color: "#2F9E6E" }}>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
-            </div>
-          )}
-
-          {resultado.sobrantes.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-              <h2 className="text-sm font-semibold mb-1" style={{ color: "#B8791F" }}>
-                Instalados del {fmtFecha(resultado.desde)} al {fmtFecha(resultado.hasta)} que no aparecen en este precierre
-              </h2>
-              <p className="text-xs mb-3" style={{ color: "#6B7280" }}>
-                Revisá si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
-              </p>
-              <div className="flex flex-col gap-2">
-                {resultado.sobrantes.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                    style={{ borderColor: "#F3E3C3", background: "#FFFBF2" }}
-                  >
-                    <div>
-                      <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                      <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
-                    </div>
-                    <span className="text-xs font-mono" style={{ color: "#B8791F" }}>
-                      Instalado: {fmtFecha(c.fechaInstalacion)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {resultado.fueraDeRango.length > 0 && (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-              <h2 className="text-sm font-semibold mb-1" style={{ color: "#C2761F" }}>
-                ⚠️ Están en el precierre y en la app, pero instalados fuera del rango seleccionado
-              </h2>
-              <p className="text-xs mb-3" style={{ color: "#6B7280" }}>
-                Revisá si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
-              </p>
-              <div className="flex flex-col gap-2">
-                {resultado.fueraDeRango.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between rounded-md border p-3"
-                    style={{ borderColor: "#F5D9B8", background: "#FFF6EC" }}
-                  >
-                    <div>
-                      <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                      <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
-                    </div>
-                    <span className="text-xs font-mono" style={{ color: "#C2761F" }}>
-                      Instalado: {fmtFecha(c.fechaInstalacion)}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+          <ResultadoPrecierreTabs resultado={resultado} onIrNuevo={onIrNuevo} />
         </div>
       )}
+    </div>
+  );
+}
+
+function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
+  const subtabs = [
+    { key: "faltantes", label: "Faltantes", count: resultado.faltantes.length, color: "#C23B3B" },
+    { key: "sobrantes", label: "Sobrantes", count: resultado.sobrantes.length, color: "#B8791F" },
+    { key: "fueraDeRango", label: "Fuera de rango", count: resultado.fueraDeRango.length, color: "#C2761F" },
+  ];
+  const [subtab, setSubtab] = useState("faltantes");
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
+      <div className="flex border-b border-gray-200">
+        {subtabs.map((t) => (
+          <button
+            key={t.key}
+            onClick={() => setSubtab(t.key)}
+            className="flex-1 text-sm font-medium px-4 py-3 text-center"
+            style={{
+              color: subtab === t.key ? t.color : "#6B7280",
+              borderBottom: subtab === t.key ? `2px solid ${t.color}` : "2px solid transparent",
+              background: subtab === t.key ? "#F9FAFB" : "transparent",
+            }}
+          >
+            {t.label} ({t.count})
+          </button>
+        ))}
+      </div>
+
+      <div className="p-5">
+        {subtab === "faltantes" && (
+          resultado.faltantes.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs mb-1" style={{ color: "#6B7280" }}>
+                ⚠️ Suscriptores del precierre que no están en la app.
+              </p>
+              {resultado.faltantes.map((n) => (
+                <div
+                  key={n}
+                  className="flex items-center justify-between rounded-md border p-3"
+                  style={{ borderColor: "#F3C6C6", background: "#FBEAEA" }}
+                >
+                  <span className="font-mono text-sm">{n}</span>
+                  <button
+                    onClick={() => onIrNuevo(n)}
+                    className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                    style={{ background: "#001E62" }}
+                  >
+                    + Agregar cliente
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-center" style={{ color: "#2F9E6E" }}>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
+          )
+        )}
+
+        {subtab === "sobrantes" && (
+          resultado.sobrantes.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs mb-1" style={{ color: "#6B7280" }}>
+                Instalados en el rango seleccionado que no aparecen en este precierre. Revisá si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
+              </p>
+              {resultado.sobrantes.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                  style={{ borderColor: "#F3E3C3", background: "#FFFBF2" }}
+                >
+                  <div>
+                    <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
+                    <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
+                  </div>
+                  <span className="text-xs font-mono" style={{ color: "#B8791F" }}>
+                    Instalado: {fmtFecha(c.fechaInstalacion)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-center" style={{ color: "#2F9E6E" }}>✅ No hay sobrantes en el rango seleccionado.</p>
+          )
+        )}
+
+        {subtab === "fueraDeRango" && (
+          resultado.fueraDeRango.length > 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs mb-1" style={{ color: "#6B7280" }}>
+                Están en el precierre y en la app, pero instalados fuera del rango seleccionado. Revisá si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
+              </p>
+              {resultado.fueraDeRango.map((c) => (
+                <div
+                  key={c.id}
+                  className="flex items-center justify-between rounded-md border p-3"
+                  style={{ borderColor: "#F5D9B8", background: "#FFF6EC" }}
+                >
+                  <div>
+                    <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
+                    <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
+                  </div>
+                  <span className="text-xs font-mono" style={{ color: "#C2761F" }}>
+                    Instalado: {fmtFecha(c.fechaInstalacion)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm text-center" style={{ color: "#2F9E6E" }}>✅ Ninguno fuera de rango.</p>
+          )
+        )}
+      </div>
     </div>
   );
 }
