@@ -221,13 +221,63 @@ const planLabelMensaje = (c) => {
   const nombre = c.planTipo === "SINGLE" ? "Single" : "Doble";
   return `${nombre} ${c.velocidad}`;
 };
-// Versión resumida para la tabla de Clientes: solo tipo de plan + costo, sin velocidad ni TV.
+// Versión resumida para la tabla de Clientes: tipo de plan + velocidad (+TV si es doble), sin costo.
 const planResumen = (c) => {
   if (!c.planTipo) return "—";
   const nombre = c.planTipo === "SINGLE" ? "Single" : "Doble";
-  return `${nombre} · ${fmtMonto(c.montoMensual)}`;
+  const vel = c.velocidad ? ` ${c.velocidad}` : "";
+  const tv = c.planTipo === "DOBLE" && c.planTV ? ` + ${c.planTV}` : "";
+  return `${nombre}${vel}${tv}`;
 };
 const cicloCorto = (c) => (c.cicloFacturacion ? `Ciclo ${c.cicloFacturacion}` : "—");
+
+// Columnas disponibles en la tabla de Clientes: metadata para el selector,
+// el orden (arrastrable) y el click-to-sort de cada encabezado.
+const COLUMNAS_CLIENTES = [
+  { key: "suscriptor", label: "N.° Suscriptor", sortable: true },
+  { key: "cliente", label: "Cliente", sortable: true },
+  { key: "plan", label: "Plan", sortable: true },
+  { key: "monto", label: "Monto mensual", sortable: true },
+  { key: "ciclo", label: "Ciclo", sortable: true },
+  { key: "instalacion", label: "Instalación", sortable: true },
+  { key: "ingreso", label: "Fecha de ingreso", sortable: true },
+  { key: "periodo", label: "Período", sortable: true },
+  { key: "facturas", label: "Facturas", sortable: true },
+  { key: "estado", label: "Estado", sortable: true },
+  { key: "obs", label: "Notas", sortable: false },
+];
+const COLUMNAS_CLIENTES_KEYS = COLUMNAS_CLIENTES.map((c) => c.key);
+
+function valorOrdenColumna(c, key) {
+  switch (key) {
+    case "suscriptor":
+      return c.numeroSuscriptor || "";
+    case "cliente":
+      return (c.nombre || "").toLowerCase();
+    case "plan":
+      return c.planTipo || "";
+    case "monto":
+      return Number(c.montoMensual) || 0;
+    case "ciclo":
+      return Number(c.cicloFacturacion) || 0;
+    case "instalacion":
+      return c.fechaInstalacion || "";
+    case "ingreso":
+      return c.creadoEn || "";
+    case "periodo":
+      return periodoComision(c.fechaInstalacion) || "";
+    case "facturas": {
+      let n = 0;
+      for (let i = 1; i <= 4; i++) if (c[`f${i}_estado`] === "pagada") n++;
+      return n;
+    }
+    case "estado":
+      return c.estadoPago || "";
+    default:
+      return "";
+  }
+}
+
 
 // Limpia el teléfono y le antepone el código de país de Panamá (507) si no lo tiene.
 function telefonoWhatsapp(telefono) {
@@ -1204,7 +1254,7 @@ function LineaProyeccion({ aunEsTemprano, texto, variant }) {
   );
 }
 
-function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaArpu, onClose }) {
+function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaArpu, metaClientes, metaDinero, bonoFullTigo, onClose }) {
   const [filas, setFilas] = useState([{ id: uid(), cantidad: 1, precio: "" }]);
 
   function agregarFila() {
@@ -1222,17 +1272,35 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
   const clientesSim = clientesActuales + clientesNuevos;
   const dineroSim = dineroActual + dineroNuevo;
   const arpuSim = clientesSim > 0 ? dineroSim / clientesSim : 0;
-  const pctSim = metaArpu ? Math.round((arpuSim / metaArpu) * 100) : null;
+
+  const comisionActual = calcularComision({
+    dineroDelPeriodo: dineroActual,
+    metaDinero,
+    arpuPeriodo: arpuActual,
+    metaArpu,
+    clientesInstalados: clientesActuales,
+    metaClientes,
+    bonoFullTigo,
+  });
+  const comisionSim = calcularComision({
+    dineroDelPeriodo: dineroSim,
+    metaDinero,
+    arpuPeriodo: arpuSim,
+    metaArpu,
+    clientesInstalados: clientesSim,
+    metaClientes,
+    bonoFullTigo,
+  });
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-1">
-          <h3 className="font-semibold text-lg">🧮 Simulador de ARPU</h3>
+          <h3 className="font-semibold text-lg">🧮 Simulador de metas</h3>
           <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
         </div>
         <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>
-          Agregá planes hipotéticos (todavía no vendidos) para ver en cuánto quedaría el ARPU si los sumaras a lo que ya tenés este período.
+          Agregá planes hipotéticos (todavía no vendidos) para ver en cuánto quedarían Clientes, Ingreso, ARPU y tu comisión estimada si los sumaras a lo que ya tenés este período.
         </p>
 
         <div className="rounded-md p-3 mb-4" style={{ background: "#F4F6FA" }}>
@@ -1286,19 +1354,57 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
           + Agregar otro plan hipotético
         </button>
 
-        <div className="rounded-md p-3" style={{ background: "#E3EDFA" }}>
+        <div className="rounded-md p-3 mb-2" style={{ background: "#E3EDFA" }}>
           <div className="text-xs" style={{ color: "#374151" }}>
             Sumando {clientesNuevos} cliente{clientesNuevos !== 1 ? "s" : ""} hipotético{clientesNuevos !== 1 ? "s" : ""} ({fmtMonto(dineroNuevo)}):
           </div>
-          <div className="text-2xl font-mono font-bold mt-1" style={{ color: "#001E62" }}>
-            ARPU {fmtMonto(arpuSim)} <span className="text-xs font-normal" style={{ color: "#6B7280" }}>({clientesSim} clientes)</span>
-          </div>
-          {pctSim !== null && (
-            <div className="text-xs mt-1 font-semibold" style={{ color: pctSim >= 100 ? "#2F9E6E" : "#0072CE" }}>
-              {pctSim}% de tu meta de ARPU ({fmtMonto(metaArpu)})
-            </div>
-          )}
         </div>
+
+        <div className="grid grid-cols-2 gap-2">
+          <ResultadoSim
+            label="Clientes"
+            actual={clientesActuales}
+            simulado={clientesSim}
+            meta={metaClientes}
+            formato={(v) => String(Math.round(v))}
+          />
+          <ResultadoSim
+            label="Ingreso $"
+            actual={dineroActual}
+            simulado={dineroSim}
+            meta={metaDinero}
+            formato={fmtMonto}
+          />
+          <ResultadoSim
+            label="ARPU"
+            actual={arpuActual}
+            simulado={arpuSim}
+            meta={metaArpu}
+            formato={fmtMonto}
+          />
+          <ResultadoSim
+            label="Comisión est."
+            actual={comisionActual.total}
+            simulado={comisionSim.total}
+            formato={fmtMonto}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ResultadoSim({ label, actual, simulado, meta, formato }) {
+  const pct = meta ? Math.round((simulado / meta) * 100) : null;
+  return (
+    <div className="rounded-md p-2.5" style={{ background: "#F4F6FA" }}>
+      <div className="text-[11px]" style={{ color: "#6B7280" }}>{label}</div>
+      <div className="text-base font-mono font-bold" style={{ color: "#001E62" }}>{formato(simulado)}</div>
+      <div className="text-[10px]" style={{ color: "#9CA3AF" }}>
+        antes {formato(actual)}
+        {pct !== null && (
+          <span className="ml-1 font-semibold" style={{ color: pct >= 100 ? "#2F9E6E" : "#0072CE" }}>· {pct}%</span>
+        )}
       </div>
     </div>
   );
@@ -1636,7 +1742,14 @@ Early: `;
           ) : (
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de clientes de este período.</p>
           )}
-          <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? String(proyeccion.clientes) : null} />
+          <LineaProyeccion
+            aunEsTemprano={aunEsTemprano}
+            texto={
+              proyeccion
+                ? `${proyeccion.clientes}${metaClientes ? ` (${Math.round((proyeccion.clientes / metaClientes) * 100)}%)` : ""}`
+                : null
+            }
+          />
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
@@ -1676,7 +1789,14 @@ Early: `;
           ) : (
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de dinero de este período.</p>
           )}
-          <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.dinero) : null} />
+          <LineaProyeccion
+            aunEsTemprano={aunEsTemprano}
+            texto={
+              proyeccion
+                ? `${fmtMonto(proyeccion.dinero)}${metaDinero ? ` (${Math.round((proyeccion.dinero / metaDinero) * 100)}%)` : ""}`
+                : null
+            }
+          />
         </div>
 
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
@@ -1829,6 +1949,9 @@ Early: `;
           clientesActuales={clientesDelPeriodo.length}
           dineroActual={dineroDelPeriodo}
           metaArpu={metaArpu}
+          metaClientes={metaClientes}
+          metaDinero={metaDinero}
+          bonoFullTigo={bonoFullTigo}
           onClose={() => setMostrarSimuladorArpu(false)}
         />
       )}
@@ -2053,6 +2176,56 @@ function FiltroCampo({ label, children }) {
   );
 }
 
+function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) {
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 max-w-sm w-full max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold text-lg">🧱 Columnas</h3>
+          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+        </div>
+        <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>
+          Elegí qué columnas ver y usá las flechas para moverlas (también podés arrastrar los encabezados en la tabla).
+        </p>
+        <div className="flex flex-col gap-1.5">
+          {orden.map((key, i) => {
+            const col = COLUMNAS_CLIENTES.find((c) => c.key === key);
+            return (
+              <div key={key} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md" style={{ background: "#F4F6FA" }}>
+                <label className="flex items-center gap-2 text-sm flex-1 min-w-0">
+                  <input type="checkbox" checked={!!visibles[key]} onChange={() => onToggle(key)} />
+                  <span className="truncate">{col.label}</span>
+                </label>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => onMover(key, -1)}
+                    disabled={i === 0}
+                    className="text-xs px-1.5 py-0.5 rounded disabled:opacity-30"
+                    style={{ color: "#6B7280" }}
+                    title="Mover arriba"
+                  >
+                    ↑
+                  </button>
+                  <button
+                    onClick={() => onMover(key, 1)}
+                    disabled={i === orden.length - 1}
+                    className="text-xs px-1.5 py-0.5 rounded disabled:opacity-30"
+                    style={{ color: "#6B7280" }}
+                    title="Mover abajo"
+                  >
+                    ↓
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] mt-3" style={{ color: "#9CA3AF" }}>La columna de Acciones siempre queda al final.</p>
+      </div>
+    </div>
+  );
+}
+
 function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
@@ -2072,7 +2245,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saltarAMes]);
-  const [ordenarPor, setOrdenarPor] = useState("creadoEn");
+  const [ordenarPor, setOrdenarPor] = useState("ingreso");
   const [ordenDireccion, setOrdenDireccion] = useState("desc");
   const [filtroEstado, setFiltroEstado] = useState("");
   const [filtroInstalacion, setFiltroInstalacion] = useState("");
@@ -2083,11 +2256,139 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const [copiedCell, setCopiedCell] = useState(null);
   const [papeleraAbierta, setPapeleraAbierta] = useState(false);
   const [filtrosAbiertos, setFiltrosAbiertos] = useState(false);
+  const [ordenColumnas, setOrdenColumnas] = useState(COLUMNAS_CLIENTES_KEYS);
+  const [columnasVisibles, setColumnasVisibles] = useState(() =>
+    Object.fromEntries(COLUMNAS_CLIENTES_KEYS.map((k) => [k, true]))
+  );
+  const [mostrarSelectorColumnas, setMostrarSelectorColumnas] = useState(false);
+  const [colArrastrando, setColArrastrando] = useState(null);
+
+  function handleOrdenarPorColumna(key) {
+    const col = COLUMNAS_CLIENTES.find((c) => c.key === key);
+    if (!col || !col.sortable) return;
+    if (ordenarPor === key) setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"));
+    else {
+      setOrdenarPor(key);
+      setOrdenDireccion("asc");
+    }
+  }
+
+  function moverColumna(key, direccion) {
+    setOrdenColumnas((prev) => {
+      const idx = prev.indexOf(key);
+      const nuevoIdx = idx + direccion;
+      if (nuevoIdx < 0 || nuevoIdx >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[nuevoIdx]] = [next[nuevoIdx], next[idx]];
+      return next;
+    });
+  }
+
+  function handleDropColumna(keyDestino) {
+    if (!colArrastrando || colArrastrando === keyDestino) {
+      setColArrastrando(null);
+      return;
+    }
+    setOrdenColumnas((prev) => {
+      const next = [...prev];
+      const fromIdx = next.indexOf(colArrastrando);
+      const toIdx = next.indexOf(keyDestino);
+      next.splice(fromIdx, 1);
+      next.splice(toIdx, 0, colArrastrando);
+      return next;
+    });
+    setColArrastrando(null);
+  }
+
+  const columnasAMostrar = ordenColumnas.filter((k) => columnasVisibles[k]);
 
   function copiarCelda(texto, id, campo) {
     navigator.clipboard?.writeText(texto || "").catch(() => {});
     setCopiedCell(id + campo);
     setTimeout(() => setCopiedCell(null), 1200);
+  }
+
+  function renderCeldaCliente(c, key) {
+    switch (key) {
+      case "suscriptor":
+        return (
+          <div className="flex items-center gap-1.5 font-mono text-xs">
+            <span>{c.numeroSuscriptor}</span>
+            <button
+              onClick={() => copiarCelda(c.numeroSuscriptor, c.id, "sub")}
+              title="Copiar número de suscriptor"
+              className="text-xs"
+              style={{ color: copiedCell === c.id + "sub" ? "#2F9E6E" : "#9CA3AF" }}
+            >
+              {copiedCell === c.id + "sub" ? "✓" : "📋"}
+            </button>
+          </div>
+        );
+      case "cliente":
+        return (
+          <div>
+            <button onClick={() => onVerDetalle(c)} className="font-medium text-left hover:underline" style={{ color: "#001E62" }}>
+              {c.nombre}
+            </button>
+            <div className="text-xs font-mono flex items-center gap-1.5" style={{ color: "#9CA3AF" }}>
+              <span>{c.telefono}</span>
+              <button
+                onClick={() => copiarCelda(c.telefono, c.id, "tel")}
+                title="Copiar teléfono"
+                className="text-xs"
+                style={{ color: copiedCell === c.id + "tel" ? "#2F9E6E" : "#9CA3AF" }}
+              >
+                {copiedCell === c.id + "tel" ? "✓" : "📋"}
+              </button>
+            </div>
+          </div>
+        );
+      case "plan":
+        return planResumen(c);
+      case "monto":
+        return <span className="font-mono text-xs">{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>;
+      case "ciclo":
+        return <span className="font-mono text-xs">{cicloCorto(c)}</span>;
+      case "instalacion":
+        return c.fechaInstalacion ? (
+          <span className="font-mono text-xs">{fmtFecha(c.fechaInstalacion)}</span>
+        ) : (
+          <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: "#F59E0B", color: "white" }}>
+            ⚠️ PENDIENTE POR INSTALAR
+          </span>
+        );
+      case "ingreso":
+        return <span className="font-mono text-xs">{c.creadoEn ? fmtFecha(c.creadoEn.slice(0, 10)) : "—"}</span>;
+      case "periodo": {
+        const p = periodoComision(c.fechaInstalacion);
+        return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={{ color: "#9CA3AF" }}>—</span>;
+      }
+      case "facturas": {
+        const generadas = c.facturas.filter((f) => daysFromToday(f.generada) <= 0);
+        return generadas.length > 0 ? (
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{generadas.length}/4</span>
+            <div className="flex items-center gap-1">
+              {generadas.map((f) => (
+                <FacturaDot key={f.n} cliente={c} n={f.n} onCambiar={onActualizarEstadoFactura} />
+              ))}
+            </div>
+          </div>
+        ) : (
+          <span className="text-xs" style={{ color: "#9CA3AF" }}>—</span>
+        );
+      }
+      case "estado":
+        return <EstadoBadge estado={c.estadoPago} />;
+      case "obs":
+        return c.observaciones && c.observaciones.trim() ? (
+          <span title={c.observaciones}>📝</span>
+        ) : (
+          <span style={{ color: "#D1D5DB" }}>—</span>
+        );
+      default:
+        return null;
+    }
   }
 
   const clientesDelMes = useMemo(() => {
@@ -2102,14 +2403,11 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const visiblesOrdenados = useMemo(() => {
     const arr = [...visibles];
     arr.sort((a, b) => {
-      let cmp = 0;
-      if (ordenarPor === "numeroSuscriptor") {
-        cmp = (a.numeroSuscriptor || "").localeCompare(b.numeroSuscriptor || "", undefined, { numeric: true });
-      } else {
-        const va = ordenarPor === "creadoEn" ? (a.creadoEn || "") : (a.fechaInstalacion || "");
-        const vb = ordenarPor === "creadoEn" ? (b.creadoEn || "") : (b.fechaInstalacion || "");
-        cmp = va < vb ? -1 : va > vb ? 1 : 0;
-      }
+      const va = valorOrdenColumna(a, ordenarPor);
+      const vb = valorOrdenColumna(b, ordenarPor);
+      let cmp;
+      if (typeof va === "number" && typeof vb === "number") cmp = va - vb;
+      else cmp = String(va).localeCompare(String(vb), undefined, { numeric: true });
       return ordenDireccion === "asc" ? cmp : -cmp;
     });
     return arr;
@@ -2227,18 +2525,28 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setFiltrosAbiertos((v) => !v)}
-        className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5 mb-4"
-        style={{
-          borderColor: filtrosActivos > 0 ? "#0072CE" : "#D1D5DB",
-          color: filtrosActivos > 0 ? "#0072CE" : "#374151",
-          background: filtrosActivos > 0 ? "#E3EDFA" : "white",
-        }}
-      >
-        🔍 Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
-      </button>
+      <div className="flex items-center gap-2 mb-4">
+        <button
+          type="button"
+          onClick={() => setFiltrosAbiertos((v) => !v)}
+          className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
+          style={{
+            borderColor: filtrosActivos > 0 ? "#0072CE" : "#D1D5DB",
+            color: filtrosActivos > 0 ? "#0072CE" : "#374151",
+            background: filtrosActivos > 0 ? "#E3EDFA" : "white",
+          }}
+        >
+          🔍 Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
+        </button>
+        <button
+          type="button"
+          onClick={() => setMostrarSelectorColumnas(true)}
+          className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
+          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+        >
+          🧱 Columnas ({columnasAMostrar.length})
+        </button>
+      </div>
 
       {filtrosAbiertos && (
         <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
@@ -2280,31 +2588,9 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             </div>
           </div>
 
+          <p className="text-[11px] -mb-1" style={{ color: "#9CA3AF" }}>Tip: tocá el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
+
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-            <FiltroCampo label="Ordenar por">
-              <select
-                value={ordenarPor}
-                onChange={(e) => setOrdenarPor(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
-                style={{ borderColor: "#D1D5DB" }}
-              >
-                <option value="fechaInstalacion">Fecha de instalación</option>
-                <option value="numeroSuscriptor">Número de suscriptor</option>
-                <option value="creadoEn">Fecha de ingreso</option>
-              </select>
-            </FiltroCampo>
-
-            <FiltroCampo label="Dirección">
-              <button
-                type="button"
-                onClick={() => setOrdenDireccion((d) => (d === "asc" ? "desc" : "asc"))}
-                className="w-full text-xs font-medium px-2 py-1.5 rounded-md border text-left"
-                style={{ borderColor: "#D1D5DB", color: "#374151" }}
-              >
-                {ordenDireccion === "asc" ? "↑ Ascendente" : "↓ Descendente"}
-              </button>
-            </FiltroCampo>
-
             <FiltroCampo label="Tipo de plan">
               <select
                 value={filtroPlan}
@@ -2377,77 +2663,42 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left" style={{ background: "#F4F6FA" }}>
-                {["Número de suscriptor", "Nombre de Cliente", "Plan", "Ciclo", "Instalado", "Facturas", "Estado", ""].map((h) => (
-                  <th key={h} className="px-4 py-2.5 font-medium text-xs" style={{ color: "#6B7280" }}>{h}</th>
-                ))}
+                {columnasAMostrar.map((key) => {
+                  const col = COLUMNAS_CLIENTES.find((c) => c.key === key);
+                  const activa = ordenarPor === key;
+                  return (
+                    <th
+                      key={key}
+                      draggable
+                      onDragStart={() => setColArrastrando(key)}
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={() => handleDropColumna(key)}
+                      onClick={() => handleOrdenarPorColumna(key)}
+                      className="px-4 py-2.5 font-medium text-xs select-none whitespace-nowrap"
+                      style={{
+                        color: activa ? "#001E62" : "#6B7280",
+                        cursor: col.sortable ? "pointer" : "grab",
+                        opacity: colArrastrando === key ? 0.4 : 1,
+                      }}
+                      title={col.sortable ? "Tocá para ordenar · arrastrá para mover" : "Arrastrá para mover"}
+                    >
+                      <span className="inline-flex items-center gap-1">
+                        <span style={{ color: "#C7D2E8" }}>⠿</span>
+                        {col.label}
+                        {activa && <span>{ordenDireccion === "asc" ? "▲" : "▼"}</span>}
+                      </span>
+                    </th>
+                  );
+                })}
+                <th className="px-4 py-2.5 font-medium text-xs" style={{ color: "#6B7280" }}></th>
               </tr>
             </thead>
             <tbody>
               {visiblesFinal.map((c) => (
                 <tr key={c.id} className="border-t" style={{ borderColor: "#F0F0EF" }}>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    <div className="flex items-center gap-1.5">
-                      <span>{c.numeroSuscriptor}</span>
-                      <button
-                        onClick={() => copiarCelda(c.numeroSuscriptor, c.id, "sub")}
-                        title="Copiar número de suscriptor"
-                        className="text-xs"
-                        style={{ color: copiedCell === c.id + "sub" ? "#2F9E6E" : "#9CA3AF" }}
-                      >
-                        {copiedCell === c.id + "sub" ? "✓" : "📋"}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => onVerDetalle(c)}
-                      className="font-medium text-left hover:underline"
-                      style={{ color: "#001E62" }}
-                    >
-                      {c.nombre}
-                    </button>
-                    <div className="text-xs font-mono flex items-center gap-1.5" style={{ color: "#9CA3AF" }}>
-                      <span>{c.telefono}</span>
-                      <button
-                        onClick={() => copiarCelda(c.telefono, c.id, "tel")}
-                        title="Copiar teléfono"
-                        className="text-xs"
-                        style={{ color: copiedCell === c.id + "tel" ? "#2F9E6E" : "#9CA3AF" }}
-                      >
-                        {copiedCell === c.id + "tel" ? "✓" : "📋"}
-                      </button>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3">{planResumen(c)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">{cicloCorto(c)}</td>
-                  <td className="px-4 py-3 font-mono text-xs">
-                    {c.fechaInstalacion ? (
-                      fmtFecha(c.fechaInstalacion)
-                    ) : (
-                      <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: "#F59E0B", color: "white" }}>
-                        ⚠️ PENDIENTE POR INSTALAR
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3">
-                    {c.facturas.filter((f) => daysFromToday(f.generada) <= 0).length > 0 ? (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>
-                          {c.facturas.filter((f) => daysFromToday(f.generada) <= 0).length}/4
-                        </span>
-                        <div className="flex items-center gap-1">
-                          {c.facturas
-                            .filter((f) => daysFromToday(f.generada) <= 0)
-                            .map((f) => (
-                              <FacturaDot key={f.n} cliente={c} n={f.n} onCambiar={onActualizarEstadoFactura} />
-                            ))}
-                        </div>
-                      </div>
-                    ) : (
-                      <span className="text-xs" style={{ color: "#9CA3AF" }}>—</span>
-                    )}
-                  </td>
-                  <td className="px-4 py-3"><EstadoBadge estado={c.estadoPago} /></td>
+                  {columnasAMostrar.map((key) => (
+                    <td key={key} className="px-4 py-3">{renderCeldaCliente(c, key)}</td>
+                  ))}
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {c.actual && (
                       <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={{ color: "#2F9E6E" }}>Marcar pagada</button>
@@ -2460,6 +2711,16 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             </tbody>
           </table>
         </div>
+      )}
+
+      {mostrarSelectorColumnas && (
+        <SelectorColumnasModal
+          orden={ordenColumnas}
+          visibles={columnasVisibles}
+          onToggle={(key) => setColumnasVisibles((prev) => ({ ...prev, [key]: !prev[key] }))}
+          onMover={moverColumna}
+          onClose={() => setMostrarSelectorColumnas(false)}
+        />
       )}
 
       {papeleraAbierta && (
