@@ -1204,6 +1204,106 @@ function LineaProyeccion({ aunEsTemprano, texto, variant }) {
   );
 }
 
+function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaArpu, onClose }) {
+  const [filas, setFilas] = useState([{ id: uid(), cantidad: 1, precio: "" }]);
+
+  function agregarFila() {
+    setFilas((prev) => [...prev, { id: uid(), cantidad: 1, precio: "" }]);
+  }
+  function quitarFila(id) {
+    setFilas((prev) => prev.filter((f) => f.id !== id));
+  }
+  function actualizarFila(id, campo, valor) {
+    setFilas((prev) => prev.map((f) => (f.id === id ? { ...f, [campo]: valor } : f)));
+  }
+
+  const clientesNuevos = filas.reduce((acc, f) => acc + (Number(f.cantidad) || 0), 0);
+  const dineroNuevo = filas.reduce((acc, f) => acc + (Number(f.cantidad) || 0) * (Number(f.precio) || 0), 0);
+  const clientesSim = clientesActuales + clientesNuevos;
+  const dineroSim = dineroActual + dineroNuevo;
+  const arpuSim = clientesSim > 0 ? dineroSim / clientesSim : 0;
+  const pctSim = metaArpu ? Math.round((arpuSim / metaArpu) * 100) : null;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-1">
+          <h3 className="font-semibold text-lg">🧮 Simulador de ARPU</h3>
+          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+        </div>
+        <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>
+          Agregá planes hipotéticos (todavía no vendidos) para ver en cuánto quedaría el ARPU si los sumaras a lo que ya tenés este período.
+        </p>
+
+        <div className="rounded-md p-3 mb-4" style={{ background: "#F4F6FA" }}>
+          <div className="text-xs" style={{ color: "#6B7280" }}>ARPU actual de este período</div>
+          <div className="text-xl font-mono font-bold" style={{ color: "#001E62" }}>
+            {fmtMonto(arpuActual)} <span className="text-xs font-normal" style={{ color: "#9CA3AF" }}>({clientesActuales} clientes)</span>
+          </div>
+        </div>
+
+        <div className="flex flex-col gap-2 mb-3">
+          {filas.map((f) => (
+            <div key={f.id} className="flex items-center gap-2">
+              <input
+                type="number"
+                min="1"
+                value={f.cantidad}
+                onChange={(e) => actualizarFila(f.id, "cantidad", e.target.value)}
+                className="w-16 px-2 py-1.5 rounded-md border text-sm outline-none"
+                style={{ borderColor: "#D1D5DB" }}
+                placeholder="Cant."
+              />
+              <span className="text-xs" style={{ color: "#9CA3AF" }}>planes de</span>
+              <div className="relative flex-1">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs" style={{ color: "#9CA3AF" }}>$</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={f.precio}
+                  onChange={(e) => actualizarFila(f.id, "precio", e.target.value)}
+                  className="w-full pl-5 pr-2 py-1.5 rounded-md border text-sm outline-none"
+                  style={{ borderColor: "#D1D5DB" }}
+                  placeholder="0.00"
+                />
+              </div>
+              {filas.length > 1 && (
+                <button onClick={() => quitarFila(f.id)} className="text-sm px-1" style={{ color: "#C23B3B" }} title="Quitar">
+                  ✕
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <button
+          type="button"
+          onClick={agregarFila}
+          className="text-xs font-medium mb-4"
+          style={{ color: "#0072CE" }}
+        >
+          + Agregar otro plan hipotético
+        </button>
+
+        <div className="rounded-md p-3" style={{ background: "#E3EDFA" }}>
+          <div className="text-xs" style={{ color: "#374151" }}>
+            Sumando {clientesNuevos} cliente{clientesNuevos !== 1 ? "s" : ""} hipotético{clientesNuevos !== 1 ? "s" : ""} ({fmtMonto(dineroNuevo)}):
+          </div>
+          <div className="text-2xl font-mono font-bold mt-1" style={{ color: "#001E62" }}>
+            ARPU {fmtMonto(arpuSim)} <span className="text-xs font-normal" style={{ color: "#6B7280" }}>({clientesSim} clientes)</span>
+          </div>
+          {pctSim !== null && (
+            <div className="text-xs mt-1 font-semibold" style={{ color: pctSim >= 100 ? "#2F9E6E" : "#0072CE" }}>
+              {pctSim}% de tu meta de ARPU ({fmtMonto(metaArpu)})
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MiniStat({ valor, label, color, onClick }) {
   return (
     <button
@@ -1388,6 +1488,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   }, [esActual, metaArpu, clientesDelPeriodo.length, dineroDelPeriodo, precioPromedioPlan]);
 
   const [copiadoReporte, setCopiadoReporte] = useState(false);
+  const [mostrarSimuladorArpu, setMostrarSimuladorArpu] = useState(false);
 
   function generarReporteDiario() {
     const hoy = fechaLocalISO(new Date());
@@ -1616,7 +1717,14 @@ Early: `;
           ) : (
             <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de ARPU de este período.</p>
           )}
-          <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.arpu) : null} />
+          <button
+            type="button"
+            onClick={() => setMostrarSimuladorArpu(true)}
+            className="text-[11px] mt-2 font-medium underline-offset-2 hover:underline"
+            style={{ color: "#0072CE" }}
+          >
+            🧮 Simular ARPU con planes hipotéticos →
+          </button>
           {recomendacionArpu && (recomendacionArpu.alcanzado || recomendacionArpu.doble || recomendacionArpu.single) && (
             <div className="text-[11px] mt-1 leading-relaxed" style={{ color: recomendacionArpu.alcanzado ? "#2F9E6E" : "#9CA3AF" }}>
               {recomendacionArpu.alcanzado
@@ -1715,6 +1823,15 @@ Early: `;
           </div>
         )}
       </div>
+      {mostrarSimuladorArpu && (
+        <SimuladorArpuModal
+          arpuActual={arpuPeriodo}
+          clientesActuales={clientesDelPeriodo.length}
+          dineroActual={dineroDelPeriodo}
+          metaArpu={metaArpu}
+          onClose={() => setMostrarSimuladorArpu(false)}
+        />
+      )}
     </div>
   );
 }
