@@ -9,6 +9,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/flatpickr.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/es.js"></script>
 <style>
   body { margin: 0; }
 </style>
@@ -486,6 +489,57 @@ function facturaActual(facturas) {
   return facturas[0];
 }
 
+// ---------- Selector de rango de fechas en un solo campo (calendario único) ----------
+// Usa flatpickr en modo "range": el usuario abre un solo calendario y elige
+// primero la fecha inicial y luego la final, sin tener que usar dos campos separados.
+function RangoFechasInput({ desde, hasta, onChange, className, style, placeholder = "Seleccionar rango de fechas" }) {
+  const inputRef = useRef(null);
+  const fpRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  useEffect(() => {
+    if (!inputRef.current || !window.flatpickr) return;
+    fpRef.current = window.flatpickr(inputRef.current, {
+      mode: "range",
+      dateFormat: "Y-m-d",
+      altInput: true,
+      altFormat: "d/m/Y",
+      locale: window.flatpickr.l10ns && window.flatpickr.l10ns.es ? "es" : undefined,
+      defaultDate: [desde, hasta].filter(Boolean),
+      onChange: (selectedDates) => {
+        if (selectedDates.length === 2) {
+          onChangeRef.current(fechaLocalISO(selectedDates[0]), fechaLocalISO(selectedDates[1]));
+        } else if (selectedDates.length === 0) {
+          onChangeRef.current("", "");
+        }
+      },
+    });
+    return () => {
+      if (fpRef.current) fpRef.current.destroy();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Mantiene el calendario sincronizado si el rango cambia desde afuera (ej. botón "Limpiar").
+  useEffect(() => {
+    if (fpRef.current) {
+      fpRef.current.setDate([desde, hasta].filter(Boolean), false);
+    }
+  }, [desde, hasta]);
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      readOnly
+      placeholder={placeholder}
+      className={className || "px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"}
+      style={style || { borderColor: "#D1D5DB" }}
+    />
+  );
+}
+
 // ---------- Componente principal ----------
 function App() {
   const [autenticado, setAutenticado] = useState(() => {
@@ -501,6 +555,8 @@ function App() {
   const [form, setForm] = useState(emptyForm());
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
+  const [searchAlertas, setSearchAlertas] = useState("");
+  const [filtroTipoAlertas, setFiltroTipoAlertas] = useState("");
   const [copiedKey, setCopiedKey] = useState(null);
   const [copiedSubKey, setCopiedSubKey] = useState(null);
   const [saveError, setSaveError] = useState(false);
@@ -1142,6 +1198,7 @@ function App() {
         {tab === "alertas" && (
           <AlertasTab
             alertasHoy={alertasPorCliente}
+            alertasTodas={alertasHoy}
             onMarcar={toggleMilestone}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
@@ -1150,6 +1207,10 @@ function App() {
               setClienteDetalleId(c.id);
               setTab("detalle");
             }}
+            search={searchAlertas}
+            setSearch={setSearchAlertas}
+            filtroTipo={filtroTipoAlertas}
+            setFiltroTipo={setFiltroTipoAlertas}
           />
         )}
         {tab === "precierre" && (
@@ -2031,9 +2092,9 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
   );
 }
 
-function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle }) {
+function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
   const [expandidos, setExpandidos] = useState(new Set());
-  const [filtroTipo, setFiltroTipo] = useState("");
+  const [extrasAbiertos, setExtrasAbiertos] = useState(new Set());
 
   const conteosPorTipo = useMemo(() => {
     const c = {};
@@ -2041,7 +2102,40 @@ function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, on
     return c;
   }, [alertasHoy]);
 
-  const alertasFiltradas = filtroTipo ? alertasHoy.filter(({ milestone }) => milestone.type === filtroTipo) : alertasHoy;
+  // Alertas adicionales que tiene el mismo cliente y que quedaron ocultas al
+  // colapsar a "una alerta por cliente" (la más urgente se muestra arriba).
+  const extrasPorCliente = useMemo(() => {
+    const map = new Map();
+    (alertasTodas || []).forEach((a) => {
+      const arr = map.get(a.cliente.id) || [];
+      arr.push(a);
+      map.set(a.cliente.id, arr);
+    });
+    return map;
+  }, [alertasTodas]);
+
+  const q = search.trim().toLowerCase();
+  const alertasFiltradas = alertasHoy
+    .filter(({ milestone }) => (filtroTipo ? milestone.type === filtroTipo : true))
+    .filter(({ cliente }) =>
+      q
+        ? cliente.nombre.toLowerCase().includes(q) ||
+          (cliente.telefono || "").toLowerCase().includes(q) ||
+          (cliente.numeroSuscriptor || "").toLowerCase().includes(q)
+        : true
+    );
+
+  // Agrupa por urgencia para que se puedan escanear las más críticas primero.
+  const GRUPOS = [
+    { type: "t3", titulo: "🔴 Vencidas / urgentes" },
+    { type: "t15", titulo: "🟡 Próximas a vencer" },
+    { type: "d1", titulo: "🟢 Facturas nuevas" },
+    { type: "prorrateo", titulo: "🟣 Prorrateo alto" },
+  ];
+  const gruposConDatos = GRUPOS.map((g) => ({
+    ...g,
+    items: alertasFiltradas.filter(({ milestone }) => milestone.type === g.type),
+  })).filter((g) => g.items.length > 0);
 
   function toggleExpandido(id) {
     setExpandidos((prev) => {
@@ -2052,42 +2146,68 @@ function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, on
     });
   }
 
+  function toggleExtras(id) {
+    setExtrasAbiertos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function diasTexto(triggerDate) {
+    const dias = daysFromToday(triggerDate);
+    if (dias === 0) return "Vence hoy";
+    const abs = Math.abs(dias);
+    return `Atrasada hace ${abs} día${abs === 1 ? "" : "s"}`;
+  }
+
   return (
     <div>
       <h1 className="text-2xl font-semibold mb-1">Alertas de hoy</h1>
       <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
-        Una alerta por cliente — la más reciente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
+        Una alerta principal por cliente — la más urgente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
       </p>
 
       {alertasHoy.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap mb-6">
-          <button
-            onClick={() => setFiltroTipo("")}
-            className="text-xs font-medium px-3 py-1.5 rounded-full border"
-            style={{
-              borderColor: filtroTipo === "" ? "#001E62" : "#D1D5DB",
-              background: filtroTipo === "" ? "#001E62" : "white",
-              color: filtroTipo === "" ? "white" : "#374151",
-            }}
-          >
-            Todas ({alertasHoy.length})
-          </button>
-          {TIPOS_ALERTA.map((m) => (
+        <div className="flex flex-col gap-3 mb-6">
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por nombre, teléfono o N° de suscriptor…"
+            className="w-full max-w-sm px-3 py-2 rounded-md border text-sm outline-none"
+            style={{ borderColor: "#D1D5DB" }}
+          />
+          <div className="flex items-center gap-2 flex-wrap">
             <button
-              key={m.type}
-              onClick={() => setFiltroTipo((t) => (t === m.type ? "" : m.type))}
-              disabled={!conteosPorTipo[m.type]}
-              className="text-xs font-medium px-3 py-1.5 rounded-full border disabled:opacity-30"
+              onClick={() => setFiltroTipo("")}
+              className="text-xs font-medium px-3 py-1.5 rounded-full border"
               style={{
-                borderColor: filtroTipo === m.type ? m.color : "#D1D5DB",
-                background: filtroTipo === m.type ? m.bg : "white",
-                color: filtroTipo === m.type ? m.color : "#374151",
+                borderColor: filtroTipo === "" ? "#001E62" : "#D1D5DB",
+                background: filtroTipo === "" ? "#001E62" : "white",
+                color: filtroTipo === "" ? "white" : "#374151",
               }}
-              title={m.label}
             >
-              {m.tag} ({conteosPorTipo[m.type] || 0})
+              Todas ({alertasHoy.length})
             </button>
-          ))}
+            {TIPOS_ALERTA.map((m) => (
+              <button
+                key={m.type}
+                onClick={() => setFiltroTipo((t) => (t === m.type ? "" : m.type))}
+                disabled={!conteosPorTipo[m.type]}
+                className="text-xs font-medium px-3 py-1.5 rounded-full border disabled:opacity-30"
+                style={{
+                  borderColor: filtroTipo === m.type ? m.color : "#D1D5DB",
+                  background: filtroTipo === m.type ? m.bg : "white",
+                  color: filtroTipo === m.type ? m.color : "#374151",
+                }}
+                title={m.label}
+              >
+                {m.tag} ({conteosPorTipo[m.type] || 0})
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
@@ -2097,94 +2217,149 @@ function AlertasTab({ alertasHoy, onMarcar, onCopiarSuscriptor, copiedSubKey, on
         </div>
       ) : alertasFiltradas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={{ color: "#6B7280" }}>No hay alertas de este tipo.</p>
+          <p className="text-sm" style={{ color: "#6B7280" }}>No hay alertas que coincidan con la búsqueda o el filtro.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-3">
-          {alertasFiltradas.map(({ cliente, factura, milestone }) => {
-            return (
-              <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" }}>
-                  <div>
-                    <button
-                      onClick={() => onVerDetalle(cliente)}
-                      className="font-semibold text-sm text-left hover:underline"
-                      style={{ color: "#001E62" }}
-                    >
-                      {cliente.nombre}
-                    </button>
-                    <div className="text-xs" style={{ color: "#6B7280" }}>
-                      {cliente.telefono} · {cliente.plan} · {ORDINAL[factura.n]} factura
+        <div className="flex flex-col gap-6">
+          {gruposConDatos.map((grupo) => (
+            <div key={grupo.type}>
+              <h2 className="text-xs font-semibold mb-2" style={{ color: "#6B7280" }}>
+                {grupo.titulo} ({grupo.items.length})
+              </h2>
+              <div className="flex flex-col gap-3">
+                {grupo.items.map(({ cliente, factura, milestone }) => {
+                  const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
+                  return (
+                    <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+                      <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" }}>
+                        <div>
+                          <button
+                            onClick={() => onVerDetalle(cliente)}
+                            className="font-semibold text-sm text-left hover:underline"
+                            style={{ color: "#001E62" }}
+                          >
+                            {cliente.nombre}
+                          </button>
+                          <div className="text-xs" style={{ color: "#6B7280" }}>
+                            {cliente.telefono} · {cliente.plan} · {ORDINAL[factura.n]} factura
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => onCopiarSuscriptor(cliente)}
+                            className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                          >
+                            {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
+                          </button>
+                          <button
+                            onClick={() => {
+                              if (window.confirm(`¿Confirmás que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
+                                onPagoRealizado(cliente.id, factura.n);
+                              }
+                            }}
+                            className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                            style={{ background: "#2F9E6E" }}
+                          >
+                            Pago realizado
+                          </button>
+                        </div>
+                      </div>
+                      <div className="p-4">
+                        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: milestone.bg, color: milestone.color }}>
+                              {milestone.tag}
+                            </span>
+                            <span className="text-xs" style={{ color: "#6B7280" }}>{milestone.label}</span>
+                            <span className="text-xs font-medium" style={{ color: milestone.color }}>{diasTexto(milestone.triggerDate)}</span>
+                          </div>
+                          <button
+                            onClick={() => toggleExpandido(cliente.id)}
+                            className="text-xs font-medium"
+                            style={{ color: "#0072CE" }}
+                          >
+                            {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
+                          </button>
+                        </div>
+                        {expandidos.has(cliente.id) && (
+                          <div className="text-sm rounded-md p-3 mb-3" style={{ background: "#F4F6FA", color: "#374151" }}>
+                            {milestone.texto}
+                          </div>
+                        )}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <a
+                            href={whatsappLink(cliente, milestone)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                            style={{ background: "#25D366" }}
+                          >
+                            Enviar por WhatsApp
+                          </a>
+                          <button
+                            onClick={() => {
+                              if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
+                                onMarcar(cliente.id, milestone.key);
+                              }
+                            }}
+                            className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                          >
+                            Marcar como enviado
+                          </button>
+                        </div>
+
+                        {extras.length > 0 && (
+                          <div className="mt-3 pt-3" style={{ borderTop: "1px dashed #E5E7EB" }}>
+                            <button
+                              onClick={() => toggleExtras(cliente.id)}
+                              className="text-xs font-medium"
+                              style={{ color: "#B8791F" }}
+                            >
+                              {extrasAbiertos.has(cliente.id)
+                                ? "Ocultar otras alertas de este cliente"
+                                : `+ ${extras.length} alerta${extras.length === 1 ? "" : "s"} más de este cliente`}
+                            </button>
+                            {extrasAbiertos.has(cliente.id) && (
+                              <div className="flex flex-col gap-2 mt-2">
+                                {extras.map((ex) => (
+                                  <div
+                                    key={ex.milestone.key}
+                                    className="flex items-center justify-between gap-2 rounded-md border p-2 flex-wrap"
+                                    style={{ borderColor: "#E5E7EB", background: "#FAFAF9" }}
+                                  >
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: ex.milestone.bg, color: ex.milestone.color }}>
+                                        {ex.milestone.tag}
+                                      </span>
+                                      <span className="text-xs" style={{ color: "#6B7280" }}>{ORDINAL[ex.factura.n]} factura · {ex.milestone.label}</span>
+                                      <span className="text-xs font-medium" style={{ color: ex.milestone.color }}>{diasTexto(ex.milestone.triggerDate)}</span>
+                                    </div>
+                                    <button
+                                      onClick={() => {
+                                        if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
+                                          onMarcar(ex.cliente.id, ex.milestone.key);
+                                        }
+                                      }}
+                                      className="text-xs font-medium px-2 py-1 rounded-md border"
+                                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                                    >
+                                      Marcar como enviado
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onCopiarSuscriptor(cliente)}
-                      className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
-                    >
-                      {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
-                    </button>
-                    <button
-                      onClick={() => {
-                        if (window.confirm(`¿Confirmás que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
-                          onPagoRealizado(cliente.id, factura.n);
-                        }
-                      }}
-                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ background: "#2F9E6E" }}
-                    >
-                      Pago realizado
-                    </button>
-                  </div>
-                </div>
-                <div className="p-4">
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: milestone.bg, color: milestone.color }}>
-                        {milestone.tag}
-                      </span>
-                      <span className="text-xs" style={{ color: "#6B7280" }}>{milestone.label}</span>
-                    </div>
-                    <button
-                      onClick={() => toggleExpandido(cliente.id)}
-                      className="text-xs font-medium"
-                      style={{ color: "#0072CE" }}
-                    >
-                      {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
-                    </button>
-                  </div>
-                  {expandidos.has(cliente.id) && (
-                    <div className="text-sm rounded-md p-3 mb-3" style={{ background: "#F4F6FA", color: "#374151" }}>
-                      {milestone.texto}
-                    </div>
-                  )}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <a
-                      href={whatsappLink(cliente, milestone)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ background: "#25D366" }}
-                    >
-                      Enviar por WhatsApp
-                    </a>
-                    <button
-                      onClick={() => {
-                        if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
-                          onMarcar(cliente.id, milestone.key);
-                        }
-                      }}
-                      className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
-                    >
-                      Marcar como enviado
-                    </button>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
-            );
-          })}
+            </div>
+          ))}
         </div>
       )}
     </div>
@@ -2600,23 +2775,13 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             </div>
             <div className="flex items-center gap-4 flex-wrap">
               <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
-                Desde
-                <input
-                  type="date"
-                  value={fechaDesde}
-                  onChange={(e) => setFechaDesde(e.target.value)}
-                  className="px-2 py-1 rounded-md border text-xs outline-none"
-                  style={{ borderColor: "#D1D5DB" }}
-                />
-              </label>
-              <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
-                Hasta
-                <input
-                  type="date"
-                  value={fechaHasta}
-                  onChange={(e) => setFechaHasta(e.target.value)}
-                  className="px-2 py-1 rounded-md border text-xs outline-none"
-                  style={{ borderColor: "#D1D5DB" }}
+                Rango de fechas de instalación
+                <RangoFechasInput
+                  desde={fechaDesde}
+                  hasta={fechaHasta}
+                  onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); }}
+                  className="px-2 py-1 rounded-md border text-xs outline-none cursor-pointer"
+                  style={{ borderColor: "#D1D5DB", minWidth: "180px" }}
                 />
               </label>
             </div>
@@ -3234,31 +3399,17 @@ function PrecierreTab({ clientes, onIrNuevo }) {
         Pega aquí los números de suscriptor del archivo de precierre (uno por línea, o como vengan copiados desde Excel). La app detecta cuáles ya están cargados y cuáles faltan.
       </p>
 
-      <div className="mb-4 flex gap-4">
-        <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>
-            Desde
-          </label>
-          <input
-            type="date"
-            value={fechaDesde}
-            onChange={(e) => setFechaDesde(e.target.value)}
-            className="px-3 py-2 rounded-md border text-sm outline-none"
-            style={{ borderColor: "#D1D5DB" }}
-          />
-        </div>
-        <div>
-          <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>
-            Hasta
-          </label>
-          <input
-            type="date"
-            value={fechaHasta}
-            onChange={(e) => setFechaHasta(e.target.value)}
-            className="px-3 py-2 rounded-md border text-sm outline-none"
-            style={{ borderColor: "#D1D5DB" }}
-          />
-        </div>
+      <div className="mb-4">
+        <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>
+          Rango de fechas a verificar
+        </label>
+        <RangoFechasInput
+          desde={fechaDesde}
+          hasta={fechaHasta}
+          onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); }}
+          className="px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"
+          style={{ borderColor: "#D1D5DB", minWidth: "220px" }}
+        />
       </div>
 
       <textarea
