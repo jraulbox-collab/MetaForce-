@@ -2121,6 +2121,46 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
   const [expandidos, setExpandidos] = useState(new Set());
   const [extrasAbiertos, setExtrasAbiertos] = useState(new Set());
 
+  // ---- Envío en cadena por WhatsApp ----
+  // Cola de alertas pendientes de recorrer una por una: abre WhatsApp con el
+  // mensaje, y al volver pregunta si se envió antes de pasar a la siguiente.
+  const [colaEnvio, setColaEnvio] = useState(null); // null = inactivo
+  const [indiceEnvio, setIndiceEnvio] = useState(0);
+  const [contadorEnviados, setContadorEnviados] = useState(0);
+  const [resumenEnvio, setResumenEnvio] = useState(null); // { total, enviados } al terminar
+
+  function iniciarEnvioEnCadena(lista) {
+    if (!lista.length) return;
+    setColaEnvio(lista);
+    setIndiceEnvio(0);
+    setContadorEnviados(0);
+    setResumenEnvio(null);
+    window.open(whatsappLink(lista[0].cliente, lista[0].milestone), "_blank", "noopener,noreferrer");
+  }
+
+  function avanzarEnvio(marcarComoEnviado) {
+    const actual = colaEnvio[indiceEnvio];
+    if (marcarComoEnviado) {
+      onMarcar(actual.cliente.id, actual.milestone.key);
+    }
+    const nuevosEnviados = contadorEnviados + (marcarComoEnviado ? 1 : 0);
+    const siguienteIndice = indiceEnvio + 1;
+    if (siguienteIndice >= colaEnvio.length) {
+      setResumenEnvio({ total: colaEnvio.length, enviados: nuevosEnviados });
+      setColaEnvio(null);
+    } else {
+      setContadorEnviados(nuevosEnviados);
+      setIndiceEnvio(siguienteIndice);
+      const siguiente = colaEnvio[siguienteIndice];
+      window.open(whatsappLink(siguiente.cliente, siguiente.milestone), "_blank", "noopener,noreferrer");
+    }
+  }
+
+  function cancelarEnvioEnCadena() {
+    setColaEnvio(null);
+    setIndiceEnvio(0);
+  }
+
   const conteosPorTipo = useMemo(() => {
     const c = {};
     alertasHoy.forEach(({ milestone }) => { c[milestone.type] = (c[milestone.type] || 0) + 1; });
@@ -2194,16 +2234,82 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
         Una alerta principal por cliente — la más urgente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
       </p>
 
+      {colaEnvio && (
+        <div
+          className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap"
+          style={{ background: "#001E62" }}
+        >
+          <div>
+            <p className="text-sm font-semibold text-white">
+              Enviando {indiceEnvio + 1} de {colaEnvio.length}: {colaEnvio[indiceEnvio].cliente.nombre}
+            </p>
+            <p className="text-xs" style={{ color: "#B9C4E0" }}>
+              Se abrió WhatsApp con el mensaje. ¿Lo enviaste?
+            </p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              onClick={() => avanzarEnvio(true)}
+              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+              style={{ background: "#2F9E6E" }}
+            >
+              Sí, siguiente
+            </button>
+            <button
+              onClick={() => avanzarEnvio(false)}
+              className="text-xs font-medium px-3 py-1.5 rounded-md border border-white text-white"
+            >
+              No, saltar
+            </button>
+            <button
+              onClick={cancelarEnvioEnCadena}
+              className="text-xs font-medium px-2 py-1.5 text-white opacity-70"
+            >
+              Cancelar envío
+            </button>
+          </div>
+        </div>
+      )}
+
+      {resumenEnvio && (
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap"
+          style={{ background: "#E9F7EF", border: "1px solid #BEE8CE" }}
+        >
+          <p className="text-sm" style={{ color: "#166534" }}>
+            ✅ Envío en cadena terminado: <span className="font-semibold">{resumenEnvio.enviados} de {resumenEnvio.total}</span> mensajes marcados como enviados.
+          </p>
+          <button
+            onClick={() => setResumenEnvio(null)}
+            className="text-xs font-medium"
+            style={{ color: "#166534" }}
+          >
+            Cerrar
+          </button>
+        </div>
+      )}
+
       {alertasHoy.length > 0 && (
         <div className="flex flex-col gap-3 mb-6">
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar por nombre, teléfono o N° de suscriptor…"
-            className="w-full max-w-sm px-3 py-2 rounded-md border text-sm outline-none"
-            style={{ borderColor: "#D1D5DB" }}
-          />
+          <div className="flex items-center gap-3 flex-wrap">
+            <input
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nombre, teléfono o N° de suscriptor…"
+              className="w-full max-w-sm px-3 py-2 rounded-md border text-sm outline-none"
+              style={{ borderColor: "#D1D5DB" }}
+            />
+            {!colaEnvio && alertasFiltradas.length > 0 && (
+              <button
+                onClick={() => iniciarEnvioEnCadena(alertasFiltradas)}
+                className="text-sm font-medium px-3 py-2 rounded-md text-white whitespace-nowrap"
+                style={{ background: "#25D366" }}
+              >
+                📲 Empezar envío en cadena ({alertasFiltradas.length})
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setFiltroTipo("")}
