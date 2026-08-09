@@ -535,7 +535,7 @@ function RangoFechasInput({ desde, hasta, onChange, className, style, placeholde
       readOnly
       placeholder={placeholder}
       className={className || "px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"}
-      style={style || { borderColor: "#D1D5DB" }}
+      style={style || { borderColor: "#D1D5DB" } }
     />
   );
 }
@@ -1059,19 +1059,19 @@ function App() {
             localStorage.setItem("antichurn_auth", "1");
           } catch (e) {}
           setAutenticado(true);
-        }}
+        } }
       />
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row font-sans" style={{ background: "#F4F6FA", color: "#001E62" }}>
-      <div className="md:hidden flex items-center justify-between px-4 py-3" style={{ background: "#001E62" }}>
+    <div className="min-h-screen flex flex-col md:flex-row font-sans" style={ { background: "#F4F6FA", color: "#001E62" } }>
+      <div className="md:hidden flex items-center justify-between px-4 py-3" style={ { background: "#001E62" } }>
         <button
-          onClick={() => { setTab("dashboard"); setMobileMenuOpen(false); }}
+          onClick={() => { setTab("dashboard"); setMobileMenuOpen(false); } }
           className="flex items-center gap-2"
         >
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
+          <div className="w-2.5 h-2.5 rounded-full" style={ { background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" } } />
           <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
         </button>
         <button
@@ -1085,15 +1085,15 @@ function App() {
 
       <aside
         className={(mobileMenuOpen ? "flex " : "hidden ") + "md:flex w-full md:w-56 md:shrink-0 flex-col justify-between"}
-        style={{ background: "#001E62" }}
+        style={ { background: "#001E62" } }
       >
         <div>
           <div className="hidden md:block px-5 pt-6 pb-8">
             <button onClick={() => setTab("dashboard")} className="flex items-center gap-2">
-              <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" }} />
+              <div className="w-2.5 h-2.5 rounded-full" style={ { background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" } } />
               <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
             </button>
-            <p className="text-[11px] mt-1" style={{ color: "#7C89B0" }}>
+            <p className="text-[11px] mt-1" style={ { color: "#7C89B0" } }>
               CONTROL DE CLIENTES &amp; EARLY CHURN - TEAM AZUERO
             </p>
           </div>
@@ -1104,20 +1104,20 @@ function App() {
                 onClick={() => {
                   if (item.key === "nuevo" && !editingId) resetForm();
                   setTab(item.key);
-                }}
+                } }
                 className="text-left px-3 py-2.5 rounded-md text-sm flex items-center justify-between transition-colors"
-                style={{
+                style={ {
                   background: tab === item.key ? "rgba(255,255,255,0.08)" : "transparent",
                   color: tab === item.key ? "#FFFFFF" : "#8593B8",
                   fontWeight: tab === item.key ? 600 : 500,
-                }}
+                } }
               >
                 <span className="flex items-center gap-2">
                   <span aria-hidden="true">{item.icon}</span>
                   {item.label}
                 </span>
                 {!!item.badge && (
-                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded animate-pulse" style={{ background: "#C23B3B", color: "white" }}>
+                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded animate-pulse" style={ { background: "#C23B3B", color: "white" } }>
                     {item.badge}
                   </span>
                 )}
@@ -1126,24 +1126,24 @@ function App() {
             <button
               onClick={() => setMostrarSelectorNuevo(true)}
               className="text-left px-3 py-2.5 rounded-md text-sm font-medium mt-1"
-              style={{ background: "#2F9E6E", color: "white" }}
+              style={ { background: "#2F9E6E", color: "white" } }
             >
               + Nuevo cliente
             </button>
           </nav>
         </div>
         <div className="px-5 pb-5 flex flex-col gap-2">
-          <div className="text-[11px]" style={{ color: "#5C6480" }}>
+          <div className="text-[11px]" style={ { color: "#5C6480" } }>
             {saveError ? "⚠️ error al guardar" : "guardado automático activo (en la nube)"}
           </div>
           <button
             onClick={() => setMostrarConfig(true)}
             className="text-xs font-medium text-left px-2 py-1.5 rounded-md flex items-center gap-2"
-            style={{ color: "#8593B8", border: "1px solid #3A4258" }}
+            style={ { color: "#8593B8", border: "1px solid #3A4258" } }
           >
             ⚙️ Configuración
           </button>
-          <div className="text-[10px] text-center pt-1" style={{ color: "#3A4258" }}>JRS~</div>
+          <div className="text-[10px] text-center pt-1" style={ { color: "#3A4258" } }>JRS~</div>
         </div>
       </aside>
 
@@ -1153,15 +1153,15 @@ function App() {
         ) : (
         <React.Fragment>
         {stats.alHoy > 0 && !bannerDismissed && tab !== "alertas" && (
-          <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={{ background: "#FBEAEA", borderColor: "#F3C6C6" }}>
-            <span className="text-sm font-medium" style={{ color: "#C23B3B" }}>
+          <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={ { background: "#FBEAEA", borderColor: "#F3C6C6" } }>
+            <span className="text-sm font-medium" style={ { color: "#C23B3B" } }>
               🔔 Alertas pendientes: {stats.alHoy}
             </span>
             <div className="flex items-center gap-2">
-              <button onClick={() => setTab("alertas")} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={{ background: "#C23B3B" }}>
+              <button onClick={() => setTab("alertas")} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#C23B3B" } }>
                 Ver alertas
               </button>
-              <button onClick={() => setBannerDismissed(true)} className="text-xs font-medium px-2" style={{ color: "#6B7280" }}>
+              <button onClick={() => setBannerDismissed(true)} className="text-xs font-medium px-2" style={ { color: "#6B7280" } }>
                 ✕
               </button>
             </div>
@@ -1179,7 +1179,7 @@ function App() {
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               setTab("clientes");
-            }}
+            } }
           />
         )}
         {tab === "clientes" && (
@@ -1195,7 +1195,7 @@ function App() {
               setOrigenDetalle("clientes");
               setClienteDetalleId(c.id);
               setTab("detalle");
-            }}
+            } }
             onNuevo={() => setMostrarSelectorNuevo(true)}
             eliminados={eliminados}
             onRecuperar={recuperarCliente}
@@ -1231,7 +1231,7 @@ function App() {
               setOrigenDetalle("alertas");
               setClienteDetalleId(c.id);
               setTab("detalle");
-            }}
+            } }
             setSearch={setSearchAlertas}
             search={searchAlertas}
             filtroTipo={filtroTipoAlertas}
@@ -1251,7 +1251,7 @@ function App() {
             onCancel={() => {
               resetForm();
               setTab("clientes");
-            }}
+            } }
           />
         )}
         </React.Fragment>
@@ -1264,7 +1264,7 @@ function App() {
           <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold text-lg">Convergencias</h3>
-              <button onClick={() => setMostrarConvergencias(false)} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+              <button onClick={() => setMostrarConvergencias(false)} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
             </div>
             <ConvergenciasPanel
               convergencias={convergencias}
@@ -1282,11 +1282,11 @@ function App() {
             resetForm();
             setTab("nuevo");
             setMostrarSelectorNuevo(false);
-          }}
+          } }
           onConvergencia={() => {
             setMostrarConvergencias(true);
             setMostrarSelectorNuevo(false);
-          }}
+          } }
         />
       )}
       {mostrarConfig && (
@@ -1304,7 +1304,7 @@ function App() {
               localStorage.removeItem("antichurn_auth");
             } catch (e) {}
             setAutenticado(false);
-          }}
+          } }
         />
       )}
       <input
@@ -1312,7 +1312,7 @@ function App() {
         accept="application/json"
         ref={importInputRef}
         onChange={importarRespaldo}
-        style={{ display: "none" }}
+        style={ { display: "none" } }
       />
     </div>
   );
@@ -1335,31 +1335,31 @@ function LoginScreen({ onSuccess }) {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center font-sans" style={{ background: "#F4F6FA" }}>
+    <div className="min-h-screen flex items-center justify-center font-sans" style={ { background: "#F4F6FA" } }>
       <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 w-full max-w-sm">
         <div className="flex items-center gap-2 mb-1">
-          <div className="w-2.5 h-2.5 rounded-full" style={{ background: "#00AEEF" }} />
-          <span className="font-semibold text-lg" style={{ color: "#001E62" }}>MetaForce CRM</span>
+          <div className="w-2.5 h-2.5 rounded-full" style={ { background: "#00AEEF" } } />
+          <span className="font-semibold text-lg" style={ { color: "#001E62" } }>MetaForce CRM</span>
         </div>
-        <p className="text-sm mb-4" style={{ color: "#6B7280" }}>Ingresá la clave de acceso para continuar.</p>
+        <p className="text-sm mb-4" style={ { color: "#6B7280" } }>Ingresá la clave de acceso para continuar.</p>
         <input
           type="password"
           value={clave}
           onChange={(e) => {
             setClave(e.target.value);
             setError(false);
-          }}
+          } }
           placeholder="Clave de acceso"
           autoFocus
           className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-2"
-          style={{ borderColor: error ? "#C23B3B" : "#D1D5DB" }}
+          style={ { borderColor: error ? "#C23B3B" : "#D1D5DB" } }
         />
         {error && (
-          <p className="text-xs mb-2" style={{ color: "#C23B3B" }}>
+          <p className="text-xs mb-2" style={ { color: "#C23B3B" } }>
             Clave incorrecta.
           </p>
         )}
-        <button type="submit" className="w-full text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+        <button type="submit" className="w-full text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
           Ingresar
         </button>
       </form>
@@ -1371,7 +1371,7 @@ function LineaProyeccion({ aunEsTemprano, texto, variant }) {
   if (!aunEsTemprano && texto == null) return null;
   const color = variant === "claro" ? "rgba(255,255,255,0.7)" : "#9CA3AF";
   return (
-    <div className="text-[11px] mt-2" style={{ color }}>
+    <div className="text-[11px] mt-2" style={ { color } }>
       {aunEsTemprano ? "↳ Aún es temprano para proyectar" : `↳ Proyección a fin de ciclo: ${texto}`}
     </div>
   );
@@ -1420,16 +1420,16 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
       <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-lg">🧮 Simulador de metas</h3>
-          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+          <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
-        <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>
+        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
           Agregá planes hipotéticos (todavía no vendidos) para ver en cuánto quedarían Clientes, Ingreso, ARPU y tu comisión estimada si los sumaras a lo que ya tenés este período.
         </p>
 
-        <div className="rounded-md p-3 mb-4" style={{ background: "#F4F6FA" }}>
-          <div className="text-xs" style={{ color: "#6B7280" }}>ARPU actual de este período</div>
-          <div className="text-xl font-mono font-bold" style={{ color: "#001E62" }}>
-            {fmtMonto(arpuActual)} <span className="text-xs font-normal" style={{ color: "#9CA3AF" }}>({clientesActuales} clientes)</span>
+        <div className="rounded-md p-3 mb-4" style={ { background: "#F4F6FA" } }>
+          <div className="text-xs" style={ { color: "#6B7280" } }>ARPU actual de este período</div>
+          <div className="text-xl font-mono font-bold" style={ { color: "#001E62" } }>
+            {fmtMonto(arpuActual)} <span className="text-xs font-normal" style={ { color: "#9CA3AF" } }>({clientesActuales} clientes)</span>
           </div>
         </div>
 
@@ -1442,12 +1442,12 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
                 value={f.cantidad}
                 onChange={(e) => actualizarFila(f.id, "cantidad", e.target.value)}
                 className="w-16 px-2 py-1.5 rounded-md border text-sm outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
                 placeholder="Cant."
               />
-              <span className="text-xs" style={{ color: "#9CA3AF" }}>planes de</span>
+              <span className="text-xs" style={ { color: "#9CA3AF" } }>planes de</span>
               <div className="relative flex-1">
-                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs" style={{ color: "#9CA3AF" }}>$</span>
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-xs" style={ { color: "#9CA3AF" } }>$</span>
                 <input
                   type="number"
                   min="0"
@@ -1455,12 +1455,12 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
                   value={f.precio}
                   onChange={(e) => actualizarFila(f.id, "precio", e.target.value)}
                   className="w-full pl-5 pr-2 py-1.5 rounded-md border text-sm outline-none"
-                  style={{ borderColor: "#D1D5DB" }}
+                  style={ { borderColor: "#D1D5DB" } }
                   placeholder="0.00"
                 />
               </div>
               {filas.length > 1 && (
-                <button onClick={() => quitarFila(f.id)} className="text-sm px-1" style={{ color: "#C23B3B" }} title="Quitar">
+                <button onClick={() => quitarFila(f.id)} className="text-sm px-1" style={ { color: "#C23B3B" } } title="Quitar">
                   ✕
                 </button>
               )}
@@ -1472,13 +1472,13 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
           type="button"
           onClick={agregarFila}
           className="text-xs font-medium mb-4"
-          style={{ color: "#0072CE" }}
+          style={ { color: "#0072CE" } }
         >
           + Agregar otro plan hipotético
         </button>
 
-        <div className="rounded-md p-3 mb-2" style={{ background: "#E3EDFA" }}>
-          <div className="text-xs" style={{ color: "#374151" }}>
+        <div className="rounded-md p-3 mb-2" style={ { background: "#E3EDFA" } }>
+          <div className="text-xs" style={ { color: "#374151" } }>
             Sumando {clientesNuevos} cliente{clientesNuevos !== 1 ? "s" : ""} hipotético{clientesNuevos !== 1 ? "s" : ""} ({fmtMonto(dineroNuevo)}):
           </div>
         </div>
@@ -1520,13 +1520,13 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
 function ResultadoSim({ label, actual, simulado, meta, formato }) {
   const pct = meta ? Math.round((simulado / meta) * 100) : null;
   return (
-    <div className="rounded-md p-2.5" style={{ background: "#F4F6FA" }}>
-      <div className="text-[11px]" style={{ color: "#6B7280" }}>{label}</div>
-      <div className="text-base font-mono font-bold" style={{ color: "#001E62" }}>{formato(simulado)}</div>
-      <div className="text-[10px]" style={{ color: "#9CA3AF" }}>
+    <div className="rounded-md p-2.5" style={ { background: "#F4F6FA" } }>
+      <div className="text-[11px]" style={ { color: "#6B7280" } }>{label}</div>
+      <div className="text-base font-mono font-bold" style={ { color: "#001E62" } }>{formato(simulado)}</div>
+      <div className="text-[10px]" style={ { color: "#9CA3AF" } }>
         antes {formato(actual)}
         {pct !== null && (
-          <span className="ml-1 font-semibold" style={{ color: pct >= 100 ? "#2F9E6E" : "#0072CE" }}>· {pct}%</span>
+          <span className="ml-1 font-semibold" style={ { color: pct >= 100 ? "#2F9E6E" : "#0072CE" } }>· {pct}%</span>
         )}
       </div>
     </div>
@@ -1539,8 +1539,8 @@ function MiniStat({ valor, label, color, onClick }) {
       onClick={onClick}
       className="bg-white rounded-lg border border-gray-200 shadow-sm px-3 py-3 text-left hover:border-gray-300 transition-colors"
     >
-      <div className="text-xl font-mono font-semibold" style={{ color }}>{valor}</div>
-      <div className="text-[11px] mt-0.5 leading-tight" style={{ color: "#6B7280" }}>{label}</div>
+      <div className="text-xl font-mono font-semibold" style={ { color } }>{valor}</div>
+      <div className="text-[11px] mt-0.5 leading-tight" style={ { color: "#6B7280" } }>{label}</div>
     </button>
   );
 }
@@ -1753,12 +1753,12 @@ Early: `;
           <button
             onClick={generarReporteDiario}
             className="text-sm font-medium px-4 py-2 rounded-md border"
-            style={{ borderColor: "#001E62", color: "#001E62" }}
+            style={ { borderColor: "#001E62", color: "#001E62" } }
             title="Copia el reporte de la gestión de hoy"
           >
             {copiadoReporte ? "Copiado ✓" : "📋 REPORTE DIARIO"}
           </button>
-          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
             + Nuevo cliente
           </button>
         </div>
@@ -1768,18 +1768,18 @@ Early: `;
         <button
           onClick={() => setPeriodoVisto((p) => sumarMesClave(p, -1))}
           className="text-sm font-medium px-3 py-1.5 rounded-md border"
-          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+          style={ { borderColor: "#D1D5DB", color: "#374151" } }
         >
           ← Período anterior
         </button>
-        <span className="text-sm font-semibold px-2" style={{ color: "#001E62" }}>
+        <span className="text-sm font-semibold px-2" style={ { color: "#001E62" } }>
           Comisión de {mesLabel(periodoVisto)}
         </span>
         {!esActual && (
           <button
             onClick={() => setPeriodoVisto((p) => sumarMesClave(p, 1))}
             className="text-sm font-medium px-3 py-1.5 rounded-md border"
-            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+            style={ { borderColor: "#D1D5DB", color: "#374151" } }
           >
             Período siguiente →
           </button>
@@ -1788,18 +1788,18 @@ Early: `;
           <button
             onClick={() => setPeriodoVisto(periodoActual)}
             className="text-sm font-medium px-3 py-1.5 rounded-md"
-            style={{ color: "#0072CE" }}
+            style={ { color: "#0072CE" } }
           >
             Volver al período actual
           </button>
         )}
       </div>
 
-      <div className="rounded-lg p-5 mb-6 text-white" style={{ background: "linear-gradient(135deg, #001E62, #0072CE)" }}>
+      <div className="rounded-lg p-5 mb-6 text-white" style={ { background: "linear-gradient(135deg, #001E62, #0072CE)" } }>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <h2 className="font-semibold text-sm opacity-90">Comisión estimada de {mesLabel(periodoVisto)}</h2>
           {comision.aplicaBono && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: "rgba(255,255,255,0.2)" }}>
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
               + bono FULL TIGO aplicado
             </span>
           )}
@@ -1826,13 +1826,13 @@ Early: `;
               type="button"
               onClick={() => onVerClientes({ periodo: periodoVisto })}
               className="font-semibold text-sm underline-offset-2 hover:underline"
-              style={{ color: "#001E62" }}
+              style={ { color: "#001E62" } }
               title="Ver clientes de este período"
             >
               CLIENTES →
             </button>
             <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
+              <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
               <input
                 type="number"
                 min="0"
@@ -1840,30 +1840,30 @@ Early: `;
                 onChange={(e) => onActualizarMeta(periodoVisto, "clientes", e.target.value)}
                 placeholder="0"
                 className="w-16 px-2 py-1 rounded-md border text-sm outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               />
             </div>
           </div>
           {metaClientes ? (
             <>
-              <p className="text-sm mb-2" style={{ color: "#374151" }}>
+              <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientes}</span> ·{" "}
-                <span className="font-semibold" style={{ color: progresoClientesPct >= 100 ? "#2F9E6E" : "#0072CE" }}>
+                <span className="font-semibold" style={ { color: progresoClientesPct >= 100 ? "#2F9E6E" : "#0072CE" } }>
                   {progresoClientesPct}%
                 </span>
               </p>
-              <div className="w-full h-2 rounded-full" style={{ background: "#E3EDFA" }}>
+              <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
                 <div
                   className="h-2 rounded-full"
-                  style={{
+                  style={ {
                     width: `${Math.min(100, progresoClientesPct)}%`,
                     background: clientesDelPeriodo.length >= metaClientes ? "#2F9E6E" : "#0072CE",
-                  }}
+                  } }
                 />
               </div>
             </>
           ) : (
-            <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de clientes de este período.</p>
+            <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes de este período.</p>
           )}
           <LineaProyeccion
             aunEsTemprano={aunEsTemprano}
@@ -1879,7 +1879,7 @@ Early: `;
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold text-sm">INGRESO $</h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
+              <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
               <input
                 type="number"
                 min="0"
@@ -1887,30 +1887,30 @@ Early: `;
                 onChange={(e) => onActualizarMeta(periodoVisto, "dinero", e.target.value)}
                 placeholder="0"
                 className="w-20 px-2 py-1 rounded-md border text-sm outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               />
             </div>
           </div>
           {metaDinero ? (
             <>
-              <p className="text-sm mb-2" style={{ color: "#374151" }}>
+              <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{fmtMonto(dineroDelPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
-                <span className="font-semibold" style={{ color: progresoDineroPct >= 100 ? "#2F9E6E" : "#0072CE" }}>
+                <span className="font-semibold" style={ { color: progresoDineroPct >= 100 ? "#2F9E6E" : "#0072CE" } }>
                   {progresoDineroPct}%
                 </span>
               </p>
-              <div className="w-full h-2 rounded-full" style={{ background: "#E3EDFA" }}>
+              <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
                 <div
                   className="h-2 rounded-full"
-                  style={{
+                  style={ {
                     width: `${Math.min(100, progresoDineroPct)}%`,
                     background: dineroDelPeriodo >= metaDinero ? "#2F9E6E" : "#0072CE",
-                  }}
+                  } }
                 />
               </div>
             </>
           ) : (
-            <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de dinero de este período.</p>
+            <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de dinero de este período.</p>
           )}
           <LineaProyeccion
             aunEsTemprano={aunEsTemprano}
@@ -1926,7 +1926,7 @@ Early: `;
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <h2 className="font-semibold text-sm">ARPU</h2>
             <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: "#6B7280" }}>Meta:</span>
+              <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
               <input
                 type="number"
                 min="0"
@@ -1935,41 +1935,41 @@ Early: `;
                 onChange={(e) => onActualizarMeta(periodoVisto, "arpu", e.target.value)}
                 placeholder="0"
                 className="w-20 px-2 py-1 rounded-md border text-sm outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               />
             </div>
           </div>
           {metaArpu ? (
             <>
-              <p className="text-sm mb-2" style={{ color: "#374151" }}>
+              <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{fmtMonto(arpuPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaArpu)}</span> ·{" "}
-                <span className="font-semibold" style={{ color: progresoArpuPct >= 100 ? "#2F9E6E" : "#0072CE" }}>
+                <span className="font-semibold" style={ { color: progresoArpuPct >= 100 ? "#2F9E6E" : "#0072CE" } }>
                   {progresoArpuPct}%
                 </span>
               </p>
-              <div className="w-full h-2 rounded-full" style={{ background: "#E3EDFA" }}>
+              <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
                 <div
                   className="h-2 rounded-full"
-                  style={{
+                  style={ {
                     width: `${Math.min(100, progresoArpuPct)}%`,
                     background: arpuPeriodo >= metaArpu ? "#2F9E6E" : "#0072CE",
-                  }}
+                  } }
                 />
               </div>
             </>
           ) : (
-            <p className="text-xs" style={{ color: "#9CA3AF" }}>Cargá la meta de ARPU de este período.</p>
+            <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de ARPU de este período.</p>
           )}
           <button
             type="button"
             onClick={() => setMostrarSimuladorArpu(true)}
             className="text-[11px] mt-2 font-medium underline-offset-2 hover:underline"
-            style={{ color: "#0072CE" }}
+            style={ { color: "#0072CE" } }
           >
             🧮 Simular ARPU con planes hipotéticos →
           </button>
           {recomendacionArpu && (recomendacionArpu.alcanzado || recomendacionArpu.doble || recomendacionArpu.single) && (
-            <div className="text-[11px] mt-1 leading-relaxed" style={{ color: recomendacionArpu.alcanzado ? "#2F9E6E" : "#9CA3AF" }}>
+            <div className="text-[11px] mt-1 leading-relaxed" style={ { color: recomendacionArpu.alcanzado ? "#2F9E6E" : "#9CA3AF" } }>
               {recomendacionArpu.alcanzado
                 ? "✓ Ya alcanzaste el 100% de ARPU"
                 : [
@@ -2024,7 +2024,7 @@ Early: `;
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
-        <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>Tocá o pasá el mouse sobre una barra para ver el detalle y la comparación.</p>
+        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>Tocá o pasá el mouse sobre una barra para ver el detalle y la comparación.</p>
 
         <HistorialComisionChart
           data={historialComisiones}
@@ -2034,25 +2034,25 @@ Early: `;
         />
 
         {detalleMostrado && (
-          <div className="rounded-md p-3 mt-4" style={{ background: "#F4F6FA" }}>
+          <div className="rounded-md p-3 mt-4" style={ { background: "#F4F6FA" } }>
             <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
-              <span className="text-sm font-semibold" style={{ color: "#001E62" }}>
+              <span className="text-sm font-semibold" style={ { color: "#001E62" } }>
                 {mesLabel(detalleMostrado.key)}{detalleMostrado.key === periodoActual ? " (actual)" : ""}
               </span>
-              <span className="text-lg font-mono font-bold" style={{ color: "#001E62" }}>{fmtMonto(detalleMostrado.total)}</span>
+              <span className="text-lg font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(detalleMostrado.total)}</span>
             </div>
-            <div className="text-xs" style={{ color: "#6B7280" }}>
+            <div className="text-xs" style={ { color: "#6B7280" } }>
               {detalleMostrado.completo
                 ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
                 : "Faltan metas cargadas en este período para calcular la comisión completa."}
             </div>
-            <div className="text-xs mt-1" style={{ color: "#9CA3AF" }}>
+            <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>
               {detalleMostrado.cantidad} clientes · {fmtMonto(detalleMostrado.dinero)} en ingresos · ARPU {fmtMonto(detalleMostrado.arpu)}
             </div>
             {detalleAnterior && (
               <div
                 className="text-xs mt-2 font-semibold flex items-center gap-1"
-                style={{ color: detalleMostrado.total >= detalleAnterior.total ? "#2F9E6E" : "#C23B3B" }}
+                style={ { color: detalleMostrado.total >= detalleAnterior.total ? "#2F9E6E" : "#C23B3B" } }
               >
                 <span>{detalleMostrado.total >= detalleAnterior.total ? "▲" : "▼"}</span>
                 <span>
@@ -2086,7 +2086,7 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
   const max = Math.max(1, ...data.map((d) => d.total));
   const ALTURA_MAX = 110;
   return (
-    <div className="flex items-end gap-3 sm:gap-4" style={{ height: ALTURA_MAX + 44 }}>
+    <div className="flex items-end gap-3 sm:gap-4" style={ { height: ALTURA_MAX + 44 } }>
       {data.map((d) => {
         const alturaPx = Math.max(6, Math.round((d.total / max) * ALTURA_MAX));
         const activo = d.key === periodoActivo;
@@ -2101,14 +2101,14 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
             onBlur={() => onHover(null)}
             className="flex-1 flex flex-col items-center justify-end gap-1.5"
           >
-            <span className="text-[11px] font-mono font-semibold whitespace-nowrap" style={{ color: activo ? "#001E62" : "#9CA3AF" }}>
+            <span className="text-[11px] font-mono font-semibold whitespace-nowrap" style={ { color: activo ? "#001E62" : "#9CA3AF" } }>
               {fmtMonto(d.total)}
             </span>
             <div
               className="w-full rounded-t-md transition-all"
-              style={{ height: alturaPx, background: activo ? "#001E62" : "#C7D2E8" }}
+              style={ { height: alturaPx, background: activo ? "#001E62" : "#C7D2E8" } }
             />
-            <span className="text-[11px] font-medium" style={{ color: activo ? "#001E62" : "#6B7280" }}>
+            <span className="text-[11px] font-medium" style={ { color: activo ? "#001E62" : "#6B7280" } }>
               {mesLabel(d.key).split(" ")[0].slice(0, 3).toUpperCase()}
             </span>
           </button>
@@ -2231,20 +2231,20 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
   return (
     <div>
       <h1 className="text-2xl font-semibold mb-1">Alertas de hoy</h1>
-      <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
+      <p className="text-sm mb-4" style={ { color: "#6B7280" } }>
         Una alerta principal por cliente — la más urgente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
       </p>
 
       {colaEnvio && (
         <div
           className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap"
-          style={{ background: "#001E62" }}
+          style={ { background: "#001E62" } }
         >
           <div>
             <p className="text-sm font-semibold text-white">
               Enviando {indiceEnvio + 1} de {colaEnvio.length}: {colaEnvio[indiceEnvio].cliente.nombre}
             </p>
-            <p className="text-xs" style={{ color: "#B9C4E0" }}>
+            <p className="text-xs" style={ { color: "#B9C4E0" } }>
               Se abrió WhatsApp con el mensaje. ¿Lo enviaste?
             </p>
           </div>
@@ -2252,7 +2252,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
             <button
               onClick={() => avanzarEnvio(true)}
               className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-              style={{ background: "#2F9E6E" }}
+              style={ { background: "#2F9E6E" } }
             >
               Sí, siguiente
             </button>
@@ -2275,15 +2275,15 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
       {resumenEnvio && (
         <div
           className="flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap"
-          style={{ background: "#E9F7EF", border: "1px solid #BEE8CE" }}
+          style={ { background: "#E9F7EF", border: "1px solid #BEE8CE" } }
         >
-          <p className="text-sm" style={{ color: "#166534" }}>
+          <p className="text-sm" style={ { color: "#166534" } }>
             ✅ Envío en cadena terminado: <span className="font-semibold">{resumenEnvio.enviados} de {resumenEnvio.total}</span> mensajes marcados como enviados.
           </p>
           <button
             onClick={() => setResumenEnvio(null)}
             className="text-xs font-medium"
-            style={{ color: "#166534" }}
+            style={ { color: "#166534" } }
           >
             Cerrar
           </button>
@@ -2299,13 +2299,13 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
               onChange={(e) => setSearch(e.target.value)}
               placeholder="Buscar por nombre, teléfono o N° de suscriptor…"
               className="w-full max-w-sm px-3 py-2 rounded-md border text-sm outline-none"
-              style={{ borderColor: "#D1D5DB" }}
+              style={ { borderColor: "#D1D5DB" } }
             />
             {!colaEnvio && alertasFiltradas.length > 0 && (
               <button
                 onClick={() => iniciarEnvioEnCadena(alertasFiltradas)}
                 className="text-sm font-medium px-3 py-2 rounded-md text-white whitespace-nowrap"
-                style={{ background: "#25D366" }}
+                style={ { background: "#25D366" } }
               >
                 📲 Empezar envío en cadena ({alertasFiltradas.length})
               </button>
@@ -2315,11 +2315,11 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
             <button
               onClick={() => setFiltroTipo("")}
               className="text-xs font-medium px-3 py-1.5 rounded-full border"
-              style={{
+              style={ {
                 borderColor: filtroTipo === "" ? "#001E62" : "#D1D5DB",
                 background: filtroTipo === "" ? "#001E62" : "white",
                 color: filtroTipo === "" ? "white" : "#374151",
-              }}
+              } }
             >
               Todas ({alertasHoy.length})
             </button>
@@ -2329,11 +2329,11 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                 onClick={() => setFiltroTipo((t) => (t === m.type ? "" : m.type))}
                 disabled={!conteosPorTipo[m.type]}
                 className="text-xs font-medium px-3 py-1.5 rounded-full border disabled:opacity-30"
-                style={{
+                style={ {
                   borderColor: filtroTipo === m.type ? m.color : "#D1D5DB",
                   background: filtroTipo === m.type ? m.bg : "white",
                   color: filtroTipo === m.type ? m.color : "#374151",
-                }}
+                } }
                 title={m.label}
               >
                 {m.tag} ({conteosPorTipo[m.type] || 0})
@@ -2345,17 +2345,17 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
       {alertasHoy.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={{ color: "#6B7280" }}>No tenés alertas pendientes en este momento.</p>
+          <p className="text-sm" style={ { color: "#6B7280" } }>No tenés alertas pendientes en este momento.</p>
         </div>
       ) : alertasFiltradas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={{ color: "#6B7280" }}>No hay alertas que coincidan con la búsqueda o el filtro.</p>
+          <p className="text-sm" style={ { color: "#6B7280" } }>No hay alertas que coincidan con la búsqueda o el filtro.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-6">
           {gruposConDatos.map((grupo) => (
             <div key={grupo.type}>
-              <h2 className="text-xs font-semibold mb-2" style={{ color: "#6B7280" }}>
+              <h2 className="text-xs font-semibold mb-2" style={ { color: "#6B7280" } }>
                 {grupo.titulo} ({grupo.items.length})
               </h2>
               <div className="flex flex-col gap-3">
@@ -2363,16 +2363,16 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                   const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
                   return (
                     <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                      <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={{ borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" }}>
+                      <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={ { borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" } }>
                         <div>
                           <button
                             onClick={() => onVerDetalle(cliente)}
                             className="font-semibold text-sm text-left hover:underline"
-                            style={{ color: "#001E62" }}
+                            style={ { color: "#001E62" } }
                           >
                             {cliente.nombre}
                           </button>
-                          <div className="text-xs" style={{ color: "#6B7280" }}>
+                          <div className="text-xs" style={ { color: "#6B7280" } }>
                             {cliente.telefono} · {cliente.plan} · {ORDINAL[factura.n]} factura
                           </div>
                         </div>
@@ -2380,7 +2380,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                           <button
                             onClick={() => onCopiarSuscriptor(cliente)}
                             className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                            style={ { borderColor: "#D1D5DB", color: "#374151" } }
                           >
                             {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
                           </button>
@@ -2389,9 +2389,9 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                               if (window.confirm(`¿Confirmás que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
                                 onPagoRealizado(cliente.id, factura.n);
                               }
-                            }}
+                            } }
                             className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                            style={{ background: "#2F9E6E" }}
+                            style={ { background: "#2F9E6E" } }
                           >
                             Pago realizado
                           </button>
@@ -2400,22 +2400,22 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                       <div className="p-4">
                         <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: milestone.bg, color: milestone.color }}>
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: milestone.bg, color: milestone.color } }>
                               {milestone.tag}
                             </span>
-                            <span className="text-xs" style={{ color: "#6B7280" }}>{milestone.label}</span>
-                            <span className="text-xs font-medium" style={{ color: milestone.color }}>{diasTexto(milestone.triggerDate)}</span>
+                            <span className="text-xs" style={ { color: "#6B7280" } }>{milestone.label}</span>
+                            <span className="text-xs font-medium" style={ { color: milestone.color } }>{diasTexto(milestone.triggerDate)}</span>
                           </div>
                           <button
                             onClick={() => toggleExpandido(cliente.id)}
                             className="text-xs font-medium"
-                            style={{ color: "#0072CE" }}
+                            style={ { color: "#0072CE" } }
                           >
                             {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
                           </button>
                         </div>
                         {expandidos.has(cliente.id) && (
-                          <div className="text-sm rounded-md p-3 mb-3" style={{ background: "#F4F6FA", color: "#374151" }}>
+                          <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F4F6FA", color: "#374151" } }>
                             {milestone.texto}
                           </div>
                         )}
@@ -2425,7 +2425,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                            style={{ background: "#25D366" }}
+                            style={ { background: "#25D366" } }
                           >
                             Enviar por WhatsApp
                           </a>
@@ -2434,20 +2434,20 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                               if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
                                 onMarcar(cliente.id, milestone.key);
                               }
-                            }}
+                            } }
                             className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                            style={ { borderColor: "#D1D5DB", color: "#374151" } }
                           >
                             Marcar como enviado
                           </button>
                         </div>
 
                         {extras.length > 0 && (
-                          <div className="mt-3 pt-3" style={{ borderTop: "1px dashed #E5E7EB" }}>
+                          <div className="mt-3 pt-3" style={ { borderTop: "1px dashed #E5E7EB" } }>
                             <button
                               onClick={() => toggleExtras(cliente.id)}
                               className="text-xs font-medium"
-                              style={{ color: "#B8791F" }}
+                              style={ { color: "#B8791F" } }
                             >
                               {extrasAbiertos.has(cliente.id)
                                 ? "Ocultar otras alertas de este cliente"
@@ -2459,23 +2459,23 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                                   <div
                                     key={ex.milestone.key}
                                     className="flex items-center justify-between gap-2 rounded-md border p-2 flex-wrap"
-                                    style={{ borderColor: "#E5E7EB", background: "#FAFAF9" }}
+                                    style={ { borderColor: "#E5E7EB", background: "#FAFAF9" } }
                                   >
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: ex.milestone.bg, color: ex.milestone.color }}>
+                                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: ex.milestone.bg, color: ex.milestone.color } }>
                                         {ex.milestone.tag}
                                       </span>
-                                      <span className="text-xs" style={{ color: "#6B7280" }}>{ORDINAL[ex.factura.n]} factura · {ex.milestone.label}</span>
-                                      <span className="text-xs font-medium" style={{ color: ex.milestone.color }}>{diasTexto(ex.milestone.triggerDate)}</span>
+                                      <span className="text-xs" style={ { color: "#6B7280" } }>{ORDINAL[ex.factura.n]} factura · {ex.milestone.label}</span>
+                                      <span className="text-xs font-medium" style={ { color: ex.milestone.color } }>{diasTexto(ex.milestone.triggerDate)}</span>
                                     </div>
                                     <button
                                       onClick={() => {
                                         if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
                                           onMarcar(ex.cliente.id, ex.milestone.key);
                                         }
-                                      }}
+                                      } }
                                       className="text-xs font-medium px-2 py-1 rounded-md border"
-                                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                                      style={ { borderColor: "#D1D5DB", color: "#374151" } }
                                     >
                                       Marcar como enviado
                                     </button>
@@ -2513,7 +2513,7 @@ function ultimosMeses(count) {
 function FiltroCampo({ label, children }) {
   return (
     <div className="flex flex-col gap-1 min-w-0">
-      <span className="text-xs font-medium" style={{ color: "#6B7280" }}>{label}</span>
+      <span className="text-xs font-medium" style={ { color: "#6B7280" } }>{label}</span>
       {children}
     </div>
   );
@@ -2525,16 +2525,16 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
       <div className="bg-white rounded-lg p-6 max-w-sm w-full max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-1">
           <h3 className="font-semibold text-lg">🧱 Columnas</h3>
-          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+          <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
-        <p className="text-xs mb-4" style={{ color: "#9CA3AF" }}>
+        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
           Elegí qué columnas ver y usá las flechas para moverlas (también podés arrastrar los encabezados en la tabla).
         </p>
         <div className="flex flex-col gap-1.5">
           {orden.map((key, i) => {
             const col = COLUMNAS_CLIENTES.find((c) => c.key === key);
             return (
-              <div key={key} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md" style={{ background: "#F4F6FA" }}>
+              <div key={key} className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-md" style={ { background: "#F4F6FA" } }>
                 <label className="flex items-center gap-2 text-sm flex-1 min-w-0">
                   <input type="checkbox" checked={!!visibles[key]} onChange={() => onToggle(key)} />
                   <span className="truncate">{col.label}</span>
@@ -2544,7 +2544,7 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
                     onClick={() => onMover(key, -1)}
                     disabled={i === 0}
                     className="text-xs px-1.5 py-0.5 rounded disabled:opacity-30"
-                    style={{ color: "#6B7280" }}
+                    style={ { color: "#6B7280" } }
                     title="Mover arriba"
                   >
                     ↑
@@ -2553,7 +2553,7 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
                     onClick={() => onMover(key, 1)}
                     disabled={i === orden.length - 1}
                     className="text-xs px-1.5 py-0.5 rounded disabled:opacity-30"
-                    style={{ color: "#6B7280" }}
+                    style={ { color: "#6B7280" } }
                     title="Mover abajo"
                   >
                     ↓
@@ -2563,7 +2563,7 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
             );
           })}
         </div>
-        <p className="text-[11px] mt-3" style={{ color: "#9CA3AF" }}>La columna de Acciones siempre queda al final.</p>
+        <p className="text-[11px] mt-3" style={ { color: "#9CA3AF" } }>La columna de Acciones siempre queda al final.</p>
       </div>
     </div>
   );
@@ -2659,7 +2659,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               onClick={() => copiarCelda(c.numeroSuscriptor, c.id, "sub")}
               title="Copiar número de suscriptor"
               className="text-xs"
-              style={{ color: copiedCell === c.id + "sub" ? "#2F9E6E" : "#9CA3AF" }}
+              style={ { color: copiedCell === c.id + "sub" ? "#2F9E6E" : "#9CA3AF" } }
             >
               {copiedCell === c.id + "sub" ? "✓" : "📋"}
             </button>
@@ -2672,17 +2672,17 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               onClick={() => onVerDetalle(c)}
               title={c.nombre}
               className="font-medium text-left hover:underline truncate block w-full"
-              style={{ color: "#001E62" }}
+              style={ { color: "#001E62" } }
             >
               {c.nombre}
             </button>
-            <div className="text-xs font-mono flex items-center gap-1.5" style={{ color: "#9CA3AF" }}>
+            <div className="text-xs font-mono flex items-center gap-1.5" style={ { color: "#9CA3AF" } }>
               <span>{c.telefono}</span>
               <button
                 onClick={() => copiarCelda(c.telefono, c.id, "tel")}
                 title="Copiar teléfono"
                 className="text-xs"
-                style={{ color: copiedCell === c.id + "tel" ? "#2F9E6E" : "#9CA3AF" }}
+                style={ { color: copiedCell === c.id + "tel" ? "#2F9E6E" : "#9CA3AF" } }
               >
                 {copiedCell === c.id + "tel" ? "✓" : "📋"}
               </button>
@@ -2699,7 +2699,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         return c.fechaInstalacion ? (
           <span className="font-mono text-xs">{fmtFecha(c.fechaInstalacion)}</span>
         ) : (
-          <span className="text-xs font-bold px-2 py-1 rounded-full" style={{ background: "#F59E0B", color: "white" }}>
+          <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#F59E0B", color: "white" } }>
             ⚠️ PENDIENTE POR INSTALAR
           </span>
         );
@@ -2707,13 +2707,13 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         return <span className="font-mono text-xs">{c.creadoEn ? fmtFecha(c.creadoEn.slice(0, 10)) : "—"}</span>;
       case "periodo": {
         const p = periodoComision(c.fechaInstalacion);
-        return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={{ color: "#9CA3AF" }}>—</span>;
+        return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>;
       }
       case "facturas": {
         const generadas = c.facturas.filter((f) => daysFromToday(f.generada) <= 0);
         return generadas.length > 0 ? (
           <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{generadas.length}/4</span>
+            <span className="text-xs font-mono" style={ { color: "#9CA3AF" } }>{generadas.length}/4</span>
             <div className="flex items-center gap-1">
               {generadas.map((f) => (
                 <FacturaDot key={f.n} cliente={c} n={f.n} onCambiar={onActualizarEstadoFactura} />
@@ -2721,7 +2721,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             </div>
           </div>
         ) : (
-          <span className="text-xs" style={{ color: "#9CA3AF" }}>—</span>
+          <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>
         );
       }
       case "estado":
@@ -2730,7 +2730,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         return c.observaciones && c.observaciones.trim() ? (
           <span title={c.observaciones}>📝</span>
         ) : (
-          <span style={{ color: "#D1D5DB" }}>—</span>
+          <span style={ { color: "#D1D5DB" } }>—</span>
         );
       default:
         return null;
@@ -2787,39 +2787,39 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           <button
             onClick={() => setPapeleraAbierta(true)}
             className="text-sm font-medium px-3 py-2 rounded-md border flex items-center gap-1.5"
-            style={{ borderColor: "#D1D5DB", color: "#374151" }}
+            style={ { borderColor: "#D1D5DB", color: "#374151" } }
             title="Ver clientes eliminados"
           >
             🗑️ Papelera{eliminados.length > 0 ? ` (${eliminados.length})` : ""}
           </button>
-          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
             + Nuevo cliente
           </button>
         </div>
       </div>
       <div className="flex items-center gap-4 mb-4 flex-wrap">
         <p className="text-sm">
-          <span className="font-semibold" style={{ color: "#2F9E6E" }}>{statsClientes.instalados}</span>{" "}
-          <span style={{ color: "#6B7280" }}>instalados</span>
+          <span className="font-semibold" style={ { color: "#2F9E6E" } }>{statsClientes.instalados}</span>{" "}
+          <span style={ { color: "#6B7280" } }>instalados</span>
         </p>
         <p className="text-sm">
-          <span className="font-semibold" style={{ color: "#F59E0B" }}>{statsClientes.pendientes}</span>{" "}
-          <span style={{ color: "#6B7280" }}>pendientes de instalación</span>
+          <span className="font-semibold" style={ { color: "#F59E0B" } }>{statsClientes.pendientes}</span>{" "}
+          <span style={ { color: "#6B7280" } }>pendientes de instalación</span>
         </p>
         <p className="text-sm">
-          <span className="font-semibold" style={{ color: "#001E62" }}>{statsClientes.total}</span>{" "}
-          <span style={{ color: "#6B7280" }}>clientes en total</span>
+          <span className="font-semibold" style={ { color: "#001E62" } }>{statsClientes.total}</span>{" "}
+          <span style={ { color: "#6B7280" } }>clientes en total</span>
         </p>
       </div>
 
       {modoVerTodos && (
-        <div className="flex items-center justify-between gap-2 rounded-md p-2.5 mb-3" style={{ background: "#E3EDFA" }}>
-          <span className="text-xs font-medium" style={{ color: "#0072CE" }}>Mostrando resultados de todos los meses.</span>
+        <div className="flex items-center justify-between gap-2 rounded-md p-2.5 mb-3" style={ { background: "#E3EDFA" } }>
+          <span className="text-xs font-medium" style={ { color: "#0072CE" } }>Mostrando resultados de todos los meses.</span>
           <button
             type="button"
             onClick={() => setModoVerTodos(false)}
             className="text-xs font-medium"
-            style={{ color: "#0072CE" }}
+            style={ { color: "#0072CE" } }
           >
             Volver a vista por mes
           </button>
@@ -2830,14 +2830,14 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         {meses.map((m, i) => (
           <button
             key={m.key}
-            onClick={() => { setMesActivo(m.key); setModoVerTodos(false); }}
+            onClick={() => { setMesActivo(m.key); setModoVerTodos(false); } }
             disabled={rangoActivo || modoVerTodos}
             className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
-            style={{
+            style={ {
               borderColor: mesActivo === m.key ? "#001E62" : "#D1D5DB",
               background: mesActivo === m.key ? "#001E62" : "white",
               color: mesActivo === m.key ? "white" : "#374151",
-            }}
+            } }
           >
             {m.label.toUpperCase()}{i === 0 ? " (actual)" : ""}
           </button>
@@ -2850,16 +2850,16 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Buscar en todos los meses por nombre, teléfono, suscriptor o plan…"
           className="w-full px-3 py-2 pr-9 rounded-md border text-sm outline-none"
-          style={{ borderColor: "#D1D5DB" }}
+          style={ { borderColor: "#D1D5DB" } }
         />
         {search && (
           <button
             onClick={() => setSearch("")}
             className="absolute top-1/2 -translate-y-1/2 text-sm font-medium px-1.5"
-            style={{
+            style={ {
               color: "#9CA3AF",
               left: `min(calc(0.75rem + ${search.length}ch + 0.3rem), calc(100% - 2.1rem))`,
-            }}
+            } }
             title="Limpiar búsqueda"
           >
             ✕
@@ -2872,11 +2872,11 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           type="button"
           onClick={() => setFiltrosAbiertos((v) => !v)}
           className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
-          style={{
+          style={ {
             borderColor: filtrosActivos > 0 ? "#0072CE" : "#D1D5DB",
             color: filtrosActivos > 0 ? "#0072CE" : "#374151",
             background: filtrosActivos > 0 ? "#E3EDFA" : "white",
-          }}
+          } }
         >
           🔍 Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
         </button>
@@ -2884,7 +2884,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           type="button"
           onClick={() => setMostrarSelectorColumnas(true)}
           className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
-          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+          style={ { borderColor: "#D1D5DB", color: "#374151" } }
         >
           🧱 Columnas ({columnasAMostrar.length})
         </button>
@@ -2892,35 +2892,35 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
 
       {filtrosAbiertos && (
         <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
-          <div className="rounded-md p-3" style={{ background: rangoActivo ? "#E3EDFA" : "#F4F6FA" }}>
+          <div className="rounded-md p-3" style={ { background: rangoActivo ? "#E3EDFA" : "#F4F6FA" } }>
             <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
-              <span className="text-xs font-semibold" style={{ color: "#374151" }}>Rango de fechas (instalación)</span>
+              <span className="text-xs font-semibold" style={ { color: "#374151" } }>Rango de fechas (instalación)</span>
               {rangoActivo && (
                 <button
                   type="button"
-                  onClick={() => { setFechaDesde(""); setFechaHasta(""); }}
+                  onClick={() => { setFechaDesde(""); setFechaHasta(""); } }
                   className="text-xs font-medium"
-                  style={{ color: "#0072CE" }}
+                  style={ { color: "#0072CE" } }
                 >
                   Limpiar rango
                 </button>
               )}
             </div>
             <div className="flex items-center gap-4 flex-wrap">
-              <label className="flex items-center gap-1.5 text-xs" style={{ color: "#6B7280" }}>
+              <label className="flex items-center gap-1.5 text-xs" style={ { color: "#6B7280" } }>
                 Rango de fechas de instalación
                 <RangoFechasInput
                   desde={fechaDesde}
                   hasta={fechaHasta}
-                  onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); }}
+                  onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } }
                   className="px-2 py-1 rounded-md border text-xs outline-none cursor-pointer"
-                  style={{ borderColor: "#D1D5DB", minWidth: "180px" }}
+                  style={ { borderColor: "#D1D5DB", minWidth: "180px" } }
                 />
               </label>
             </div>
           </div>
 
-          <p className="text-[11px] -mb-1" style={{ color: "#9CA3AF" }}>Tip: tocá el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
+          <p className="text-[11px] -mb-1" style={ { color: "#9CA3AF" } }>Tip: tocá el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <FiltroCampo label="Tipo de plan">
@@ -2928,7 +2928,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                 value={filtroPlan}
                 onChange={(e) => setFiltroPlan(e.target.value)}
                 className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               >
                 <option value="">Todos</option>
                 {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t === "SINGLE" ? "Single" : "Doble"}</option>)}
@@ -2940,7 +2940,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                 value={filtroInstalacion}
                 onChange={(e) => setFiltroInstalacion(e.target.value)}
                 className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               >
                 <option value="">Todos</option>
                 <option value="instalados">Instalados</option>
@@ -2953,7 +2953,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                 value={filtroEstado}
                 onChange={(e) => setFiltroEstado(e.target.value)}
                 className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               >
                 <option value="">Todos</option>
                 {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
@@ -2970,9 +2970,9 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                 setFiltroPlan("");
                 setFechaDesde("");
                 setFechaHasta("");
-              }}
+              } }
               className="text-xs font-medium self-start"
-              style={{ color: "#C23B3B" }}
+              style={ { color: "#C23B3B" } }
             >
               ✕ Limpiar todos los filtros
             </button>
@@ -2982,7 +2982,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
 
       {visiblesFinal.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={{ color: "#6B7280" }}>
+          <p className="text-sm" style={ { color: "#6B7280" } }>
             {filtroEstado || filtroInstalacion || filtroPlan || rangoActivo
               ? "No hay clientes con ese filtro."
               : search.trim()
@@ -2994,7 +2994,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-left" style={{ background: "#F4F6FA" }}>
+              <tr className="text-left" style={ { background: "#F4F6FA" } }>
                 {columnasAMostrar.map((key) => {
                   const col = COLUMNAS_CLIENTES.find((c) => c.key === key);
                   const activa = ordenarPor === key;
@@ -3007,36 +3007,36 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                       onDrop={() => handleDropColumna(key)}
                       onClick={() => handleOrdenarPorColumna(key)}
                       className="px-4 py-2.5 font-medium text-xs select-none whitespace-nowrap"
-                      style={{
+                      style={ {
                         color: activa ? "#001E62" : "#6B7280",
                         cursor: col.sortable ? "pointer" : "grab",
                         opacity: colArrastrando === key ? 0.4 : 1,
-                      }}
+                      } }
                       title={col.sortable ? "Tocá para ordenar · arrastrá para mover" : "Arrastrá para mover"}
                     >
                       <span className="inline-flex items-center gap-1">
-                        <span style={{ color: "#C7D2E8" }}>⠿</span>
+                        <span style={ { color: "#C7D2E8" } }>⠿</span>
                         {col.label}
                         {activa && <span>{ordenDireccion === "asc" ? "▲" : "▼"}</span>}
                       </span>
                     </th>
                   );
                 })}
-                <th className="px-4 py-2.5 font-medium text-xs" style={{ color: "#6B7280" }}></th>
+                <th className="px-4 py-2.5 font-medium text-xs" style={ { color: "#6B7280" } }></th>
               </tr>
             </thead>
             <tbody>
               {visiblesFinal.map((c) => (
-                <tr key={c.id} className="border-t" style={{ borderColor: "#F0F0EF" }}>
+                <tr key={c.id} className="border-t" style={ { borderColor: "#F0F0EF" } }>
                   {columnasAMostrar.map((key) => (
                     <td key={key} className="px-4 py-3">{renderCeldaCliente(c, key)}</td>
                   ))}
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {c.actual && (
-                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={{ color: "#2F9E6E" }}>Marcar pagada</button>
+                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={ { color: "#2F9E6E" } }>Marcar pagada</button>
                     )}
-                    <button onClick={() => onEdit(c)} className="text-xs font-medium mr-3" style={{ color: "#0072CE" }}>Editar</button>
-                    <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={{ color: "#C23B3B" }}>Eliminar</button>
+                    <button onClick={() => onEdit(c)} className="text-xs font-medium mr-3" style={ { color: "#0072CE" } }>Editar</button>
+                    <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={ { color: "#C23B3B" } }>Eliminar</button>
                   </td>
                 </tr>
               ))}
@@ -3060,24 +3060,24 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-semibold">Clientes eliminados</h3>
-              <button onClick={() => setPapeleraAbierta(false)} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+              <button onClick={() => setPapeleraAbierta(false)} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
             </div>
             {eliminados.length === 0 ? (
-              <p className="text-sm" style={{ color: "#6B7280" }}>No hay clientes eliminados.</p>
+              <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes eliminados.</p>
             ) : (
               <div className="flex flex-col gap-2">
                 {eliminados.map((c) => (
-                  <div key={c.id} className="flex items-center justify-between rounded-md border p-3" style={{ borderColor: "#F0F0EF" }}>
+                  <div key={c.id} className="flex items-center justify-between rounded-md border p-3" style={ { borderColor: "#F0F0EF" } }>
                     <div>
                       <div className="text-sm font-medium">{c.nombre}</div>
-                      <div className="text-xs font-mono" style={{ color: "#9CA3AF" }}>
+                      <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>
                         {c.numeroSuscriptor} · eliminado el {fmtFecha((c.eliminadoEn || "").slice(0, 10))}
                       </div>
                     </div>
                     <button
                       onClick={() => onRecuperar(c.id)}
                       className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ background: "#2F9E6E" }}
+                      style={ { background: "#2F9E6E" } }
                     >
                       Recuperar
                     </button>
@@ -3096,11 +3096,11 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
   if (!cliente) {
     return (
       <div className="max-w-2xl">
-        <button onClick={onVolver} className="text-xs font-medium mb-4" style={{ color: "#0072CE" }}>
+        <button onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>
           {volverLabel || "← Volver a Clientes"}
         </button>
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={{ color: "#6B7280" }}>No se encontró el cliente (puede haber sido eliminado).</p>
+          <p className="text-sm" style={ { color: "#6B7280" } }>No se encontró el cliente (puede haber sido eliminado).</p>
         </div>
       </div>
     );
@@ -3110,7 +3110,7 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
 
   return (
     <div className="max-w-2xl">
-      <button onClick={onVolver} className="text-xs font-medium mb-4" style={{ color: "#0072CE" }}>
+      <button onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>
         {volverLabel || "← Volver a Clientes"}
       </button>
 
@@ -3119,16 +3119,16 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
         <button
           onClick={() => onEditar(cliente)}
           className="text-sm font-medium px-4 py-2 rounded-md border"
-          style={{ borderColor: "#D1D5DB", color: "#374151" }}
+          style={ { borderColor: "#D1D5DB", color: "#374151" } }
         >
           Editar cliente
         </button>
       </div>
-      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>{planLabel(cliente)}</p>
+      <p className="text-sm mb-6" style={ { color: "#6B7280" } }>{planLabel(cliente)}</p>
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Número de suscriptor</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Número de suscriptor</div>
           <div className="font-medium flex items-center gap-1.5">
             <span>{cliente.numeroSuscriptor || "—"}</span>
             {cliente.numeroSuscriptor && (
@@ -3136,7 +3136,7 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
                 onClick={() => onCopiarSuscriptor(cliente)}
                 title="Copiar número de suscriptor"
                 className="text-xs"
-                style={{ color: copiedSubKey === cliente.id ? "#2F9E6E" : "#9CA3AF" }}
+                style={ { color: copiedSubKey === cliente.id ? "#2F9E6E" : "#9CA3AF" } }
               >
                 {copiedSubKey === cliente.id ? "✓" : "📋"}
               </button>
@@ -3144,38 +3144,38 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
           </div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Teléfono</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Teléfono</div>
           <div className="font-medium">{cliente.telefono || "—"}</div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Ciclo de facturación</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Ciclo de facturación</div>
           <div className="font-medium">{cicloLabel}</div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Fecha de instalación</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Fecha de instalación</div>
           <div className="font-medium">{fmtFecha(cliente.fechaInstalacion)}</div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Monto mensual recurrente</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Monto mensual recurrente</div>
           <div className="font-medium">{fmtMonto(cliente.montoMensual)}</div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Monto 1ra factura</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Monto 1ra factura</div>
           <div className="font-medium">{fmtMonto(cliente.monto1raFactura)}</div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Estado de pago</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Estado de pago</div>
           <div><EstadoBadge estado={cliente.estadoPago} /></div>
         </div>
         <div>
-          <div className="text-xs" style={{ color: "#6B7280" }}>Fecha de ingreso</div>
+          <div className="text-xs" style={ { color: "#6B7280" } }>Fecha de ingreso</div>
           <div className="font-medium">{cliente.creadoEn ? fmtFecha(cliente.creadoEn.slice(0, 10)) : "—"}</div>
         </div>
       </div>
 
       {cliente.observaciones && (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 text-sm">
-          <div className="text-xs font-medium mb-1" style={{ color: "#6B7280" }}>Observaciones</div>
+          <div className="text-xs font-medium mb-1" style={ { color: "#6B7280" } }>Observaciones</div>
           {cliente.observaciones}
         </div>
       )}
@@ -3183,7 +3183,7 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
       <h2 className="text-sm font-semibold mb-2">Facturas</h2>
       {cliente.facturas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 text-center">
-          <p className="text-sm" style={{ color: "#B8791F" }}>
+          <p className="text-sm" style={ { color: "#B8791F" } }>
             Este cliente está <strong>pendiente de instalación</strong>, todavía no tiene fecha cargada. Editalo para asignarle la fecha de instalación y así empezar a generar sus facturas.
           </p>
         </div>
@@ -3196,19 +3196,19 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <div className="font-medium text-sm">{ORDINAL[f.n]} factura</div>
-                  <div className="text-xs" style={{ color: "#6B7280" }}>
+                  <div className="text-xs" style={ { color: "#6B7280" } }>
                     Generada: {fmtFecha(f.generada)} · Vence: {fmtFecha(f.vencimiento)}
                   </div>
                 </div>
                 {estadoFactura === "pagada" ? (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ background: "#E3EDFA", color: "#0072CE" }}>
+                    <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
                       Pagada ✓
                     </span>
                     <button
                       onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pendiente")}
                       className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                      style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                      style={ { borderColor: "#D1D5DB", color: "#374151" } }
                     >
                       Desmarcar
                     </button>
@@ -3216,14 +3216,14 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
                 ) : (
                   <div className="flex items-center gap-2">
                     {estadoFactura === "pendiente" && (
-                      <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={{ background: "#FBF1DE", color: "#B8791F" }}>
+                      <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={ { background: "#FBF1DE", color: "#B8791F" } }>
                         Pendiente
                       </span>
                     )}
                     <button
                       onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")}
                       className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={{ background: "#2F9E6E" }}
+                      style={ { background: "#2F9E6E" } }
                     >
                       Marcar como pagada
                     </button>
@@ -3235,7 +3235,7 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
                 const alertasActivas = f.milestones.filter((m) => m.pendienteHoy);
                 if (alertasActivas.length === 0) {
                   return (
-                    <p className="text-xs" style={{ color: "#9CA3AF" }}>
+                    <p className="text-xs" style={ { color: "#9CA3AF" } }>
                       Sin alertas activas en esta factura por el momento.
                     </p>
                   );
@@ -3245,14 +3245,14 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
                     {alertasActivas.map((m) => {
                       const key = cliente.id + m.key;
                       return (
-                        <div key={m.key} className="rounded-md border p-3" style={{ borderColor: "#F0F0EF" }}>
+                        <div key={m.key} className="rounded-md border p-3" style={ { borderColor: "#F0F0EF" } }>
                           <div className="flex items-center gap-2 mb-2">
-                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={{ background: m.bg, color: m.color }}>
+                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: m.bg, color: m.color } }>
                               {m.tag}
                             </span>
-                            <span className="text-xs" style={{ color: "#6B7280" }}>{m.label}</span>
+                            <span className="text-xs" style={ { color: "#6B7280" } }>{m.label}</span>
                           </div>
-                          <div className="text-sm rounded-md p-3 mb-3" style={{ background: "#F4F6FA", color: "#374151" }}>
+                          <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F4F6FA", color: "#374151" } }>
                             {m.texto}
                           </div>
                           <div className="flex items-center gap-2 flex-wrap">
@@ -3261,21 +3261,21 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                              style={{ background: "#25D366" }}
+                              style={ { background: "#25D366" } }
                             >
                               Enviar por WhatsApp
                             </a>
                             <button
                               onClick={() => onCopiarMensaje(cliente, m)}
                               className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                              style={{ background: "#001E62" }}
+                              style={ { background: "#001E62" } }
                             >
                               {copiedKey === key ? "Copiado ✓" : "Copiar mensaje"}
                             </button>
                             <button
                               onClick={() => onMarcarEnviado(cliente.id, m.key)}
                               className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                              style={{ borderColor: "#D1D5DB", color: "#374151" }}
+                              style={ { borderColor: "#D1D5DB", color: "#374151" } }
                             >
                               Marcar como enviado
                             </button>
@@ -3347,44 +3347,44 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
         <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar convergencia" : "Nueva convergencia"}</h2>
         <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <div className="flex-1">
-            <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>Nombre</label>
+            <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Nombre</label>
             <input
               required
               value={nombre}
               onChange={(e) => setNombre(e.target.value)}
               className="w-full px-3 py-2 rounded-md border text-sm outline-none"
-              style={{ borderColor: "#D1D5DB" }}
+              style={ { borderColor: "#D1D5DB" } }
             />
           </div>
           <div className="flex-1">
-            <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>Número de celular</label>
+            <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Número de celular</label>
             <input
               required
               value={telefono}
               onChange={(e) => setTelefono(e.target.value)}
               className="w-full px-3 py-2 rounded-md border text-sm outline-none"
-              style={{ borderColor: "#D1D5DB" }}
+              style={ { borderColor: "#D1D5DB" } }
             />
           </div>
           <div className="flex gap-2">
-            <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+            <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
               {editingId ? "Guardar" : "Agregar"}
             </button>
             {editingId && (
-              <button type="button" onClick={cancelEdit} className="text-sm font-medium px-4 py-2 rounded-md border" style={{ borderColor: "#D1D5DB" }}>
+              <button type="button" onClick={cancelEdit} className="text-sm font-medium px-4 py-2 rounded-md border" style={ { borderColor: "#D1D5DB" } }>
                 Cancelar
               </button>
             )}
           </div>
         </form>
-        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t" style={{ borderColor: "#F0F0EF" }}>
+        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t" style={ { borderColor: "#F0F0EF" } }>
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={fullTigo} onChange={(e) => setFullTigo(e.target.checked)} />
             FULL TIGO
           </label>
           {fullTigo && (
             <div className="flex items-center gap-2">
-              <span className="text-xs" style={{ color: "#6B7280" }}>Monto del plan vendido:</span>
+              <span className="text-xs" style={ { color: "#6B7280" } }>Monto del plan vendido:</span>
               <input
                 type="number"
                 step="0.01"
@@ -3394,7 +3394,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
                 onChange={(e) => setMontoPlan(e.target.value)}
                 placeholder="$0.00"
                 className="w-28 px-2 py-1 rounded-md border text-sm outline-none"
-                style={{ borderColor: "#D1D5DB" }}
+                style={ { borderColor: "#D1D5DB" } }
               />
             </div>
           )}
@@ -3412,37 +3412,37 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
                 className="w-full flex items-center justify-between px-4 py-3 text-left"
               >
                 <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
-                <span className="text-sm font-mono flex items-center gap-2" style={{ color: "#001E62" }}>
+                <span className="text-sm font-mono flex items-center gap-2" style={ { color: "#001E62" } }>
                   {delMes.length} convergencia{delMes.length !== 1 ? "s" : ""}
-                  <span style={{ color: "#9CA3AF" }}>{abierto ? "▲" : "▼"}</span>
+                  <span style={ { color: "#9CA3AF" } }>{abierto ? "▲" : "▼"}</span>
                 </span>
               </button>
               {abierto && (
-                <div className="border-t" style={{ borderColor: "#F0F0EF" }}>
+                <div className="border-t" style={ { borderColor: "#F0F0EF" } }>
                   {delMes.length === 0 ? (
-                    <p className="text-sm px-4 py-3" style={{ color: "#6B7280" }}>Sin convergencias este mes.</p>
+                    <p className="text-sm px-4 py-3" style={ { color: "#6B7280" } }>Sin convergencias este mes.</p>
                   ) : (
                     delMes.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={{ borderColor: "#F0F0EF" }}>
+                      <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
                         <div>
                           <div className="text-sm font-medium flex items-center gap-2">
                             {c.nombre}
                             {c.fullTigo && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: "#E3EDFA", color: "#0072CE" }}>
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
                                 FULL TIGO · {fmtMonto(c.montoPlan)}
                               </span>
                             )}
                           </div>
-                          <div className="text-xs font-mono" style={{ color: "#9CA3AF" }}>{c.telefono}</div>
+                          <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>{c.telefono}</div>
                         </div>
                         <div className="flex gap-3">
-                          <button onClick={() => startEdit(c)} className="text-xs font-medium" style={{ color: "#0072CE" }}>Editar</button>
+                          <button onClick={() => startEdit(c)} className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
                           <button
                             onClick={() => {
                               if (window.confirm(`¿Eliminar a ${c.nombre} de convergencias?`)) onEliminar(c.id);
-                            }}
+                            } }
                             className="text-xs font-medium"
-                            style={{ color: "#C23B3B" }}
+                            style={ { color: "#C23B3B" } }
                           >
                             Eliminar
                           </button>
@@ -3486,7 +3486,7 @@ function EstadoBadge({ estado }) {
     Suspendido: { bg: "#EFEFEF", color: "#4B5563" },
   };
   const s = map[estado] || map["Pendiente"];
-  return <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={{ background: s.bg, color: s.color }}>{estado}</span>;
+  return <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: s.bg, color: s.color } }>{estado}</span>;
 }
 
 function PrecierreTab({ clientes, onIrNuevo }) {
@@ -3528,20 +3528,20 @@ function PrecierreTab({ clientes, onIrNuevo }) {
   return (
     <div className="max-w-3xl">
       <h1 className="text-2xl font-semibold mb-1">Validar precierre del mes</h1>
-      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
+      <p className="text-sm mb-6" style={ { color: "#6B7280" } }>
         Pega aquí los números de suscriptor del archivo de precierre (uno por línea, o como vengan copiados desde Excel). La app detecta cuáles ya están cargados y cuáles faltan.
       </p>
 
       <div className="mb-4">
-        <label className="text-xs font-medium block mb-1" style={{ color: "#6B7280" }}>
+        <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>
           Rango de fechas a verificar
         </label>
         <RangoFechasInput
           desde={fechaDesde}
           hasta={fechaHasta}
-          onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); }}
+          onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } }
           className="px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"
-          style={{ borderColor: "#D1D5DB", minWidth: "220px" }}
+          style={ { borderColor: "#D1D5DB", minWidth: "220px" } }
         />
       </div>
 
@@ -3551,38 +3551,38 @@ function PrecierreTab({ clientes, onIrNuevo }) {
         rows={10}
         placeholder="Pega aquí la lista de suscriptores del precierre…"
         className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 font-mono"
-        style={{ borderColor: "#D1D5DB" }}
+        style={ { borderColor: "#D1D5DB" } }
       />
       <button
         onClick={validar}
         disabled={!texto.trim()}
         className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
-        style={{ background: "#001E62" }}
+        style={ { background: "#001E62" } }
       >
         Validar precierre
       </button>
 
       {resultado && (
         <div className="mt-6 flex flex-col gap-4">
-          <p className="text-sm font-medium" style={{ color: "#374151" }}>
+          <p className="text-sm font-medium" style={ { color: "#374151" } }>
             Resultado del precierre del {fmtFecha(resultado.desde)} al {fmtFecha(resultado.hasta)}
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={{ color: "#001E62" }}>{resultado.total}</div>
-              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Suscriptores en el precierre</div>
+              <div className="text-2xl font-mono font-semibold" style={ { color: "#001E62" } }>{resultado.total}</div>
+              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Suscriptores en el precierre</div>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={{ color: "#2F9E6E" }}>{resultado.encontrados.length}</div>
-              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Ya cargados en la app</div>
+              <div className="text-2xl font-mono font-semibold" style={ { color: "#2F9E6E" } }>{resultado.encontrados.length}</div>
+              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Ya cargados en la app</div>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={{ color: "#C23B3B" }}>{resultado.faltantes.length}</div>
-              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Faltan por cargar</div>
+              <div className="text-2xl font-mono font-semibold" style={ { color: "#C23B3B" } }>{resultado.faltantes.length}</div>
+              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Faltan por cargar</div>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={{ color: "#C2761F" }}>{resultado.fueraDeRango.length}</div>
-              <div className="text-xs mt-1" style={{ color: "#6B7280" }}>Fuera de rango</div>
+              <div className="text-2xl font-mono font-semibold" style={ { color: "#C2761F" } }>{resultado.fueraDeRango.length}</div>
+              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Fuera de rango</div>
             </div>
           </div>
 
@@ -3609,11 +3609,11 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
             key={t.key}
             onClick={() => setSubtab(t.key)}
             className="flex-1 text-sm font-medium px-4 py-3 text-center"
-            style={{
+            style={ {
               color: subtab === t.key ? t.color : "#6B7280",
               borderBottom: subtab === t.key ? `2px solid ${t.color}` : "2px solid transparent",
               background: subtab === t.key ? "#F9FAFB" : "transparent",
-            }}
+            } }
           >
             {t.label} ({t.count})
           </button>
@@ -3624,20 +3624,20 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
         {subtab === "faltantes" && (
           resultado.faltantes.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <p className="text-xs mb-1" style={{ color: "#6B7280" }}>
+              <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
                 ⚠️ Suscriptores del precierre que no están en la app.
               </p>
               {resultado.faltantes.map((n) => (
                 <div
                   key={n}
                   className="flex items-center justify-between rounded-md border p-3"
-                  style={{ borderColor: "#F3C6C6", background: "#FBEAEA" }}
+                  style={ { borderColor: "#F3C6C6", background: "#FBEAEA" } }
                 >
                   <span className="font-mono text-sm">{n}</span>
                   <button
                     onClick={() => onIrNuevo(n)}
                     className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                    style={{ background: "#001E62" }}
+                    style={ { background: "#001E62" } }
                   >
                     + Agregar cliente
                   </button>
@@ -3645,61 +3645,61 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-center" style={{ color: "#2F9E6E" }}>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
+            <p className="text-sm text-center" style={ { color: "#2F9E6E" } }>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
           )
         )}
 
         {subtab === "sobrantes" && (
           resultado.sobrantes.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <p className="text-xs mb-1" style={{ color: "#6B7280" }}>
+              <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
                 Instalados en el rango seleccionado que no aparecen en este precierre. Revisá si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
               </p>
               {resultado.sobrantes.map((c) => (
                 <div
                   key={c.id}
                   className="flex items-center justify-between rounded-md border p-3"
-                  style={{ borderColor: "#F3E3C3", background: "#FFFBF2" }}
+                  style={ { borderColor: "#F3E3C3", background: "#FFFBF2" } }
                 >
                   <div>
                     <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                    <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
+                    <div className="text-xs" style={ { color: "#6B7280" } }>{c.nombre}</div>
                   </div>
-                  <span className="text-xs font-mono" style={{ color: "#B8791F" }}>
+                  <span className="text-xs font-mono" style={ { color: "#B8791F" } }>
                     Instalado: {fmtFecha(c.fechaInstalacion)}
                   </span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-center" style={{ color: "#2F9E6E" }}>✅ No hay sobrantes en el rango seleccionado.</p>
+            <p className="text-sm text-center" style={ { color: "#2F9E6E" } }>✅ No hay sobrantes en el rango seleccionado.</p>
           )
         )}
 
         {subtab === "fueraDeRango" && (
           resultado.fueraDeRango.length > 0 ? (
             <div className="flex flex-col gap-2">
-              <p className="text-xs mb-1" style={{ color: "#6B7280" }}>
+              <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
                 Están en el precierre y en la app, pero instalados fuera del rango seleccionado. Revisá si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
               </p>
               {resultado.fueraDeRango.map((c) => (
                 <div
                   key={c.id}
                   className="flex items-center justify-between rounded-md border p-3"
-                  style={{ borderColor: "#F5D9B8", background: "#FFF6EC" }}
+                  style={ { borderColor: "#F5D9B8", background: "#FFF6EC" } }
                 >
                   <div>
                     <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                    <div className="text-xs" style={{ color: "#6B7280" }}>{c.nombre}</div>
+                    <div className="text-xs" style={ { color: "#6B7280" } }>{c.nombre}</div>
                   </div>
-                  <span className="text-xs font-mono" style={{ color: "#C2761F" }}>
+                  <span className="text-xs font-mono" style={ { color: "#C2761F" } }>
                     Instalado: {fmtFecha(c.fechaInstalacion)}
                   </span>
                 </div>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-center" style={{ color: "#2F9E6E" }}>✅ Ninguno fuera de rango.</p>
+            <p className="text-sm text-center" style={ { color: "#2F9E6E" } }>✅ Ninguno fuera de rango.</p>
           )
         )}
       </div>
@@ -3762,7 +3762,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
   return (
     <div className="max-w-2xl">
       <h1 className="text-2xl font-semibold mb-1">{editing ? "Editar cliente" : "Nuevo cliente"}</h1>
-      <p className="text-sm mb-6" style={{ color: "#6B7280" }}>
+      <p className="text-sm mb-6" style={ { color: "#6B7280" } }>
         Se hace seguimiento a las primeras 4 facturas. Las fechas de la 2da, 3ra y 4ta se calculan con el día del Ciclo de Facturación. Todos los campos son obligatorios.
       </p>
       <form onSubmit={onSubmit} className="flex flex-col gap-3">
@@ -3798,7 +3798,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
                 className={inputClass}
                 style={!form.fechaInstalacion ? lockedStyle : inputStyle}
               />
-              <label className="flex items-center gap-2 mt-1.5 text-xs" style={{ color: "#6B7280" }}>
+              <label className="flex items-center gap-2 mt-1.5 text-xs" style={ { color: "#6B7280" } }>
                 <input
                   type="checkbox"
                   checked={!form.fechaInstalacion}
@@ -3839,7 +3839,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
               <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
               {montosSugeridos.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <span className="text-xs" style={{ color: "#9CA3AF" }}>Sugeridos:</span>
+                  <span className="text-xs" style={ { color: "#9CA3AF" } }>Sugeridos:</span>
                   {montosSugeridos.map((m) => (
                     <button
                       key={m}
@@ -3860,12 +3860,12 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
             </Field>
           </div>
 
-          <div className="rounded-md p-3 flex items-center justify-between mt-4" style={{ background: "#F4F6FA" }}>
+          <div className="rounded-md p-3 flex items-center justify-between mt-4" style={ { background: "#F4F6FA" } }>
             <div>
-              <div className="text-xs font-medium" style={{ color: "#374151" }}>
+              <div className="text-xs font-medium" style={ { color: "#374151" } }>
                 Fecha y monto de la 1ra factura (recurrente + prorrateo)
               </div>
-              <div className="text-xs mt-0.5" style={{ color: "#9CA3AF" }}>
+              <div className="text-xs mt-0.5" style={ { color: "#9CA3AF" } }>
                 {diasProrrateo != null
                   ? `Calculado automáticamente: ${diasProrrateo} día${diasProrrateo !== 1 ? "s" : ""} de prorrateo`
                   : "Se calcula solo al completar fecha de instalación + ciclo + monto mensual"}
@@ -3876,7 +3876,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
               onClick={calcularAuto}
               disabled={!form.fechaInstalacion || !form.cicloFacturacion || !form.montoMensual}
               className="text-xs font-medium px-3 py-1.5 rounded-md text-white disabled:opacity-40"
-              style={{ background: "#001E62" }}
+              style={ { background: "#001E62" } }
               title="Recalcular por si editaste algo manualmente"
             >
               🔄 Recalcular
@@ -3905,10 +3905,10 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
         </SeccionFormulario>
 
         <div className="flex gap-2 pt-2">
-          <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={{ background: "#001E62" }}>
+          <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
             {editing ? "Guardar cambios" : "Registrar cliente"}
           </button>
-          <button type="button" onClick={onCancel} className="text-sm font-medium px-4 py-2 rounded-md border" style={{ borderColor: "#D1D5DB" }}>
+          <button type="button" onClick={onCancel} className="text-sm font-medium px-4 py-2 rounded-md border" style={ { borderColor: "#D1D5DB" } }>
             Cancelar
           </button>
         </div>
@@ -3926,11 +3926,11 @@ function SeccionFormulario({ titulo, defaultOpen = true, children }) {
         onClick={() => setAbierta((v) => !v)}
         className="w-full flex items-center justify-between px-5 py-3 text-left"
       >
-        <span className="text-sm font-semibold" style={{ color: "#001E62" }}>{titulo}</span>
-        <span className="text-xs" style={{ color: "#9CA3AF" }}>{abierta ? "▲" : "▼"}</span>
+        <span className="text-sm font-semibold" style={ { color: "#001E62" } }>{titulo}</span>
+        <span className="text-xs" style={ { color: "#9CA3AF" } }>{abierta ? "▲" : "▼"}</span>
       </button>
       {abierta && (
-        <div className="px-5 pb-5 pt-1 border-t" style={{ borderColor: "#F0F0EF" }}>
+        <div className="px-5 pb-5 pt-1 border-t" style={ { borderColor: "#F0F0EF" } }>
           {children}
         </div>
       )}
@@ -3941,7 +3941,7 @@ function SeccionFormulario({ titulo, defaultOpen = true, children }) {
 function Field({ label, children }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="text-xs font-medium" style={{ color: "#6B7280" }}>{label}</span>
+      <span className="text-xs font-medium" style={ { color: "#6B7280" } }>{label}</span>
       {children}
     </label>
   );
@@ -3967,7 +3967,7 @@ function SkeletonCargando() {
         {bloque("h-14")}
         {bloque("h-14")}
       </div>
-      <p className="text-xs text-center mt-6" style={{ color: "#9CA3AF" }}>Cargando datos…</p>
+      <p className="text-xs text-center mt-6" style={ { color: "#9CA3AF" } }>Cargando datos…</p>
     </div>
   );
 }
@@ -3978,29 +3978,29 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
       <div className="bg-white rounded-lg p-6 max-w-sm w-full">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg">¿Qué querés agregar?</h3>
-          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+          <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
         <div className="flex flex-col gap-2">
           <button
             onClick={onHogar}
             className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
-            style={{ borderColor: "#D1D5DB" }}
+            style={ { borderColor: "#D1D5DB" } }
           >
             <span className="text-xl" aria-hidden="true">🏠</span>
             <span>
               <span className="block text-sm font-semibold">Cliente de hogar</span>
-              <span className="block text-xs" style={{ color: "#6B7280" }}>Registro completo con facturación y seguimiento</span>
+              <span className="block text-xs" style={ { color: "#6B7280" } }>Registro completo con facturación y seguimiento</span>
             </span>
           </button>
           <button
             onClick={onConvergencia}
             className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
-            style={{ borderColor: "#D1D5DB" }}
+            style={ { borderColor: "#D1D5DB" } }
           >
             <span className="text-xl" aria-hidden="true">🔗</span>
             <span>
               <span className="block text-sm font-semibold">Convergencia</span>
-              <span className="block text-xs" style={{ color: "#6B7280" }}>Se agrega al listado de convergencias</span>
+              <span className="block text-xs" style={ { color: "#6B7280" } }>Se agrega al listado de convergencias</span>
             </span>
           </button>
         </div>
@@ -4016,10 +4016,10 @@ function ConfirmModal({ onCancel, onConfirm }) {
         <h3 className="font-semibold mb-2 flex items-center gap-2">
           <span aria-hidden="true">⚠️</span> ¿Eliminar cliente?
         </h3>
-        <p className="text-sm mb-5" style={{ color: "#6B7280" }}>Esta acción no se puede deshacer.</p>
+        <p className="text-sm mb-5" style={ { color: "#6B7280" } }>Esta acción no se puede deshacer.</p>
         <div className="flex gap-2 justify-end">
-          <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded-md border" style={{ borderColor: "#D1D5DB" }}>Cancelar</button>
-          <button onClick={onConfirm} className="text-sm px-3 py-1.5 rounded-md text-white flex items-center gap-1.5" style={{ background: "#C23B3B" }}>
+          <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded-md border" style={ { borderColor: "#D1D5DB" } }>Cancelar</button>
+          <button onClick={onConfirm} className="text-sm px-3 py-1.5 rounded-md text-white flex items-center gap-1.5" style={ { background: "#C23B3B" } }>
             <span aria-hidden="true">⚠️</span> Eliminar
           </button>
         </div>
@@ -4036,7 +4036,7 @@ function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExpo
       <div className="bg-white rounded-lg p-6 max-w-sm w-full">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg flex items-center gap-2">⚙️ Configuración</h3>
-          <button onClick={onClose} className="text-sm" style={{ color: "#6B7280" }}>✕</button>
+          <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
         <div className="flex flex-col gap-2 mb-4">
           <button onClick={onDeshacer} disabled={!puedeDeshacer} className={rowClass} style={rowStyle}>
@@ -4049,8 +4049,8 @@ function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExpo
             ⬆️ Importar respaldo (.json)
           </button>
         </div>
-        <div className="flex items-center justify-between gap-2 py-3 border-t" style={{ borderColor: "#F0F0EF" }}>
-          <label className="text-xs" style={{ color: "#6B7280" }} title="A partir de qué % de prorrateo se envía el aviso D+3">
+        <div className="flex items-center justify-between gap-2 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
+          <label className="text-xs" style={ { color: "#6B7280" } } title="A partir de qué % de prorrateo se envía el aviso D+3">
             Umbral de prorrateo (%)
           </label>
           <input
@@ -4060,13 +4060,13 @@ function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExpo
             value={umbralProrrateo}
             onChange={(e) => setUmbralProrrateo(e.target.value === "" ? "" : Number(e.target.value))}
             className="w-16 px-2 py-1 rounded-md border text-sm outline-none"
-            style={{ borderColor: "#D1D5DB" }}
+            style={ { borderColor: "#D1D5DB" } }
           />
         </div>
         <button
           onClick={onCerrarSesion}
           className="text-sm text-left underline pt-2"
-          style={{ color: "#C23B3B" }}
+          style={ { color: "#C23B3B" } }
         >
           Cerrar sesión
         </button>
