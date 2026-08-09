@@ -23,8 +23,8 @@
 const { useState, useEffect, useMemo, useRef } = React;
 
 // ---------- Conexión a Supabase ----------
-const SUPABASE_URL = "https://byudndybtvpozhytmxgw.supabase.co";
-const SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJ5dWRuZHlidHZwb3poeXRteGd3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM3ODc0NDIsImV4cCI6MjA5OTM2MzQ0Mn0.94KZqhFex0iEc0-bpmv5oVh5net66Dgu6Xf3NMvedYk";
+const SUPABASE_URL = "PEGA_AQUI_TU_PROJECT_URL";
+const SUPABASE_ANON_KEY = "PEGA_AQUI_TU_ANON_KEY";
 const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
 // ---------- Almacenamiento en la nube (reemplaza window.storage / localStorage) ----------
@@ -333,7 +333,7 @@ function textoD1(c, n) {
   const nombre = nombreCompleto(c);
   if (n === 1) {
     const finProrrateo = addDays(c.fecha1raFactura, -1);
-    return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
+    return `Hola ${nombre}, le saluda José Rodríguez de Tigo Panamá.
 
 Le confirmo que su primera factura ya fue generada:
 📋 Plan: ${c.plan}
@@ -346,12 +346,12 @@ Este cobro incluye ambos períodos: el prorrateo desde su instalación y su prim
 
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier duda, quedo atento.`;
   }
-  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
+  return `Hola ${nombre}, le saluda José Rodríguez, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
 }
 function textoT15(c, n) {
   const nombre = nombreCompleto(c);
   const dias = daysFromToday(c._venc);
-  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
+  return `Hola ${nombre}, le habla José Rodríguez de Tigo Panamá.
 
 Le recuerdo que su factura ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
@@ -362,7 +362,7 @@ Una vez realizado el pago, compárteme el comprobante para validar el ingreso. C
 function textoT3(c, n) {
   const nombre = nombreCompleto(c);
   const dias = daysFromToday(c._venc);
-  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
+  return `Hola ${nombre}, le habla José Rodríguez de Tigo Panamá.
 
 Su factura ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
@@ -1247,6 +1247,7 @@ function App() {
             setForm={setForm}
             onSubmit={handleSubmit}
             editing={!!editingId}
+            clientes={clientesCalc}
             onCancel={() => {
               resetForm();
               setTab("clientes");
@@ -3706,12 +3707,43 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
   );
 }
 
-function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
+function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, clientes = [] }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const inputClass = "w-full px-3 py-2 rounded-md border text-sm outline-none focus:ring-2";
   const inputStyle = { borderColor: "#D1D5DB" };
   const lockedStyle = { borderColor: "#D1D5DB", background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" };
   const [diasProrrateo, setDiasProrrateo] = useState(null);
+
+  // Montos mensuales más usados para el plan que se está seleccionando ahora mismo.
+  // Primero intenta con match exacto (tipo + velocidad + TV), y si no hay suficientes
+  // datos, va ampliando el filtro (tipo + velocidad, y luego solo tipo de plan).
+  const montosSugeridos = useMemo(() => {
+    if (!form.planTipo) return [];
+    const contar = (lista) => {
+      const conteo = new Map();
+      lista.forEach((c) => {
+        const m = Number(c.montoMensual);
+        if (!m) return;
+        conteo.set(m, (conteo.get(m) || 0) + 1);
+      });
+      return [...conteo.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([monto]) => monto);
+    };
+
+    const porTipo = clientes.filter((c) => c.planTipo === form.planTipo);
+    if (form.velocidad) {
+      const porVelocidad = porTipo.filter((c) => c.velocidad === form.velocidad);
+      const base =
+        form.planTipo === "DOBLE" && form.planTV
+          ? porVelocidad.filter((c) => c.planTV === form.planTV)
+          : porVelocidad;
+      if (base.length >= 2) return contar(base);
+      if (porVelocidad.length > 0) return contar(porVelocidad);
+    }
+    return contar(porTipo);
+  }, [clientes, form.planTipo, form.velocidad, form.planTV]);
 
   function calcularAuto() {
     const r = calcularPrimeraFactura(form.fechaInstalacion, parseInt(form.cicloFacturacion, 10), form.montoMensual);
@@ -3805,6 +3837,26 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel }) {
             )}
             <Field label="Monto mensual recurrente *">
               <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
+              {montosSugeridos.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-xs" style={{ color: "#9CA3AF" }}>Sugeridos:</span>
+                  {montosSugeridos.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setForm((f) => ({ ...f, montoMensual: String(m) }))}
+                      className="text-xs font-medium px-2 py-0.5 rounded-full border"
+                      style={
+                        Number(form.montoMensual) === m
+                          ? { background: "#001E62", color: "#fff", borderColor: "#001E62" }
+                          : { background: "#F4F6FA", color: "#374151", borderColor: "#D1D5DB" }
+                      }
+                    >
+                      {fmtMonto(m)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </Field>
           </div>
 
