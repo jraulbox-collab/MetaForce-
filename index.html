@@ -376,7 +376,7 @@ function textoD1(c, n) {
   const nombre = nombreCompleto(c);
   if (n === 1) {
     const finProrrateo = addDays(c.fecha1raFactura, -1);
-    return `Hola ${nombre}, le saluda José Rodríguez de Tigo Panamá.
+    return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
 
 Le confirmo que su primera factura ya fue generada:
 📋 Plan: ${c.plan}
@@ -389,12 +389,12 @@ Este cobro incluye ambos períodos: el prorrateo desde su instalación y su prim
 
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier duda, quedo atento.`;
   }
-  return `Hola ${nombre}, le saluda José Rodríguez, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
+  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
 }
 function textoT15(c, n) {
   const nombre = nombreCompleto(c);
   const dias = daysFromToday(c._venc);
-  return `Hola ${nombre}, le habla José Rodríguez de Tigo Panamá.
+  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
 Le recuerdo que su factura ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
@@ -405,7 +405,7 @@ Una vez realizado el pago, compárteme el comprobante para validar el ingreso. C
 function textoT3(c, n) {
   const nombre = nombreCompleto(c);
   const dias = daysFromToday(c._venc);
-  return `Hola ${nombre}, le habla José Rodríguez de Tigo Panamá.
+  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
 Su factura ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
@@ -1800,6 +1800,65 @@ function MiniStat({ valor, label, color, onClick }) {
   );
 }
 
+// Input de meta que solo confirma el cambio (y por lo tanto solo registra en la
+// bitácora) al presionar Enter, salir del campo, o tocar el botón ✓ — no en cada
+// tecla que se escribe, para no llenar el historial de cambios intermedios.
+function MetaInput({ valor, onConfirmar, width, step }) {
+  const [editando, setEditando] = useState(false);
+  const [valorLocal, setValorLocal] = useState(valor ?? "");
+
+  useEffect(() => {
+    if (!editando) setValorLocal(valor ?? "");
+  }, [valor, editando]);
+
+  function confirmar() {
+    setEditando(false);
+    if (String(valorLocal) !== String(valor ?? "")) {
+      onConfirmar(valorLocal);
+    }
+  }
+
+  function cancelar() {
+    setValorLocal(valor ?? "");
+    setEditando(false);
+  }
+
+  const hayCambioPendiente = editando && String(valorLocal) !== String(valor ?? "");
+
+  return (
+    <div className="flex items-center gap-1">
+      <input
+        type="number"
+        min="0"
+        step={step}
+        value={valorLocal}
+        onFocus={() => setEditando(true)}
+        onChange={(e) => setValorLocal(e.target.value)}
+        onBlur={confirmar}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") { cancelar(); e.currentTarget.blur(); }
+        } }
+        placeholder="0"
+        className={`${width || "w-20"} px-2 py-1 rounded-md border text-sm outline-none`}
+        style={ { borderColor: hayCambioPendiente ? "#0072CE" : "#D1D5DB" } }
+      />
+      {hayCambioPendiente && (
+        <button
+          type="button"
+          onMouseDown={(e) => e.preventDefault()}
+          onClick={confirmar}
+          title="Confirmar cambio"
+          className="text-xs px-1.5 py-1 rounded-md text-white leading-none"
+          style={ { background: "#2F9E6E" } }
+        >
+          ✓
+        </button>
+      )}
+    </div>
+  );
+}
+
 function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
@@ -2088,14 +2147,10 @@ Early: `;
             </button>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
-              <input
-                type="number"
-                min="0"
-                value={metaClientes ?? ""}
-                onChange={(e) => onActualizarMeta(periodoVisto, "clientes", e.target.value)}
-                placeholder="0"
-                className="w-16 px-2 py-1 rounded-md border text-sm outline-none"
-                style={ { borderColor: "#D1D5DB" } }
+              <MetaInput
+                valor={metaClientes}
+                onConfirmar={(v) => onActualizarMeta(periodoVisto, "clientes", v)}
+                width="w-16"
               />
             </div>
           </div>
@@ -2135,14 +2190,10 @@ Early: `;
             <h2 className="font-semibold text-sm">INGRESO $</h2>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
-              <input
-                type="number"
-                min="0"
-                value={metaDinero ?? ""}
-                onChange={(e) => onActualizarMeta(periodoVisto, "dinero", e.target.value)}
-                placeholder="0"
-                className="w-20 px-2 py-1 rounded-md border text-sm outline-none"
-                style={ { borderColor: "#D1D5DB" } }
+              <MetaInput
+                valor={metaDinero}
+                onConfirmar={(v) => onActualizarMeta(periodoVisto, "dinero", v)}
+                width="w-20"
               />
             </div>
           </div>
@@ -2182,15 +2233,11 @@ Early: `;
             <h2 className="font-semibold text-sm">ARPU</h2>
             <div className="flex items-center gap-2">
               <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
-              <input
-                type="number"
-                min="0"
+              <MetaInput
+                valor={metaArpu}
+                onConfirmar={(v) => onActualizarMeta(periodoVisto, "arpu", v)}
+                width="w-20"
                 step="0.01"
-                value={metaArpu ?? ""}
-                onChange={(e) => onActualizarMeta(periodoVisto, "arpu", e.target.value)}
-                placeholder="0"
-                className="w-20 px-2 py-1 rounded-md border text-sm outline-none"
-                style={ { borderColor: "#D1D5DB" } }
               />
             </div>
           </div>
