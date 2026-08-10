@@ -226,6 +226,35 @@ const CICLOS = [
 const TIPOS_PLAN = ["SINGLE", "DOBLE"];
 const VELOCIDADES = ["150 Megas", "300 Megas", "500 Megas", "750 Megas", "1000 Megas"];
 const TIPOS_TV = ["COMBO PACK", "TV PERFECTO"];
+
+// ---------- Bitácora de cambios: campos que se comparan al editar un cliente ----------
+const CAMPOS_BITACORA = {
+  nombre: "Nombre",
+  numeroSuscriptor: "N° de suscriptor",
+  telefono: "Teléfono",
+  cicloFacturacion: "Ciclo de facturación",
+  planTipo: "Tipo de plan",
+  velocidad: "Velocidad",
+  planTV: "Plan de TV",
+  montoMensual: "Monto mensual",
+  fechaInstalacion: "Fecha de instalación",
+  fecha1raFactura: "Fecha 1ra factura",
+  monto1raFactura: "Monto 1ra factura",
+  estadoPago: "Estado de pago",
+  observaciones: "Observaciones",
+};
+function diffCliente(antes, despues) {
+  if (!antes || !despues) return [];
+  const cambios = [];
+  Object.keys(CAMPOS_BITACORA).forEach((k) => {
+    const a = antes[k] ?? "";
+    const d = despues[k] ?? "";
+    if (String(a) !== String(d)) {
+      cambios.push({ campo: k, label: CAMPOS_BITACORA[k], anterior: a, nuevo: d });
+    }
+  });
+  return cambios;
+}
 const planLabel = (c) => {
   if (!c.planTipo || !c.velocidad) return "";
   if (c.planTipo === "DOBLE") {
@@ -565,7 +594,7 @@ function App() {
   });
   const [clientes, setClientes] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre"];
+  const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre", "historial"];
   const [tab, setTab] = useState(() => {
     try {
       const guardado = localStorage.getItem("antichurn_tab");
@@ -608,6 +637,8 @@ function App() {
   const [mostrarConvergencias, setMostrarConvergencias] = useState(false);
   const [eliminados, setEliminados] = useState([]);
   const [eliminadosLoaded, setEliminadosLoaded] = useState(false);
+  const [historialCambios, setHistorialCambios] = useState([]);
+  const [historialCambiosLoaded, setHistorialCambiosLoaded] = useState(false);
   const [umbralProrrateo, setUmbralProrrateo] = useState(25);
   const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
   const [columnasClientes, setColumnasClientes] = useState({
@@ -699,6 +730,25 @@ function App() {
       } catch (e) {}
     })();
   }, [eliminados, eliminadosLoaded]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("historial-cambios-churn");
+        if (res && res.value) setHistorialCambios(JSON.parse(res.value));
+      } catch (e) {}
+      setHistorialCambiosLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!historialCambiosLoaded) return;
+    (async () => {
+      try {
+        await storage.set("historial-cambios-churn", JSON.stringify(historialCambios));
+      } catch (e) {}
+    })();
+  }, [historialCambios, historialCambiosLoaded]);
 
   useEffect(() => {
     (async () => {
@@ -892,6 +942,52 @@ function App() {
     });
   }
 
+  // Registra una entrada en la bitácora de cambios (crear/editar/eliminar un cliente).
+  // "antes" y "despues" son el objeto completo del cliente en cada momento (null si no aplica).
+  function registrarCambio(tipo, antes, despues) {
+    const nombre = (despues && despues.nombre) || (antes && antes.nombre) || "Cliente";
+    const clienteId = (despues && despues.id) || (antes && antes.id);
+    if (!clienteId) return;
+    const cambios = tipo === "editar" ? diffCliente(antes, despues) : [];
+    if (tipo === "editar" && cambios.length === 0) return; // nada realmente cambió
+    setHistorialCambios((prev) =>
+      [
+        {
+          id: uid(),
+          tipo, // "crear" | "editar" | "eliminar"
+          clienteId,
+          clienteNombre: nombre,
+          fecha: new Date().toISOString(),
+          cambios,
+          snapshotAntes: antes || null,
+          deshecho: false,
+        },
+        ...prev,
+      ].slice(0, 300)
+    );
+  }
+
+  // Revierte una entrada puntual de la bitácora (no depende de que sea la última acción).
+  function deshacerCambio(entryId) {
+    setHistorialCambios((prev) => {
+      const entry = prev.find((h) => h.id === entryId);
+      if (!entry || entry.deshecho) return prev;
+      if (entry.tipo === "crear") {
+        actualizarClientes((cs) => cs.filter((c) => c.id !== entry.clienteId));
+      } else if (entry.tipo === "eliminar") {
+        if (entry.snapshotAntes) {
+          actualizarClientes((cs) => (cs.some((c) => c.id === entry.clienteId) ? cs : [...cs, entry.snapshotAntes]));
+        }
+        setEliminados((els) => els.filter((c) => c.id !== entry.clienteId));
+      } else if (entry.tipo === "editar") {
+        if (entry.snapshotAntes) {
+          actualizarClientes((cs) => cs.map((c) => (c.id === entry.clienteId ? entry.snapshotAntes : c)));
+        }
+      }
+      return prev.map((h) => (h.id === entryId ? { ...h, deshecho: true } : h));
+    });
+  }
+
   function handleSubmit(e) {
     e.preventDefault();
     const obligatorios = [
@@ -930,9 +1026,14 @@ function App() {
     }
 
     if (editingId) {
+      const antes = clientes.find((c) => c.id === editingId);
+      const despues = antes ? { ...antes, ...form } : null;
       actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+      if (antes && despues) registrarCambio("editar", antes, despues);
     } else {
-      actualizarClientes((prev) => [...prev, { id: uid(), ...form, creadoEn: new Date().toISOString() }]);
+      const nuevo = { id: uid(), ...form, creadoEn: new Date().toISOString() };
+      actualizarClientes((prev) => [...prev, nuevo]);
+      registrarCambio("crear", null, nuevo);
     }
     resetForm();
     setTab("clientes");
@@ -997,6 +1098,7 @@ function App() {
     actualizarClientes((prev) => prev.filter((c) => c.id !== id));
     if (cliente) {
       setEliminados((prev) => [...prev, { ...cliente, eliminadoEn: new Date().toISOString() }]);
+      registrarCambio("eliminar", cliente, null);
     }
     setConfirmDelete(null);
   }
@@ -1063,6 +1165,7 @@ function App() {
     { key: "clientes", label: "Clientes", icon: "👥" },
     { key: "alertas", label: "Alertas de hoy", icon: "🔔", badge: stats.alHoy },
     { key: "precierre", label: "Precierre", icon: "🧾" },
+    { key: "historial", label: "Historial", icon: "📜" },
   ];
 
   if (!autenticado) {
@@ -1254,6 +1357,9 @@ function App() {
         )}
         {tab === "precierre" && (
           <PrecierreTab clientes={clientesCalc} onIrNuevo={irANuevoConSuscriptor} />
+        )}
+        {tab === "historial" && (
+          <HistorialTab entradas={historialCambios} onDeshacer={deshacerCambio} />
         )}
         {tab === "nuevo" && (
           <FormularioCliente
@@ -3501,6 +3607,137 @@ function EstadoBadge({ estado }) {
   };
   const s = map[estado] || map["Pendiente"];
   return <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: s.bg, color: s.color } }>{estado}</span>;
+}
+
+// ---------- Bitácora de cambios ----------
+function fmtFechaHora(iso) {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const fecha = d.toLocaleDateString("es-PA", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const hora = d.toLocaleTimeString("es-PA", { hour: "2-digit", minute: "2-digit" });
+  return `${fecha} · ${hora}`;
+}
+function fmtRelativo(iso) {
+  if (!iso) return "";
+  const diffMs = Date.now() - new Date(iso).getTime();
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return "justo ahora";
+  if (min < 60) return `hace ${min} min`;
+  const hrs = Math.floor(min / 60);
+  if (hrs < 24) return `hace ${hrs} h`;
+  const dias = Math.floor(hrs / 24);
+  if (dias < 30) return `hace ${dias} d`;
+  return fmtFechaHora(iso);
+}
+const TIPO_INFO = {
+  crear: { icon: "➕", label: "Cliente agregado", color: "#1E7A46", bg: "#E7F5EC" },
+  editar: { icon: "✏️", label: "Cliente editado", color: "#8A6D00", bg: "#FBF3D9" },
+  eliminar: { icon: "🗑️", label: "Cliente eliminado", color: "#B91C1C", bg: "#FBEAEA" },
+};
+function valorLegible(campo, valor) {
+  if (valor === "" || valor === null || valor === undefined) return "—";
+  if (campo === "montoMensual" || campo === "monto1raFactura") return fmtMonto(valor);
+  if (campo === "fechaInstalacion" || campo === "fecha1raFactura") return fmtFecha(valor);
+  return String(valor);
+}
+function HistorialTab({ entradas, onDeshacer }) {
+  const [filtro, setFiltro] = useState("");
+  const [confirmando, setConfirmando] = useState(null);
+  const filtradas = entradas.filter((e) =>
+    !filtro.trim() || e.clienteNombre.toLowerCase().includes(filtro.trim().toLowerCase())
+  );
+  return (
+    <div>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+        <h2 className="text-lg font-semibold" style={ { color: "#001E62" } }>📜 Historial de cambios</h2>
+        <input
+          type="text"
+          placeholder="Buscar por nombre de cliente..."
+          value={filtro}
+          onChange={(e) => setFiltro(e.target.value)}
+          className="px-3 py-2 rounded-md border text-sm outline-none w-full sm:w-64"
+          style={ { borderColor: "#D1D5DB" } }
+        />
+      </div>
+
+      {filtradas.length === 0 ? (
+        <div className="text-sm text-center py-10 rounded-lg border" style={ { color: "#8593B8", borderColor: "#E5E7EB", background: "#fff" } }>
+          {entradas.length === 0
+            ? "Todavía no hay cambios registrados. Aquí vas a ver cada vez que agregues, edites o elimines un cliente."
+            : "No hay cambios que coincidan con esa búsqueda."}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2">
+          {filtradas.map((e) => {
+            const info = TIPO_INFO[e.tipo] || TIPO_INFO.editar;
+            return (
+              <div key={e.id} className="rounded-lg border px-4 py-3 bg-white" style={ { borderColor: "#E5E7EB" } }>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <span
+                      className="text-xs font-semibold px-2 py-1 rounded-full shrink-0"
+                      style={ { color: info.color, background: info.bg } }
+                    >
+                      {info.icon} {info.label}
+                    </span>
+                    <div>
+                      <div className="text-sm font-medium" style={ { color: "#001E62" } }>{e.clienteNombre}</div>
+                      <div className="text-xs" style={ { color: "#9CA3AF" } }>
+                        {fmtRelativo(e.fecha)} · {fmtFechaHora(e.fecha)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    {e.deshecho ? (
+                      <span className="text-xs italic" style={ { color: "#9CA3AF" } }>Deshecho</span>
+                    ) : confirmando === e.id ? (
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => { onDeshacer(e.id); setConfirmando(null); } }
+                          className="text-xs font-medium px-2 py-1 rounded-md text-white"
+                          style={ { background: "#C23B3B" } }
+                        >
+                          Confirmar
+                        </button>
+                        <button
+                          onClick={() => setConfirmando(null)}
+                          className="text-xs font-medium px-2 py-1 rounded-md"
+                          style={ { color: "#6B7280", border: "1px solid #D1D5DB" } }
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setConfirmando(e.id)}
+                        className="text-xs font-medium px-2.5 py-1 rounded-md"
+                        style={ { color: "#001E62", border: "1px solid #D1D5DB" } }
+                      >
+                        ↩ Deshacer
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {e.tipo === "editar" && e.cambios && e.cambios.length > 0 && (
+                  <div className="mt-2.5 pl-1 flex flex-col gap-1">
+                    {e.cambios.map((c) => (
+                      <div key={c.campo} className="text-xs" style={ { color: "#4B5563" } }>
+                        <span className="font-medium">{c.label}:</span>{" "}
+                        <span style={ { color: "#B91C1C" } }>{valorLegible(c.campo, c.anterior)}</span>
+                        {" → "}
+                        <span style={ { color: "#1E7A46" } }>{valorLegible(c.campo, c.nuevo)}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function PrecierreTab({ clientes, onIrNuevo }) {
