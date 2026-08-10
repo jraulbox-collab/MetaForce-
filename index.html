@@ -904,26 +904,77 @@ function App() {
     setTab("nuevo");
   }
 
+  function cambiarUmbralProrrateo(nuevoValor) {
+    const valorAnterior = umbralProrrateo;
+    setUmbralProrrateo(nuevoValor);
+    const valorNum = nuevoValor === "" ? "" : Number(nuevoValor);
+    if (String(valorAnterior ?? "") !== String(valorNum ?? "") && valorNum !== "") {
+      registrarCambio({
+        entidad: "config",
+        tipo: "editar",
+        etiqueta: "Umbral de prorrateo",
+        antes: { campo: "umbralProrrateo", valor: valorAnterior },
+        despues: { campo: "umbralProrrateo", valor: valorNum },
+        cambios: [{ campo: "umbralProrrateo", label: "Umbral de prorrateo", anterior: `${valorAnterior}%`, nuevo: `${valorNum}%` }],
+        refId: "umbralProrrateo",
+      });
+    }
+  }
+
   function actualizarMeta(mes, campo, valor) {
+    const nuevoValor = valor === "" ? undefined : Number(valor);
+    const actualPrev = typeof metas[mes] === "object" && metas[mes] !== null ? metas[mes] : {};
+    const valorAnterior = actualPrev[campo];
     setMetas((prev) => {
       const actual = typeof prev[mes] === "object" && prev[mes] !== null ? prev[mes] : {};
-      return { ...prev, [mes]: { ...actual, [campo]: valor === "" ? undefined : Number(valor) } };
+      return { ...prev, [mes]: { ...actual, [campo]: nuevoValor } };
     });
+    if (String(valorAnterior ?? "") !== String(nuevoValor ?? "")) {
+      const CAMPOS_META = { dinero: "Meta de dinero", arpu: "Meta de ARPU", clientes: "Meta de clientes" };
+      registrarCambio({
+        entidad: "meta",
+        tipo: "editar",
+        etiqueta: `${CAMPOS_META[campo] || campo} · ${mesLabel(mes)}`,
+        antes: { mes, campo, valor: valorAnterior },
+        despues: { mes, campo, valor: nuevoValor },
+        cambios: [{ campo, label: CAMPOS_META[campo] || campo, anterior: valorAnterior, nuevo: nuevoValor }],
+        refId: `${mes}-${campo}`,
+      });
+    }
   }
 
   function agregarConvergencia(nombre, telefono, fullTigo, montoPlan) {
-    setConvergencias((prev) => [
-      ...prev,
-      { id: uid(), nombre, telefono, fullTigo: !!fullTigo, montoPlan: fullTigo ? Number(montoPlan) || 0 : null, creadoEn: new Date().toISOString() },
-    ]);
+    const nueva = { id: uid(), nombre, telefono, fullTigo: !!fullTigo, montoPlan: fullTigo ? Number(montoPlan) || 0 : null, creadoEn: new Date().toISOString() };
+    setConvergencias((prev) => [...prev, nueva]);
+    registrarCambio({ entidad: "convergencia", tipo: "crear", etiqueta: nombre, despues: nueva, cambios: [], refId: nueva.id });
   }
 
   function editarConvergencia(id, datos) {
+    const antes = convergencias.find((c) => c.id === id);
+    const despues = antes ? { ...antes, ...datos } : null;
     setConvergencias((prev) => prev.map((c) => (c.id === id ? { ...c, ...datos } : c)));
+    if (antes && despues) {
+      const cambios = [];
+      if (String(antes.nombre ?? "") !== String(despues.nombre ?? ""))
+        cambios.push({ campo: "nombre", label: "Nombre", anterior: antes.nombre, nuevo: despues.nombre });
+      if (String(antes.telefono ?? "") !== String(despues.telefono ?? ""))
+        cambios.push({ campo: "telefono", label: "Teléfono", anterior: antes.telefono, nuevo: despues.telefono });
+      if (String(!!antes.fullTigo) !== String(!!despues.fullTigo))
+        cambios.push({ campo: "fullTigo", label: "FULL TIGO", anterior: antes.fullTigo ? "Sí" : "No", nuevo: despues.fullTigo ? "Sí" : "No" });
+      if (String(antes.montoPlan ?? "") !== String(despues.montoPlan ?? ""))
+        cambios.push({ campo: "montoPlan", label: "Monto del plan", anterior: antes.montoPlan, nuevo: despues.montoPlan });
+      if (cambios.length > 0) {
+        registrarCambio({ entidad: "convergencia", tipo: "editar", etiqueta: despues.nombre, antes, despues, cambios, refId: id });
+      }
+    }
   }
 
   function eliminarConvergencia(id) {
+    const convergencia = convergencias.find((c) => c.id === id);
     setConvergencias((prev) => prev.filter((c) => c.id !== id));
+    if (convergencia) {
+      registrarCambio({ entidad: "convergencia", tipo: "eliminar", etiqueta: convergencia.nombre, antes: convergencia, cambios: [], refId: id });
+    }
   }
 
   // Aplica un cambio a la lista de clientes, guardando el estado anterior
@@ -942,28 +993,31 @@ function App() {
     });
   }
 
-  // Registra una entrada en la bitácora de cambios (crear/editar/eliminar un cliente).
-  // "antes" y "despues" son el objeto completo del cliente en cada momento (null si no aplica).
-  function registrarCambio(tipo, antes, despues) {
-    const nombre = (despues && despues.nombre) || (antes && antes.nombre) || "Cliente";
-    const clienteId = (despues && despues.id) || (antes && antes.id);
-    if (!clienteId) return;
-    const cambios = tipo === "editar" ? diffCliente(antes, despues) : [];
-    if (tipo === "editar" && cambios.length === 0) return; // nada realmente cambió
+  // Registra una entrada en la bitácora de cambios.
+  // entidad: "cliente" | "convergencia" | "meta" | "factura" | "config"
+  // tipo: "crear" | "editar" | "eliminar" | "recuperar"
+  // etiqueta: texto que identifica el registro afectado (nombre del cliente, mes de la meta, etc.)
+  // antes/despues: snapshot completo para poder revertir. cambios: lista opcional ya calculada de {campo,label,anterior,nuevo}
+  function registrarCambio({ entidad, tipo, etiqueta, antes, despues, cambios, refId }) {
+    const listaCambios = cambios !== undefined ? cambios : entidad === "cliente" && tipo === "editar" ? diffCliente(antes, despues) : [];
+    if (tipo === "editar" && listaCambios.length === 0) return; // nada realmente cambió
+    const id = refId ?? (despues && despues.id) ?? (antes && antes.id) ?? null;
     setHistorialCambios((prev) =>
       [
         {
           id: uid(),
-          tipo, // "crear" | "editar" | "eliminar"
-          clienteId,
-          clienteNombre: nombre,
+          entidad,
+          tipo,
+          etiqueta,
+          refId: id,
           fecha: new Date().toISOString(),
-          cambios,
-          snapshotAntes: antes || null,
+          cambios: listaCambios,
+          snapshotAntes: antes ?? null,
+          snapshotDespues: despues ?? null,
           deshecho: false,
         },
         ...prev,
-      ].slice(0, 300)
+      ].slice(0, 400)
     );
   }
 
@@ -972,18 +1026,55 @@ function App() {
     setHistorialCambios((prev) => {
       const entry = prev.find((h) => h.id === entryId);
       if (!entry || entry.deshecho) return prev;
-      if (entry.tipo === "crear") {
-        actualizarClientes((cs) => cs.filter((c) => c.id !== entry.clienteId));
-      } else if (entry.tipo === "eliminar") {
-        if (entry.snapshotAntes) {
-          actualizarClientes((cs) => (cs.some((c) => c.id === entry.clienteId) ? cs : [...cs, entry.snapshotAntes]));
+
+      if (entry.entidad === "cliente") {
+        if (entry.tipo === "crear") {
+          actualizarClientes((cs) => cs.filter((c) => c.id !== entry.refId));
+        } else if (entry.tipo === "eliminar") {
+          if (entry.snapshotAntes) {
+            actualizarClientes((cs) => (cs.some((c) => c.id === entry.refId) ? cs : [...cs, entry.snapshotAntes]));
+          }
+          setEliminados((els) => els.filter((c) => c.id !== entry.refId));
+        } else if (entry.tipo === "editar") {
+          if (entry.snapshotAntes) {
+            actualizarClientes((cs) => cs.map((c) => (c.id === entry.refId ? entry.snapshotAntes : c)));
+          }
+        } else if (entry.tipo === "recuperar") {
+          // Deshacer una recuperación = volver a eliminar ese cliente.
+          const cliente = clientes.find((c) => c.id === entry.refId);
+          actualizarClientes((cs) => cs.filter((c) => c.id !== entry.refId));
+          if (cliente) setEliminados((els) => [...els, { ...cliente, eliminadoEn: new Date().toISOString() }]);
         }
-        setEliminados((els) => els.filter((c) => c.id !== entry.clienteId));
-      } else if (entry.tipo === "editar") {
+      } else if (entry.entidad === "convergencia") {
+        if (entry.tipo === "crear") {
+          setConvergencias((prev2) => prev2.filter((c) => c.id !== entry.refId));
+        } else if (entry.tipo === "eliminar") {
+          if (entry.snapshotAntes) {
+            setConvergencias((prev2) => (prev2.some((c) => c.id === entry.refId) ? prev2 : [...prev2, entry.snapshotAntes]));
+          }
+        } else if (entry.tipo === "editar") {
+          if (entry.snapshotAntes) {
+            setConvergencias((prev2) => prev2.map((c) => (c.id === entry.refId ? entry.snapshotAntes : c)));
+          }
+        }
+      } else if (entry.entidad === "meta") {
         if (entry.snapshotAntes) {
-          actualizarClientes((cs) => cs.map((c) => (c.id === entry.clienteId ? entry.snapshotAntes : c)));
+          const { mes, campo, valor } = entry.snapshotAntes;
+          setMetas((prev2) => {
+            const actual = typeof prev2[mes] === "object" && prev2[mes] !== null ? prev2[mes] : {};
+            return { ...prev2, [mes]: { ...actual, [campo]: valor } };
+          });
+        }
+      } else if (entry.entidad === "factura") {
+        if (entry.snapshotAntes) {
+          actualizarClientes((cs) => cs.map((c) => (c.id === entry.refId ? entry.snapshotAntes : c)));
+        }
+      } else if (entry.entidad === "config") {
+        if (entry.snapshotAntes && entry.snapshotAntes.campo === "umbralProrrateo") {
+          setUmbralProrrateo(entry.snapshotAntes.valor);
         }
       }
+
       return prev.map((h) => (h.id === entryId ? { ...h, deshecho: true } : h));
     });
   }
@@ -1029,11 +1120,13 @@ function App() {
       const antes = clientes.find((c) => c.id === editingId);
       const despues = antes ? { ...antes, ...form } : null;
       actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
-      if (antes && despues) registrarCambio("editar", antes, despues);
+      if (antes && despues) {
+        registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: editingId });
+      }
     } else {
       const nuevo = { id: uid(), ...form, creadoEn: new Date().toISOString() };
       actualizarClientes((prev) => [...prev, nuevo]);
-      registrarCambio("crear", null, nuevo);
+      registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
     resetForm();
     setTab("clientes");
@@ -1064,6 +1157,7 @@ function App() {
   }
 
   function marcarFacturaPagada(clienteId, n) {
+    const antes = clientes.find((c) => c.id === clienteId);
     actualizarClientes((prev) =>
       prev.map((c) =>
         c.id === clienteId
@@ -1071,12 +1165,28 @@ function App() {
           : c
       )
     );
+    if (antes) {
+      const despues = { ...antes, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada", estadoPago: "Pagado" };
+      const anteriorLabel = antes[`f${n}_estado`] || "sin marcar";
+      if (anteriorLabel !== "pagada") {
+        registrarCambio({
+          entidad: "factura",
+          tipo: "editar",
+          etiqueta: `Factura ${n} de ${antes.nombre}`,
+          antes,
+          despues,
+          cambios: [{ campo: `f${n}_estado`, label: `Estado factura ${n}`, anterior: anteriorLabel, nuevo: "pagada" }],
+          refId: clienteId,
+        });
+      }
+    }
   }
 
   // Cambia el estado de pago de una factura puntual: "pagada", "pendiente" o "" (sin marcar).
   // Al marcar como pagada, silencia sus 3 avisos; al desmarcar, los reactiva por si
   // corresponde que sigan recordándole al cliente.
   function actualizarEstadoFactura(clienteId, n, nuevoEstado) {
+    const antes = clientes.find((c) => c.id === clienteId);
     actualizarClientes((prev) =>
       prev.map((c) => {
         if (c.id !== clienteId) return c;
@@ -1091,6 +1201,30 @@ function App() {
         };
       })
     );
+    if (antes) {
+      const marcarEnviado = nuevoEstado === "pagada";
+      const despues = {
+        ...antes,
+        [`f${n}_estado`]: nuevoEstado,
+        [`f${n}_d1`]: marcarEnviado,
+        [`f${n}_t15`]: marcarEnviado,
+        [`f${n}_t3`]: marcarEnviado,
+        ...(marcarEnviado ? { estadoPago: "Pagado" } : {}),
+      };
+      const anteriorLabel = antes[`f${n}_estado`] || "sin marcar";
+      const nuevoLabel = nuevoEstado || "sin marcar";
+      if (anteriorLabel !== nuevoLabel) {
+        registrarCambio({
+          entidad: "factura",
+          tipo: "editar",
+          etiqueta: `Factura ${n} de ${antes.nombre}`,
+          antes,
+          despues,
+          cambios: [{ campo: `f${n}_estado`, label: `Estado factura ${n}`, anterior: anteriorLabel, nuevo: nuevoLabel }],
+          refId: clienteId,
+        });
+      }
+    }
   }
 
   function deleteClient(id) {
@@ -1098,7 +1232,7 @@ function App() {
     actualizarClientes((prev) => prev.filter((c) => c.id !== id));
     if (cliente) {
       setEliminados((prev) => [...prev, { ...cliente, eliminadoEn: new Date().toISOString() }]);
-      registrarCambio("eliminar", cliente, null);
+      registrarCambio({ entidad: "cliente", tipo: "eliminar", etiqueta: cliente.nombre, antes: cliente, cambios: [], refId: id });
     }
     setConfirmDelete(null);
   }
@@ -1109,6 +1243,7 @@ function App() {
     setEliminados((prev) => prev.filter((c) => c.id !== id));
     const { eliminadoEn, ...resto } = cliente;
     actualizarClientes((prev) => [...prev, resto]);
+    registrarCambio({ entidad: "cliente", tipo: "recuperar", etiqueta: resto.nombre, despues: resto, cambios: [], refId: id });
   }
 
   function copyMessage(cliente, milestone) {
@@ -1418,7 +1553,7 @@ function App() {
           puedeExportar={clientes.length > 0}
           onImportarClick={() => importInputRef.current && importInputRef.current.click()}
           umbralProrrateo={umbralProrrateo}
-          setUmbralProrrateo={setUmbralProrrateo}
+          setUmbralProrrateo={cambiarUmbralProrrateo}
           onCerrarSesion={() => {
             try {
               localStorage.removeItem("antichurn_auth");
@@ -3629,61 +3764,88 @@ function fmtRelativo(iso) {
   if (dias < 30) return `hace ${dias} d`;
   return fmtFechaHora(iso);
 }
-const TIPO_INFO = {
-  crear: { icon: "➕", label: "Cliente agregado", color: "#1E7A46", bg: "#E7F5EC" },
-  editar: { icon: "✏️", label: "Cliente editado", color: "#8A6D00", bg: "#FBF3D9" },
-  eliminar: { icon: "🗑️", label: "Cliente eliminado", color: "#B91C1C", bg: "#FBEAEA" },
+const ACCION_INFO = {
+  crear: { icon: "➕", label: "Agregado", color: "#1E7A46", bg: "#E7F5EC" },
+  editar: { icon: "✏️", label: "Editado", color: "#8A6D00", bg: "#FBF3D9" },
+  eliminar: { icon: "🗑️", label: "Eliminado", color: "#B91C1C", bg: "#FBEAEA" },
+  recuperar: { icon: "♻️", label: "Recuperado", color: "#1D4ED8", bg: "#E8EEFC" },
+};
+const ENTIDAD_LABEL = {
+  cliente: "Cliente",
+  convergencia: "Convergencia",
+  meta: "Meta",
+  factura: "Factura",
+  config: "Configuración",
 };
 function valorLegible(campo, valor) {
   if (valor === "" || valor === null || valor === undefined) return "—";
-  if (campo === "montoMensual" || campo === "monto1raFactura") return fmtMonto(valor);
+  if (campo === "montoMensual" || campo === "monto1raFactura" || campo === "montoPlan") return fmtMonto(valor);
   if (campo === "fechaInstalacion" || campo === "fecha1raFactura") return fmtFecha(valor);
   return String(valor);
 }
 function HistorialTab({ entradas, onDeshacer }) {
   const [filtro, setFiltro] = useState("");
+  const [filtroEntidad, setFiltroEntidad] = useState("");
   const [confirmando, setConfirmando] = useState(null);
-  const filtradas = entradas.filter((e) =>
-    !filtro.trim() || e.clienteNombre.toLowerCase().includes(filtro.trim().toLowerCase())
+  const filtradas = entradas.filter(
+    (e) =>
+      (!filtro.trim() || e.etiqueta.toLowerCase().includes(filtro.trim().toLowerCase())) &&
+      (!filtroEntidad || e.entidad === filtroEntidad)
   );
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <h2 className="text-lg font-semibold" style={ { color: "#001E62" } }>📜 Historial de cambios</h2>
-        <input
-          type="text"
-          placeholder="Buscar por nombre de cliente..."
-          value={filtro}
-          onChange={(e) => setFiltro(e.target.value)}
-          className="px-3 py-2 rounded-md border text-sm outline-none w-full sm:w-64"
-          style={ { borderColor: "#D1D5DB" } }
-        />
+        <div className="flex gap-2 w-full sm:w-auto">
+          <select
+            value={filtroEntidad}
+            onChange={(e) => setFiltroEntidad(e.target.value)}
+            className="px-2 py-2 rounded-md border text-sm outline-none"
+            style={ { borderColor: "#D1D5DB" } }
+          >
+            <option value="">Todo</option>
+            <option value="cliente">Clientes</option>
+            <option value="convergencia">Convergencias</option>
+            <option value="meta">Metas</option>
+            <option value="factura">Facturas</option>
+            <option value="config">Configuración</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Buscar..."
+            value={filtro}
+            onChange={(e) => setFiltro(e.target.value)}
+            className="px-3 py-2 rounded-md border text-sm outline-none w-full sm:w-56"
+            style={ { borderColor: "#D1D5DB" } }
+          />
+        </div>
       </div>
 
       {filtradas.length === 0 ? (
         <div className="text-sm text-center py-10 rounded-lg border" style={ { color: "#8593B8", borderColor: "#E5E7EB", background: "#fff" } }>
           {entradas.length === 0
-            ? "Todavía no hay cambios registrados. Aquí vas a ver cada vez que agregues, edites o elimines un cliente."
+            ? "Todavía no hay cambios registrados. Aquí vas a ver cada vez que agregues, edites o elimines un cliente, una convergencia, una meta, el estado de una factura o la configuración."
             : "No hay cambios que coincidan con esa búsqueda."}
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {filtradas.map((e) => {
-            const info = TIPO_INFO[e.tipo] || TIPO_INFO.editar;
+            const accion = ACCION_INFO[e.tipo] || ACCION_INFO.editar;
+            const entidadLabel = ENTIDAD_LABEL[e.entidad] || e.entidad;
             return (
               <div key={e.id} className="rounded-lg border px-4 py-3 bg-white" style={ { borderColor: "#E5E7EB" } }>
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-2.5">
                     <span
                       className="text-xs font-semibold px-2 py-1 rounded-full shrink-0"
-                      style={ { color: info.color, background: info.bg } }
+                      style={ { color: accion.color, background: accion.bg } }
                     >
-                      {info.icon} {info.label}
+                      {accion.icon} {accion.label}
                     </span>
                     <div>
-                      <div className="text-sm font-medium" style={ { color: "#001E62" } }>{e.clienteNombre}</div>
+                      <div className="text-sm font-medium" style={ { color: "#001E62" } }>{e.etiqueta}</div>
                       <div className="text-xs" style={ { color: "#9CA3AF" } }>
-                        {fmtRelativo(e.fecha)} · {fmtFechaHora(e.fecha)}
+                        {entidadLabel} · {fmtRelativo(e.fecha)} · {fmtFechaHora(e.fecha)}
                       </div>
                     </div>
                   </div>
