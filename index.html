@@ -178,7 +178,7 @@ function estadoRiesgoChurn(c, periodoActualKey) {
     const mesCancel = mesCicloCliente(c.fechaInstalacion, periodoComision(c.fechaCancelacion));
     if (mesCancel !== null && mesCancel >= 1 && mesCancel <= 4) {
       const motivo = c.motivoCancelacion === "falta_pago" ? "falta de pago" : "cancelación voluntaria";
-      return { tipo: "cancelado", texto: `❌ Canceló en mes ${mesCancel} (${motivo}) · afecta tu comisión`, color: "#B91C1C", bg: "#FBEAEA" };
+      return { tipo: "cancelado", texto: `⛔ Canceló en mes ${mesCancel} (${motivo}) · afecta tu comisión`, color: "#B91C1C", bg: "#FBEAEA" };
     }
     return null; // canceló fuera de la ventana de riesgo, no afecta comisión
   }
@@ -189,8 +189,8 @@ function estadoRiesgoChurn(c, periodoActualKey) {
   const f1Pagada = c.f1_estado === "pagada";
   if (mes === 2) {
     return f1Pagada
-      ? { tipo: "ok", texto: "🟢 Mes 2 · 1ra factura pagada", color: "#1E7A46", bg: "#E7F5EC" }
-      : { tipo: "alerta", texto: "🟡 Mes 2 · falta pagar la 1ra factura", color: "#8A6D00", bg: "#FBF3D9" };
+      ? { tipo: "ok", texto: "✅ Mes 2 · 1ra factura pagada", color: "#0F766E", bg: "#DCF5F3" }
+      : { tipo: "alerta", texto: "⚠️ Mes 2 · falta pagar la 1ra factura", color: "#8A6D00", bg: "#FBF3D9" };
   }
 
   // Mes 3 o 4: buscar 2 facturas consecutivas ya vencidas y sin pagar (señal fuerte de churn).
@@ -207,12 +207,12 @@ function estadoRiesgoChurn(c, periodoActualKey) {
     if (a.vencida && b.vencida && !a.pagada && !b.pagada) dosSeguidasSinPagar = true;
   }
   if (dosSeguidasSinPagar) {
-    return { tipo: "alerta", texto: `🔴 Mes ${mes} en riesgo · 2 facturas seguidas sin pagar`, color: "#B91C1C", bg: "#FBEAEA" };
+    return { tipo: "alerta", texto: `⛔ Mes ${mes} en riesgo · 2 facturas seguidas sin pagar`, color: "#B91C1C", bg: "#FBEAEA" };
   }
   if (!f1Pagada) {
-    return { tipo: "alerta", texto: `🟡 Mes ${mes} · nunca pagó la 1ra factura`, color: "#8A6D00", bg: "#FBF3D9" };
+    return { tipo: "alerta", texto: `⚠️ Mes ${mes} · nunca pagó la 1ra factura`, color: "#8A6D00", bg: "#FBF3D9" };
   }
-  return { tipo: "ok", texto: `🟢 Mes ${mes} · al día`, color: "#1E7A46", bg: "#E7F5EC" };
+  return { tipo: "ok", texto: `✅ Mes ${mes} · al día`, color: "#0F766E", bg: "#DCF5F3" };
 }
 // Suma (o resta) meses a una clave "YYYY-MM", para navegar entre períodos de comisión.
 function sumarMesClave(mesKey, delta) {
@@ -513,7 +513,7 @@ Quedo a la orden para cualquier consulta.`;
 }
 
 const MILESTONE_TYPES = [
-  { type: "d1", tag: "D+1", label: "Factura generada", color: "#2F9E6E", bg: "#EAF7F0", getTexto: textoD1 },
+  { type: "d1", tag: "D+1", label: "Factura generada", color: "#0F766E", bg: "#DCF5F3", getTexto: textoD1 },
   { type: "t15", tag: "T-15", label: "15 días antes del vencimiento", color: "#B8791F", bg: "#FBF1DE", getTexto: textoT15 },
   { type: "t3", tag: "T-3", label: "3 días antes del vencimiento", color: "#C23B3B", bg: "#FBEAEA", getTexto: textoT3 },
 ];
@@ -1473,7 +1473,7 @@ function App() {
             <button
               onClick={() => setMostrarSelectorNuevo(true)}
               className="text-left px-3 py-2.5 rounded-md text-sm font-medium mt-1"
-              style={ { background: "#2F9E6E", color: "white" } }
+              style={ { background: "#0F766E", color: "white" } }
             >
               + Nuevo cliente
             </button>
@@ -1880,7 +1880,7 @@ function ResultadoSim({ label, actual, simulado, meta, formato }) {
       <div className="text-[10px]" style={ { color: "#9CA3AF" } }>
         antes {formato(actual)}
         {pct !== null && (
-          <span className="ml-1 font-semibold" style={ { color: pct >= 100 ? "#2F9E6E" : "#0072CE" } }>· {pct}%</span>
+          <span className="ml-1 font-semibold" style={ { color: pct >= 100 ? "#0F766E" : "#0072CE" } }>· {pct}%</span>
         )}
       </div>
     </div>
@@ -1949,7 +1949,7 @@ function MetaInput({ valor, onConfirmar, width, step }) {
           onClick={confirmar}
           title="Confirmar cambio"
           className="text-xs px-1.5 py-1 rounded-md text-white leading-none"
-          style={ { background: "#2F9E6E" } }
+          style={ { background: "#0F766E" } }
         >
           ✓
         </button>
@@ -2257,8 +2257,8 @@ Early: `;
             <>
               <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientes}</span> ·{" "}
-                <span className="font-semibold" style={ { color: progresoClientesPct >= 100 ? "#2F9E6E" : "#0072CE" } }>
-                  {progresoClientesPct}%
+                <span className="font-semibold" style={ { color: progresoClientesPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                  {progresoClientesPct >= 100 ? "✓ " : ""}{progresoClientesPct}%
                 </span>
               </p>
               <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
@@ -2266,7 +2266,7 @@ Early: `;
                   className="h-2 rounded-full"
                   style={ {
                     width: `${Math.min(100, progresoClientesPct)}%`,
-                    background: clientesDelPeriodo.length >= metaClientes ? "#2F9E6E" : "#0072CE",
+                    background: clientesDelPeriodo.length >= metaClientes ? "#0F766E" : "#0072CE",
                   } }
                 />
               </div>
@@ -2300,8 +2300,8 @@ Early: `;
             <>
               <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{fmtMonto(dineroDelPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
-                <span className="font-semibold" style={ { color: progresoDineroPct >= 100 ? "#2F9E6E" : "#0072CE" } }>
-                  {progresoDineroPct}%
+                <span className="font-semibold" style={ { color: progresoDineroPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                  {progresoDineroPct >= 100 ? "✓ " : ""}{progresoDineroPct}%
                 </span>
               </p>
               <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
@@ -2309,7 +2309,7 @@ Early: `;
                   className="h-2 rounded-full"
                   style={ {
                     width: `${Math.min(100, progresoDineroPct)}%`,
-                    background: dineroDelPeriodo >= metaDinero ? "#2F9E6E" : "#0072CE",
+                    background: dineroDelPeriodo >= metaDinero ? "#0F766E" : "#0072CE",
                   } }
                 />
               </div>
@@ -2344,8 +2344,8 @@ Early: `;
             <>
               <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{fmtMonto(arpuPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaArpu)}</span> ·{" "}
-                <span className="font-semibold" style={ { color: progresoArpuPct >= 100 ? "#2F9E6E" : "#0072CE" } }>
-                  {progresoArpuPct}%
+                <span className="font-semibold" style={ { color: progresoArpuPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                  {progresoArpuPct >= 100 ? "✓ " : ""}{progresoArpuPct}%
                 </span>
               </p>
               <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
@@ -2353,7 +2353,7 @@ Early: `;
                   className="h-2 rounded-full"
                   style={ {
                     width: `${Math.min(100, progresoArpuPct)}%`,
-                    background: arpuPeriodo >= metaArpu ? "#2F9E6E" : "#0072CE",
+                    background: arpuPeriodo >= metaArpu ? "#0F766E" : "#0072CE",
                   } }
                 />
               </div>
@@ -2370,7 +2370,7 @@ Early: `;
             🧮 Simular ARPU con planes hipotéticos →
           </button>
           {recomendacionArpu && (recomendacionArpu.alcanzado || recomendacionArpu.doble || recomendacionArpu.single) && (
-            <div className="text-[11px] mt-1 leading-relaxed" style={ { color: recomendacionArpu.alcanzado ? "#2F9E6E" : "#9CA3AF" } }>
+            <div className="text-[11px] mt-1 leading-relaxed" style={ { color: recomendacionArpu.alcanzado ? "#0F766E" : "#9CA3AF" } }>
               {recomendacionArpu.alcanzado
                 ? "✓ Ya alcanzaste el 100% de ARPU"
                 : [
@@ -2453,7 +2453,7 @@ Early: `;
             {detalleAnterior && (
               <div
                 className="text-xs mt-2 font-semibold flex items-center gap-1"
-                style={ { color: detalleMostrado.total >= detalleAnterior.total ? "#2F9E6E" : "#C23B3B" } }
+                style={ { color: detalleMostrado.total >= detalleAnterior.total ? "#0F766E" : "#C23B3B" } }
               >
                 <span>{detalleMostrado.total >= detalleAnterior.total ? "▲" : "▼"}</span>
                 <span>
@@ -2653,7 +2653,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
             <button
               onClick={() => avanzarEnvio(true)}
               className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-              style={ { background: "#2F9E6E" } }
+              style={ { background: "#0F766E" } }
             >
               Sí, siguiente
             </button>
@@ -2792,7 +2792,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                               }
                             } }
                             className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                            style={ { background: "#2F9E6E" } }
+                            style={ { background: "#0F766E" } }
                           >
                             Pago realizado
                           </button>
@@ -3060,7 +3060,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               onClick={() => copiarCelda(c.numeroSuscriptor, c.id, "sub")}
               title="Copiar número de suscriptor"
               className="text-xs"
-              style={ { color: copiedCell === c.id + "sub" ? "#2F9E6E" : "#9CA3AF" } }
+              style={ { color: copiedCell === c.id + "sub" ? "#0F766E" : "#9CA3AF" } }
             >
               {copiedCell === c.id + "sub" ? "✓" : "📋"}
             </button>
@@ -3083,7 +3083,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                 onClick={() => copiarCelda(c.telefono, c.id, "tel")}
                 title="Copiar teléfono"
                 className="text-xs"
-                style={ { color: copiedCell === c.id + "tel" ? "#2F9E6E" : "#9CA3AF" } }
+                style={ { color: copiedCell === c.id + "tel" ? "#0F766E" : "#9CA3AF" } }
               >
                 {copiedCell === c.id + "tel" ? "✓" : "📋"}
               </button>
@@ -3208,7 +3208,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       </div>
       <div className="flex items-center gap-4 mb-4 flex-wrap">
         <p className="text-sm">
-          <span className="font-semibold" style={ { color: "#2F9E6E" } }>{statsClientes.instalados}</span>{" "}
+          <span className="font-semibold" style={ { color: "#0F766E" } }>{statsClientes.instalados}</span>{" "}
           <span style={ { color: "#6B7280" } }>instalados</span>
         </p>
         <p className="text-sm">
@@ -3442,7 +3442,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                   ))}
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {c.actual && (
-                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={ { color: "#2F9E6E" } }>Marcar pagada</button>
+                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={ { color: "#0F766E" } }>Marcar pagada</button>
                     )}
                     <button onClick={() => onEdit(c)} className="text-xs font-medium mr-3" style={ { color: "#0072CE" } }>Editar</button>
                     <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={ { color: "#C23B3B" } }>Eliminar</button>
@@ -3486,7 +3486,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                     <button
                       onClick={() => onRecuperar(c.id)}
                       className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={ { background: "#2F9E6E" } }
+                      style={ { background: "#0F766E" } }
                     >
                       Recuperar
                     </button>
@@ -3632,7 +3632,7 @@ function ClienteDetalle({
                 onClick={() => onCopiarSuscriptor(cliente)}
                 title="Copiar número de suscriptor"
                 className="text-xs"
-                style={ { color: copiedSubKey === cliente.id ? "#2F9E6E" : "#9CA3AF" } }
+                style={ { color: copiedSubKey === cliente.id ? "#0F766E" : "#9CA3AF" } }
               >
                 {copiedSubKey === cliente.id ? "✓" : "📋"}
               </button>
@@ -3719,7 +3719,7 @@ function ClienteDetalle({
                     <button
                       onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")}
                       className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={ { background: "#2F9E6E" } }
+                      style={ { background: "#0F766E" } }
                     >
                       Marcar como pagada
                     </button>
@@ -3976,13 +3976,17 @@ function FacturaDot({ cliente, n, onCambiar }) {
 
 function EstadoBadge({ estado }) {
   const map = {
-    Pendiente: { bg: "#FBF1DE", color: "#B8791F" },
-    Pagado: { bg: "#EAF7F0", color: "#2F9E6E" },
-    Atrasado: { bg: "#FBEAEA", color: "#C23B3B" },
-    Suspendido: { bg: "#EFEFEF", color: "#4B5563" },
+    Pendiente: { bg: "#FBF1DE", color: "#B8791F", icon: "⏳" },
+    Pagado: { bg: "#DCF5F3", color: "#0F766E", icon: "✓" },
+    Atrasado: { bg: "#FBEAEA", color: "#C23B3B", icon: "⚠" },
+    Suspendido: { bg: "#EFEFEF", color: "#4B5563", icon: "⏸" },
   };
   const s = map[estado] || map["Pendiente"];
-  return <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: s.bg, color: s.color } }>{estado}</span>;
+  return (
+    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: s.bg, color: s.color } }>
+      {s.icon} {estado}
+    </span>
+  );
 }
 
 // ---------- Bitácora de cambios ----------
@@ -4006,7 +4010,7 @@ function fmtRelativo(iso) {
   return fmtFechaHora(iso);
 }
 const ACCION_INFO = {
-  crear: { icon: "➕", label: "Agregado", color: "#1E7A46", bg: "#E7F5EC" },
+  crear: { icon: "➕", label: "Agregado", color: "#0F766E", bg: "#DCF5F3" },
   editar: { icon: "✏️", label: "Editado", color: "#8A6D00", bg: "#FBF3D9" },
   eliminar: { icon: "🗑️", label: "Eliminado", color: "#B91C1C", bg: "#FBEAEA" },
   recuperar: { icon: "♻️", label: "Recuperado", color: "#1D4ED8", bg: "#E8EEFC" },
@@ -4127,9 +4131,9 @@ function HistorialTab({ entradas, onDeshacer }) {
                     {e.cambios.map((c) => (
                       <div key={c.campo} className="text-xs" style={ { color: "#4B5563" } }>
                         <span className="font-medium">{c.label}:</span>{" "}
-                        <span style={ { color: "#B91C1C" } }>{valorLegible(c.campo, c.anterior)}</span>
-                        {" → "}
-                        <span style={ { color: "#1E7A46" } }>{valorLegible(c.campo, c.nuevo)}</span>
+                        <span style={ { color: "#B91C1C" } }>− {valorLegible(c.campo, c.anterior)}</span>
+                        {"  "}
+                        <span style={ { color: "#0F766E" } }>+ {valorLegible(c.campo, c.nuevo)}</span>
                       </div>
                     ))}
                   </div>
@@ -4227,7 +4231,7 @@ function PrecierreTab({ clientes, onIrNuevo }) {
               <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Suscriptores en el precierre</div>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={ { color: "#2F9E6E" } }>{resultado.encontrados.length}</div>
+              <div className="text-2xl font-mono font-semibold" style={ { color: "#0F766E" } }>{resultado.encontrados.length}</div>
               <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Ya cargados en la app</div>
             </div>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
@@ -4299,7 +4303,7 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-center" style={ { color: "#2F9E6E" } }>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
+            <p className="text-sm text-center" style={ { color: "#0F766E" } }>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
           )
         )}
 
@@ -4326,7 +4330,7 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-center" style={ { color: "#2F9E6E" } }>✅ No hay sobrantes en el rango seleccionado.</p>
+            <p className="text-sm text-center" style={ { color: "#0F766E" } }>✅ No hay sobrantes en el rango seleccionado.</p>
           )
         )}
 
@@ -4353,7 +4357,7 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
               ))}
             </div>
           ) : (
-            <p className="text-sm text-center" style={ { color: "#2F9E6E" } }>✅ Ninguno fuera de rango.</p>
+            <p className="text-sm text-center" style={ { color: "#0F766E" } }>✅ Ninguno fuera de rango.</p>
           )
         )}
       </div>
