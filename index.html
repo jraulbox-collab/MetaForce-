@@ -140,6 +140,17 @@ function periodoComision(fechaISO) {
   }
   return `${year}-${String(month).padStart(2, "0")}`;
 }
+// Determina a qué período de comisión pertenece un cliente:
+// - Si ya tiene fecha de instalación, se usa esa fecha (así el cliente "se mueve"
+//   automáticamente al período en que finalmente se instaló, aunque haya sido
+//   ingresado en un período anterior).
+// - Si todavía está pendiente de instalación (sin fecha), cuenta en el período
+//   en que fue ingresado a la app.
+function periodoDelCliente(c) {
+  if (c.fechaInstalacion) return periodoComision(c.fechaInstalacion);
+  if (c.creadoEn) return periodoComision(fechaLocalISO(c.creadoEn));
+  return null;
+}
 // Suma (o resta) meses a una clave "YYYY-MM", para navegar entre períodos de comisión.
 function sumarMesClave(mesKey, delta) {
   const [y, m] = mesKey.split("-").map(Number);
@@ -311,7 +322,7 @@ function valorOrdenColumna(c, key) {
     case "ingreso":
       return c.creadoEn || "";
     case "periodo":
-      return periodoComision(c.fechaInstalacion) || "";
+      return periodoDelCliente(c) || "";
     case "facturas": {
       let n = 0;
       for (let i = 1; i <= 4; i++) if (c[`f${i}_estado`] === "pagada") n++;
@@ -1885,7 +1896,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   // Todo lo que sigue se agrupa por período de comisión (instalados del 21 al 20),
   // no por mes calendario ni por fecha de ingreso.
   const clientesDelPeriodo = useMemo(
-    () => clientes.filter((c) => periodoComision(c.fechaInstalacion) === periodoVisto),
+    () => clientes.filter((c) => periodoDelCliente(c) === periodoVisto),
     [clientes, periodoVisto]
   );
   const dineroDelPeriodo = useMemo(
@@ -1930,7 +1941,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         const metaClientesP = leerMeta(metas, key, "clientes");
         const metaDineroP = leerMeta(metas, key, "dinero");
         const metaArpuP = leerMeta(metas, key, "arpu");
-        const delPeriodo = clientes.filter((c) => periodoComision(c.fechaInstalacion) === key);
+        const delPeriodo = clientes.filter((c) => periodoDelCliente(c) === key);
         const cantidad = delPeriodo.length;
         const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
         const arpuP = cantidad > 0 ? dinero / cantidad : 0;
@@ -3008,7 +3019,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       case "ingreso":
         return <span className="font-mono text-xs">{c.creadoEn ? fmtFecha(c.creadoEn.slice(0, 10)) : "—"}</span>;
       case "periodo": {
-        const p = periodoComision(c.fechaInstalacion);
+        const p = periodoDelCliente(c);
         return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>;
       }
       case "facturas": {
@@ -3040,13 +3051,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   }
 
   const clientesDelMes = useMemo(() => {
-    const instalados = clientes.filter((c) => periodoComision(c.fechaInstalacion) === mesActivo);
-    if (mesActivo === mesActualKey) {
-      const pendientes = clientes.filter((c) => !c.fechaInstalacion);
-      return [...instalados, ...pendientes];
-    }
-    return instalados;
-  }, [clientes, mesActivo, mesActualKey]);
+    return clientes.filter((c) => periodoDelCliente(c) === mesActivo);
+  }, [clientes, mesActivo]);
   const visibles = search.trim() || rangoActivo || modoVerTodos ? clientes : clientesDelMes;
   const visiblesOrdenados = useMemo(() => {
     const arr = [...visibles];
