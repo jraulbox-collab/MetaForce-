@@ -151,6 +151,69 @@ function periodoDelCliente(c) {
   if (c.creadoEn) return periodoComision(fechaLocalISO(c.creadoEn));
   return null;
 }
+// Diferencia en meses entre dos claves "YYYY-MM" (keyB - keyA).
+function diffPeriodos(keyA, keyB) {
+  const [ya, ma] = keyA.split("-").map(Number);
+  const [yb, mb] = keyB.split("-").map(Number);
+  return (yb * 12 + mb) - (ya * 12 + ma);
+}
+// "Mes del ciclo" de un cliente respecto a un período de referencia: 1 = el mismo
+// período en que se instaló, 2 = un período después, etc. Es la base de la ventana
+// de riesgo de early churn (mes 2 al mes 4 según la regla de comisión de Tigo).
+function mesCicloCliente(fechaInstalacion, periodoRefKey) {
+  if (!fechaInstalacion || !periodoRefKey) return null;
+  const periodoInstalacion = periodoComision(fechaInstalacion);
+  if (!periodoInstalacion) return null;
+  return diffPeriodos(periodoInstalacion, periodoRefKey) + 1;
+}
+// Estado de riesgo de early churn de un cliente respecto a "hoy" (periodoActualKey).
+// Ventana: mes 2 (debe tener pagada la 1ra factura) al mes 4 (Tigo audita y
+// descuenta si canceló voluntariamente o dejó de pagar después de la 1ra factura).
+function estadoRiesgoChurn(c, periodoActualKey) {
+  if (!c.fechaInstalacion) return null;
+
+  // Si ya se marcó como cancelado, prevalece ese estado mientras haya pasado
+  // dentro de la ventana de riesgo (mes 1 al 4) — es un hecho permanente.
+  if (c.cancelado && c.fechaCancelacion) {
+    const mesCancel = mesCicloCliente(c.fechaInstalacion, periodoComision(c.fechaCancelacion));
+    if (mesCancel !== null && mesCancel >= 1 && mesCancel <= 4) {
+      const motivo = c.motivoCancelacion === "falta_pago" ? "falta de pago" : "cancelación voluntaria";
+      return { tipo: "cancelado", texto: `❌ Canceló en mes ${mesCancel} (${motivo}) · afecta tu comisión`, color: "#B91C1C", bg: "#FBEAEA" };
+    }
+    return null; // canceló fuera de la ventana de riesgo, no afecta comisión
+  }
+
+  const mes = mesCicloCliente(c.fechaInstalacion, periodoActualKey);
+  if (mes === null || mes < 2 || mes > 4) return null;
+
+  const f1Pagada = c.f1_estado === "pagada";
+  if (mes === 2) {
+    return f1Pagada
+      ? { tipo: "ok", texto: "🟢 Mes 2 · 1ra factura pagada", color: "#1E7A46", bg: "#E7F5EC" }
+      : { tipo: "alerta", texto: "🟡 Mes 2 · falta pagar la 1ra factura", color: "#8A6D00", bg: "#FBF3D9" };
+  }
+
+  // Mes 3 o 4: buscar 2 facturas consecutivas ya vencidas y sin pagar (señal fuerte de churn).
+  const facturas = Array.isArray(c.facturas) ? c.facturas : [];
+  const estadosVencidos = [1, 2, 3].map((n) => {
+    const f = facturas.find((x) => x.n === n);
+    const vencida = f ? daysFromToday(f.vencimiento) <= 0 : false;
+    return { n, vencida, pagada: c[`f${n}_estado`] === "pagada" };
+  });
+  let dosSeguidasSinPagar = false;
+  for (let i = 0; i < estadosVencidos.length - 1; i++) {
+    const a = estadosVencidos[i];
+    const b = estadosVencidos[i + 1];
+    if (a.vencida && b.vencida && !a.pagada && !b.pagada) dosSeguidasSinPagar = true;
+  }
+  if (dosSeguidasSinPagar) {
+    return { tipo: "alerta", texto: `🔴 Mes ${mes} en riesgo · 2 facturas seguidas sin pagar`, color: "#B91C1C", bg: "#FBEAEA" };
+  }
+  if (!f1Pagada) {
+    return { tipo: "alerta", texto: `🟡 Mes ${mes} · nunca pagó la 1ra factura`, color: "#8A6D00", bg: "#FBF3D9" };
+  }
+  return { tipo: "ok", texto: `🟢 Mes ${mes} · al día`, color: "#1E7A46", bg: "#E7F5EC" };
+}
 // Suma (o resta) meses a una clave "YYYY-MM", para navegar entre períodos de comisión.
 function sumarMesClave(mesKey, delta) {
   const [y, m] = mesKey.split("-").map(Number);
@@ -253,6 +316,9 @@ const CAMPOS_BITACORA = {
   monto1raFactura: "Monto 1ra factura",
   estadoPago: "Estado de pago",
   observaciones: "Observaciones",
+  cancelado: "Cliente cancelado",
+  fechaCancelacion: "Fecha de cancelación",
+  motivoCancelacion: "Motivo de cancelación",
 };
 function diffCliente(antes, despues) {
   if (!antes || !despues) return [];
@@ -299,6 +365,7 @@ const COLUMNAS_CLIENTES = [
   { key: "instalacion", label: "Instalación", sortable: true },
   { key: "ingreso", label: "Fecha de ingreso", sortable: true },
   { key: "periodo", label: "Período", sortable: true },
+  { key: "riesgo", label: "Riesgo de churn", sortable: false },
   { key: "facturas", label: "Facturas", sortable: true },
   { key: "estado", label: "Estado", sortable: true },
   { key: "obs", label: "Notas", sortable: false },
@@ -605,6 +672,7 @@ function App() {
   });
   const [clientes, setClientes] = useState([]);
   const [loaded, setLoaded] = useState(false);
+  const periodoActualApp = periodoComision(toISO(new Date()));
   const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre", "historial"];
   const [tab, setTab] = useState(() => {
     try {
@@ -1248,6 +1316,22 @@ function App() {
     setConfirmDelete(null);
   }
 
+  function cancelarCliente(id, fecha, motivo) {
+    const antes = clientes.find((c) => c.id === id);
+    if (!antes) return;
+    const despues = { ...antes, cancelado: true, fechaCancelacion: fecha, motivoCancelacion: motivo };
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: antes.nombre, antes, despues, refId: id });
+  }
+
+  function descancelarCliente(id) {
+    const antes = clientes.find((c) => c.id === id);
+    if (!antes) return;
+    const despues = { ...antes, cancelado: false, fechaCancelacion: "", motivoCancelacion: "" };
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: antes.nombre, antes, despues, refId: id });
+  }
+
   function recuperarCliente(id) {
     const cliente = eliminados.find((c) => c.id === id);
     if (!cliente) return;
@@ -1465,6 +1549,7 @@ function App() {
             saltarAMes={saltarAMes}
             columnasClientes={columnasClientes}
             setColumnasClientes={setColumnasClientes}
+            periodoActual={periodoActualApp}
           />
         )}
         {tab === "detalle" && (
@@ -1480,6 +1565,9 @@ function App() {
             onMarcarEnviado={toggleMilestone}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
+            periodoActual={periodoActualApp}
+            onCancelar={cancelarCliente}
+            onDescancelar={descancelarCliente}
           />
         )}
         {tab === "alertas" && (
@@ -2882,7 +2970,7 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
   );
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, columnasClientes, setColumnasClientes }) {
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, columnasClientes, setColumnasClientes, periodoActual }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const [mesActivo, setMesActivo] = useState(mesActualKey);
@@ -3021,6 +3109,19 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       case "periodo": {
         const p = periodoDelCliente(c);
         return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>;
+      }
+      case "riesgo": {
+        const riesgo = estadoRiesgoChurn(c, periodoActual);
+        return riesgo ? (
+          <span
+            className="text-xs font-medium px-2 py-1 rounded-full inline-block whitespace-nowrap"
+            style={ { color: riesgo.color, background: riesgo.bg } }
+          >
+            {riesgo.texto}
+          </span>
+        ) : (
+          <span className="text-xs" style={ { color: "#D1D5DB" } }>—</span>
+        );
       }
       case "facturas": {
         const generadas = c.facturas.filter((f) => daysFromToday(f.generada) <= 0);
@@ -3400,7 +3501,26 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   );
 }
 
-function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPagada, onActualizarEstadoFactura, onCopiarMensaje, copiedKey, onMarcarEnviado, onCopiarSuscriptor, copiedSubKey }) {
+function ClienteDetalle({
+  cliente,
+  onVolver,
+  volverLabel,
+  onEditar,
+  onMarcarPagada,
+  onActualizarEstadoFactura,
+  onCopiarMensaje,
+  copiedKey,
+  onMarcarEnviado,
+  onCopiarSuscriptor,
+  copiedSubKey,
+  periodoActual,
+  onCancelar,
+  onDescancelar,
+}) {
+  const [mostrarCancelar, setMostrarCancelar] = useState(false);
+  const [fechaCancel, setFechaCancel] = useState(() => toISO(new Date()));
+  const [motivoCancel, setMotivoCancel] = useState("voluntaria");
+
   if (!cliente) {
     return (
       <div className="max-w-2xl">
@@ -3415,6 +3535,7 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
   }
 
   const cicloLabel = (CICLOS.find((c) => c.value === cliente.cicloFacturacion) || {}).label || "—";
+  const riesgo = estadoRiesgoChurn(cliente, periodoActual);
 
   return (
     <div className="max-w-2xl">
@@ -3432,7 +3553,74 @@ function ClienteDetalle({ cliente, onVolver, volverLabel, onEditar, onMarcarPaga
           Editar cliente
         </button>
       </div>
-      <p className="text-sm mb-6" style={ { color: "#6B7280" } }>{planLabel(cliente)}</p>
+      <p className="text-sm mb-3" style={ { color: "#6B7280" } }>{planLabel(cliente)}</p>
+
+      {riesgo && (
+        <div
+          className="text-xs font-medium px-3 py-2 rounded-md mb-3 inline-block"
+          style={ { color: riesgo.color, background: riesgo.bg } }
+        >
+          {riesgo.texto}
+        </div>
+      )}
+
+      <div className="mb-4">
+        {cliente.cancelado ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs" style={ { color: "#B91C1C" } }>
+              ❌ Cliente cancelado el {fmtFecha(cliente.fechaCancelacion)} ({cliente.motivoCancelacion === "falta_pago" ? "falta de pago" : "cancelación voluntaria"})
+            </span>
+            <button
+              onClick={() => onDescancelar(cliente.id)}
+              className="text-xs font-medium px-2 py-1 rounded-md border"
+              style={ { color: "#374151", borderColor: "#D1D5DB" } }
+            >
+              Deshacer cancelación
+            </button>
+          </div>
+        ) : mostrarCancelar ? (
+          <div className="flex items-center gap-2 flex-wrap bg-white border rounded-md px-3 py-2" style={ { borderColor: "#E5E7EB" } }>
+            <input
+              type="date"
+              value={fechaCancel}
+              onChange={(e) => setFechaCancel(e.target.value)}
+              className="px-2 py-1 rounded-md border text-xs outline-none"
+              style={ { borderColor: "#D1D5DB" } }
+            />
+            <select
+              value={motivoCancel}
+              onChange={(e) => setMotivoCancel(e.target.value)}
+              className="px-2 py-1 rounded-md border text-xs outline-none"
+              style={ { borderColor: "#D1D5DB" } }
+            >
+              <option value="voluntaria">Cancelación voluntaria</option>
+              <option value="falta_pago">Falta de pago</option>
+            </select>
+            <button
+              onClick={() => { onCancelar(cliente.id, fechaCancel, motivoCancel); setMostrarCancelar(false); } }
+              className="text-xs font-medium px-2.5 py-1 rounded-md text-white"
+              style={ { background: "#C23B3B" } }
+            >
+              Confirmar cancelación
+            </button>
+            <button
+              onClick={() => setMostrarCancelar(false)}
+              className="text-xs font-medium px-2 py-1 rounded-md"
+              style={ { color: "#6B7280", border: "1px solid #D1D5DB" } }
+            >
+              Cancelar
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={() => setMostrarCancelar(true)}
+            className="text-xs font-medium px-2.5 py-1.5 rounded-md border"
+            style={ { color: "#B91C1C", borderColor: "#F3C6C6" } }
+          >
+            Marcar cliente como cancelado
+          </button>
+        )}
+      </div>
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4 grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
         <div>
