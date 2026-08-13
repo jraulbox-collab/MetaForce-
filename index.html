@@ -3400,7 +3400,58 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           </p>
         </div>
       ) : (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
+        <>
+          {/* Vista de tarjetas: solo en pantallas angostas (celular), sin scroll horizontal. */}
+          <div className="md:hidden flex flex-col gap-2">
+            {visiblesFinal.map((c) => {
+              const riesgo = estadoRiesgoChurn(c, periodoActual);
+              return (
+                <div key={c.id} className="bg-white rounded-lg border p-3" style={ { borderColor: "#E5E7EB" } }>
+                  <div className="flex items-start justify-between gap-2">
+                    <button onClick={() => onVerDetalle(c)} className="text-left min-w-0">
+                      <div className="font-medium text-sm truncate" style={ { color: "#001E62" } }>{c.nombre}</div>
+                      <div className="text-xs truncate" style={ { color: "#6B7280" } }>
+                        {planResumen(c)}{c.numeroSuscriptor ? ` · ${c.numeroSuscriptor}` : ""}
+                      </div>
+                    </button>
+                    <span className="font-mono text-sm font-semibold shrink-0" style={ { color: "#001E62" } }>
+                      {c.montoMensual ? fmtMonto(c.montoMensual) : "—"}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                    <EstadoBadge estado={c.estadoPago} />
+                    {!c.fechaInstalacion && (
+                      <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={ { background: "#F59E0B", color: "white" } }>
+                        ⚠️ PENDIENTE POR INSTALAR
+                      </span>
+                    )}
+                    {riesgo && (
+                      <span
+                        className="text-xs font-medium px-2 py-0.5 rounded-full"
+                        style={ { color: riesgo.color, background: riesgo.bg } }
+                      >
+                        {riesgo.texto}
+                      </span>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-4 mt-2.5 pt-2.5 border-t" style={ { borderColor: "#F0F0EF" } }>
+                    {c.actual && (
+                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium" style={ { color: "#0F766E" } }>
+                        Marcar pagada
+                      </button>
+                    )}
+                    <button onClick={() => onEdit(c)} className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
+                    <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={ { color: "#C23B3B" } }>Eliminar</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Vista de tabla clásica: solo en pantallas anchas (tablet/desktop). */}
+          <div className="hidden md:block bg-white rounded-lg border border-gray-200 shadow-sm overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left" style={ { background: "#F4F6FA" } }>
@@ -3451,7 +3502,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       {mostrarSelectorColumnas && (
