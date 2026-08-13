@@ -365,9 +365,7 @@ const COLUMNAS_CLIENTES = [
   { key: "instalacion", label: "Instalación", sortable: true },
   { key: "ingreso", label: "Fecha de ingreso", sortable: true },
   { key: "periodo", label: "Período", sortable: true },
-  { key: "riesgo", label: "Riesgo de churn", sortable: false },
-  { key: "facturas", label: "Facturas", sortable: true },
-  { key: "estado", label: "Estado", sortable: true },
+  { key: "seguimiento", label: "Seguimiento", sortable: false },
   { key: "obs", label: "Notas", sortable: false },
 ];
 const COLUMNAS_CLIENTES_KEYS = COLUMNAS_CLIENTES.map((c) => c.key);
@@ -390,13 +388,6 @@ function valorOrdenColumna(c, key) {
       return c.creadoEn || "";
     case "periodo":
       return periodoDelCliente(c) || "";
-    case "facturas": {
-      let n = 0;
-      for (let i = 1; i <= 4; i++) if (c[`f${i}_estado`] === "pagada") n++;
-      return n;
-    }
-    case "estado":
-      return c.estadoPago || "";
     default:
       return "";
   }
@@ -1240,12 +1231,12 @@ function App() {
     actualizarClientes((prev) =>
       prev.map((c) =>
         c.id === clienteId
-          ? { ...c, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada", estadoPago: "Pagado" }
+          ? { ...c, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada" }
           : c
       )
     );
     if (antes) {
-      const despues = { ...antes, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada", estadoPago: "Pagado" };
+      const despues = { ...antes, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada" };
       const anteriorLabel = antes[`f${n}_estado`] || "sin marcar";
       if (anteriorLabel !== "pagada") {
         registrarCambio({
@@ -1276,7 +1267,6 @@ function App() {
           [`f${n}_d1`]: marcarEnviado,
           [`f${n}_t15`]: marcarEnviado,
           [`f${n}_t3`]: marcarEnviado,
-          ...(marcarEnviado ? { estadoPago: "Pagado" } : {}),
         };
       })
     );
@@ -1288,7 +1278,6 @@ function App() {
         [`f${n}_d1`]: marcarEnviado,
         [`f${n}_t15`]: marcarEnviado,
         [`f${n}_t3`]: marcarEnviado,
-        ...(marcarEnviado ? { estadoPago: "Pagado" } : {}),
       };
       const anteriorLabel = antes[`f${n}_estado`] || "sin marcar";
       const nuevoLabel = nuevoEstado || "sin marcar";
@@ -3110,36 +3099,43 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         const p = periodoDelCliente(c);
         return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>;
       }
-      case "riesgo": {
+      case "seguimiento": {
+        if (!c.fechaInstalacion) {
+          return (
+            <span
+              className="text-xs font-medium px-2 py-1 rounded-full inline-block whitespace-nowrap"
+              style={ { color: "#B8791F", background: "#FBF1DE" } }
+            >
+              ⚠️ Pendiente por instalar
+            </span>
+          );
+        }
+        const mes = mesCicloCliente(c.fechaInstalacion, periodoActual);
+        if (mes === null || mes < 2 || mes > 4) {
+          return <span className="text-xs" style={ { color: "#D1D5DB" } }>—</span>;
+        }
         const riesgo = estadoRiesgoChurn(c, periodoActual);
-        return riesgo ? (
-          <span
-            className="text-xs font-medium px-2 py-1 rounded-full inline-block whitespace-nowrap"
-            style={ { color: riesgo.color, background: riesgo.bg } }
-          >
-            {riesgo.texto}
-          </span>
-        ) : (
-          <span className="text-xs" style={ { color: "#D1D5DB" } }>—</span>
-        );
-      }
-      case "facturas": {
-        const generadas = c.facturas.filter((f) => daysFromToday(f.generada) <= 0);
-        return generadas.length > 0 ? (
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs font-mono" style={ { color: "#9CA3AF" } }>{generadas.length}/4</span>
-            <div className="flex items-center gap-1">
-              {generadas.map((f) => (
-                <FacturaDot key={f.n} cliente={c} n={f.n} onCambiar={onActualizarEstadoFactura} />
-              ))}
-            </div>
+        const generadas = (c.facturas || []).filter((f) => daysFromToday(f.generada) <= 0);
+        return (
+          <div className="flex flex-col gap-1 items-start">
+            {riesgo && (
+              <span
+                className="text-xs font-medium px-2 py-1 rounded-full inline-block whitespace-nowrap"
+                style={ { color: riesgo.color, background: riesgo.bg } }
+              >
+                {riesgo.texto}
+              </span>
+            )}
+            {generadas.length > 0 && (
+              <div className="flex items-center gap-1">
+                {generadas.map((f) => (
+                  <FacturaDot key={f.n} cliente={c} n={f.n} onCambiar={onActualizarEstadoFactura} />
+                ))}
+              </div>
+            )}
           </div>
-        ) : (
-          <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>
         );
       }
-      case "estado":
-        return <EstadoBadge estado={c.estadoPago} />;
       case "obs":
         return c.observaciones && c.observaciones.trim() ? (
           <span title={c.observaciones}>📝</span>
@@ -3711,7 +3707,16 @@ function ClienteDetalle({
         </div>
         <div>
           <div className="text-xs" style={ { color: "#6B7280" } }>Estado de pago</div>
-          <div><EstadoBadge estado={cliente.estadoPago} /></div>
+          <div>
+            {(() => {
+              const r = resumenPagoCliente(cliente);
+              return (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block" style={ { color: r.color, background: r.bg } }>
+                  {r.texto}
+                </span>
+              );
+            })()}
+          </div>
         </div>
         <div>
           <div className="text-xs" style={ { color: "#6B7280" } }>Fecha de ingreso</div>
@@ -4024,19 +4029,26 @@ function FacturaDot({ cliente, n, onCambiar }) {
   );
 }
 
-function EstadoBadge({ estado }) {
-  const map = {
-    Pendiente: { bg: "#FBF1DE", color: "#B8791F", icon: "⏳" },
-    Pagado: { bg: "#DCF5F3", color: "#0F766E", icon: "✓" },
-    Atrasado: { bg: "#FBEAEA", color: "#C23B3B", icon: "⚠" },
-    Suspendido: { bg: "#EFEFEF", color: "#4B5563", icon: "⏸" },
-  };
-  const s = map[estado] || map["Pendiente"];
-  return (
-    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: s.bg, color: s.color } }>
-      {s.icon} {estado}
-    </span>
-  );
+// Resumen real del estado de pago de un cliente, mirando TODAS las facturas ya
+// generadas (no solo la última que se tocó) — para la ficha de detalle.
+function resumenPagoCliente(c) {
+  if (c.estadoPago === "Suspendido") {
+    return { texto: "⏸ Suspendido", color: "#4B5563", bg: "#EFEFEF" };
+  }
+  const facturas = Array.isArray(c.facturas) ? c.facturas : [];
+  const generadas = facturas.filter((f) => daysFromToday(f.generada) <= 0);
+  if (generadas.length === 0) {
+    return { texto: "⏳ Pendiente", color: "#B8791F", bg: "#FBF1DE" };
+  }
+  const pagadas = generadas.filter((f) => c[`f${f.n}_estado`] === "pagada").length;
+  const hayVencidaSinPagar = generadas.some((f) => daysFromToday(f.vencimiento) <= 0 && c[`f${f.n}_estado`] !== "pagada");
+  if (pagadas === generadas.length) {
+    return { texto: "✓ Pagado", color: "#0F766E", bg: "#DCF5F3" };
+  }
+  if (hayVencidaSinPagar) {
+    return { texto: `⚠ Atrasado (${pagadas}/${generadas.length} pagadas)`, color: "#C23B3B", bg: "#FBEAEA" };
+  }
+  return { texto: `◐ Pago parcial (${pagadas}/${generadas.length})`, color: "#B8791F", bg: "#FBF1DE" };
 }
 
 // ---------- Bitácora de cambios ----------
