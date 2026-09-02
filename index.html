@@ -653,6 +653,171 @@ function RangoFechasInput({ desde, hasta, onChange, className, style, placeholde
 }
 
 // ---------- Componente principal ----------
+// Resumen de facturas ya emitidas (hasta hoy) y cuántas de esas están pagadas.
+function facturasResumen(c) {
+  const generadas = (c.facturas || []).filter((f) => daysFromToday(f.generada) <= 0);
+  const pagadas = generadas.filter((f) => c[`f${f.n}_estado`] === "pagada");
+  return { emitidas: generadas.length, pagadas: pagadas.length };
+}
+
+const CAMPOS_EXPORTAR = [
+  ["suscriptor", "N° Suscriptor"],
+  ["nombre", "Nombre del cliente"],
+  ["instalacion", "Fecha de instalación"],
+  ["facturasEmitidas", "Facturas emitidas"],
+  ["facturasPagadas", "Facturas pagadas hasta la fecha"],
+  ["telefono", "Teléfono"],
+  ["plan", "Plan"],
+  ["monto", "Monto mensual"],
+];
+
+function ExportarModal({ clientes, onCerrar }) {
+  const [desde, setDesde] = useState("");
+  const [hasta, setHasta] = useState("");
+  const [campos, setCampos] = useState({
+    suscriptor: true,
+    nombre: true,
+    instalacion: true,
+    facturasEmitidas: true,
+    facturasPagadas: true,
+    telefono: false,
+    plan: false,
+    monto: false,
+  });
+  const [copiado, setCopiado] = useState(false);
+
+  const filtrados = useMemo(() => {
+    return clientes
+      .filter((c) => {
+        if (!c.fechaInstalacion) return false;
+        if (desde && c.fechaInstalacion < desde) return false;
+        if (hasta && c.fechaInstalacion > hasta) return false;
+        return true;
+      })
+      .sort((a, b) => (a.fechaInstalacion < b.fechaInstalacion ? -1 : 1));
+  }, [clientes, desde, hasta]);
+
+  function construirTabla() {
+    const activos = CAMPOS_EXPORTAR.filter(([key]) => campos[key]);
+    const encabezado = activos.map(([, label]) => label);
+    const filas = filtrados.map((c) => {
+      const r = facturasResumen(c);
+      return activos.map(([key]) => {
+        switch (key) {
+          case "suscriptor":
+            return c.numeroSuscriptor || "";
+          case "nombre":
+            return c.nombre || "";
+          case "instalacion":
+            return fmtFecha(c.fechaInstalacion);
+          case "facturasEmitidas":
+            return r.emitidas;
+          case "facturasPagadas":
+            return r.pagadas;
+          case "telefono":
+            return c.telefono || "";
+          case "plan":
+            return planLabel(c);
+          case "monto":
+            return c.montoMensual || "";
+          default:
+            return "";
+        }
+      });
+    });
+    return { encabezado, filas };
+  }
+
+  function descargarCSV() {
+    const { encabezado, filas } = construirTabla();
+    const csv = [encabezado, ...filas]
+      .map((fila) => fila.map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","))
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `suscriptores_instalados_${desde || "inicio"}_a_${hasta || "hoy"}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function copiarTexto() {
+    const { encabezado, filas } = construirTabla();
+    const texto = [encabezado, ...filas].map((fila) => fila.join("\t")).join("\n");
+    navigator.clipboard?.writeText(texto).catch(() => {});
+    setCopiado(true);
+    setTimeout(() => setCopiado(false), 1500);
+  }
+
+  const hayCampos = CAMPOS_EXPORTAR.some(([key]) => campos[key]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,0.45)" } }>
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold" style={ { color: "#001E62" } }>⬇️ Exportar suscriptores instalados</h3>
+          <button onClick={onCerrar} className="text-sm px-2" style={ { color: "#6B7280" } }>✕</button>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-xs font-medium block mb-1.5" style={ { color: "#6B7280" } }>
+            Rango de fecha de instalación
+          </label>
+          <RangoFechasInput
+            desde={desde}
+            hasta={hasta}
+            onChange={(d, h) => { setDesde(d); setHasta(h); } }
+            className="w-full px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"
+          />
+        </div>
+
+        <div className="mb-4">
+          <label className="text-xs font-medium block mb-2" style={ { color: "#6B7280" } }>Qué incluir</label>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+            {CAMPOS_EXPORTAR.map(([key, label]) => (
+              <label key={key} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={!!campos[key]}
+                  onChange={(e) => setCampos((prev) => ({ ...prev, [key]: e.target.checked }))}
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
+          {filtrados.length} cliente{filtrados.length === 1 ? "" : "s"} instalado{filtrados.length === 1 ? "" : "s"}
+          {desde || hasta ? " en ese rango." : " en total (no elegiste rango — se exportan todos los instalados)."}
+        </p>
+
+        <div className="flex gap-2">
+          <button
+            onClick={descargarCSV}
+            disabled={filtrados.length === 0 || !hayCampos}
+            className="flex-1 text-sm font-medium px-3 py-2 rounded-md text-white disabled:opacity-40"
+            style={ { background: "#001E62" } }
+          >
+            ⬇️ Descargar CSV
+          </button>
+          <button
+            onClick={copiarTexto}
+            disabled={filtrados.length === 0 || !hayCampos}
+            className="flex-1 text-sm font-medium px-3 py-2 rounded-md border disabled:opacity-40"
+            style={ { borderColor: "#D1D5DB", color: copiado ? "#0F766E" : "#374151" } }
+          >
+            {copiado ? "✓ Copiado" : "📋 Copiar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [autenticado, setAutenticado] = useState(() => {
     try {
@@ -1539,6 +1704,8 @@ function App() {
             columnasClientes={columnasClientes}
             setColumnasClientes={setColumnasClientes}
             periodoActual={periodoActualApp}
+            onCopiarSuscriptor={copySuscriptor}
+            copiedSubKey={copiedSubKey}
           />
         )}
         {tab === "detalle" && (
@@ -3184,11 +3351,21 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
     return { instalados, pendientes: visiblesFinal.length - instalados, total: visiblesFinal.length };
   }, [visiblesFinal]);
 
+  const [exportarAbierto, setExportarAbierto] = useState(false);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Clientes</h1>
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setExportarAbierto(true)}
+            className="text-sm font-medium px-3 py-2 rounded-md border flex items-center gap-1.5"
+            style={ { borderColor: "#D1D5DB", color: "#374151" } }
+            title="Exportar suscriptores instalados en un rango de fechas"
+          >
+            ⬇️ Exportar suscriptores
+          </button>
           <button
             onClick={() => setPapeleraAbierta(true)}
             className="text-sm font-medium px-3 py-2 rounded-md border flex items-center gap-1.5"
@@ -3202,6 +3379,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           </button>
         </div>
       </div>
+      {exportarAbierto && <ExportarModal clientes={clientes} onCerrar={() => setExportarAbierto(false)} />}
       <div className="flex items-center gap-4 mb-4 flex-wrap">
         <p className="text-sm">
           <span className="font-semibold" style={ { color: "#0F766E" } }>{statsClientes.instalados}</span>{" "}
