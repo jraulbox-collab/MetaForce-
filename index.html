@@ -839,6 +839,20 @@ function App() {
     }
   });
   const [origenDetalle, setOrigenDetalle] = useState("clientes");
+  // Mes/período que se está viendo en la pestaña Clientes. Vive aquí (y no dentro de
+  // ClientesTab) para que no se resetee al período actual cuando entras al detalle
+  // de un cliente y volvés atrás.
+  const [mesActivoClientes, setMesActivoClientes] = useState(null);
+  const [filtrosClientes, setFiltrosClientes] = useState({
+    modoVerTodos: false,
+    ordenarPor: "ingreso",
+    ordenDireccion: "desc",
+    filtroEstado: "",
+    filtroInstalacion: "",
+    filtroPlan: "",
+    fechaDesde: "",
+    fechaHasta: "",
+  });
   const [form, setForm] = useState(emptyForm());
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
@@ -859,7 +873,21 @@ function App() {
     } catch (e) {}
   }, [tab]);
   const [copiedSubKey, setCopiedSubKey] = useState(null);
-  const [saveError, setSaveError] = useState(false);
+  // Estado de guardado visible para el usuario: "guardando" mientras hay una
+  // escritura en curso hacia Supabase, "guardado" cuando terminó bien, "error"
+  // si falló. Se combina con si el celular/navegador está sin conexión.
+  const [estadoGuardado, setEstadoGuardado] = useState("guardado");
+  const [enLinea, setEnLinea] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
+  useEffect(() => {
+    function marcarOnline() { setEnLinea(true); }
+    function marcarOffline() { setEnLinea(false); }
+    window.addEventListener("online", marcarOnline);
+    window.addEventListener("offline", marcarOffline);
+    return () => {
+      window.removeEventListener("online", marcarOnline);
+      window.removeEventListener("offline", marcarOffline);
+    };
+  }, []);
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [clienteDetalleId, setClienteDetalleId] = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
@@ -897,17 +925,63 @@ function App() {
     })();
   }, []);
 
+  // Guarda los clientes en Supabase de a UN guardado a la vez (nunca en paralelo).
+  // Si mientras se está guardando llegan más cambios (por ejemplo, marcar 50 alertas
+  // seguidas en el envío en cadena), no se disparan 50 guardados sueltos que puedan
+  // llegar desordenados y pisarse entre sí — se guarda solo el más reciente en cuanto
+  // el guardado anterior termina.
+  const guardandoClientesRef = useRef(false);
+  const clientesPendienteRef = useRef(null);
+  const persistirClientes = useRef(async function persist(json) {
+    if (guardandoClientesRef.current) {
+      clientesPendienteRef.current = json;
+      return;
+    }
+    guardandoClientesRef.current = true;
+    setEstadoGuardado("guardando");
+    try {
+      const r = await storage.set("clientes-churn", json);
+      setEstadoGuardado(r ? "guardado" : "error");
+    } catch (e) {
+      setEstadoGuardado("error");
+    } finally {
+      guardandoClientesRef.current = false;
+      if (clientesPendienteRef.current !== null) {
+        const siguiente = clientesPendienteRef.current;
+        clientesPendienteRef.current = null;
+        persistirClientes.current(siguiente);
+      }
+    }
+  }).current;
+
   useEffect(() => {
     if (!loaded) return;
-    (async () => {
-      try {
-        const r = await storage.set("clientes-churn", JSON.stringify(clientes));
-        setSaveError(!r);
-      } catch (e) {
-        setSaveError(true);
-      }
-    })();
+    persistirClientes(JSON.stringify(clientes));
   }, [clientes, loaded]);
+
+  // Guarda un valor en Supabase de a UNO a la vez (nunca en paralelo), para que un
+  // guardado atrasado nunca pise a uno más reciente si llegan desordenados por la
+  // red. Devuelve una función persist(valor) para usar dentro de un useEffect.
+  function useGuardadoSerie(key) {
+    const guardandoRef = useRef(false);
+    const pendienteRef = useRef(null);
+    return useRef(async function persist(valor) {
+      if (guardandoRef.current) {
+        pendienteRef.current = valor;
+        return;
+      }
+      guardandoRef.current = true;
+      try {
+        await storage.set(key, valor);
+      } catch (e) {}
+      guardandoRef.current = false;
+      if (pendienteRef.current !== null) {
+        const siguiente = pendienteRef.current;
+        pendienteRef.current = null;
+        persist(siguiente);
+      }
+    }).current;
+  }
 
   useEffect(() => {
     (async () => {
@@ -919,13 +993,10 @@ function App() {
     })();
   }, []);
 
+  const persistirMetas = useGuardadoSerie("metas-mensuales");
   useEffect(() => {
     if (!metasLoaded) return;
-    (async () => {
-      try {
-        await storage.set("metas-mensuales", JSON.stringify(metas));
-      } catch (e) {}
-    })();
+    persistirMetas(JSON.stringify(metas));
   }, [metas, metasLoaded]);
 
   useEffect(() => {
@@ -938,13 +1009,10 @@ function App() {
     })();
   }, []);
 
+  const persistirConvergencias = useGuardadoSerie("convergencias-churn");
   useEffect(() => {
     if (!convergenciasLoaded) return;
-    (async () => {
-      try {
-        await storage.set("convergencias-churn", JSON.stringify(convergencias));
-      } catch (e) {}
-    })();
+    persistirConvergencias(JSON.stringify(convergencias));
   }, [convergencias, convergenciasLoaded]);
 
   useEffect(() => {
@@ -957,13 +1025,10 @@ function App() {
     })();
   }, []);
 
+  const persistirEliminados = useGuardadoSerie("clientes-eliminados");
   useEffect(() => {
     if (!eliminadosLoaded) return;
-    (async () => {
-      try {
-        await storage.set("clientes-eliminados", JSON.stringify(eliminados));
-      } catch (e) {}
-    })();
+    persistirEliminados(JSON.stringify(eliminados));
   }, [eliminados, eliminadosLoaded]);
 
   useEffect(() => {
@@ -976,13 +1041,10 @@ function App() {
     })();
   }, []);
 
+  const persistirHistorial = useGuardadoSerie("historial-cambios-churn");
   useEffect(() => {
     if (!historialCambiosLoaded) return;
-    (async () => {
-      try {
-        await storage.set("historial-cambios-churn", JSON.stringify(historialCambios));
-      } catch (e) {}
-    })();
+    persistirHistorial(JSON.stringify(historialCambios));
   }, [historialCambios, historialCambiosLoaded]);
 
   useEffect(() => {
@@ -995,13 +1057,10 @@ function App() {
     })();
   }, []);
 
+  const persistirUmbral = useGuardadoSerie("umbral-prorrateo");
   useEffect(() => {
     if (!umbralProrrateoLoaded) return;
-    (async () => {
-      try {
-        await storage.set("umbral-prorrateo", String(umbralProrrateo));
-      } catch (e) {}
-    })();
+    persistirUmbral(String(umbralProrrateo));
   }, [umbralProrrateo, umbralProrrateoLoaded]);
 
   useEffect(() => {
@@ -1024,13 +1083,10 @@ function App() {
     })();
   }, []);
 
+  const persistirColumnas = useGuardadoSerie("clientes-columnas");
   useEffect(() => {
     if (!columnasClientesLoaded) return;
-    (async () => {
-      try {
-        await storage.set("clientes-columnas", JSON.stringify(columnasClientes));
-      } catch (e) {}
-    })();
+    persistirColumnas(JSON.stringify(columnasClientes));
   }, [columnasClientes, columnasClientesLoaded]);
 
   const clientesCalc = useMemo(() => {
@@ -1634,8 +1690,14 @@ function App() {
           </nav>
         </div>
         <div className="px-5 pb-5 flex flex-col gap-2">
-          <div className="text-[11px]" style={ { color: "#5C6480" } }>
-            {saveError ? "⚠️ error al guardar" : "guardado automático activo (en la nube)"}
+          <div className="text-[11px] flex items-center gap-1.5" style={ { color: "#5C6480" } }>
+            {!enLinea
+              ? "📴 Sin conexión — se guardará al reconectar"
+              : estadoGuardado === "guardando"
+              ? "⏳ Guardando..."
+              : estadoGuardado === "error"
+              ? "⚠️ Error al guardar — revisa tu conexión"
+              : "☁️ Guardado"}
           </div>
           <button
             onClick={() => setMostrarConfig(true)}
@@ -1705,6 +1767,10 @@ function App() {
             setColumnasClientes={setColumnasClientes}
             periodoActual={periodoActualApp}
             onCopiarSuscriptor={copySuscriptor}
+            mesActivo={mesActivoClientes}
+            setMesActivo={setMesActivoClientes}
+            filtrosClientes={filtrosClientes}
+            setFiltrosClientes={setFiltrosClientes}
             copiedSubKey={copiedSubKey}
           />
         )}
@@ -1757,6 +1823,7 @@ function App() {
             setForm={setForm}
             onSubmit={handleSubmit}
             editing={!!editingId}
+            editingId={editingId}
             clientes={clientesCalc}
             onCancel={() => {
               resetForm();
@@ -3126,32 +3193,48 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
   );
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, columnasClientes, setColumnasClientes, periodoActual }) {
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
-  const [mesActivo, setMesActivo] = useState(mesActualKey);
-  const [modoVerTodos, setModoVerTodos] = useState(false);
+  const mesActivoEfectivo = mesActivo || mesActualKey;
+
+  // Todos estos filtros viven en App (no acá) para que no se reseteen cuando entrás
+  // al detalle de un cliente y volvés atrás — quedan tal como los dejaste.
+  const { modoVerTodos, ordenarPor, ordenDireccion, filtroEstado, filtroInstalacion, filtroPlan, fechaDesde, fechaHasta } = filtrosClientes;
+  function hacerSetter(key) {
+    return (valOrFn) => {
+      setFiltrosClientes((prev) => ({
+        ...prev,
+        [key]: typeof valOrFn === "function" ? valOrFn(prev[key]) : valOrFn,
+      }));
+    };
+  }
+  const setModoVerTodos = hacerSetter("modoVerTodos");
+  const setOrdenarPor = hacerSetter("ordenarPor");
+  const setOrdenDireccion = hacerSetter("ordenDireccion");
+  const setFiltroEstado = hacerSetter("filtroEstado");
+  const setFiltroInstalacion = hacerSetter("filtroInstalacion");
+  const setFiltroPlan = hacerSetter("filtroPlan");
+  const setFechaDesde = hacerSetter("fechaDesde");
+  const setFechaHasta = hacerSetter("fechaHasta");
+
   useEffect(() => {
     if (saltarAMes) {
       if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
-      setFechaDesde("");
-      setFechaHasta("");
+      setFiltrosClientes((prev) => ({
+        ...prev,
+        fechaDesde: "",
+        fechaHasta: "",
+        filtroPlan: saltarAMes.filtroPlan || "",
+        filtroInstalacion: saltarAMes.filtroInstalacion || "",
+        filtroEstado: saltarAMes.filtroEstado || "",
+        modoVerTodos: !!saltarAMes.todosLosMeses,
+      }));
       setSearch("");
-      setFiltroPlan(saltarAMes.filtroPlan || "");
-      setFiltroInstalacion(saltarAMes.filtroInstalacion || "");
-      setFiltroEstado(saltarAMes.filtroEstado || "");
-      setModoVerTodos(!!saltarAMes.todosLosMeses);
       setFiltrosAbiertos(true);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saltarAMes]);
-  const [ordenarPor, setOrdenarPor] = useState("ingreso");
-  const [ordenDireccion, setOrdenDireccion] = useState("desc");
-  const [filtroEstado, setFiltroEstado] = useState("");
-  const [filtroInstalacion, setFiltroInstalacion] = useState("");
-  const [filtroPlan, setFiltroPlan] = useState("");
-  const [fechaDesde, setFechaDesde] = useState("");
-  const [fechaHasta, setFechaHasta] = useState("");
   const rangoActivo = !!(fechaDesde || fechaHasta);
   const [copiedCell, setCopiedCell] = useState(null);
   const [papeleraAbierta, setPapeleraAbierta] = useState(false);
@@ -3315,8 +3398,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   }
 
   const clientesDelMes = useMemo(() => {
-    return clientes.filter((c) => periodoDelCliente(c) === mesActivo);
-  }, [clientes, mesActivo]);
+    return clientes.filter((c) => periodoDelCliente(c) === mesActivoEfectivo);
+  }, [clientes, mesActivoEfectivo]);
   const visibles = search.trim() || rangoActivo || modoVerTodos ? clientes : clientesDelMes;
   const visiblesOrdenados = useMemo(() => {
     const arr = [...visibles];
@@ -3417,9 +3500,9 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             disabled={rangoActivo || modoVerTodos}
             className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
             style={ {
-              borderColor: mesActivo === m.key ? "#001E62" : "#D1D5DB",
-              background: mesActivo === m.key ? "#001E62" : "white",
-              color: mesActivo === m.key ? "white" : "#374151",
+              borderColor: mesActivoEfectivo === m.key ? "#001E62" : "#D1D5DB",
+              background: mesActivoEfectivo === m.key ? "#001E62" : "white",
+              color: mesActivoEfectivo === m.key ? "white" : "#374151",
             } }
           >
             {m.label.toUpperCase()}{i === 0 ? " (actual)" : ""}
@@ -4605,12 +4688,20 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
   );
 }
 
-function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, clientes = [] }) {
+function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCancel, clientes = [] }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const inputClass = "w-full px-3 py-2 rounded-md border text-sm outline-none focus:ring-2";
   const inputStyle = { borderColor: "#D1D5DB" };
   const lockedStyle = { borderColor: "#D1D5DB", background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" };
   const [diasProrrateo, setDiasProrrateo] = useState(null);
+
+  // Aviso en vivo (mientras escribís) si ese N° de suscriptor ya pertenece a otro
+  // cliente — antes esto solo se avisaba al final, al tocar Guardar.
+  const suscriptorDuplicado = useMemo(() => {
+    const num = (form.numeroSuscriptor || "").trim();
+    if (!num) return null;
+    return clientes.find((c) => c.id !== editingId && (c.numeroSuscriptor || "").trim() === num) || null;
+  }, [clientes, editingId, form.numeroSuscriptor]);
 
   // Montos mensuales más usados para el plan que se está seleccionando ahora mismo.
   // Primero intenta con match exacto (tipo + velocidad + TV), y si no hay suficientes
@@ -4667,7 +4758,12 @@ function FormularioCliente({ form, setForm, onSubmit, editing, onCancel, cliente
         <SeccionFormulario titulo="Datos del cliente">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <Field label="Número de suscriptor *">
-              <input required value={form.numeroSuscriptor} onChange={set("numeroSuscriptor")} className={inputClass} style={inputStyle} />
+              <input required value={form.numeroSuscriptor} onChange={set("numeroSuscriptor")} className={inputClass} style={ { ...inputStyle, ...(suscriptorDuplicado ? { borderColor: "#C23B3B" } : {}) } } />
+              {suscriptorDuplicado && (
+                <p className="text-xs mt-1" style={ { color: "#C23B3B" } }>
+                  ⚠️ Ese número ya pertenece a {suscriptorDuplicado.nombre}
+                </p>
+              )}
             </Field>
             <Field label="Nombre y apellido *">
               <input required value={form.nombre} onChange={set("nombre")} className={inputClass} style={inputStyle} />
