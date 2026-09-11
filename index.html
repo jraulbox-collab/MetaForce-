@@ -1837,6 +1837,7 @@ function App() {
             onActualizarEstadoFactura={actualizarEstadoFactura}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
+            onDescartarCliente={cancelarCliente}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               setTab("clientes");
@@ -2280,9 +2281,15 @@ function MetaInput({ valor, onConfirmar, width, step }) {
 }
 
 // ---------- Modo revisión diaria de churn ----------
-function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onCopiarSuscriptor, copiedSubKey, onCerrar }) {
+function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onDescartar, onCopiarSuscriptor, copiedSubKey, onCerrar }) {
   const actual = pendientes[0] || null;
   const revisados = total - pendientes.length;
+  const [confirmando, setConfirmando] = useState(null); // null | "pagada" | "descartar"
+
+  // El paso de confirmación se resetea solo cada vez que cambia el cliente mostrado.
+  useEffect(() => {
+    setConfirmando(null);
+  }, [actual && actual.cliente.id]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,0.5)" } }>
@@ -2303,36 +2310,91 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
 
             <button
               onClick={() => onCopiarSuscriptor(actual.cliente)}
-              className="w-full py-3 rounded-md border-2 mb-5 font-mono text-2xl font-bold tracking-wide"
+              className="w-full py-3 rounded-md border-2 mb-2 font-mono text-2xl font-bold tracking-wide"
               style={ { borderColor: "#001E62", color: "#001E62" } }
             >
               {actual.cliente.numeroSuscriptor || "sin número"}
             </button>
-            <div className="text-xs -mt-4 mb-5" style={ { color: "#9CA3AF" } }>
+            <div className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
               {copiedSubKey === actual.cliente.id ? "✓ Copiado" : "Tocá para copiar"}
             </div>
+
+            {actual.cliente.telefono && (
+              <a
+                href={`https://wa.me/${telefonoWhatsapp(actual.cliente.telefono)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full py-2.5 rounded-md border font-medium mb-4 inline-flex items-center justify-center gap-2"
+                style={ { borderColor: "#0F766E", color: "#0F766E" } }
+              >
+                💬 Escribirle por WhatsApp
+              </a>
+            )}
 
             <p className="text-xs mb-4" style={ { color: "#6B7280" } }>
               Revisa en el sistema de Tigo si ya pagó su factura, y confirma abajo.
             </p>
 
-            <div className="flex flex-col gap-2">
-              <button
-                onClick={() => actual.facturaPendiente && onMarcarPagada(actual.cliente.id, actual.facturaPendiente.n)}
-                disabled={!actual.facturaPendiente}
-                className="w-full py-3 rounded-md text-white font-medium disabled:opacity-40"
-                style={ { background: "#0F766E" } }
-              >
-                ✓ Sí pagó
-              </button>
-              <button
-                onClick={() => onNoPagoTodavia(actual.cliente.id)}
-                className="w-full py-3 rounded-md border font-medium"
-                style={ { borderColor: "#D1D5DB", color: "#374151" } }
-              >
-                ✕ No pagó todavía
-              </button>
-            </div>
+            {confirmando === "pagada" ? (
+              <div className="rounded-md p-3 mb-2" style={ { background: "#DCF5F3" } }>
+                <p className="text-sm font-medium mb-2" style={ { color: "#0F766E" } }>¿Confirmas que ya pagó?</p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => actual.facturaPendiente && onMarcarPagada(actual.cliente.id, actual.facturaPendiente.n)}
+                    className="flex-1 py-2 rounded-md text-white font-medium text-sm"
+                    style={ { background: "#0F766E" } }
+                  >
+                    Sí, confirmar
+                  </button>
+                  <button onClick={() => setConfirmando(null)} className="flex-1 py-2 rounded-md border font-medium text-sm" style={ { borderColor: "#D1D5DB", color: "#374151" } }>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : confirmando === "descartar" ? (
+              <div className="rounded-md p-3 mb-2" style={ { background: "#FBEAEA" } }>
+                <p className="text-sm font-medium mb-2" style={ { color: "#B91C1C" } }>
+                  ¿Descartar a este cliente? Se va a marcar como cancelado por falta de pago.
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onDescartar(actual.cliente.id)}
+                    className="flex-1 py-2 rounded-md text-white font-medium text-sm"
+                    style={ { background: "#C23B3B" } }
+                  >
+                    Sí, descartar
+                  </button>
+                  <button onClick={() => setConfirmando(null)} className="flex-1 py-2 rounded-md border font-medium text-sm" style={ { borderColor: "#D1D5DB", color: "#374151" } }>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => setConfirmando("pagada")}
+                  disabled={!actual.facturaPendiente}
+                  className="w-full py-3 rounded-md text-white font-medium disabled:opacity-40"
+                  style={ { background: "#0F766E" } }
+                >
+                  ✓ Sí pagó
+                </button>
+                <button
+                  onClick={() => onNoPagoTodavia(actual.cliente.id)}
+                  className="w-full py-3 rounded-md border font-medium"
+                  style={ { borderColor: "#D1D5DB", color: "#374151" } }
+                >
+                  ✕ No pagó todavía
+                </button>
+                <button
+                  onClick={() => setConfirmando("descartar")}
+                  className="w-full py-2 rounded-md font-medium text-xs"
+                  style={ { color: "#B91C1C" } }
+                >
+                  🚫 Descartar cliente (no va a pagar / se desconecta)
+                </button>
+              </div>
+            )}
           </>
         ) : (
           <div className="py-6">
@@ -2353,7 +2415,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey }) {
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   const esActual = periodoVisto === periodoActual;
@@ -2750,6 +2812,10 @@ Early: `;
             marcarRevisadoHoy(clienteId);
           } }
           onNoPagoTodavia={marcarRevisadoHoy}
+          onDescartar={(clienteId) => {
+            onDescartarCliente(clienteId, toISO(new Date()), "falta_pago");
+            marcarRevisadoHoy(clienteId);
+          } }
           onCopiarSuscriptor={onCopiarSuscriptor}
           copiedSubKey={copiedSubKey}
           onCerrar={() => setMostrarRevisionDiaria(false)}
