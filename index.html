@@ -129,9 +129,31 @@ const mesLabel = (valorMes) => {
 };
 // Período de comisión: instalados del 21 del mes anterior al 20 del mes actual
 // se cuentan como "del mes actual" (el día 21 ya arranca el período siguiente).
+// Fecha desde la que rige el esquema nuevo de comisión de Tigo (a partir de este
+// período, el corte pasa a ser mes calendario completo: día 1 al 30/31).
+const ESQUEMA_NUEVO_DESDE = "2026-10";
+function esquemaNuevo(periodoKey) {
+  return !!periodoKey && periodoKey >= ESQUEMA_NUEVO_DESDE;
+}
 function periodoComision(fechaISO) {
   if (!fechaISO) return null;
   const [y, m, d] = fechaISO.split("-").map(Number);
+
+  // Desde octubre 2026 en adelante: período = mes calendario completo (1 al 30/31),
+  // sin importar el día — se toma directo el mes de la fecha.
+  if (y > 2026 || (y === 2026 && m >= 10)) {
+    return `${y}-${String(m).padStart(2, "0")}`;
+  }
+
+  // Excepción única de transición: septiembre 2026 se extiende del 21 de agosto
+  // al 30 de septiembre completo (en vez de cortar el 20 como antes), para cubrir
+  // el hueco que deja el cambio de esquema que arranca en octubre.
+  if (y === 2026 && m === 9) {
+    return "2026-09";
+  }
+
+  // Regla vieja (hasta agosto 2026 inclusive): corte el día 21 — del 21 al 20 del
+  // mes siguiente cuenta como el período del mes siguiente.
   let year = y;
   let month = m;
   if (d >= 21) {
@@ -225,6 +247,16 @@ function sumarMesClave(mesKey, delta) {
 // Rango de fechas (inicio y fin) de un período de comisión "YYYY-MM" (día 21 al 20).
 function rangoCiclo(periodoKey) {
   const [y, m] = periodoKey.split("-").map(Number);
+  if (esquemaNuevo(periodoKey)) {
+    // Octubre 2026 en adelante: mes calendario completo (día 1 al último día del mes).
+    const inicio = new Date(y, m - 1, 1);
+    const fin = new Date(y, m, 0); // día 0 del mes siguiente = último día de este mes
+    return { inicio, fin };
+  }
+  if (periodoKey === "2026-09") {
+    // Excepción de transición: 21 de agosto al 30 de septiembre completo.
+    return { inicio: new Date(2026, 7, 21), fin: new Date(2026, 8, 30) };
+  }
   const inicio = new Date(y, m - 2, 21);
   const fin = new Date(y, m - 1, 20);
   return { inicio, fin };
@@ -271,10 +303,15 @@ function montoBaseComision(pctIngreso) {
   const tramo = TABLA_COMISION_BASE.find((t) => pctIngreso >= t.min && pctIngreso <= t.max);
   return tramo ? tramo.monto : 1700;
 }
+const BONO_POR_CONVERGENCIA = 6;
+const PESO_CLIENTES_HOGAR = 0.65;
+const PESO_CLIENTES_MOVIL = 0.35;
+
+// ---- Fórmula vieja (hasta el período "2026-09" inclusive) ----
 // Comisión final = monto base (según % ingreso) × (% ARPU / 100) × (% clientes / 100).
 // Si el % de clientes instalados supera 90%, el ingreso del período suma también
 // los montos de las convergencias FULL TIGO de ese mismo período.
-function calcularComision({ dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesInstalados, metaClientes, bonoFullTigo }) {
+function calcularComisionVieja({ dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesInstalados, metaClientes, bonoFullTigo }) {
   const pctClientes = metaClientes ? (clientesInstalados / metaClientes) * 100 : null;
   const aplicaBono = pctClientes !== null && pctClientes > 90;
   const dineroAjustado = dineroDelPeriodo + (aplicaBono ? bonoFullTigo : 0);
@@ -285,7 +322,59 @@ function calcularComision({ dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu,
   const factorClientes = pctClientes != null ? pctClientes / 100 : 0;
   const completo = pctIngreso != null && pctArpu != null && pctClientes != null;
   const total = completo ? montoBase * factorArpu * factorClientes : 0;
-  return { total, montoBase, pctIngreso, pctArpu, pctClientes, aplicaBono, bonoFullTigo, dineroAjustado, completo };
+  return { esquema: "viejo", total, montoBase, pctIngreso, pctArpu, pctClientes, aplicaBono, bonoFullTigo, dineroAjustado, completo };
+}
+
+// ---- Fórmula nueva (desde el período "2026-10" en adelante) ----
+// El monto base ahora sale del % de clientes (hogar 65% + móvil 35%, ponderado),
+// usando la MISMA tabla de tramos que antes usaba % de ingreso. Ya no se mide ARPU.
+// El % de logro de la meta de ingresos (hogar + costo de planes móviles, sin peso)
+// aplica un acelerador (+10% si >100%) o desacelerador (-10% si <100%) sobre el
+// monto final en dólares; si da exactamente 100%, no aplica ninguno de los dos.
+// Además se suma un bono fijo de $6 por cada convergencia (o FULL TIGO) del período,
+// independiente de todo lo demás.
+function calcularComisionNueva({
+  clientesHogar,
+  metaClientesHogar,
+  clientesMovil,
+  metaClientesMovil,
+  ingresosDelPeriodo,
+  metaIngresos,
+  cantidadConvergencias,
+}) {
+  const pctHogar = metaClientesHogar ? (clientesHogar / metaClientesHogar) * 100 : null;
+  const pctMovil = metaClientesMovil ? (clientesMovil / metaClientesMovil) * 100 : null;
+  const pctClientesPonderado =
+    pctHogar != null && pctMovil != null ? pctHogar * PESO_CLIENTES_HOGAR + pctMovil * PESO_CLIENTES_MOVIL : null;
+  const montoBase = montoBaseComision(pctClientesPonderado);
+
+  const pctIngreso = metaIngresos ? (ingresosDelPeriodo / metaIngresos) * 100 : null;
+  const factorAcelerador = pctIngreso == null ? 1 : pctIngreso > 100 ? 1.1 : pctIngreso < 100 ? 0.9 : 1;
+
+  const bonoConvergencias = BONO_POR_CONVERGENCIA * (cantidadConvergencias || 0);
+  const completo = pctHogar != null && pctMovil != null && pctIngreso != null;
+  const comisionSinBono = completo ? montoBase * factorAcelerador : 0;
+  const total = comisionSinBono + bonoConvergencias;
+
+  return {
+    esquema: "nuevo",
+    total,
+    montoBase,
+    pctHogar,
+    pctMovil,
+    pctClientesPonderado,
+    pctIngreso,
+    factorAcelerador,
+    comisionSinBono,
+    bonoConvergencias,
+    cantidadConvergencias: cantidadConvergencias || 0,
+    completo,
+  };
+}
+
+// Despachador: usa la fórmula que corresponda según el período (params.periodoKey).
+function calcularComision(params) {
+  return esquemaNuevo(params.periodoKey) ? calcularComisionNueva(params) : calcularComisionVieja(params);
 }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -1221,7 +1310,13 @@ function App() {
       return { ...prev, [mes]: { ...actual, [campo]: nuevoValor } };
     });
     if (String(valorAnterior ?? "") !== String(nuevoValor ?? "")) {
-      const CAMPOS_META = { dinero: "Meta de dinero", arpu: "Meta de ARPU", clientes: "Meta de clientes" };
+      const CAMPOS_META = {
+        dinero: "Meta de ingresos",
+        arpu: "Meta de ARPU",
+        clientes: "Meta de clientes",
+        clientesHogar: "Meta de clientes hogar",
+        clientesMovil: "Meta de clientes móvil",
+      };
       registrarCambio({
         entidad: "meta",
         tipo: "editar",
@@ -1235,7 +1330,7 @@ function App() {
   }
 
   function agregarConvergencia(nombre, telefono, fullTigo, montoPlan) {
-    const nueva = { id: uid(), nombre, telefono, fullTigo: !!fullTigo, montoPlan: fullTigo ? Number(montoPlan) || 0 : null, creadoEn: new Date().toISOString() };
+    const nueva = { id: uid(), nombre, telefono, fullTigo: !!fullTigo, montoPlan: montoPlan ? Number(montoPlan) || 0 : null, creadoEn: new Date().toISOString() };
     setConvergencias((prev) => [...prev, nueva]);
     registrarCambio({ entidad: "convergencia", tipo: "crear", etiqueta: nombre, despues: nueva, cambios: [], refId: nueva.id });
   }
@@ -2186,9 +2281,12 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   const esActual = periodoVisto === periodoActual;
 
+  const esNuevo = esquemaNuevo(periodoVisto);
   const metaClientes = leerMeta(metas, periodoVisto, "clientes");
   const metaDinero = leerMeta(metas, periodoVisto, "dinero");
   const metaArpu = leerMeta(metas, periodoVisto, "arpu");
+  const metaClientesHogar = leerMeta(metas, periodoVisto, "clientesHogar");
+  const metaClientesMovil = leerMeta(metas, periodoVisto, "clientesMovil");
 
   // Progreso del ciclo actual (día 21 al 20) para poder proyectar a fin de ciclo.
   const UN_DIA_MS = 24 * 60 * 60 * 1000;
@@ -2230,9 +2328,16 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   // fecha), así que se muestran como un total aparte, sin importar qué período mires.
   const pendientesAhora = useMemo(() => clientes.filter((c) => !c.fechaInstalacion).length, [clientes]);
 
-  const convergenciasPeriodo = useMemo(
-    () => convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto).length,
+  const convergenciasDelPeriodo = useMemo(
+    () => convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto),
     [convergencias, periodoVisto]
+  );
+  const convergenciasPeriodo = convergenciasDelPeriodo.length;
+  // Esquema nuevo (desde octubre 2026): el costo del plan de TODAS las convergencias
+  // (sean o no FULL TIGO) suma al ingreso del período.
+  const costoPlanesMovilesPeriodo = useMemo(
+    () => convergenciasDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
+    [convergenciasDelPeriodo]
   );
 
   const historialPeriodos = useMemo(() => {
@@ -2249,23 +2354,38 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return historialPeriodos
       .slice(0, 4)
       .map((key) => {
-        const metaClientesP = leerMeta(metas, key, "clientes");
-        const metaDineroP = leerMeta(metas, key, "dinero");
-        const metaArpuP = leerMeta(metas, key, "arpu");
         const delPeriodo = clientes.filter((c) => periodoDelCliente(c) === key);
         const cantidad = delPeriodo.length;
         const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
         const arpuP = cantidad > 0 ? dinero / cantidad : 0;
-        const bonoFullTigoP = convergencias
-          .filter((c) => c.fullTigo && periodoComision((c.creadoEn || "").slice(0, 10)) === key)
+        const converDelPeriodo = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === key);
+
+        if (esquemaNuevo(key)) {
+          const costoPlanesP = converDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
+          const com = calcularComision({
+            periodoKey: key,
+            clientesHogar: cantidad,
+            metaClientesHogar: leerMeta(metas, key, "clientesHogar"),
+            clientesMovil: converDelPeriodo.length,
+            metaClientesMovil: leerMeta(metas, key, "clientesMovil"),
+            ingresosDelPeriodo: dinero + costoPlanesP,
+            metaIngresos: leerMeta(metas, key, "dinero"),
+            cantidadConvergencias: converDelPeriodo.length,
+          });
+          return { key, cantidad, dinero, arpu: arpuP, ...com };
+        }
+
+        const bonoFullTigoP = converDelPeriodo
+          .filter((c) => c.fullTigo)
           .reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
         const com = calcularComision({
+          periodoKey: key,
           dineroDelPeriodo: dinero,
-          metaDinero: metaDineroP,
+          metaDinero: leerMeta(metas, key, "dinero"),
           arpuPeriodo: arpuP,
-          metaArpu: metaArpuP,
+          metaArpu: leerMeta(metas, key, "arpu"),
           clientesInstalados: cantidad,
-          metaClientes: metaClientesP,
+          metaClientes: leerMeta(metas, key, "clientes"),
           bonoFullTigo: bonoFullTigoP,
         });
         return { key, cantidad, dinero, arpu: arpuP, ...com };
@@ -2281,27 +2401,57 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const progresoClientesPct = metaClientes ? Math.round((clientesDelPeriodo.length / metaClientes) * 100) : null;
   const progresoDineroPct = metaDinero ? Math.round((dineroDelPeriodo / metaDinero) * 100) : null;
   const progresoArpuPct = metaArpu ? Math.round((arpuPeriodo / metaArpu) * 100) : null;
+  const progresoClientesHogarPct = metaClientesHogar ? Math.round((clientesDelPeriodo.length / metaClientesHogar) * 100) : null;
+  const progresoClientesMovilPct = metaClientesMovil ? Math.round((convergenciasPeriodo / metaClientesMovil) * 100) : null;
+  const progresoIngresoNuevoPct = metaDinero
+    ? Math.round(((dineroDelPeriodo + costoPlanesMovilesPeriodo) / metaDinero) * 100)
+    : null;
 
   const bonoFullTigo = useMemo(
     () =>
-      convergencias
-        .filter((c) => c.fullTigo && periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto)
+      convergenciasDelPeriodo
+        .filter((c) => c.fullTigo)
         .reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
-    [convergencias, periodoVisto]
+    [convergenciasDelPeriodo]
   );
-  const comision = useMemo(
-    () =>
-      calcularComision({
-        dineroDelPeriodo,
-        metaDinero,
-        arpuPeriodo,
-        metaArpu,
-        clientesInstalados: clientesDelPeriodo.length,
-        metaClientes,
-        bonoFullTigo,
-      }),
-    [dineroDelPeriodo, metaDinero, arpuPeriodo, metaArpu, clientesDelPeriodo.length, metaClientes, bonoFullTigo]
-  );
+  const comision = useMemo(() => {
+    if (esNuevo) {
+      return calcularComision({
+        periodoKey: periodoVisto,
+        clientesHogar: clientesDelPeriodo.length,
+        metaClientesHogar,
+        clientesMovil: convergenciasPeriodo,
+        metaClientesMovil,
+        ingresosDelPeriodo: dineroDelPeriodo + costoPlanesMovilesPeriodo,
+        metaIngresos: metaDinero,
+        cantidadConvergencias: convergenciasPeriodo,
+      });
+    }
+    return calcularComision({
+      periodoKey: periodoVisto,
+      dineroDelPeriodo,
+      metaDinero,
+      arpuPeriodo,
+      metaArpu,
+      clientesInstalados: clientesDelPeriodo.length,
+      metaClientes,
+      bonoFullTigo,
+    });
+  }, [
+    esNuevo,
+    periodoVisto,
+    clientesDelPeriodo.length,
+    metaClientesHogar,
+    convergenciasPeriodo,
+    metaClientesMovil,
+    dineroDelPeriodo,
+    costoPlanesMovilesPeriodo,
+    metaDinero,
+    arpuPeriodo,
+    metaArpu,
+    metaClientes,
+    bonoFullTigo,
+  ]);
 
   // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
   // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
@@ -2313,8 +2463,26 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     const clientesProy = Math.round(clientesDelPeriodo.length * factor);
     const dineroProy = dineroDelPeriodo * factor;
     const arpuProy = clientesProy > 0 ? dineroProy / clientesProy : 0;
+
+    if (esNuevo) {
+      const convergenciasProy = Math.round(convergenciasPeriodo * factor);
+      const costoPlanesProy = costoPlanesMovilesPeriodo * factor;
+      const comisionProy = calcularComision({
+        periodoKey: periodoVisto,
+        clientesHogar: clientesProy,
+        metaClientesHogar,
+        clientesMovil: convergenciasProy,
+        metaClientesMovil,
+        ingresosDelPeriodo: dineroProy + costoPlanesProy,
+        metaIngresos: metaDinero,
+        cantidadConvergencias: convergenciasProy,
+      });
+      return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
+    }
+
     const bonoFullTigoProy = bonoFullTigo * factor;
     const comisionProy = calcularComision({
+      periodoKey: periodoVisto,
       dineroDelPeriodo: dineroProy,
       metaDinero,
       arpuPeriodo: arpuProy,
@@ -2324,7 +2492,22 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       bonoFullTigo: bonoFullTigoProy,
     });
     return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
-  }, [puedeProyectar, cicloInfo, clientesDelPeriodo.length, dineroDelPeriodo, bonoFullTigo, metaDinero, metaArpu, metaClientes]);
+  }, [
+    puedeProyectar,
+    cicloInfo,
+    esNuevo,
+    periodoVisto,
+    clientesDelPeriodo.length,
+    dineroDelPeriodo,
+    bonoFullTigo,
+    metaDinero,
+    metaArpu,
+    metaClientes,
+    convergenciasPeriodo,
+    costoPlanesMovilesPeriodo,
+    metaClientesHogar,
+    metaClientesMovil,
+  ]);
 
   // Precio promedio real de tus planes SINGLE y DOBLE (según lo que ya cargaste),
   // para poder recomendar cuántos clientes de cada tipo hacen falta para llegar al ARPU meta.
@@ -2434,28 +2617,172 @@ Early: `;
       <div className="rounded-lg p-5 mb-6 text-white" style={ { background: "linear-gradient(135deg, #001E62, #0072CE)" } }>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <h2 className="font-semibold text-sm opacity-90">Comisión estimada de {mesLabel(periodoVisto)}</h2>
-          {comision.aplicaBono && (
+          {!esNuevo && comision.aplicaBono && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
               + bono FULL TIGO aplicado
+            </span>
+          )}
+          {esNuevo && comision.factorAcelerador !== 1 && (
+            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
+              {comision.factorAcelerador > 1 ? "⚡ acelerador +10%" : "🐢 desacelerador −10%"}
             </span>
           )}
         </div>
         {comision.completo ? (
           <>
             <div className="text-4xl font-mono font-bold mb-2">{fmtMonto(comision.total)}</div>
-            <div className="text-xs opacity-80 leading-relaxed">
-              Base {fmtMonto(comision.montoBase)} ({comision.pctIngreso.toFixed(1)}% ingresos
-              {comision.aplicaBono ? `, incluye ${fmtMonto(bonoFullTigo)} de convergencias FULL TIGO` : ""}) ×{" "}
-              {comision.pctArpu.toFixed(1)}% ARPU × {comision.pctClientes.toFixed(1)}% clientes
-            </div>
+            {esNuevo ? (
+              <div className="text-xs opacity-80 leading-relaxed">
+                Base {fmtMonto(comision.montoBase)} ({comision.pctClientesPonderado.toFixed(1)}% clientes ponderado: {comision.pctHogar.toFixed(1)}% hogar × 65% + {comision.pctMovil.toFixed(1)}% móvil × 35%)
+                {" × "}
+                {comision.factorAcelerador === 1 ? "sin acelerador (100% ingresos)" : comision.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}
+                {" "}({comision.pctIngreso.toFixed(1)}% ingresos)
+                {comision.bonoConvergencias > 0 ? ` + ${fmtMonto(comision.bonoConvergencias)} bono por convergencia (${comision.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` : ""}
+              </div>
+            ) : (
+              <div className="text-xs opacity-80 leading-relaxed">
+                Base {fmtMonto(comision.montoBase)} ({comision.pctIngreso.toFixed(1)}% ingresos
+                {comision.aplicaBono ? `, incluye ${fmtMonto(bonoFullTigo)} de convergencias FULL TIGO` : ""}) ×{" "}
+                {comision.pctArpu.toFixed(1)}% ARPU × {comision.pctClientes.toFixed(1)}% clientes
+              </div>
+            )}
             <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.comision) : null} variant="claro" />
           </>
         ) : (
-          <p className="text-sm opacity-80">Cargá las metas de clientes, dinero y ARPU de este período para ver la comisión estimada.</p>
+          <p className="text-sm opacity-80">
+            {esNuevo
+              ? "Cargá las metas de clientes hogar, clientes móvil e ingresos de este período para ver la comisión estimada."
+              : "Cargá las metas de clientes, dinero y ARPU de este período para ver la comisión estimada."}
+          </p>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+        {esNuevo ? (
+          <>
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => onVerClientes({ periodo: periodoVisto })}
+                  className="font-semibold text-sm underline-offset-2 hover:underline"
+                  style={ { color: "#001E62" } }
+                  title="Ver clientes de este período"
+                >
+                  CLIENTES HOGAR →
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
+                  <MetaInput
+                    valor={metaClientesHogar}
+                    onConfirmar={(v) => onActualizarMeta(periodoVisto, "clientesHogar", v)}
+                    width="w-16"
+                  />
+                </div>
+              </div>
+              {metaClientesHogar ? (
+                <>
+                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
+                    <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientesHogar}</span> ·{" "}
+                    <span className="font-semibold" style={ { color: progresoClientesHogarPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                      {progresoClientesHogarPct >= 100 ? "✓ " : ""}{progresoClientesHogarPct}%
+                    </span>
+                  </p>
+                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
+                    <div
+                      className="h-2 rounded-full"
+                      style={ {
+                        width: `${Math.min(100, progresoClientesHogarPct)}%`,
+                        background: clientesDelPeriodo.length >= metaClientesHogar ? "#0F766E" : "#0072CE",
+                      } }
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes hogar de este período.</p>
+              )}
+              <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>Peso en el % de clientes: 65%</p>
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h2 className="font-semibold text-sm">CLIENTES MÓVIL</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
+                  <MetaInput
+                    valor={metaClientesMovil}
+                    onConfirmar={(v) => onActualizarMeta(periodoVisto, "clientesMovil", v)}
+                    width="w-16"
+                  />
+                </div>
+              </div>
+              {metaClientesMovil ? (
+                <>
+                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
+                    <span className="font-semibold">{convergenciasPeriodo}</span> de <span className="font-semibold">{metaClientesMovil}</span> ·{" "}
+                    <span className="font-semibold" style={ { color: progresoClientesMovilPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                      {progresoClientesMovilPct >= 100 ? "✓ " : ""}{progresoClientesMovilPct}%
+                    </span>
+                  </p>
+                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
+                    <div
+                      className="h-2 rounded-full"
+                      style={ {
+                        width: `${Math.min(100, progresoClientesMovilPct)}%`,
+                        background: convergenciasPeriodo >= metaClientesMovil ? "#0F766E" : "#0072CE",
+                      } }
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes móvil de este período.</p>
+              )}
+              <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
+                Convergencias + FULL TIGO del período · Peso en el % de clientes: 35%
+              </p>
+            </div>
+
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h2 className="font-semibold text-sm">INGRESO $</h2>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
+                  <MetaInput
+                    valor={metaDinero}
+                    onConfirmar={(v) => onActualizarMeta(periodoVisto, "dinero", v)}
+                    width="w-20"
+                  />
+                </div>
+              </div>
+              {metaDinero ? (
+                <>
+                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
+                    <span className="font-semibold">{fmtMonto(dineroDelPeriodo + costoPlanesMovilesPeriodo)}</span> de{" "}
+                    <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
+                    <span className="font-semibold" style={ { color: progresoIngresoNuevoPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                      {progresoIngresoNuevoPct >= 100 ? "✓ " : ""}{progresoIngresoNuevoPct}%
+                    </span>
+                  </p>
+                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
+                    <div
+                      className="h-2 rounded-full"
+                      style={ {
+                        width: `${Math.min(100, progresoIngresoNuevoPct)}%`,
+                        background: progresoIngresoNuevoPct >= 100 ? "#0F766E" : "#0072CE",
+                      } }
+                    />
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de ingresos de este período.</p>
+              )}
+              <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
+                Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)} · define el acelerador/desacelerador (±10%)
+              </p>
+            </div>
+          </>
+        ) : (
+          <>
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <button
@@ -2611,6 +2938,8 @@ Early: `;
             </div>
           )}
         </div>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
@@ -2667,11 +2996,14 @@ Early: `;
             </div>
             <div className="text-xs" style={ { color: "#6B7280" } }>
               {detalleMostrado.completo
-                ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
+                ? detalleMostrado.esquema === "nuevo"
+                  ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) × ${detalleMostrado.factorAcelerador === 1 ? "sin acelerador" : detalleMostrado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMonto(detalleMostrado.bonoConvergencias)} bono convergencias` : ""}`
+                  : `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
                 : "Faltan metas cargadas en este período para calcular la comisión completa."}
             </div>
             <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>
-              {detalleMostrado.cantidad} clientes · {fmtMonto(detalleMostrado.dinero)} en ingresos · ARPU {fmtMonto(detalleMostrado.arpu)}
+              {detalleMostrado.cantidad} clientes hogar · {fmtMonto(detalleMostrado.dinero)} en ingresos hogar
+              {detalleMostrado.esquema === "nuevo" ? "" : ` · ARPU ${fmtMonto(detalleMostrado.arpu)}`}
             </div>
             {detalleAnterior && (
               <div
@@ -4119,13 +4451,12 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
   function handleSubmit(e) {
     e.preventDefault();
     if (!nombre.trim() || !telefono.trim()) return;
-    if (fullTigo && !montoPlan) return;
     if (editingId) {
       onEditar(editingId, {
         nombre: nombre.trim(),
         telefono: telefono.trim(),
         fullTigo,
-        montoPlan: fullTigo ? Number(montoPlan) || 0 : null,
+        montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
       });
     } else {
       onAgregar(nombre.trim(), telefono.trim(), fullTigo, montoPlan);
@@ -4194,22 +4525,19 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
             <input type="checkbox" checked={fullTigo} onChange={(e) => setFullTigo(e.target.checked)} />
             FULL TIGO
           </label>
-          {fullTigo && (
-            <div className="flex items-center gap-2">
-              <span className="text-xs" style={ { color: "#6B7280" } }>Monto del plan vendido:</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                required
-                value={montoPlan}
-                onChange={(e) => setMontoPlan(e.target.value)}
-                placeholder="$0.00"
-                className="w-28 px-2 py-1 rounded-md border text-sm outline-none"
-                style={ { borderColor: "#D1D5DB" } }
-              />
-            </div>
-          )}
+          <div className="flex items-center gap-2">
+            <span className="text-xs" style={ { color: "#6B7280" } }>Costo del plan móvil:</span>
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              value={montoPlan}
+              onChange={(e) => setMontoPlan(e.target.value)}
+              placeholder="$0.00"
+              className="w-28 px-2 py-1 rounded-md border text-sm outline-none"
+              style={ { borderColor: "#D1D5DB" } }
+            />
+          </div>
         </div>
       </div>
 
@@ -4226,6 +4554,11 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
                 <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
                 <span className="text-sm font-mono flex items-center gap-2" style={ { color: "#001E62" } }>
                   {delMes.length} convergencia{delMes.length !== 1 ? "s" : ""}
+                  {delMes.length > 0 && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#DCF5F3", color: "#0F766E" } }>
+                      BONO POR CONVERGENCIA = {fmtMonto(delMes.length * BONO_POR_CONVERGENCIA)}
+                    </span>
+                  )}
                   <span style={ { color: "#9CA3AF" } }>{abierto ? "▲" : "▼"}</span>
                 </span>
               </button>
@@ -4237,11 +4570,16 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
                     delMes.map((c) => (
                       <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
                         <div>
-                          <div className="text-sm font-medium flex items-center gap-2">
+                          <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
                             {c.nombre}
                             {c.fullTigo && (
                               <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
-                                FULL TIGO · {fmtMonto(c.montoPlan)}
+                                FULL TIGO
+                              </span>
+                            )}
+                            {c.montoPlan != null && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#F4F6FA", color: "#374151" } }>
+                                Plan: {fmtMonto(c.montoPlan)}
                               </span>
                             )}
                           </div>
