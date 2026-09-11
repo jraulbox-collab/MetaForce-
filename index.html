@@ -1834,6 +1834,9 @@ function App() {
             convergencias={convergencias}
             onAbrirConvergencias={() => setMostrarConvergencias(true)}
             onNuevo={() => setMostrarSelectorNuevo(true)}
+            onActualizarEstadoFactura={actualizarEstadoFactura}
+            onCopiarSuscriptor={copySuscriptor}
+            copiedSubKey={copiedSubKey}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               setTab("clientes");
@@ -2276,7 +2279,81 @@ function MetaInput({ valor, onConfirmar, width, step }) {
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes }) {
+// ---------- Modo revisión diaria de churn ----------
+function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onCopiarSuscriptor, copiedSubKey, onCerrar }) {
+  const actual = pendientes[0] || null;
+  const revisados = total - pendientes.length;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,0.5)" } }>
+      <div className="bg-white rounded-lg shadow-lg w-full max-w-sm p-6 text-center relative">
+        <button onClick={onCerrar} className="absolute top-3 right-3 text-sm px-2" style={ { color: "#6B7280" } }>✕</button>
+
+        <div className="text-xs font-medium mb-4" style={ { color: "#9CA3AF" } }>
+          {total > 0 ? `${revisados} de ${total} revisados hoy` : ""}
+        </div>
+
+        {actual ? (
+          <>
+            <div className="text-xs font-medium px-2 py-1 rounded-full inline-block mb-3" style={ { color: actual.riesgo.color, background: actual.riesgo.bg } }>
+              {actual.riesgo.texto}
+            </div>
+            <div className="text-xl font-semibold mb-1" style={ { color: "#001E62" } }>{actual.cliente.nombre}</div>
+            <div className="text-sm mb-4" style={ { color: "#6B7280" } }>{planLabel(actual.cliente)}</div>
+
+            <button
+              onClick={() => onCopiarSuscriptor(actual.cliente)}
+              className="w-full py-3 rounded-md border-2 mb-5 font-mono text-2xl font-bold tracking-wide"
+              style={ { borderColor: "#001E62", color: "#001E62" } }
+            >
+              {actual.cliente.numeroSuscriptor || "sin número"}
+            </button>
+            <div className="text-xs -mt-4 mb-5" style={ { color: "#9CA3AF" } }>
+              {copiedSubKey === actual.cliente.id ? "✓ Copiado" : "Tocá para copiar"}
+            </div>
+
+            <p className="text-xs mb-4" style={ { color: "#6B7280" } }>
+              Revisa en el sistema de Tigo si ya pagó su factura, y confirma abajo.
+            </p>
+
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => actual.facturaPendiente && onMarcarPagada(actual.cliente.id, actual.facturaPendiente.n)}
+                disabled={!actual.facturaPendiente}
+                className="w-full py-3 rounded-md text-white font-medium disabled:opacity-40"
+                style={ { background: "#0F766E" } }
+              >
+                ✓ Sí pagó
+              </button>
+              <button
+                onClick={() => onNoPagoTodavia(actual.cliente.id)}
+                className="w-full py-3 rounded-md border font-medium"
+                style={ { borderColor: "#D1D5DB", color: "#374151" } }
+              >
+                ✕ No pagó todavía
+              </button>
+            </div>
+          </>
+        ) : (
+          <div className="py-6">
+            <div className="text-4xl mb-3">✓</div>
+            <div className="text-lg font-semibold mb-1" style={ { color: "#001E62" } }>
+              Listo, revisaste tus {total} de hoy
+            </div>
+            <p className="text-xs mb-5" style={ { color: "#9CA3AF" } }>
+              No te vamos a volver a molestar con estos hasta mañana.
+            </p>
+            <button onClick={onCerrar} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
+              Cerrar
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   const esActual = periodoVisto === periodoActual;
@@ -2536,6 +2613,58 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   }, [esActual, metaArpu, clientesDelPeriodo.length, dineroDelPeriodo, precioPromedioPlan]);
 
   const [copiadoReporte, setCopiadoReporte] = useState(false);
+
+  // ---- Modo revisión diaria (foco en clientes que necesitan atención HOY) ----
+  // Los clientes que sí marcaste como pagados dejan de aparecer solos (cambia su
+  // estado de riesgo real). Los que dejaste como "no pagó todavía" no vuelven a
+  // aparecer en la cola de HOY (para poder terminar la lista sin dar vueltas en
+  // círculo), pero si mañana siguen sin pagar, vuelven a aparecer — el registro de
+  // "revisados hoy" es local al celular y se reinicia solo cada día.
+  const [revisadosHoy, setRevisadosHoy] = useState(() => {
+    try {
+      const guardado = JSON.parse(localStorage.getItem("revision_diaria_hoy") || "null");
+      const hoy = fechaLocalISO(new Date());
+      if (guardado && guardado.fecha === hoy) return guardado.ids || [];
+    } catch (e) {}
+    return [];
+  });
+  function marcarRevisadoHoy(clienteId) {
+    setRevisadosHoy((prev) => {
+      const nuevos = prev.includes(clienteId) ? prev : [...prev, clienteId];
+      try {
+        localStorage.setItem("revision_diaria_hoy", JSON.stringify({ fecha: fechaLocalISO(new Date()), ids: nuevos }));
+      } catch (e) {}
+      return nuevos;
+    });
+  }
+
+  const enRiesgoHoy = useMemo(() => {
+    return clientes
+      .map((c) => ({ cliente: c, riesgo: estadoRiesgoChurn(c, periodoActual) }))
+      .filter((x) => x.riesgo && x.riesgo.tipo === "alerta")
+      .map((x) => {
+        const facturaPendiente = (x.cliente.facturas || []).find(
+          (f) => daysFromToday(f.vencimiento) <= 0 && x.cliente[`f${f.n}_estado`] !== "pagada"
+        );
+        return { ...x, facturaPendiente };
+      })
+      .sort((a, b) => {
+        // Más urgente primero: más avanzado en el mes de riesgo (mes 4 antes que mes 2),
+        // y dentro del mismo mes, el que tenga la factura vencida hace más días.
+        const mesA = mesCicloCliente(a.cliente.fechaInstalacion, periodoActual) || 0;
+        const mesB = mesCicloCliente(b.cliente.fechaInstalacion, periodoActual) || 0;
+        if (mesB !== mesA) return mesB - mesA;
+        const diasA = a.facturaPendiente ? -daysFromToday(a.facturaPendiente.vencimiento) : 0;
+        const diasB = b.facturaPendiente ? -daysFromToday(b.facturaPendiente.vencimiento) : 0;
+        return diasB - diasA;
+      });
+  }, [clientes, periodoActual]);
+
+  const pendientesHoy = useMemo(
+    () => enRiesgoHoy.filter((x) => !revisadosHoy.includes(x.cliente.id)),
+    [enRiesgoHoy, revisadosHoy]
+  );
+  const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
   const [mostrarSimuladorArpu, setMostrarSimuladorArpu] = useState(false);
 
   function generarReporteDiario() {
@@ -2582,6 +2711,50 @@ Early: `;
           </button>
         </div>
       </div>
+
+      {enRiesgoHoy.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setMostrarRevisionDiaria(true)}
+          className="w-full text-left rounded-lg p-4 mb-6 flex items-center justify-between gap-3 flex-wrap"
+          style={
+            pendientesHoy.length > 0
+              ? { background: "#FBEAEA", border: "1px solid #F3C6C6" }
+              : { background: "#DCF5F3", border: "1px solid #B7E6E1" }
+          }
+        >
+          <div>
+            <div className="text-sm font-semibold" style={ { color: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
+              {pendientesHoy.length > 0
+                ? `🎯 ${pendientesHoy.length} cliente${pendientesHoy.length === 1 ? "" : "s"} necesita${pendientesHoy.length === 1 ? "" : "n"} revisión hoy`
+                : "✓ Ya revisaste tus clientes de hoy"}
+            </div>
+            <div className="text-xs mt-0.5" style={ { color: pendientesHoy.length > 0 ? "#C23B3B" : "#0F766E" } }>
+              {pendientesHoy.length > 0
+                ? "Clientes en ventana de riesgo de churn sin pago confirmado — tocá para revisarlos uno por uno."
+                : `${enRiesgoHoy.length} en ventana de riesgo, ninguno pendiente de revisar por ahora.`}
+            </div>
+          </div>
+          <span className="text-xs font-medium px-3 py-1.5 rounded-md text-white shrink-0" style={ { background: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
+            {pendientesHoy.length > 0 ? "Empezar revisión →" : "Ver de nuevo →"}
+          </span>
+        </button>
+      )}
+
+      {mostrarRevisionDiaria && (
+        <RevisionDiariaModal
+          pendientes={pendientesHoy}
+          total={enRiesgoHoy.length}
+          onMarcarPagada={(clienteId, n) => {
+            onActualizarEstadoFactura(clienteId, n, "pagada");
+            marcarRevisadoHoy(clienteId);
+          } }
+          onNoPagoTodavia={marcarRevisadoHoy}
+          onCopiarSuscriptor={onCopiarSuscriptor}
+          copiedSubKey={copiedSubKey}
+          onCerrar={() => setMostrarRevisionDiaria(false)}
+        />
+      )}
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
         <button
