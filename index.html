@@ -2700,27 +2700,29 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     });
   }
 
+  // Único criterio: clientes instalados exactamente 2 períodos atrás (los que ya
+  // deben tener su 1ra factura pagada para contar en tu comisión) que todavía no
+  // la tienen pagada. Nada de mes 3/4 acá — eso ya perdió el plazo o ya está bien,
+  // no necesitas seguir revisándolo todos los días.
+  const periodoObjetivoRevision = sumarMesClave(periodoActual, -2);
   const enRiesgoHoy = useMemo(() => {
     return clientes
-      .map((c) => ({ cliente: c, riesgo: estadoRiesgoChurn(c, periodoActual) }))
-      .filter((x) => x.riesgo && x.riesgo.tipo === "alerta")
-      .map((x) => {
-        const facturaPendiente = (x.cliente.facturas || []).find(
-          (f) => daysFromToday(f.vencimiento) <= 0 && x.cliente[`f${f.n}_estado`] !== "pagada"
-        );
-        return { ...x, facturaPendiente };
+      .filter((c) => periodoDelCliente(c) === periodoObjetivoRevision && c.f1_estado !== "pagada")
+      .map((c) => {
+        const facturaPendiente = (c.facturas || []).find((f) => f.n === 1) || null;
+        return {
+          cliente: c,
+          facturaPendiente,
+          riesgo: { texto: "⚠️ Debe pagar su 1ra factura para contar en tu comisión", color: "#B91C1C", bg: "#FBEAEA" },
+        };
       })
       .sort((a, b) => {
-        // Más urgente primero: más avanzado en el mes de riesgo (mes 4 antes que mes 2),
-        // y dentro del mismo mes, el que tenga la factura vencida hace más días.
-        const mesA = mesCicloCliente(a.cliente.fechaInstalacion, periodoActual) || 0;
-        const mesB = mesCicloCliente(b.cliente.fechaInstalacion, periodoActual) || 0;
-        if (mesB !== mesA) return mesB - mesA;
+        // Más urgente primero: el que tenga la factura vencida hace más días.
         const diasA = a.facturaPendiente ? -daysFromToday(a.facturaPendiente.vencimiento) : 0;
         const diasB = b.facturaPendiente ? -daysFromToday(b.facturaPendiente.vencimiento) : 0;
         return diasB - diasA;
       });
-  }, [clientes, periodoActual]);
+  }, [clientes, periodoObjetivoRevision]);
 
   const pendientesHoy = useMemo(
     () => enRiesgoHoy.filter((x) => !revisadosHoy.includes(x.cliente.id)),
