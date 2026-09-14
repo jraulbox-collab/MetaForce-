@@ -14,6 +14,14 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/flatpickr/4.6.13/l10n/es.js"></script>
 <style>
   body { margin: 0; }
+  /* Modo oscuro permanente: invierte todos los colores de la pantalla (blanco pasa a
+     negro, y así con el resto), ya que la app usa colores fijos y no un sistema de
+     tema editable. El hue-rotate(180deg) corrige que los colores no queden con la
+     tonalidad invertida (ej. que el rojo no se vuelva verde). */
+  html {
+    filter: invert(1) hue-rotate(180deg);
+    background: #F4F6FA;
+  }
 </style>
 </head>
 <body>
