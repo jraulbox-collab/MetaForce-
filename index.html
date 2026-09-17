@@ -284,6 +284,19 @@ function fechaLimitePrimeraFactura(periodoInstalacion) {
   const [y, m] = periodoLimite.split("-").map(Number);
   return new Date(y, m - 1, 5);
 }
+// Un cliente deja de contar para tu comisión (en cualquier período) si no pagó su
+// 1ra factura y ya se venció su fecha límite real (día 5 del segundo período
+// completo después de instalarse). Mientras esté dentro de su plazo, o ya haya
+// pagado, sigue contando con normalidad.
+function clienteCuentaParaComision(c) {
+  if (!c.fechaInstalacion) return true;
+  if (c.f1_estado === "pagada") return true;
+  const fechaLimite = fechaLimitePrimeraFactura(periodoDelCliente(c));
+  if (!fechaLimite) return true;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  return hoy <= fechaLimite;
+}
 function periodosRecientes(count) {
   const actual = periodoComision(toISO(new Date()));
   const out = [];
@@ -625,9 +638,9 @@ Puede realizar este pago indicando su número de suscriptor *${c.numeroSuscripto
 }
 
 const MILESTONE_TYPES = [
-  { type: "d1", tag: "D+1", label: "Factura generada", color: "#0F766E", bg: "#DCF5F3", getTexto: textoD1 },
-  { type: "t15", tag: "T-15", label: "15 días antes del vencimiento", color: "#B8791F", bg: "#FBF1DE", getTexto: textoT15 },
-  { type: "t3", tag: "T-3", label: "3 días antes del vencimiento", color: "#C23B3B", bg: "#FBEAEA", getTexto: textoT3 },
+  { type: "d1", tag: "🧾", label: "Nueva factura", color: "#0F766E", bg: "#DCF5F3", getTexto: textoD1 },
+  { type: "t15", tag: "⏰", label: "15 días", color: "#B8791F", bg: "#FBF1DE", getTexto: textoT15 },
+  { type: "t3", tag: "🚨", label: "3 días", color: "#C23B3B", bg: "#FBEAEA", getTexto: textoT3 },
 ];
 
 // Igual que MILESTONE_TYPES pero incluye también los avisos preventivos de abono
@@ -635,8 +648,8 @@ const MILESTONE_TYPES = [
 // parte de los hitos normales de factura.
 const TIPOS_ALERTA = [
   ...MILESTONE_TYPES,
-  { type: "toque1", tag: "T1", label: "Toque 1 · abono inicial", color: "#7C3AED", bg: "#EDE9FE" },
-  { type: "toque2", tag: "T2", label: "Toque 2 · recordatorio abono", color: "#7C3AED", bg: "#EDE9FE" },
+  { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", color: "#7C3AED", bg: "#EDE9FE" },
+  { type: "toque2", tag: "🔔", label: "Recordatorio de abono", color: "#7C3AED", bg: "#EDE9FE" },
 ];
 
 const emptyForm = () => ({
@@ -670,7 +683,11 @@ function calcularFacturas(cliente, umbralProrrateo) {
       ? addMonthsKeepDay(generada, 1, cicloDia)
       : addDays(generada, 30);
     const vencimiento = addDays(siguienteGenerada, -1);
-    const milestones = MILESTONE_TYPES.map((mt) => {
+    // Solo la 1ra factura (la que decide si el cliente cuenta para tu comisión)
+    // mantiene los 3 avisos completos. De la 2da en adelante, con el aviso de
+    // 3 días antes alcanza — ya no hace falta la insistencia de D+1 y 15 días.
+    const tiposParaEstaFactura = n === 1 ? MILESTONE_TYPES : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
+    const milestones = tiposParaEstaFactura.map((mt) => {
       const key = `f${n}_${mt.type}`;
       const triggerDate =
         mt.type === "d1" ? addDays(generada, 1) :
@@ -692,8 +709,8 @@ function calcularFacturas(cliente, umbralProrrateo) {
         const pctProrrateo = (Number(rProrrateo.monto1raFactura) / Number(cliente.montoMensual)) * 100;
         if (pctProrrateo >= Number(umbralProrrateo ?? 25)) {
           [
-            { type: "toque1", tag: "T1", label: "Toque 1 · abono inicial", dias: 2, key: "aviso_toque1", getTexto: textoToque1 },
-            { type: "toque2", tag: "T2", label: "Toque 2 · recordatorio abono", dias: 25, key: "aviso_toque2", getTexto: textoToque2 },
+            { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", dias: 2, key: "aviso_toque1", getTexto: textoToque1 },
+            { type: "toque2", tag: "🔔", label: "Recordatorio de abono", dias: 25, key: "aviso_toque2", getTexto: textoToque2 },
           ].forEach((t) => {
             const triggerDate = addDays(cliente.fechaInstalacion, t.dias);
             const enviado = !!cliente[t.key];
@@ -2482,9 +2499,11 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const puedeProyectar = esActual && !aunEsTemprano && cicloInfo.diasTranscurridos > 0;
 
   // Todo lo que sigue se agrupa por período de comisión (instalados del 21 al 20),
-  // no por mes calendario ni por fecha de ingreso.
+  // no por mes calendario ni por fecha de ingreso. Y excluye a los clientes que ya
+  // perdieron su plazo de pago de la 1ra factura sin pagar — esos no cuentan para
+  // tu comisión, sin importar en qué período cayó su instalación.
   const clientesDelPeriodo = useMemo(
-    () => clientes.filter((c) => periodoDelCliente(c) === periodoVisto),
+    () => clientes.filter((c) => periodoDelCliente(c) === periodoVisto && clienteCuentaParaComision(c)),
     [clientes, periodoVisto]
   );
   const dineroDelPeriodo = useMemo(
@@ -2533,7 +2552,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return historialPeriodos
       .slice(0, 4)
       .map((key) => {
-        const delPeriodo = clientes.filter((c) => periodoDelCliente(c) === key);
+        const delPeriodo = clientes.filter((c) => periodoDelCliente(c) === key && clienteCuentaParaComision(c));
         const cantidad = delPeriodo.length;
         const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
         const arpuP = cantidad > 0 ? dinero / cantidad : 0;
@@ -2740,16 +2759,18 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     });
   }
 
-  // Único criterio: clientes instalados exactamente 2 períodos atrás (los que ya
-  // deben tener su 1ra factura pagada para contar en tu comisión) que todavía no
-  // la tienen pagada. Nada de mes 3/4 acá — eso ya perdió el plazo o ya está bien,
-  // no necesitas seguir revisándolo todos los días.
-  const periodoObjetivoRevision = sumarMesClave(periodoActual, -2);
+  // Único criterio: clientes que ya pasaron su mes de instalación (no del mes
+  // actual) que todavía no tienen su 1ra factura pagada, y cuya fecha límite real
+  // de comisión (día 5 del segundo período completo después de instalarse) todavía
+  // no venció. Se calcula la fecha límite real de cada cliente en vez de asumir
+  // una resta fija de meses — así se ajusta solo aunque algún período dure más o
+  // menos de lo normal (como agosto extendido). En cuanto vence su fecha límite,
+  // sale solo de esta cola (ya no hay nada que puedas hacer para que cuente).
   const enRiesgoHoy = useMemo(() => {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
     return clientes
-      .filter((c) => periodoDelCliente(c) === periodoObjetivoRevision && c.f1_estado !== "pagada")
+      .filter((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) !== periodoActual)
       .map((c) => {
         const facturaPendiente = (c.facturas || []).find((f) => f.n === 1) || null;
         const fechaLimite = fechaLimitePrimeraFactura(periodoDelCliente(c));
@@ -2771,8 +2792,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           riesgo: { texto, color: vencido || diasParaLimite === 0 ? "#B91C1C" : "#B8791F", bg: vencido || diasParaLimite === 0 ? "#FBEAEA" : "#FBF1DE" },
         };
       })
+      .filter((x) => x.diasParaLimite === null || x.diasParaLimite >= 0)
       .sort((a, b) => (a.diasParaLimite ?? 999) - (b.diasParaLimite ?? 999));
-  }, [clientes, periodoObjetivoRevision]);
+  }, [clientes, periodoActual]);
 
   const pendientesHoy = useMemo(
     () => enRiesgoHoy.filter((x) => !revisadosHoy.includes(x.cliente.id)),
@@ -3440,11 +3462,11 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
   // Agrupa por urgencia para que se puedan escanear las más críticas primero.
   const GRUPOS = [
-    { type: "t3", titulo: "🔴 Vencidas / urgentes" },
-    { type: "t15", titulo: "🟡 Próximas a vencer" },
-    { type: "d1", titulo: "🟢 Facturas nuevas" },
-    { type: "toque2", titulo: "🟣 Toque 2 · recordatorio de abono" },
-    { type: "toque1", titulo: "🟣 Toque 1 · abono inicial" },
+    { type: "t3", titulo: "🚨 3 días (urgente)" },
+    { type: "t15", titulo: "⏰ 15 días" },
+    { type: "d1", titulo: "🧾 Nueva factura" },
+    { type: "toque2", titulo: "🔔 Recordatorio de abono" },
+    { type: "toque1", titulo: "👋 Bienvenida (pedir abono)" },
   ];
   const gruposConDatos = GRUPOS.map((g) => ({
     ...g,
@@ -3986,6 +4008,16 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         }
         const mes = mesCicloCliente(c.fechaInstalacion, periodoActual);
         if (mes === null || mes < 2 || mes > 4) {
+          if (!clienteCuentaParaComision(c)) {
+            return (
+              <span
+                className="text-xs font-medium px-2 py-1 rounded-full inline-block whitespace-nowrap"
+                style={ { color: "#B91C1C", background: "#FBEAEA" } }
+              >
+                ⛔ No cuenta para comisión
+              </span>
+            );
+          }
           return <span className="text-xs" style={ { color: "#D1D5DB" } }>—</span>;
         }
         const riesgo = estadoRiesgoChurn(c, periodoActual);
@@ -4289,12 +4321,23 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               // El nombre siempre va en el encabezado de la tarjeta (para poder tocarlo y
               // abrir el detalle); el resto de columnas activadas se listan debajo.
               const camposCard = columnasAMostrar.filter((k) => k !== "cliente");
-              return visiblesFinal.map((c) => (
-                <div key={c.id} className="bg-white rounded-lg border p-3" style={ { borderColor: "#E5E7EB" } }>
+              return visiblesFinal.map((c) => {
+                const cuenta = clienteCuentaParaComision(c);
+                return (
+                <div
+                  key={c.id}
+                  className="bg-white rounded-lg border p-3"
+                  style={ { borderColor: "#E5E7EB", opacity: cuenta ? 1 : 0.5 } }
+                >
                   <button onClick={() => onVerDetalle(c)} className="text-left block w-full">
                     <div className="font-medium text-sm truncate" style={ { color: "#001E62" } }>{c.nombre}</div>
                     {c.telefono && (
                       <div className="text-xs font-mono truncate" style={ { color: "#9CA3AF" } }>{c.telefono}</div>
+                    )}
+                    {!cuenta && (
+                      <div className="text-[10px] font-semibold mt-0.5" style={ { color: "#B91C1C" } }>
+                        ⛔ No cuenta para tu comisión (venció sin pagar la 1ra factura)
+                      </div>
                     )}
                   </button>
 
@@ -4325,7 +4368,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                     <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={ { color: "#C23B3B" } }>Eliminar</button>
                   </div>
                 </div>
-              ));
+                );
+              });
             })()}
           </div>
 
@@ -4366,7 +4410,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             </thead>
             <tbody>
               {visiblesFinal.map((c) => (
-                <tr key={c.id} className="border-t" style={ { borderColor: "#F0F0EF" } }>
+                <tr key={c.id} className="border-t" style={ { borderColor: "#F0F0EF", opacity: clienteCuentaParaComision(c) ? 1 : 0.5 } }>
                   {columnasAMostrar.map((key) => (
                     <td key={key} className="px-4 py-3">{renderCeldaCliente(c, key)}</td>
                   ))}
