@@ -323,6 +323,21 @@ function siguienteEstadoFactura(actual) {
   return actual === "pagada" ? "" : "pagada";
 }
 const etiquetaEstadoFactura = (e) => (e === "pagada" ? "pagada" : "no pagada");
+// Cuándo se marcó como pagada una factura: la fecha propia si existe; si no (facturas
+// marcadas antes de que se guardara), la de la última marca en el Historial; si tampoco
+// hay, null (se muestra "sin fecha registrada").
+function fechaMarcadaPagada(cliente, n, historial) {
+  const propia = cliente[`f${n}_pagadaEn`];
+  if (propia) return propia;
+  const e = (historial || []).find(
+    (h) =>
+      h.entidad === "factura" &&
+      h.refId === cliente.id &&
+      !h.deshecho &&
+      (h.cambios || []).some((x) => x.campo === `f${n}_estado` && x.nuevo === "pagada")
+  );
+  return e ? e.fecha : null;
+}
 
 // ---------- Cálculo de comisión ----------
 // Monto base según el % de logro en ingresos ($ de clientes) del período actual.
@@ -965,6 +980,26 @@ function ExportarModal({ clientes, onCerrar }) {
   );
 }
 
+const VISTA_CLIENTES_KEY = "clientes_vista_dia";
+const FILTROS_CLIENTES_INICIALES = {
+  modoVerTodos: false,
+  ordenarPor: "ingreso",
+  ordenDireccion: "desc",
+  filtroEstado: "",
+  filtroInstalacion: "",
+  filtroPlan: "",
+  fechaDesde: "",
+  fechaHasta: "",
+};
+// Devuelve la vista guardada de hoy (mes + filtros), o null si no hay o es de otro día.
+function leerVistaClientesDelDia() {
+  try {
+    const g = JSON.parse(localStorage.getItem(VISTA_CLIENTES_KEY) || "null");
+    if (g && g.fecha === fechaLocalISO(new Date())) return g;
+  } catch (e) {}
+  return null;
+}
+
 function App() {
   const [autenticado, setAutenticado] = useState(() => {
     try {
@@ -989,17 +1024,25 @@ function App() {
   // Mes/período que se está viendo en la pestaña Clientes. Vive aquí (y no dentro de
   // ClientesTab) para que no se resetee al período actual cuando entras al detalle
   // de un cliente y volvés atrás.
-  const [mesActivoClientes, setMesActivoClientes] = useState(null);
+  // La vista de Clientes (mes, filtros y orden) también se recuerda al refrescar la
+  // página, pero solo durante el mismo día: al día siguiente arranca limpia en el
+  // período actual. Se guarda solo en este celular, no en la nube.
+  const [vistaClientesInicial] = useState(leerVistaClientesDelDia);
+  const [mesActivoClientes, setMesActivoClientes] = useState(
+    vistaClientesInicial && vistaClientesInicial.mesActivo ? vistaClientesInicial.mesActivo : null
+  );
   const [filtrosClientes, setFiltrosClientes] = useState({
-    modoVerTodos: false,
-    ordenarPor: "ingreso",
-    ordenDireccion: "desc",
-    filtroEstado: "",
-    filtroInstalacion: "",
-    filtroPlan: "",
-    fechaDesde: "",
-    fechaHasta: "",
+    ...FILTROS_CLIENTES_INICIALES,
+    ...(vistaClientesInicial && vistaClientesInicial.filtros ? vistaClientesInicial.filtros : {}),
   });
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        VISTA_CLIENTES_KEY,
+        JSON.stringify({ fecha: fechaLocalISO(new Date()), mesActivo: mesActivoClientes, filtros: filtrosClientes })
+      );
+    } catch (e) {}
+  }, [mesActivoClientes, filtrosClientes]);
   const [form, setForm] = useState(emptyForm());
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
@@ -1639,13 +1682,18 @@ function App() {
   // corresponde que sigan recordándole al cliente.
   function actualizarEstadoFactura(clienteId, n, nuevoEstado) {
     const antes = clientes.find((c) => c.id === clienteId);
+    // Al marcarla como pagada se anota sola el día y la hora (sin editar nada);
+    // al desmarcarla, esa fecha se borra.
+    const ahoraISO = new Date().toISOString();
     actualizarClientes((prev) =>
       prev.map((c) => {
         if (c.id !== clienteId) return c;
         const marcarEnviado = nuevoEstado === "pagada";
+        const yaPagada = c[`f${n}_estado`] === "pagada" && c[`f${n}_pagadaEn`];
         return {
           ...c,
           [`f${n}_estado`]: nuevoEstado,
+          [`f${n}_pagadaEn`]: marcarEnviado ? (yaPagada ? c[`f${n}_pagadaEn`] : ahoraISO) : "",
           [`f${n}_d1`]: marcarEnviado,
           [`f${n}_t15`]: marcarEnviado,
           [`f${n}_t3`]: marcarEnviado,
@@ -1657,6 +1705,7 @@ function App() {
       const despues = {
         ...antes,
         [`f${n}_estado`]: nuevoEstado,
+        [`f${n}_pagadaEn`]: marcarEnviado ? ahoraISO : "",
         [`f${n}_d1`]: marcarEnviado,
         [`f${n}_t15`]: marcarEnviado,
         [`f${n}_t3`]: marcarEnviado,
@@ -1955,6 +2004,7 @@ function App() {
             periodoActual={periodoActualApp}
             onCancelar={cancelarCliente}
             onDescancelar={descancelarCliente}
+            historialCambios={historialCambios}
           />
         )}
         {tab === "alertas" && (
@@ -2546,6 +2596,11 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   // Los pendientes de instalación no pertenecen a ningún período todavía (no tienen
   // fecha), así que se muestran como un total aparte, sin importar qué período mires.
   const pendientesAhora = useMemo(() => clientes.filter((c) => !c.fechaInstalacion).length, [clientes]);
+  // Clientes que ya perdieron su plazo para pagar la 1ra factura (no cuentan para comisión).
+  const noCuentanComision = useMemo(
+    () => clientes.filter((c) => c.fechaInstalacion && !clienteCuentaParaComision(c)).length,
+    [clientes]
+  );
 
   const convergenciasDelPeriodo = useMemo(
     () => convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto),
@@ -3302,10 +3357,10 @@ Early: `;
           onClick={() => onVerClientes({ filtroInstalacion: "pendientes", todosLosMeses: true })}
         />
         <MiniStat
-          valor={stats.atrasados}
-          label="En atraso (ahora mismo)"
+          valor={noCuentanComision}
+          label="No cuentan para comisión"
           color="#C23B3B"
-          onClick={() => onVerClientes({ filtroEstado: "Atrasado", todosLosMeses: true })}
+          onClick={() => onVerClientes({ filtroEstado: "nocuenta", todosLosMeses: true })}
         />
         <MiniStat
           valor={convergenciasPeriodo}
@@ -3866,6 +3921,14 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
   );
 }
 
+// Filtro de Clientes según el estado real de la 1ra factura.
+function pasaFiltroFactura(c, f) {
+  if (f === "pago1") return c.f1_estado === "pagada";
+  if (f === "nopago1") return !!c.fechaInstalacion && c.f1_estado !== "pagada";
+  if (f === "nocuenta") return !!c.fechaInstalacion && !clienteCuentaParaComision(c);
+  return true;
+}
+
 function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
@@ -4097,7 +4160,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
     return arr;
   }, [visibles, ordenarPor, ordenDireccion]);
   const visiblesFinal = useMemo(() => {
-    let arr = filtroEstado ? visiblesOrdenados.filter((c) => c.estadoPago === filtroEstado) : visiblesOrdenados;
+    let arr = filtroEstado ? visiblesOrdenados.filter((c) => pasaFiltroFactura(c, filtroEstado)) : visiblesOrdenados;
     if (filtroInstalacion === "instalados") arr = arr.filter((c) => !!c.fechaInstalacion);
     if (filtroInstalacion === "pendientes") arr = arr.filter((c) => !c.fechaInstalacion);
     if (filtroPlan) arr = arr.filter((c) => c.planTipo === filtroPlan);
@@ -4297,7 +4360,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               </select>
             </FiltroCampo>
 
-            <FiltroCampo label="Estado">
+            <FiltroCampo label="1ra factura">
               <select
                 value={filtroEstado}
                 onChange={(e) => setFiltroEstado(e.target.value)}
@@ -4305,7 +4368,9 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                 style={ { borderColor: "#D1D5DB" } }
               >
                 <option value="">Todos</option>
-                {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+                <option value="pago1">✓ Pagó su 1ra factura</option>
+                <option value="nopago1">Aún no la ha pagado</option>
+                <option value="nocuenta">⛔ No cuenta para comisión</option>
               </select>
             </FiltroCampo>
           </div>
@@ -4518,6 +4583,7 @@ function ClienteDetalle({
   periodoActual,
   onCancelar,
   onDescancelar,
+  historialCambios,
 }) {
   const [mostrarCancelar, setMostrarCancelar] = useState(false);
   const [fechaCancel, setFechaCancel] = useState(() => toISO(new Date()));
@@ -4706,6 +4772,14 @@ function ClienteDetalle({
                   <div className="text-xs" style={ { color: "#6B7280" } }>
                     Generada: {fmtFecha(f.generada)} · Vence: {fmtFecha(f.vencimiento)}
                   </div>
+                  {estadoFactura === "pagada" && (
+                    <div className="text-xs mt-0.5" style={ { color: "#0072CE" } }>
+                      {(() => {
+                        const marcada = fechaMarcadaPagada(cliente, f.n, historialCambios);
+                        return marcada ? `✓ Marcada como pagada el ${fmtFechaHora(marcada)}` : "✓ Marcada como pagada · sin fecha registrada";
+                      })()}
+                    </div>
+                  )}
                 </div>
                 {estadoFactura === "pagada" ? (
                   <div className="flex items-center gap-2">
