@@ -2884,6 +2884,71 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [enRiesgoHoy, revisadosHoy]
   );
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
+
+  // ---- Lo que se cobra este mes ----
+  // Este mes se cobra el ciclo de hace 2 períodos (septiembre cobra julio, octubre cobra
+  // agosto...), y su fecha límite de pago de la 1ra factura es el día 5 de este mismo mes.
+  // "Confirmado" cuenta solo a los que ya pagaron; "si pagan los pendientes" suma también
+  // a los que todavía están dentro de su plazo. Los que ya vencieron sin pagar no cuentan.
+  const cobroMes = useMemo(() => {
+    const periodoCobro = sumarMesClave(periodoActual, -2);
+    const nuevo = esquemaNuevo(periodoCobro);
+    const delCiclo = clientes.filter((c) => c.fechaInstalacion && periodoDelCliente(c) === periodoCobro);
+    const pagados = delCiclo.filter((c) => c.f1_estado === "pagada");
+    const enPlazo = delCiclo.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c));
+    const vencidos = delCiclo.filter((c) => !clienteCuentaParaComision(c));
+    const converDelCiclo = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoCobro);
+    const bonoFullTigoCiclo = converDelCiclo.filter((c) => c.fullTigo).reduce((a, c) => a + (Number(c.montoPlan) || 0), 0);
+    const costoPlanesCiclo = converDelCiclo.reduce((a, c) => a + (Number(c.montoPlan) || 0), 0);
+
+    const calcular = (lista) => {
+      const dinero = lista.reduce((a, c) => a + (Number(c.montoMensual) || 0), 0);
+      const cant = lista.length;
+      if (nuevo) {
+        return calcularComision({
+          periodoKey: periodoCobro,
+          clientesHogar: cant,
+          metaClientesHogar: leerMeta(metas, periodoCobro, "clientesHogar"),
+          clientesMovil: converDelCiclo.length,
+          metaClientesMovil: leerMeta(metas, periodoCobro, "clientesMovil"),
+          ingresosDelPeriodo: dinero + costoPlanesCiclo,
+          metaIngresos: leerMeta(metas, periodoCobro, "dinero"),
+          cantidadConvergencias: converDelCiclo.length,
+        });
+      }
+      return calcularComision({
+        periodoKey: periodoCobro,
+        dineroDelPeriodo: dinero,
+        metaDinero: leerMeta(metas, periodoCobro, "dinero"),
+        arpuPeriodo: cant > 0 ? dinero / cant : 0,
+        metaArpu: leerMeta(metas, periodoCobro, "arpu"),
+        clientesInstalados: cant,
+        metaClientes: leerMeta(metas, periodoCobro, "clientes"),
+        bonoFullTigo: bonoFullTigoCiclo,
+      });
+    };
+
+    const faltantes = (nuevo
+      ? [["clientesHogar", "clientes hogar"], ["clientesMovil", "clientes móvil"], ["dinero", "ingresos"]]
+      : [["clientes", "clientes"], ["dinero", "ingresos"], ["arpu", "ARPU"]]
+    )
+      .filter(([campo]) => !leerMeta(metas, periodoCobro, campo))
+      .map(([, nombre]) => nombre);
+
+    return {
+      periodoCobro,
+      nuevo,
+      confirmado: calcular(pagados),
+      siPagan: calcular([...pagados, ...enPlazo]),
+      nPagados: pagados.length,
+      nEnPlazo: enPlazo.length,
+      nVencidos: vencidos.length,
+      nConvergencias: converDelCiclo.length,
+      fechaLimite: fechaLimitePrimeraFactura(periodoCobro),
+      faltantes,
+      vacio: delCiclo.length === 0 && converDelCiclo.length === 0,
+    };
+  }, [clientes, convergencias, metas, periodoActual]);
   const [mostrarSimuladorArpu, setMostrarSimuladorArpu] = useState(false);
 
   function generarReporteDiario() {
@@ -2978,6 +3043,72 @@ Early: `;
           onCerrar={() => setMostrarRevisionDiaria(false)}
         />
       )}
+
+      {(() => {
+        const nombreMes = (k) => (MESES[parseInt(k.split("-")[1], 10) - 1] || "");
+        const rango = rangoCiclo(cobroMes.periodoCobro);
+        const definitivo = cobroMes.nEnPlazo === 0;
+        const lineaBono =
+          cobroMes.nuevo && cobroMes.confirmado.bonoConvergencias > 0
+            ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por convergencia (${cobroMes.nConvergencias} × $${BONO_POR_CONVERGENCIA})`
+            : null;
+        return (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+              <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>
+                💰 Lo que cobras en {nombreMes(periodoActual)}
+              </h2>
+              <span className="text-xs" style={ { color: "#9CA3AF" } }>
+                {cobroMes.nuevo ? "Esquema nuevo" : "Esquema anterior"}
+              </span>
+            </div>
+            <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+              Ciclo de {nombreMes(cobroMes.periodoCobro)} · {fmtFecha(fechaLocalISO(rango.inicio))} – {fmtFecha(fechaLocalISO(rango.fin))}
+            </p>
+
+            {cobroMes.vacio ? (
+              <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes ni convergencias en este ciclo.</p>
+            ) : !cobroMes.confirmado.completo ? (
+              <p className="text-sm" style={ { color: "#B8791F" } }>
+                ⚠ Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.
+              </p>
+            ) : definitivo ? (
+              <div>
+                <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
+                <div className="text-xs font-medium mt-1" style={ { color: "#0F766E" } }>✓ Cierre definitivo</div>
+                <div className="text-xs mt-2" style={ { color: "#6B7280" } }>
+                  {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} cuentan
+                  {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : ""}
+                </div>
+                {lineaBono && <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>{lineaBono}</div>}
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <div className="text-xs font-medium" style={ { color: "#0F766E" } }>✓ Confirmado</div>
+                  <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
+                  <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
+                    {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} ya pagaron
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs font-medium" style={ { color: "#B8791F" } }>◐ Si pagan los pendientes</div>
+                  <div className="text-3xl font-mono font-bold" style={ { color: "#B8791F" } }>
+                    {cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"}
+                  </div>
+                  <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
+                    +{cobroMes.nEnPlazo} en plazo (vence el {fmtFecha(fechaLocalISO(cobroMes.fechaLimite))})
+                  </div>
+                </div>
+                <div className="sm:col-span-2 text-xs" style={ { color: "#6B7280" } }>
+                  {cobroMes.nVencidos > 0 ? `⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : "Ninguno ha vencido todavía."}
+                  {lineaBono ? ` · ${lineaBono}` : ""}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       <div className="flex items-center gap-2 mb-6 flex-wrap">
         <button
