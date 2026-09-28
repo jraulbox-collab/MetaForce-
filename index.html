@@ -4648,7 +4648,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         )}
       </div>
 
-      <div className="flex items-center gap-2 mb-4">
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
         <button
           type="button"
           onClick={() => setFiltrosAbiertos((v) => !v)}
@@ -4661,6 +4661,22 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
         >
           🔍 Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
         </button>
+        {filtrosActivos > 0 && (
+          <button
+            type="button"
+            onClick={() => {
+              setFiltroEstado("");
+              setFiltroInstalacion("");
+              setFiltroPlan("");
+              setFechaDesde("");
+              setFechaHasta("");
+            } }
+            className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
+            style={ { borderColor: "#F3C6C6", color: "#C23B3B", background: "#FBEAEA" } }
+          >
+            ✕ Limpiar filtros
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setMostrarSelectorColumnas(true)}
@@ -4743,23 +4759,6 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
               </select>
             </FiltroCampo>
           </div>
-
-          {filtrosActivos > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                setFiltroEstado("");
-                setFiltroInstalacion("");
-                setFiltroPlan("");
-                setFechaDesde("");
-                setFechaHasta("");
-              } }
-              className="text-xs font-medium self-start"
-              style={ { color: "#C23B3B" } }
-            >
-              ✕ Limpiar todos los filtros
-            </button>
-          )}
         </div>
       )}
 
