@@ -1108,7 +1108,7 @@ function App() {
   }
   const [clienteDetalleId, setClienteDetalleId] = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [mostrarMasMenu, setMostrarMasMenu] = useState(false);
   const [historial, setHistorial] = useState([]);
   const [metas, setMetas] = useState({});
   const [metasLoaded, setMetasLoaded] = useState(false);
@@ -1397,7 +1397,7 @@ function App() {
   }, [loaded, stats.alHoy]);
 
   useEffect(() => {
-    setMobileMenuOpen(false);
+    setMostrarMasMenu(false);
   }, [tab]);
 
   function resetForm() {
@@ -1875,29 +1875,22 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans" style={ { background: "#F4F6FA", color: "#001E62" } }>
-      <div className="md:hidden flex items-center justify-between px-4 py-3" style={ { background: "#001E62" } }>
-        <button
-          onClick={() => { setTab("dashboard"); setMobileMenuOpen(false); } }
-          className="flex items-center gap-2"
-        >
+      <div
+        className="md:hidden flex items-center gap-2 px-4 py-3 sticky top-0 z-30"
+        style={ { background: "#001E62" } }
+      >
+        <button onClick={() => setTab("dashboard")} className="flex items-center gap-2">
           <div className="w-2.5 h-2.5 rounded-full" style={ { background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" } } />
           <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
-        </button>
-        <button
-          onClick={() => setMobileMenuOpen((v) => !v)}
-          className="text-white text-2xl leading-none px-2 py-1"
-          aria-label="Abrir menú"
-        >
-          {mobileMenuOpen ? "✕" : "☰"}
         </button>
       </div>
 
       <aside
-        className={(mobileMenuOpen ? "flex " : "hidden ") + "md:flex w-full md:w-56 md:shrink-0 flex-col justify-between"}
+        className="hidden md:flex w-56 shrink-0 flex-col justify-between"
         style={ { background: "#001E62" } }
       >
         <div>
-          <div className="hidden md:block px-5 pt-6 pb-8">
+          <div className="px-5 pt-6 pb-8">
             <button onClick={() => setTab("dashboard")} className="flex items-center gap-2">
               <div className="w-2.5 h-2.5 rounded-full" style={ { background: "#00AEEF", boxShadow: "0 0 0 3px rgba(0,174,239,0.25)" } } />
               <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>
@@ -1962,7 +1955,111 @@ function App() {
         </div>
       </aside>
 
-      <main className="flex-1 w-full px-4 py-5 sm:px-8 sm:py-7 max-w-5xl">
+      {/* ---- Navegación móvil: barra fija abajo + botón flotante de agregar ---- */}
+      <nav
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch"
+        style={ { background: "#001E62", borderTop: "1px solid #1E3A7A" } }
+      >
+        {[
+          { key: "dashboard", label: "Inicio", icon: "🏠" },
+          { key: "clientes", label: "Clientes", icon: "👥" },
+          { key: "alertas", label: "Alertas", icon: "🔔", badge: stats.alHoy },
+        ].map((item) => (
+          <button
+            key={item.key}
+            onClick={() => setTab(item.key)}
+            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 relative"
+            style={ { color: tab === item.key ? "#FFFFFF" : "#8593B8" } }
+          >
+            <span className="text-xl leading-none relative" aria-hidden="true">
+              {item.icon}
+              {!!item.badge && (
+                <span
+                  className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full"
+                  style={ { background: "#C23B3B" } }
+                  aria-label={`${item.badge} alertas pendientes`}
+                />
+              )}
+            </span>
+            <span className="text-[11px]" style={ { fontWeight: tab === item.key ? 600 : 500 } }>{item.label}</span>
+          </button>
+        ))}
+        <button
+          onClick={() => setMostrarMasMenu(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
+          style={ { color: "#8593B8" } }
+        >
+          <span className="text-xl leading-none" aria-hidden="true">☰</span>
+          <span className="text-[11px]">Más</span>
+        </button>
+      </nav>
+
+      <button
+        onClick={() => setMostrarSelectorNuevo(true)}
+        className="md:hidden fixed z-40 w-14 h-14 rounded-full text-white text-3xl leading-none flex items-center justify-center"
+        style={ { background: "#0F766E", right: "16px", bottom: "76px", boxShadow: "0 4px 12px rgba(0,0,0,0.25)" } }
+        aria-label="Agregar cliente"
+      >
+        +
+      </button>
+
+      {mostrarMasMenu && (
+        <div
+          className="md:hidden fixed inset-0 z-50 flex items-end"
+          style={ { background: "rgba(0,0,0,0.4)" } }
+          onClick={() => setMostrarMasMenu(false)}
+        >
+          <div
+            className="w-full rounded-t-lg p-4 pb-6"
+            style={ { background: "#001E62" } }
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-white font-semibold text-sm">Más opciones</span>
+              <button onClick={() => setMostrarMasMenu(false)} className="text-white text-xl leading-none px-2">✕</button>
+            </div>
+            <div className="flex flex-col gap-1">
+              {[
+                { key: "precierre", label: "Precierre", icon: "🧾" },
+                { key: "historial", label: "Historial", icon: "📜" },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  onClick={() => { setTab(item.key); setMostrarMasMenu(false); } }
+                  className="text-left px-3 py-2.5 rounded-md text-sm flex items-center gap-2"
+                  style={ {
+                    background: tab === item.key ? "rgba(255,255,255,0.08)" : "transparent",
+                    color: tab === item.key ? "#FFFFFF" : "#8593B8",
+                    fontWeight: tab === item.key ? 600 : 500,
+                  } }
+                >
+                  <span aria-hidden="true">{item.icon}</span>
+                  {item.label}
+                </button>
+              ))}
+              <button
+                onClick={() => { setMostrarConfig(true); setMostrarMasMenu(false); } }
+                className="text-left px-3 py-2.5 rounded-md text-sm flex items-center gap-2"
+                style={ { color: "#8593B8", fontWeight: 500 } }
+              >
+                <span aria-hidden="true">⚙️</span>
+                Configuración
+              </button>
+            </div>
+            <div className="text-[11px] flex items-center gap-1.5 mt-3 pt-3 border-t" style={ { color: "#5C6480", borderColor: "#1E3A7A" } }>
+              {!enLinea
+                ? "📴 Sin conexión — se guardará al reconectar"
+                : estadoGuardado === "guardando"
+                ? "⏳ Guardando..."
+                : estadoGuardado === "error"
+                ? "⚠️ Error al guardar — revisa tu conexión"
+                : "☁️ Guardado"}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="flex-1 w-full px-4 pt-5 pb-24 sm:px-8 sm:py-7 md:pb-7 max-w-5xl">
         {!loaded ? (
           <SkeletonCargando />
         ) : (
@@ -3176,20 +3273,18 @@ Early: `;
         >
           ←
         </button>
-        {[...historialPeriodos].reverse().map((key) => (
-          <button
-            key={key}
-            onClick={() => setPeriodoVisto(key)}
-            className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors"
-            style={
-              periodoVisto === key
-                ? { background: "#001E62", borderColor: "#001E62", color: "white" }
-                : { borderColor: "#D1D5DB", color: "#374151", background: "white" }
-            }
-          >
-            Ventas {mesLabel(key)}{key === periodoActual ? " (actual)" : ""}
-          </button>
-        ))}
+        <select
+          value={periodoVisto}
+          onChange={(e) => setPeriodoVisto(e.target.value)}
+          className="text-sm font-medium px-3 py-1.5 rounded-md border"
+          style={ { borderColor: "#D1D5DB", color: "#001E62" } }
+        >
+          {Array.from({ length: 24 }, (_, i) => sumarMesClave(periodoActual, -i)).map((key) => (
+            <option key={key} value={key}>
+              Ventas {mesLabel(key)}{key === periodoActual ? " (actual)" : ""}
+            </option>
+          ))}
+        </select>
         <button
           onClick={() => setPeriodoVisto((p) => sumarMesClave(p, 1))}
           disabled={esActual}
@@ -6143,8 +6238,35 @@ function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExpo
   );
 }
 
+// Cuando un error pasa DENTRO del render de React, el navegador a veces solo
+// reporta "Script error." sin detalle (por cómo Babel ejecuta el código). Este
+// capturador recibe el error real directamente de React y sí puede mostrarlo completo.
+class CapturadorErrores extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  componentDidCatch(error, info) {
+    try {
+      mostrarErrorEnPantalla(
+        (error && error.message ? error.message : String(error)) +
+          '\n\nDónde:\n' +
+          (info && info.componentStack ? info.componentStack.trim().split('\n').slice(0, 4).join('\n') : '?') +
+          (error && error.stack ? '\n\nDetalle técnico:\n' + error.stack.split('\n').slice(0, 6).join('\n') : '')
+      );
+    } catch (e) {}
+  }
+  render() {
+    if (this.state.error) return null;
+    return this.props.children;
+  }
+}
+
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);
+root.render(<CapturadorErrores><App /></CapturadorErrores>);
 </script>
 </body>
 </html>
