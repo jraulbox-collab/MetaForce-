@@ -1977,6 +1977,7 @@ function App() {
             eliminados={eliminados}
             onRecuperar={recuperarCliente}
             saltarAMes={saltarAMes}
+            onSaltoAplicado={() => setSaltarAMes(null)}
             columnasClientes={columnasClientes}
             setColumnasClientes={setColumnasClientes}
             periodoActual={periodoActualApp}
@@ -3929,7 +3930,7 @@ function pasaFiltroFactura(c, f) {
   return true;
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes }) {
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -3968,6 +3969,10 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       }));
       setSearch("");
       setFiltrosAbiertos(true);
+      // La orden de "saltar a tal mes/filtros" se usa UNA sola vez: se borra en cuanto
+      // se aplica, para que al volver del detalle de un cliente no se vuelva a ejecutar
+      // y te pise el mes y los filtros que tenías.
+      if (onSaltoAplicado) onSaltoAplicado();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saltarAMes]);
