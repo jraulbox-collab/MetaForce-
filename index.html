@@ -2882,6 +2882,60 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     bonoFullTigo,
   ]);
 
+  // Versión "confirmada": lo mismo, pero contando solo los clientes de hogar que ya
+  // tienen su 1ra factura pagada (deja fuera a los que aún están dentro de su plazo
+  // pero todavía no pagan). Los Clientes Móvil no tienen este concepto y cuentan igual.
+  const clientesDelPeriodoConfirmados = useMemo(
+    () => clientesDelPeriodo.filter((c) => c.f1_estado === "pagada"),
+    [clientesDelPeriodo]
+  );
+  const dineroDelPeriodoConfirmado = useMemo(
+    () => clientesDelPeriodoConfirmados.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0),
+    [clientesDelPeriodoConfirmados]
+  );
+  const arpuPeriodoConfirmado = useMemo(() => {
+    if (clientesDelPeriodoConfirmados.length === 0) return 0;
+    return dineroDelPeriodoConfirmado / clientesDelPeriodoConfirmados.length;
+  }, [clientesDelPeriodoConfirmados, dineroDelPeriodoConfirmado]);
+  const comisionConfirmada = useMemo(() => {
+    if (esNuevo) {
+      return calcularComision({
+        periodoKey: periodoVisto,
+        clientesHogar: clientesDelPeriodoConfirmados.length,
+        metaClientesHogar,
+        clientesMovil: convergenciasPeriodo,
+        metaClientesMovil,
+        ingresosDelPeriodo: dineroDelPeriodoConfirmado + costoPlanesMovilesPeriodo,
+        metaIngresos: metaDinero,
+        cantidadConvergencias: convergenciasPeriodo,
+      });
+    }
+    return calcularComision({
+      periodoKey: periodoVisto,
+      dineroDelPeriodo: dineroDelPeriodoConfirmado,
+      metaDinero,
+      arpuPeriodo: arpuPeriodoConfirmado,
+      metaArpu,
+      clientesInstalados: clientesDelPeriodoConfirmados.length,
+      metaClientes,
+      bonoFullTigo,
+    });
+  }, [
+    esNuevo,
+    periodoVisto,
+    clientesDelPeriodoConfirmados.length,
+    metaClientesHogar,
+    convergenciasPeriodo,
+    metaClientesMovil,
+    dineroDelPeriodoConfirmado,
+    costoPlanesMovilesPeriodo,
+    metaDinero,
+    arpuPeriodoConfirmado,
+    metaArpu,
+    metaClientes,
+    bonoFullTigo,
+  ]);
+
   // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
   // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
   // La comisión tampoco se extrapola directo (tiene tramos escalonados) — se vuelve a calcular
@@ -3364,6 +3418,12 @@ Early: `;
               </div>
             )}
             <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.comision) : null} variant="claro" />
+            {comisionConfirmada.completo && (
+              <div className="text-xs mt-2 pt-2 opacity-90" style={ { borderTop: "1px solid rgba(255,255,255,0.2)" } }>
+                ✓ Solo con 1ra factura pagada: <span className="font-mono font-semibold">{fmtMonto(comisionConfirmada.total)}</span>{" "}
+                ({clientesDelPeriodoConfirmados.length} de {clientesDelPeriodo.length} clientes hogar)
+              </div>
+            )}
           </>
         ) : (
           <p className="text-sm opacity-80">
