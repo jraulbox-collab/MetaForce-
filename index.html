@@ -316,12 +316,13 @@ function leerMeta(metas, mes, campo) {
 }
 const fmtMonto = (n) => `$${Number(n || 0).toFixed(2)}`;
 const ORDINAL = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta" };
-// Ciclo de estados al hacer clic en el indicador de una factura: sin marcar → pendiente → pagada → sin marcar.
+// Una factura solo tiene dos estados: pagada o no pagada. "No pagada" se guarda como
+// "" (y cualquier valor viejo distinto de "pagada", como "pendiente", se trata igual).
+// Al hacer clic en el indicador de una factura alterna entre los dos.
 function siguienteEstadoFactura(actual) {
-  if (actual === "pagada") return "";
-  if (actual === "pendiente") return "pagada";
-  return "pendiente";
+  return actual === "pagada" ? "" : "pagada";
 }
+const etiquetaEstadoFactura = (e) => (e === "pagada" ? "pagada" : "no pagada");
 
 // ---------- Cálculo de comisión ----------
 // Monto base según el % de logro en ingresos ($ de clientes) del período actual.
@@ -1035,6 +1036,14 @@ function App() {
     };
   }, []);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  // Confirmación antes de marcar/desmarcar una factura como pagada (evita toques por error).
+  const [confirmarFactura, setConfirmarFactura] = useState(null);
+  function pedirCambioFactura(clienteId, n, nuevoEstado) {
+    setConfirmarFactura({ clienteId, n, nuevoEstado: nuevoEstado === "pagada" ? "pagada" : "" });
+  }
+  function pedirMarcarPagada(clienteId, n) {
+    pedirCambioFactura(clienteId, n, "pagada");
+  }
   const [clienteDetalleId, setClienteDetalleId] = useState(null);
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -1095,7 +1104,7 @@ function App() {
       if (clientesPendienteRef.current !== null) {
         const siguiente = clientesPendienteRef.current;
         clientesPendienteRef.current = null;
-        persistirClientes.current(siguiente);
+        persistirClientes(siguiente);
       }
     }
   }).current;
@@ -1610,7 +1619,7 @@ function App() {
     );
     if (antes) {
       const despues = { ...antes, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada" };
-      const anteriorLabel = antes[`f${n}_estado`] || "sin marcar";
+      const anteriorLabel = etiquetaEstadoFactura(antes[`f${n}_estado`]);
       if (anteriorLabel !== "pagada") {
         registrarCambio({
           entidad: "factura",
@@ -1625,7 +1634,7 @@ function App() {
     }
   }
 
-  // Cambia el estado de pago de una factura puntual: "pagada", "pendiente" o "" (sin marcar).
+  // Cambia el estado de pago de una factura puntual: "pagada" o "" (no pagada).
   // Al marcar como pagada, silencia sus 3 avisos; al desmarcar, los reactiva por si
   // corresponde que sigan recordándole al cliente.
   function actualizarEstadoFactura(clienteId, n, nuevoEstado) {
@@ -1652,8 +1661,8 @@ function App() {
         [`f${n}_t15`]: marcarEnviado,
         [`f${n}_t3`]: marcarEnviado,
       };
-      const anteriorLabel = antes[`f${n}_estado`] || "sin marcar";
-      const nuevoLabel = nuevoEstado || "sin marcar";
+      const anteriorLabel = etiquetaEstadoFactura(antes[`f${n}_estado`]);
+      const nuevoLabel = etiquetaEstadoFactura(nuevoEstado);
       if (anteriorLabel !== nuevoLabel) {
         registrarCambio({
           entidad: "factura",
@@ -1908,8 +1917,8 @@ function App() {
             setSearch={setSearch}
             onEdit={startEdit}
             onDelete={(id) => setConfirmDelete(id)}
-            onMarcarPagada={marcarFacturaPagada}
-            onActualizarEstadoFactura={actualizarEstadoFactura}
+            onMarcarPagada={pedirMarcarPagada}
+            onActualizarEstadoFactura={pedirCambioFactura}
             onVerDetalle={(c) => {
               setOrigenDetalle("clientes");
               setClienteDetalleId(c.id);
@@ -1936,8 +1945,8 @@ function App() {
             onVolver={() => setTab(origenDetalle)}
             volverLabel={origenDetalle === "alertas" ? "← Volver a Alertas" : "← Volver a Clientes"}
             onEditar={startEdit}
-            onMarcarPagada={marcarFacturaPagada}
-            onActualizarEstadoFactura={actualizarEstadoFactura}
+            onMarcarPagada={pedirMarcarPagada}
+            onActualizarEstadoFactura={pedirCambioFactura}
             onCopiarMensaje={copyMessage}
             copiedKey={copiedKey}
             onMarcarEnviado={toggleMilestone}
@@ -1955,7 +1964,7 @@ function App() {
             onMarcar={toggleMilestone}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
-            onPagoRealizado={marcarFacturaPagada}
+            onPagoRealizado={pedirMarcarPagada}
             onVerDetalle={(c) => {
               setOrigenDetalle("alertas");
               setClienteDetalleId(c.id);
@@ -1992,6 +2001,18 @@ function App() {
       </main>
 
       {confirmDelete && <ConfirmModal onCancel={() => setConfirmDelete(null)} onConfirm={() => deleteClient(confirmDelete)} />}
+      {confirmarFactura && clientes.find((c) => c.id === confirmarFactura.clienteId) && (
+        <ConfirmarFacturaModal
+          nombre={clientes.find((c) => c.id === confirmarFactura.clienteId).nombre}
+          n={confirmarFactura.n}
+          nuevoEstado={confirmarFactura.nuevoEstado}
+          onCancel={() => setConfirmarFactura(null)}
+          onConfirm={() => {
+            actualizarEstadoFactura(confirmarFactura.clienteId, confirmarFactura.n, confirmarFactura.nuevoEstado);
+            setConfirmarFactura(null);
+          } }
+        />
+      )}
       {mostrarConvergencias && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
@@ -2759,18 +2780,24 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     });
   }
 
-  // Único criterio: clientes que ya pasaron su mes de instalación (no del mes
-  // actual) que todavía no tienen su 1ra factura pagada, y cuya fecha límite real
-  // de comisión (día 5 del segundo período completo después de instalarse) todavía
-  // no venció. Se calcula la fecha límite real de cada cliente en vez de asumir
-  // una resta fija de meses — así se ajusta solo aunque algún período dure más o
-  // menos de lo normal (como agosto extendido). En cuanto vence su fecha límite,
-  // sale solo de esta cola (ya no hay nada que puedas hacer para que cuente).
+  // Se muestra UN SOLO ciclo a la vez: el de instalación cuya fecha límite real
+  // (día 5 del segundo período completo después de instalarse) es la más próxima
+  // que todavía no pasó. Así el día 5 todavía se ve el ciclo que vence ese día
+  // ("Vence HOY"), y desde el día 6 pasa solo al siguiente, sin mezclar dos ciclos.
+  // Se calcula con la fecha límite real de cada ciclo, no con resta fija de meses,
+  // para que siga funcionando aunque algún período dure más o menos de lo normal.
+  // Dentro del ciclo, solo entran los que todavía no pagaron su 1ra factura.
   const enRiesgoHoy = useMemo(() => {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
+    const periodoObjetivo = [-1, -2]
+      .map((d) => sumarMesClave(periodoActual, d))
+      .map((p) => ({ p, limite: fechaLimitePrimeraFactura(p) }))
+      .filter((x) => x.limite && x.limite >= hoy)
+      .sort((a, b) => a.limite - b.limite)[0]?.p;
+    if (!periodoObjetivo) return [];
     return clientes
-      .filter((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) !== periodoActual)
+      .filter((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) === periodoObjetivo)
       .map((c) => {
         const facturaPendiente = (c.facturas || []).find((f) => f.n === 1) || null;
         const fechaLimite = fechaLimitePrimeraFactura(periodoDelCliente(c));
@@ -4686,7 +4713,7 @@ function ClienteDetalle({
                       Pagada ✓
                     </span>
                     <button
-                      onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pendiente")}
+                      onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "")}
                       className="text-xs font-medium px-3 py-1.5 rounded-md border"
                       style={ { borderColor: "#D1D5DB", color: "#374151" } }
                     >
@@ -4695,11 +4722,6 @@ function ClienteDetalle({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    {estadoFactura === "pendiente" && (
-                      <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={ { background: "#FBF1DE", color: "#B8791F" } }>
-                        Pendiente
-                      </span>
-                    )}
                     <button
                       onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")}
                       className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
@@ -4947,13 +4969,12 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
 }
 
 function FacturaDot({ cliente, n, onCambiar }) {
-  const estado = cliente[`f${n}_estado`] || "";
+  const estado = cliente[`f${n}_estado`] === "pagada" ? "pagada" : "";
   const estilos = {
     pagada: { background: "#0072CE", borderColor: "#0072CE" },
-    pendiente: { background: "#F59E0B", borderColor: "#F59E0B" },
     "": { background: "white", borderColor: "#D1D5DB" },
   };
-  const etiquetas = { pagada: "Pagada", pendiente: "Pendiente", "": "Sin marcar" };
+  const etiquetas = { pagada: "Pagada", "": "No pagada" };
   return (
     <button
       onClick={() => onCambiar(cliente.id, n, siguienteEstadoFactura(estado))}
@@ -5670,6 +5691,35 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
               <span className="block text-sm font-semibold">Convergencia</span>
               <span className="block text-xs" style={ { color: "#6B7280" } }>Se agrega al listado de convergencias</span>
             </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ConfirmarFacturaModal({ nombre, n, nuevoEstado, onCancel, onConfirm }) {
+  const pagar = nuevoEstado === "pagada";
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg p-6 max-w-sm w-full">
+        <h3 className="font-semibold mb-2 flex items-center gap-2" style={ { color: "#001E62" } }>
+          <span aria-hidden="true">{pagar ? "✓" : "↩"}</span>
+          {pagar ? "¿Marcar como pagada?" : "¿Desmarcar como pagada?"}
+        </h3>
+        <p className="text-sm mb-5" style={ { color: "#6B7280" } }>
+          {pagar
+            ? `La ${ORDINAL[n]} factura de ${nombre} se va a marcar como pagada.`
+            : `La ${ORDINAL[n]} factura de ${nombre} va a volver a quedar como no pagada.`}
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded-md border" style={ { borderColor: "#D1D5DB" } }>Cancelar</button>
+          <button
+            onClick={onConfirm}
+            className="text-sm px-3 py-1.5 rounded-md text-white"
+            style={ { background: pagar ? "#0F766E" : "#001E62" } }
+          >
+            {pagar ? "Sí, pagada" : "Sí, desmarcar"}
           </button>
         </div>
       </div>
