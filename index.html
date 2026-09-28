@@ -2884,6 +2884,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [enRiesgoHoy, revisadosHoy]
   );
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
+  const [cobroMesAbierto, setCobroMesAbierto] = useState(false);
 
   // ---- Lo que se cobra este mes ----
   // Este mes se cobra el ciclo de hace 2 períodos (septiembre cobra julio, octubre cobra
@@ -3052,58 +3053,80 @@ Early: `;
           cobroMes.nuevo && cobroMes.confirmado.bonoConvergencias > 0
             ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por convergencia (${cobroMes.nConvergencias} × $${BONO_POR_CONVERGENCIA})`
             : null;
+        const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B8791F" : definitivo ? "#0F766E" : "#0072CE";
+        const resumenLinea = cobroMes.vacio
+          ? `💰 ${nombreMes(periodoActual)}: sin clientes en el ciclo de ${nombreMes(cobroMes.periodoCobro)}`
+          : !cobroMes.confirmado.completo
+          ? `💰 ${nombreMes(periodoActual)}: falta cargar meta de ${cobroMes.faltantes.join(", ")}`
+          : definitivo
+          ? `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado`
+          : `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
         return (
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6">
-            <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-              <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>
-                💰 Lo que cobras en {nombreMes(periodoActual)}
-              </h2>
-              <span className="text-xs" style={ { color: "#9CA3AF" } }>
-                {cobroMes.nuevo ? "Esquema nuevo" : "Esquema anterior"}
-              </span>
-            </div>
-            <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
-              Ciclo de {nombreMes(cobroMes.periodoCobro)} · {fmtFecha(fechaLocalISO(rango.inicio))} – {fmtFecha(fechaLocalISO(rango.fin))}
-            </p>
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => setCobroMesAbierto((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md"
+              style={ { background: "#F4F6FA" } }
+            >
+              <span className="text-xs font-medium truncate" style={ { color: colorLinea } }>{resumenLinea}</span>
+              <span className="text-xs shrink-0" style={ { color: "#9CA3AF" } }>{cobroMesAbierto ? "▲" : "▼"}</span>
+            </button>
 
-            {cobroMes.vacio ? (
-              <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes ni convergencias en este ciclo.</p>
-            ) : !cobroMes.confirmado.completo ? (
-              <p className="text-sm" style={ { color: "#B8791F" } }>
-                ⚠ Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.
-              </p>
-            ) : definitivo ? (
-              <div>
-                <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
-                <div className="text-xs font-medium mt-1" style={ { color: "#0F766E" } }>✓ Cierre definitivo</div>
-                <div className="text-xs mt-2" style={ { color: "#6B7280" } }>
-                  {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} cuentan
-                  {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : ""}
+            {cobroMesAbierto && (
+              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mt-2">
+                <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+                  <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>
+                    💰 Lo que cobras en {nombreMes(periodoActual)}
+                  </h2>
+                  <span className="text-xs" style={ { color: "#9CA3AF" } }>
+                    {cobroMes.nuevo ? "Esquema nuevo" : "Esquema anterior"}
+                  </span>
                 </div>
-                {lineaBono && <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>{lineaBono}</div>}
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <div className="text-xs font-medium" style={ { color: "#0F766E" } }>✓ Confirmado</div>
-                  <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
-                  <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
-                    {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} ya pagaron
+                <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+                  Ciclo de {nombreMes(cobroMes.periodoCobro)} · {fmtFecha(fechaLocalISO(rango.inicio))} – {fmtFecha(fechaLocalISO(rango.fin))}
+                </p>
+
+                {cobroMes.vacio ? (
+                  <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes ni convergencias en este ciclo.</p>
+                ) : !cobroMes.confirmado.completo ? (
+                  <p className="text-sm" style={ { color: "#B8791F" } }>
+                    ⚠ Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.
+                  </p>
+                ) : definitivo ? (
+                  <div>
+                    <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
+                    <div className="text-xs font-medium mt-1" style={ { color: "#0F766E" } }>✓ Cierre definitivo</div>
+                    <div className="text-xs mt-2" style={ { color: "#6B7280" } }>
+                      {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} cuentan
+                      {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : ""}
+                    </div>
+                    {lineaBono && <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>{lineaBono}</div>}
                   </div>
-                </div>
-                <div>
-                  <div className="text-xs font-medium" style={ { color: "#B8791F" } }>◐ Si pagan los pendientes</div>
-                  <div className="text-3xl font-mono font-bold" style={ { color: "#B8791F" } }>
-                    {cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"}
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <div className="text-xs font-medium" style={ { color: "#0F766E" } }>✓ Confirmado</div>
+                      <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
+                      <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
+                        {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} ya pagaron
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-medium" style={ { color: "#B8791F" } }>◐ Si pagan los pendientes</div>
+                      <div className="text-3xl font-mono font-bold" style={ { color: "#B8791F" } }>
+                        {cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"}
+                      </div>
+                      <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
+                        +{cobroMes.nEnPlazo} en plazo (vence el {fmtFecha(fechaLocalISO(cobroMes.fechaLimite))})
+                      </div>
+                    </div>
+                    <div className="sm:col-span-2 text-xs" style={ { color: "#6B7280" } }>
+                      {cobroMes.nVencidos > 0 ? `⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : "Ninguno ha vencido todavía."}
+                      {lineaBono ? ` · ${lineaBono}` : ""}
+                    </div>
                   </div>
-                  <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
-                    +{cobroMes.nEnPlazo} en plazo (vence el {fmtFecha(fechaLocalISO(cobroMes.fechaLimite))})
-                  </div>
-                </div>
-                <div className="sm:col-span-2 text-xs" style={ { color: "#6B7280" } }>
-                  {cobroMes.nVencidos > 0 ? `⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : "Ninguno ha vencido todavía."}
-                  {lineaBono ? ` · ${lineaBono}` : ""}
-                </div>
+                )}
               </div>
             )}
           </div>
