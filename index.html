@@ -288,6 +288,25 @@ function fechaLimitePrimeraFactura(periodoInstalacion) {
 // 1ra factura y ya se venció su fecha límite real (día 5 del segundo período
 // completo después de instalarse). Mientras esté dentro de su plazo, o ya haya
 // pagado, sigue contando con normalidad.
+// Cliente Móvil (antes "Convergencias"): tres tipos. "fullTigo" se sigue guardando
+// además de "tipo" por compatibilidad con el esquema de comisión anterior, que solo
+// miraba FULL TIGO para su bono del 90% de clientes.
+const TIPOS_CLIENTE_MOVIL = [
+  { value: "pospago", label: "Plan Pospago" },
+  { value: "convergencia", label: "Convergencia" },
+  { value: "fulltigo", label: "FULL TIGO" },
+];
+function tipoClienteMovil(c) {
+  return c.tipo || (c.fullTigo ? "fulltigo" : "convergencia");
+}
+function etiquetaTipoMovil(t) {
+  return (TIPOS_CLIENTE_MOVIL.find((x) => x.value === t) || {}).label || t;
+}
+// Fecha de activación de un Cliente Móvil: la propia si existe; si no (los que ya
+// tenías cargados antes de este campo), la fecha en que lo registraste.
+function fechaActivacionMovil(c) {
+  return c.fechaActivacion || (c.creadoEn || "").slice(0, 10);
+}
 function clienteCuentaParaComision(c) {
   if (!c.fechaInstalacion) return true;
   if (c.f1_estado === "pagada") return true;
@@ -1095,7 +1114,6 @@ function App() {
   const [metasLoaded, setMetasLoaded] = useState(false);
   const [convergencias, setConvergencias] = useState([]);
   const [convergenciasLoaded, setConvergenciasLoaded] = useState(false);
-  const [mostrarConvergencias, setMostrarConvergencias] = useState(false);
   const [eliminados, setEliminados] = useState([]);
   const [eliminadosLoaded, setEliminadosLoaded] = useState(false);
   const [historialCambios, setHistorialCambios] = useState([]);
@@ -1438,26 +1456,50 @@ function App() {
     }
   }
 
-  function agregarConvergencia(nombre, telefono, fullTigo, montoPlan) {
-    const nueva = { id: uid(), nombre, telefono, fullTigo: !!fullTigo, montoPlan: montoPlan ? Number(montoPlan) || 0 : null, creadoEn: new Date().toISOString() };
+  // Cliente Móvil (Plan Pospago, Convergencia o FULL TIGO). "fullTigo" se guarda además
+  // de "tipo" por compatibilidad con la fórmula de comisión anterior a octubre 2026.
+  function agregarConvergencia(nombre, telefono, tipoCliente, montoPlan, fechaActivacion) {
+    const nueva = {
+      id: uid(),
+      nombre,
+      telefono,
+      tipo: tipoCliente,
+      fullTigo: tipoCliente === "fulltigo",
+      montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
+      fechaActivacion: fechaActivacion || toISO(new Date()),
+      creadoEn: new Date().toISOString(),
+    };
     setConvergencias((prev) => [...prev, nueva]);
     registrarCambio({ entidad: "convergencia", tipo: "crear", etiqueta: nombre, despues: nueva, cambios: [], refId: nueva.id });
   }
 
   function editarConvergencia(id, datos) {
     const antes = convergencias.find((c) => c.id === id);
-    const despues = antes ? { ...antes, ...datos } : null;
-    setConvergencias((prev) => prev.map((c) => (c.id === id ? { ...c, ...datos } : c)));
+    const normalizados = datos.tipo ? { ...datos, fullTigo: datos.tipo === "fulltigo" } : datos;
+    const despues = antes ? { ...antes, ...normalizados } : null;
+    setConvergencias((prev) => prev.map((c) => (c.id === id ? { ...c, ...normalizados } : c)));
     if (antes && despues) {
       const cambios = [];
       if (String(antes.nombre ?? "") !== String(despues.nombre ?? ""))
         cambios.push({ campo: "nombre", label: "Nombre", anterior: antes.nombre, nuevo: despues.nombre });
       if (String(antes.telefono ?? "") !== String(despues.telefono ?? ""))
         cambios.push({ campo: "telefono", label: "Teléfono", anterior: antes.telefono, nuevo: despues.telefono });
-      if (String(!!antes.fullTigo) !== String(!!despues.fullTigo))
-        cambios.push({ campo: "fullTigo", label: "FULL TIGO", anterior: antes.fullTigo ? "Sí" : "No", nuevo: despues.fullTigo ? "Sí" : "No" });
+      if (String(tipoClienteMovil(antes)) !== String(tipoClienteMovil(despues)))
+        cambios.push({
+          campo: "tipo",
+          label: "Tipo",
+          anterior: etiquetaTipoMovil(tipoClienteMovil(antes)),
+          nuevo: etiquetaTipoMovil(tipoClienteMovil(despues)),
+        });
       if (String(antes.montoPlan ?? "") !== String(despues.montoPlan ?? ""))
         cambios.push({ campo: "montoPlan", label: "Monto del plan", anterior: antes.montoPlan, nuevo: despues.montoPlan });
+      if (String(fechaActivacionMovil(antes)) !== String(fechaActivacionMovil(despues)))
+        cambios.push({
+          campo: "fechaActivacion",
+          label: "Fecha de activación",
+          anterior: fechaActivacionMovil(antes),
+          nuevo: fechaActivacionMovil(despues),
+        });
       if (cambios.length > 0) {
         registrarCambio({ entidad: "convergencia", tipo: "editar", etiqueta: despues.nombre, antes, despues, cambios, refId: id });
       }
@@ -1947,7 +1989,6 @@ function App() {
             metas={metas}
             onActualizarMeta={actualizarMeta}
             convergencias={convergencias}
-            onAbrirConvergencias={() => setMostrarConvergencias(true)}
             onNuevo={() => setMostrarSelectorNuevo(true)}
             onActualizarEstadoFactura={actualizarEstadoFactura}
             onCopiarSuscriptor={copySuscriptor}
@@ -1987,6 +2028,10 @@ function App() {
             filtrosClientes={filtrosClientes}
             setFiltrosClientes={setFiltrosClientes}
             copiedSubKey={copiedSubKey}
+            clientesMovil={convergencias}
+            onAgregarMovil={agregarConvergencia}
+            onEditarMovil={editarConvergencia}
+            onEliminarMovil={eliminarConvergencia}
           />
         )}
         {tab === "detalle" && (
@@ -2064,22 +2109,6 @@ function App() {
           } }
         />
       )}
-      {mostrarConvergencias && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-lg p-6 max-w-lg w-full max-h-[85vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-semibold text-lg">Convergencias</h3>
-              <button onClick={() => setMostrarConvergencias(false)} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
-            </div>
-            <ConvergenciasPanel
-              convergencias={convergencias}
-              onAgregar={agregarConvergencia}
-              onEditar={editarConvergencia}
-              onEliminar={eliminarConvergencia}
-            />
-          </div>
-        </div>
-      )}
       {mostrarSelectorNuevo && (
         <SelectorNuevoModal
           onClose={() => setMostrarSelectorNuevo(false)}
@@ -2089,7 +2118,8 @@ function App() {
             setMostrarSelectorNuevo(false);
           } }
           onConvergencia={() => {
-            setMostrarConvergencias(true);
+            setTab("clientes");
+            setSaltarAMes({ subVista: "movil", token: Date.now() });
             setMostrarSelectorNuevo(false);
           } }
         />
@@ -2544,7 +2574,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onAbrirConvergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente }) {
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   const esActual = periodoVisto === periodoActual;
@@ -2597,14 +2627,18 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   // Los pendientes de instalación no pertenecen a ningún período todavía (no tienen
   // fecha), así que se muestran como un total aparte, sin importar qué período mires.
   const pendientesAhora = useMemo(() => clientes.filter((c) => !c.fechaInstalacion).length, [clientes]);
-  // Clientes que ya perdieron su plazo para pagar la 1ra factura (no cuentan para comisión).
+  // Clientes que ya perdieron su plazo para pagar la 1ra factura (no cuentan para
+  // comisión), solo del período que se está viendo en este momento en el Dashboard.
   const noCuentanComision = useMemo(
-    () => clientes.filter((c) => c.fechaInstalacion && !clienteCuentaParaComision(c)).length,
-    [clientes]
+    () =>
+      clientes.filter(
+        (c) => c.fechaInstalacion && periodoDelCliente(c) === periodoVisto && !clienteCuentaParaComision(c)
+      ).length,
+    [clientes, periodoVisto]
   );
 
   const convergenciasDelPeriodo = useMemo(
-    () => convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoVisto),
+    () => convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoVisto),
     [convergencias, periodoVisto]
   );
   const convergenciasPeriodo = convergenciasDelPeriodo.length;
@@ -2633,7 +2667,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         const cantidad = delPeriodo.length;
         const dinero = delPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
         const arpuP = cantidad > 0 ? dinero / cantidad : 0;
-        const converDelPeriodo = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === key);
+        const converDelPeriodo = convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === key);
 
         if (esquemaNuevo(key)) {
           const costoPlanesP = converDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
@@ -2898,7 +2932,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     const pagados = delCiclo.filter((c) => c.f1_estado === "pagada");
     const enPlazo = delCiclo.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c));
     const vencidos = delCiclo.filter((c) => !clienteCuentaParaComision(c));
-    const converDelCiclo = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === periodoCobro);
+    const converDelCiclo = convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoCobro);
     const bonoFullTigoCiclo = converDelCiclo.filter((c) => c.fullTigo).reduce((a, c) => a + (Number(c.montoPlan) || 0), 0);
     const costoPlanesCiclo = converDelCiclo.reduce((a, c) => a + (Number(c.montoPlan) || 0), 0);
 
@@ -3088,7 +3122,7 @@ Early: `;
                 </p>
 
                 {cobroMes.vacio ? (
-                  <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes ni convergencias en este ciclo.</p>
+                  <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes ni Clientes Móvil en este ciclo.</p>
                 ) : !cobroMes.confirmado.completo ? (
                   <p className="text-sm" style={ { color: "#B8791F" } }>
                     ⚠ Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.
@@ -3166,7 +3200,10 @@ Early: `;
 
       <div className="rounded-lg p-5 mb-6 text-white" style={ { background: "linear-gradient(135deg, #001E62, #0072CE)" } }>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-          <h2 className="font-semibold text-sm opacity-90">Comisión estimada de {mesLabel(periodoVisto)}</h2>
+          <h2 className="font-semibold text-sm opacity-90 flex items-center gap-1.5">
+            <span aria-hidden="true">{esActual ? "🔵" : "⚪"}</span>
+            {mesLabel(periodoVisto)} → {esActual ? "cobras" : "cobraste"} en {mesLabel(sumarMesClave(periodoVisto, 2))}
+          </h2>
           {!esNuevo && comision.aplicaBono && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
               + bono FULL TIGO aplicado
@@ -3192,7 +3229,7 @@ Early: `;
             ) : (
               <div className="text-xs opacity-80 leading-relaxed">
                 Base {fmtMonto(comision.montoBase)} ({comision.pctIngreso.toFixed(1)}% ingresos
-                {comision.aplicaBono ? `, incluye ${fmtMonto(bonoFullTigo)} de convergencias FULL TIGO` : ""}) ×{" "}
+                {comision.aplicaBono ? `, incluye ${fmtMonto(bonoFullTigo)} de Clientes Móvil FULL TIGO` : ""}) ×{" "}
                 {comision.pctArpu.toFixed(1)}% ARPU × {comision.pctClientes.toFixed(1)}% clientes
               </div>
             )}
@@ -3288,7 +3325,7 @@ Early: `;
                 <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes móvil de este período.</p>
               )}
               <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
-                Convergencias + FULL TIGO del período · Peso en el % de clientes: 35%
+                Clientes Móvil (Pospago, Convergencia y FULL TIGO) del período · Peso en el % de clientes: 35%
               </p>
             </div>
 
@@ -3519,9 +3556,9 @@ Early: `;
         />
         <MiniStat
           valor={convergenciasPeriodo}
-          label="Convergencias del período"
+          label="Clientes Móvil del período"
           color="#0072CE"
-          onClick={onAbrirConvergencias}
+          onClick={() => onVerClientes({ periodo: periodoVisto, subVista: "movil" })}
         />
       </div>
 
@@ -4084,7 +4121,7 @@ function pasaFiltroFactura(c, f) {
   return true;
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes }) {
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -4109,9 +4146,11 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const setFechaDesde = hacerSetter("fechaDesde");
   const setFechaHasta = hacerSetter("fechaHasta");
 
+  const [subVista, setSubVista] = useState("clientes");
   useEffect(() => {
     if (saltarAMes) {
       if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
+      setSubVista(saltarAMes.subVista === "movil" ? "movil" : "clientes");
       setFiltrosClientes((prev) => ({
         ...prev,
         fechaDesde: "",
@@ -4340,6 +4379,11 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   }, [visiblesFinal]);
 
   const [exportarAbierto, setExportarAbierto] = useState(false);
+  // Cuántos Cliente Móvil hay en el mismo período que se está viendo en Clientes.
+  const clientesMovilDelMes = useMemo(
+    () => (clientesMovil || []).filter((c) => periodoComision(fechaActivacionMovil(c)) === mesActivoEfectivo).length,
+    [clientesMovil, mesActivoEfectivo]
+  );
 
   return (
     <div>
@@ -4367,6 +4411,42 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           </button>
         </div>
       </div>
+
+      <div className="flex items-center gap-1.5 mb-4">
+        <button
+          onClick={() => setSubVista("clientes")}
+          className="text-sm font-medium px-3 py-1.5 rounded-md border"
+          style={
+            subVista === "clientes"
+              ? { background: "#001E62", borderColor: "#001E62", color: "white" }
+              : { borderColor: "#D1D5DB", color: "#374151" }
+          }
+        >
+          👥 Clientes
+        </button>
+        <button
+          onClick={() => setSubVista("movil")}
+          className="text-sm font-medium px-3 py-1.5 rounded-md border"
+          style={
+            subVista === "movil"
+              ? { background: "#001E62", borderColor: "#001E62", color: "white" }
+              : { borderColor: "#D1D5DB", color: "#374151" }
+          }
+        >
+          📱 Clientes Móvil ({clientesMovilDelMes})
+        </button>
+      </div>
+
+      {subVista === "movil" ? (
+        <ClientesMovilPanel
+          clientesMovil={clientesMovil || []}
+          onAgregar={onAgregarMovil}
+          onEditar={onEditarMovil}
+          onEliminar={onEliminarMovil}
+          mesActivo={mesActivoEfectivo}
+        />
+      ) : (
+        <>
       {exportarAbierto && <ExportarModal clientes={clientes} onCerrar={() => setExportarAbierto(false)} />}
       <div className="flex items-center gap-4 mb-4 flex-wrap">
         <p className="text-sm">
@@ -4723,6 +4803,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           </div>
         </div>
       )}
+      </>
+      )}
     </div>
   );
 }
@@ -5030,13 +5112,14 @@ function ClienteDetalle({
   );
 }
 
-function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) {
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo }) {
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
-  const [fullTigo, setFullTigo] = useState(false);
+  const [tipo, setTipo] = useState("pospago");
   const [montoPlan, setMontoPlan] = useState("");
+  const [fechaActivacion, setFechaActivacion] = useState(() => toISO(new Date()));
   const [editingId, setEditingId] = useState(null);
-  const [mesExpandido, setMesExpandido] = useState(() => periodoComision(toISO(new Date())));
+  const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(toISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
 
   function handleSubmit(e) {
@@ -5046,39 +5129,43 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
       onEditar(editingId, {
         nombre: nombre.trim(),
         telefono: telefono.trim(),
-        fullTigo,
+        tipo,
         montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
+        fechaActivacion,
       });
     } else {
-      onAgregar(nombre.trim(), telefono.trim(), fullTigo, montoPlan);
+      onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion);
     }
     setNombre("");
     setTelefono("");
-    setFullTigo(false);
+    setTipo("pospago");
     setMontoPlan("");
+    setFechaActivacion(toISO(new Date()));
     setEditingId(null);
   }
 
   function startEdit(c) {
     setNombre(c.nombre);
     setTelefono(c.telefono);
-    setFullTigo(!!c.fullTigo);
+    setTipo(tipoClienteMovil(c));
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
+    setFechaActivacion(fechaActivacionMovil(c) || toISO(new Date()));
     setEditingId(c.id);
   }
 
   function cancelEdit() {
     setNombre("");
     setTelefono("");
-    setFullTigo(false);
+    setTipo("pospago");
     setMontoPlan("");
+    setFechaActivacion(toISO(new Date()));
     setEditingId(null);
   }
 
   return (
     <div>
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
-        <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar convergencia" : "Nueva convergencia"}</h2>
+        <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar Cliente Móvil" : "Nuevo Cliente Móvil"}</h2>
         <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <div className="flex-1">
             <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Nombre</label>
@@ -5111,13 +5198,22 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
             )}
           </div>
         </form>
-        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t" style={ { borderColor: "#F0F0EF" } }>
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={fullTigo} onChange={(e) => setFullTigo(e.target.checked)} />
-            FULL TIGO
-          </label>
-          <div className="flex items-center gap-2">
-            <span className="text-xs" style={ { color: "#6B7280" } }>Costo del plan móvil:</span>
+        <div className="flex flex-wrap items-end gap-3 mt-3 pt-3 border-t" style={ { borderColor: "#F0F0EF" } }>
+          <div>
+            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Tipo</label>
+            <select
+              value={tipo}
+              onChange={(e) => setTipo(e.target.value)}
+              className="px-2 py-1.5 rounded-md border text-sm outline-none"
+              style={ { borderColor: "#D1D5DB" } }
+            >
+              {TIPOS_CLIENTE_MOVIL.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Costo del plan móvil</label>
             <input
               type="number"
               step="0.01"
@@ -5125,7 +5221,17 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
               value={montoPlan}
               onChange={(e) => setMontoPlan(e.target.value)}
               placeholder="$0.00"
-              className="w-28 px-2 py-1 rounded-md border text-sm outline-none"
+              className="w-28 px-2 py-1.5 rounded-md border text-sm outline-none"
+              style={ { borderColor: "#D1D5DB" } }
+            />
+          </div>
+          <div>
+            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Fecha de activación</label>
+            <input
+              type="date"
+              value={fechaActivacion}
+              onChange={(e) => setFechaActivacion(e.target.value)}
+              className="px-2 py-1.5 rounded-md border text-sm outline-none"
               style={ { borderColor: "#D1D5DB" } }
             />
           </div>
@@ -5134,7 +5240,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
 
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
-          const delMes = convergencias.filter((c) => periodoComision((c.creadoEn || "").slice(0, 10)) === m.key);
+          const delMes = clientesMovil.filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key);
           const abierto = mesExpandido === m.key;
           return (
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -5144,7 +5250,7 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
               >
                 <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
                 <span className="text-sm font-mono flex items-center gap-2" style={ { color: "#001E62" } }>
-                  {delMes.length} convergencia{delMes.length !== 1 ? "s" : ""}
+                  {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
                   {delMes.length > 0 && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#DCF5F3", color: "#0F766E" } }>
                       BONO POR CONVERGENCIA = {fmtMonto(delMes.length * BONO_POR_CONVERGENCIA)}
@@ -5156,31 +5262,31 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
               {abierto && (
                 <div className="border-t" style={ { borderColor: "#F0F0EF" } }>
                   {delMes.length === 0 ? (
-                    <p className="text-sm px-4 py-3" style={ { color: "#6B7280" } }>Sin convergencias este mes.</p>
+                    <p className="text-sm px-4 py-3" style={ { color: "#6B7280" } }>Sin Clientes Móvil este mes.</p>
                   ) : (
                     delMes.map((c) => (
                       <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
                         <div>
                           <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
                             {c.nombre}
-                            {c.fullTigo && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
-                                FULL TIGO
-                              </span>
-                            )}
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
+                              {etiquetaTipoMovil(tipoClienteMovil(c))}
+                            </span>
                             {c.montoPlan != null && (
                               <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#F4F6FA", color: "#374151" } }>
                                 Plan: {fmtMonto(c.montoPlan)}
                               </span>
                             )}
                           </div>
-                          <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>{c.telefono}</div>
+                          <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>
+                            {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
+                          </div>
                         </div>
                         <div className="flex gap-3">
                           <button onClick={() => startEdit(c)} className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
                           <button
                             onClick={() => {
-                              if (window.confirm(`¿Eliminar a ${c.nombre} de convergencias?`)) onEliminar(c.id);
+                              if (window.confirm(`¿Eliminar a ${c.nombre} de Clientes Móvil?`)) onEliminar(c.id);
                             } }
                             className="text-xs font-medium"
                             style={ { color: "#C23B3B" } }
@@ -5200,7 +5306,6 @@ function ConvergenciasPanel({ convergencias, onAgregar, onEditar, onEliminar }) 
     </div>
   );
 }
-
 function FacturaDot({ cliente, n, onCambiar }) {
   const estado = cliente[`f${n}_estado`] === "pagada" ? "pagada" : "";
   const estilos = {
@@ -5268,7 +5373,7 @@ const ACCION_INFO = {
 };
 const ENTIDAD_LABEL = {
   cliente: "Cliente",
-  convergencia: "Convergencia",
+  convergencia: "Cliente móvil",
   meta: "Meta",
   factura: "Factura",
   config: "Configuración",
@@ -5301,7 +5406,7 @@ function HistorialTab({ entradas, onDeshacer }) {
           >
             <option value="">Todo</option>
             <option value="cliente">Clientes</option>
-            <option value="convergencia">Convergencias</option>
+            <option value="convergencia">Clientes Móvil</option>
             <option value="meta">Metas</option>
             <option value="factura">Facturas</option>
             <option value="config">Configuración</option>
@@ -5320,7 +5425,7 @@ function HistorialTab({ entradas, onDeshacer }) {
       {filtradas.length === 0 ? (
         <div className="text-sm text-center py-10 rounded-lg border" style={ { color: "#8593B8", borderColor: "#E5E7EB", background: "#fff" } }>
           {entradas.length === 0
-            ? "Todavía no hay cambios registrados. Aquí vas a ver cada vez que agregues, edites o elimines un cliente, una convergencia, una meta, el estado de una factura o la configuración."
+            ? "Todavía no hay cambios registrados. Aquí vas a ver cada vez que agregues, edites o elimines un cliente, un Cliente Móvil, una meta, el estado de una factura o la configuración."
             : "No hay cambios que coincidan con esa búsqueda."}
         </div>
       ) : (
@@ -5921,8 +6026,8 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
           >
             <span className="text-xl" aria-hidden="true">🔗</span>
             <span>
-              <span className="block text-sm font-semibold">Convergencia</span>
-              <span className="block text-xs" style={ { color: "#6B7280" } }>Se agrega al listado de convergencias</span>
+              <span className="block text-sm font-semibold">Cliente Móvil</span>
+              <span className="block text-xs" style={ { color: "#6B7280" } }>Plan Pospago, Convergencia o FULL TIGO</span>
             </span>
           </button>
         </div>
