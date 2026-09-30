@@ -1814,6 +1814,34 @@ function App() {
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: antes.nombre, antes, despues, refId: id });
   }
 
+  // Confirma un rescate del simulador del Dashboard: marca la 1ra factura de cada
+  // cliente elegido como pagada (esto ya deja su propio registro en el Historial,
+  // como cualquier factura marcada), y además guarda un resumen del rescate en sí
+  // (cuánto pusiste de tu bolsillo y cuánto subió tu comisión), para tener un
+  // registro de si en general te ha convenido usar esto o no.
+  function confirmarRescate(periodoKey, clientesSeleccionados, montoInvertido, ganancia) {
+    clientesSeleccionados.forEach((c) => {
+      actualizarEstadoFactura(c.id, 1, "pagada");
+    });
+    registrarCambio({
+      entidad: "rescate",
+      tipo: "rescate",
+      etiqueta: `Rescate en ${mesLabel(periodoKey)} (${clientesSeleccionados.length} cliente${clientesSeleccionados.length === 1 ? "" : "s"})`,
+      despues: {
+        periodo: periodoKey,
+        clientes: clientesSeleccionados.map((c) => c.nombre).join(", "),
+        monto: montoInvertido,
+        ganancia,
+      },
+      cambios: [
+        { campo: "monto", label: "Pusiste de tu bolsillo", anterior: "", nuevo: fmtMonto(montoInvertido) },
+        { campo: "ganancia", label: "Tu comisión confirmada subió", anterior: "", nuevo: fmtMonto(ganancia) },
+        { campo: "clientes", label: "Clientes", anterior: "", nuevo: clientesSeleccionados.map((c) => c.nombre).join(", ") },
+      ],
+      refId: uid(),
+    });
+  }
+
   function recuperarCliente(id) {
     const cliente = eliminados.find((c) => c.id === id);
     if (!cliente) return;
@@ -2114,6 +2142,7 @@ function App() {
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
             onDescartarCliente={cancelarCliente}
+            onConfirmarRescate={confirmarRescate}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               setTab("clientes");
@@ -2560,7 +2589,7 @@ function MetaInput({ valor, onConfirmar, width, step }) {
 }
 
 // ---------- Modo revisión diaria de churn ----------
-function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onDescartar, onCopiarSuscriptor, copiedSubKey, onCerrar }) {
+function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onDescartar, onCopiarSuscriptor, copiedSubKey, onCalcularGanancia, onCerrar }) {
   const actual = pendientes[0] || null;
   const revisados = total - pendientes.length;
   const [confirmando, setConfirmando] = useState(null); // null | "pagada" | "descartar"
@@ -2569,6 +2598,8 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
   useEffect(() => {
     setConfirmando(null);
   }, [actual && actual.cliente.id]);
+
+  const ganancia = actual ? onCalcularGanancia(actual.cliente) : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,0.5)" } }>
@@ -2585,7 +2616,12 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
               {actual.riesgo.texto}
             </div>
             <div className="text-xl font-semibold mb-1" style={ { color: "#001E62" } }>{actual.cliente.nombre}</div>
-            <div className="text-sm mb-4" style={ { color: "#6B7280" } }>{planLabel(actual.cliente)}</div>
+            <div className="text-sm mb-3" style={ { color: "#6B7280" } }>{planLabel(actual.cliente)}</div>
+            {ganancia !== null && ganancia > 0 && (
+              <div className="text-xs font-medium px-2 py-1 rounded-full inline-block mb-1" style={ { color: "#0F766E", background: "#DCF5F3" } }>
+                💰 Si le pagas tú, tu comisión confirmada sube {fmtMonto(ganancia)}
+              </div>
+            )}
 
             <button
               onClick={() => onCopiarSuscriptor(actual.cliente)}
@@ -2694,13 +2730,15 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente }) {
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   const [rescateAbierto, setRescateAbierto] = useState(false);
   const [rescateSeleccion, setRescateSeleccion] = useState({});
+  const [rescateConfirmando, setRescateConfirmando] = useState(false);
   useEffect(() => {
     setRescateSeleccion({});
+    setRescateConfirmando(false);
   }, [periodoVisto]);
   const esActual = periodoVisto === periodoActual;
 
@@ -3029,6 +3067,116 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   ]);
   const rescateGanancia =
     comisionSimulada.completo && comisionConfirmada.completo ? comisionSimulada.total - comisionConfirmada.total : 0;
+  // El simulador solo tiene sentido mientras la ventana de rescate de ESTE período
+  // siga abierta (no haya pasado el 5 del mes en que se paga). Después de esa fecha,
+  // Tigo ya audita y paga ese ciclo con el número que haya en ese momento — pagar
+  // después ya no cambia nada, aunque el cliente siga sin contar en la app.
+  const rescateVentanaAbierta = useMemo(() => {
+    const limite = fechaLimitePrimeraFactura(periodoVisto);
+    if (!limite) return false;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    return hoy <= limite;
+  }, [periodoVisto]);
+  // Días que faltan para que cierre la ventana de rescate de este período.
+  const rescateDiasRestantes = useMemo(() => {
+    const limite = fechaLimitePrimeraFactura(periodoVisto);
+    if (!limite) return null;
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    return Math.round((limite - hoy) / 86400000);
+  }, [periodoVisto]);
+  // Qué cambió exactamente con la selección actual: si cruzaste de tramo de base, y
+  // (en el esquema nuevo) si activaste o desactivaste el acelerador.
+  const rescateCruceTramo = comisionSimulada.completo && comisionConfirmada.completo && comisionSimulada.montoBase !== comisionConfirmada.montoBase;
+  const rescateCruceAcelerador =
+    esNuevo && comisionSimulada.completo && comisionConfirmada.completo && comisionSimulada.factorAcelerador !== comisionConfirmada.factorAcelerador;
+  // Cuánto te falta para llegar al siguiente tramo de la tabla, partiendo de lo confirmado
+  // (en % de ingresos en el esquema viejo, en % de clientes ponderado en el nuevo).
+  const rescateProximoTramo = useMemo(() => {
+    if (!comisionConfirmada.completo) return null;
+    const pctActual = esNuevo ? comisionConfirmada.pctClientesPonderado : comisionConfirmada.pctIngreso;
+    const siguiente = TABLA_COMISION_BASE.find((t) => t.min > pctActual);
+    if (!siguiente) return null;
+    return { pctFalta: siguiente.min - pctActual, montoSiguiente: siguiente.monto };
+  }, [comisionConfirmada, esNuevo]);
+  // Combinación de menor costo que ya alcanza el máximo posible (el mismo total que
+  // pagando a todos) — para no poner más de tu bolsillo del que hace falta. Se prueban
+  // todas las combinaciones porque la lista de candidatos suele ser chica.
+  function calcularComisionConSubconjunto(subset) {
+    const clientesSimulados = clientesDelPeriodoConfirmados.length + subset.length;
+    const dineroSimulado = dineroDelPeriodoConfirmado + subset.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+    const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
+    if (esNuevo) {
+      return calcularComision({
+        periodoKey: periodoVisto,
+        clientesHogar: clientesSimulados,
+        metaClientesHogar,
+        clientesMovil: convergenciasPeriodo,
+        metaClientesMovil,
+        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodo,
+        metaIngresos: metaDinero,
+        cantidadConvergencias: convergenciasPeriodo,
+      });
+    }
+    return calcularComision({
+      periodoKey: periodoVisto,
+      dineroDelPeriodo: dineroSimulado,
+      metaDinero,
+      arpuPeriodo: arpuSimulado,
+      metaArpu,
+      clientesInstalados: clientesSimulados,
+      metaClientes,
+      bonoFullTigo,
+    });
+  }
+  const rescateCombinacionMinima = useMemo(() => {
+    if (rescateCandidatos.length === 0 || rescateCandidatos.length > 16) return null;
+    const totalMaximo = calcularComisionConSubconjunto(rescateCandidatos).total;
+    if (!comisionConfirmada.completo || totalMaximo <= comisionConfirmada.total) return null;
+    let mejor = null;
+    const n = rescateCandidatos.length;
+    for (let mask = 1; mask < 1 << n; mask++) {
+      const subset = rescateCandidatos.filter((_, i) => mask & (1 << i));
+      if (calcularComisionConSubconjunto(subset).total < totalMaximo) continue;
+      const costo = subset.reduce((acc, c) => acc + montoFaltanteCliente(c), 0);
+      if (!mejor || subset.length < mejor.subset.length || (subset.length === mejor.subset.length && costo < mejor.costo)) {
+        mejor = { subset, costo };
+      }
+    }
+    return mejor ? mejor.subset : null;
+  }, [
+    rescateCandidatos,
+    comisionConfirmada,
+    clientesDelPeriodoConfirmados.length,
+    dineroDelPeriodoConfirmado,
+    esNuevo,
+    periodoVisto,
+    metaClientesHogar,
+    convergenciasPeriodo,
+    metaClientesMovil,
+    costoPlanesMovilesPeriodo,
+    metaDinero,
+    metaArpu,
+    metaClientes,
+    bonoFullTigo,
+  ]);
+  function marcarCombinacionMinima() {
+    if (!rescateCombinacionMinima) return;
+    const nuevaSeleccion = {};
+    rescateCombinacionMinima.forEach((c) => { nuevaSeleccion[c.id] = true; });
+    setRescateSeleccion(nuevaSeleccion);
+  }
+  // Ordenados por mejor relación (más ingreso por cada dólar que pones), para que los
+  // más convenientes aparezcan primero en la lista.
+  const rescateVencidosOrdenados = useMemo(
+    () => [...rescateVencidos].sort((a, b) => (Number(b.montoMensual) || 0) / montoFaltanteCliente(b) - (Number(a.montoMensual) || 0) / montoFaltanteCliente(a)),
+    [rescateVencidos]
+  );
+  const rescateEnPlazoOrdenados = useMemo(
+    () => [...rescateEnPlazo].sort((a, b) => (Number(b.montoMensual) || 0) / montoFaltanteCliente(b) - (Number(a.montoMensual) || 0) / montoFaltanteCliente(a)),
+    [rescateEnPlazo]
+  );
 
   // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
   // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
@@ -3280,6 +3428,52 @@ Early: `;
       .catch(() => {});
   }
 
+  // Ganancia estimada de rescatar UN cliente puntual (usada en el modo uno-por-uno).
+  // Se calcula sola, sin depender de qué período estés viendo en el Dashboard, usando
+  // el período propio del cliente. El bono FULL TIGO del esquema viejo no se suma acá
+  // (es una estimación rápida para decidir en el momento, no el número exacto).
+  function calcularGananciaPorRescate(cliente) {
+    const periodoCliente = periodoDelCliente(cliente);
+    if (!periodoCliente) return null;
+    const nuevo = esquemaNuevo(periodoCliente);
+    const confirmadosDelPeriodo = clientes.filter(
+      (c) => c.fechaInstalacion && periodoDelCliente(c) === periodoCliente && c.f1_estado === "pagada"
+    );
+    const converDelPeriodo = convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoCliente);
+    const costoPlanesDelPeriodo = converDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
+
+    function calcularCon(lista) {
+      const dinero = lista.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+      if (nuevo) {
+        return calcularComision({
+          periodoKey: periodoCliente,
+          clientesHogar: lista.length,
+          metaClientesHogar: leerMeta(metas, periodoCliente, "clientesHogar"),
+          clientesMovil: converDelPeriodo.length,
+          metaClientesMovil: leerMeta(metas, periodoCliente, "clientesMovil"),
+          ingresosDelPeriodo: dinero + costoPlanesDelPeriodo,
+          metaIngresos: leerMeta(metas, periodoCliente, "dinero"),
+          cantidadConvergencias: converDelPeriodo.length,
+        });
+      }
+      return calcularComision({
+        periodoKey: periodoCliente,
+        dineroDelPeriodo: dinero,
+        metaDinero: leerMeta(metas, periodoCliente, "dinero"),
+        arpuPeriodo: lista.length > 0 ? dinero / lista.length : 0,
+        metaArpu: leerMeta(metas, periodoCliente, "arpu"),
+        clientesInstalados: lista.length,
+        metaClientes: leerMeta(metas, periodoCliente, "clientes"),
+        bonoFullTigo: 0,
+      });
+    }
+
+    const comisionBase = calcularCon(confirmadosDelPeriodo);
+    const comisionCon = calcularCon([...confirmadosDelPeriodo, cliente]);
+    if (!comisionBase.completo || !comisionCon.completo) return null;
+    return comisionCon.total - comisionBase.total;
+  }
+
   return (
     <div>
       <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
@@ -3343,6 +3537,7 @@ Early: `;
           } }
           onCopiarSuscriptor={onCopiarSuscriptor}
           copiedSubKey={copiedSubKey}
+          onCalcularGanancia={calcularGananciaPorRescate}
           onCerrar={() => setMostrarRevisionDiaria(false)}
         />
       )}
@@ -3528,32 +3723,53 @@ Early: `;
         )}
       </div>
 
-      {rescateCandidatos.length > 0 && (
+      {rescateCandidatos.length > 0 && rescateVentanaAbierta && (
         <div className="mb-6">
           <button
             type="button"
             onClick={() => setRescateAbierto((v) => !v)}
             className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md"
-            style={ { background: "#FBEAEA" } }
+            style={ { background: rescateDiasRestantes !== null && rescateDiasRestantes <= 3 ? "#FBD5D5" : "#FBEAEA" } }
           >
             <span className="text-xs font-medium truncate" style={ { color: "#B91C1C" } }>
-              🧮 {rescateCandidatos.length} cliente{rescateCandidatos.length === 1 ? "" : "s"} sin pagar su 1ra factura — tocá para ver si te conviene poner la diferencia
+              🧮 {rescateCandidatos.length} cliente{rescateCandidatos.length === 1 ? "" : "s"} sin pagar su 1ra factura
+              {rescateDiasRestantes !== null &&
+                (rescateDiasRestantes <= 0
+                  ? " — ¡vence hoy!"
+                  : rescateDiasRestantes <= 3
+                  ? ` — quedan ${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} ⚠️`
+                  : ` — quedan ${rescateDiasRestantes} días`)}
             </span>
             <span className="text-xs shrink-0" style={ { color: "#C23B3B" } }>{rescateAbierto ? "▲" : "▼"}</span>
           </button>
 
           {rescateAbierto && (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
-              <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+              <p className="text-xs mb-2" style={ { color: "#6B7280" } }>
                 Ahora mismo tu comisión confirmada es {comisionConfirmada.completo ? fmtMonto(comisionConfirmada.total) : "—"} (solo lo ya
                 pagado). Marcá a quién le pagarías la diferencia tú y mirá cuánto sube desde ahí.
               </p>
+              {rescateProximoTramo && (
+                <p className="text-xs mb-3" style={ { color: "#0072CE" } }>
+                  📏 Te falta {rescateProximoTramo.pctFalta.toFixed(1)}% para llegar a la base de {fmtMonto(rescateProximoTramo.montoSiguiente)}.
+                </p>
+              )}
+              {rescateCombinacionMinima && rescateCombinacionMinima.length < rescateCandidatos.length && (
+                <button
+                  type="button"
+                  onClick={marcarCombinacionMinima}
+                  className="text-xs font-medium px-3 py-1.5 rounded-md mb-3"
+                  style={ { background: "#E3EDFA", color: "#0072CE" } }
+                >
+                  ✨ Marcar la combinación mínima ({rescateCombinacionMinima.length} cliente{rescateCombinacionMinima.length === 1 ? "" : "s"})
+                </button>
+              )}
 
-              {rescateVencidos.length > 0 && (
+              {rescateVencidosOrdenados.length > 0 && (
                 <>
                   <div className="text-xs font-semibold mb-1.5" style={ { color: "#B91C1C" } }>⛔ Ya vencidos — los rescatás de inmediato</div>
                   <div className="flex flex-col gap-2 mb-3">
-                    {rescateVencidos.map((c) => (
+                    {rescateVencidosOrdenados.map((c) => (
                       <label
                         key={c.id}
                         className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
@@ -3579,11 +3795,11 @@ Early: `;
                 </>
               )}
 
-              {rescateEnPlazo.length > 0 && (
+              {rescateEnPlazoOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B8791F" } }>⏳ Todavía en plazo — aseguran que no se caigan el 5</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B8791F" } }>⏳ Todavía en plazo — aseguran que no se caigan</div>
                   <div className="flex flex-col gap-2 mb-4">
-                    {rescateEnPlazo.map((c) => (
+                    {rescateEnPlazoOrdenados.map((c) => (
                       <label
                         key={c.id}
                         className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
@@ -3627,7 +3843,56 @@ Early: `;
                     {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x lo que pones)` : ""}
                   </span>
                 </div>
+                {(rescateCruceTramo || rescateCruceAcelerador) && (
+                  <div className="text-xs mt-2 pt-2" style={ { borderTop: "1px solid #E5E7EB", color: "#0F766E" } }>
+                    {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmada.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
+                    {rescateCruceAcelerador && (
+                      <div>
+                        {comisionSimulada.factorAcelerador > comisionConfirmada.factorAcelerador
+                          ? "⚡ Activarías el acelerador +10% (superarías el 100% de ingresos)."
+                          : "🐢 Dejarías de tener el desacelerador −10%."}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+
+              {rescateSeleccionados.length > 0 && (
+                rescateConfirmando ? (
+                  <div className="rounded-md p-3 mt-3" style={ { background: "#DCF5F3" } }>
+                    <p className="text-xs font-medium mb-2" style={ { color: "#0F766E" } }>
+                      ¿Confirmas que vas a pagar {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { onConfirmarRescate(periodoVisto, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } }
+                        className="flex-1 py-2 rounded-md text-white font-medium text-sm"
+                        style={ { background: "#0F766E" } }
+                      >
+                        Sí, confirmar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRescateConfirmando(false)}
+                        className="flex-1 py-2 rounded-md border font-medium text-sm"
+                        style={ { borderColor: "#D1D5DB", color: "#374151" } }
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRescateConfirmando(true)}
+                    className="w-full mt-3 py-2.5 rounded-md text-white font-medium text-sm"
+                    style={ { background: "#0F766E" } }
+                  >
+                    ✅ Ya pagué — marcar como pagados
+                  </button>
+                )
+              )}
             </div>
           )}
         </div>
@@ -5758,6 +6023,7 @@ const ACCION_INFO = {
   editar: { icon: "✏️", label: "Editado", color: "#8A6D00", bg: "#FBF3D9" },
   eliminar: { icon: "🗑️", label: "Eliminado", color: "#B91C1C", bg: "#FBEAEA" },
   recuperar: { icon: "♻️", label: "Recuperado", color: "#1D4ED8", bg: "#E8EEFC" },
+  rescate: { icon: "💰", label: "Rescate confirmado", color: "#0F766E", bg: "#DCF5F3" },
 };
 const ENTIDAD_LABEL = {
   cliente: "Cliente",
@@ -5765,6 +6031,7 @@ const ENTIDAD_LABEL = {
   meta: "Meta",
   factura: "Factura",
   config: "Configuración",
+  rescate: "Rescate",
 };
 function valorLegible(campo, valor) {
   if (valor === "" || valor === null || valor === undefined) return "—";
@@ -5798,6 +6065,7 @@ function HistorialTab({ entradas, onDeshacer }) {
             <option value="meta">Metas</option>
             <option value="factura">Facturas</option>
             <option value="config">Configuración</option>
+            <option value="rescate">Rescates</option>
           </select>
           <input
             type="text"
@@ -5870,7 +6138,7 @@ function HistorialTab({ entradas, onDeshacer }) {
                   </div>
                 </div>
 
-                {e.tipo === "editar" && e.cambios && e.cambios.length > 0 && (
+                {e.cambios && e.cambios.length > 0 && (
                   <div className="mt-2.5 pl-1 flex flex-col gap-1">
                     {e.cambios.map((c) => (
                       <div key={c.campo} className="text-xs" style={ { color: "#4B5563" } }>
