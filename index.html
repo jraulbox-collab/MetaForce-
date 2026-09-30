@@ -2589,7 +2589,7 @@ function MetaInput({ valor, onConfirmar, width, step }) {
 }
 
 // ---------- Modo revisión diaria de churn ----------
-function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onDescartar, onCopiarSuscriptor, copiedSubKey, onCalcularGanancia, onCerrar }) {
+function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onDescartar, onSaltar, onCopiarSuscriptor, copiedSubKey, onCalcularGanancia, onCerrar }) {
   const actual = pendientes[0] || null;
   const revisados = total - pendientes.length;
   const [confirmando, setConfirmando] = useState(null); // null | "pagada" | "descartar"
@@ -2707,6 +2707,13 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
                   style={ { color: "#B91C1C" } }
                 >
                   🚫 Descartar cliente (no va a pagar / se desconecta)
+                </button>
+                <button
+                  onClick={() => onSaltar(actual.cliente.id)}
+                  className="w-full py-1.5 font-medium text-xs"
+                  style={ { color: "#9CA3AF" } }
+                >
+                  Saltar por ahora →
                 </button>
               </div>
             )}
@@ -3299,11 +3306,21 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       .sort((a, b) => (a.diasParaLimite ?? 999) - (b.diasParaLimite ?? 999));
   }, [clientes, periodoRescateActivo]);
 
-  const pendientesHoy = useMemo(
-    () => enRiesgoHoy.filter((x) => !revisadosHoy.includes(x.cliente.id)),
-    [enRiesgoHoy, revisadosHoy]
-  );
+  // Clientes que saltaste "por ahora" en el uno-por-uno: no quedan marcados como
+  // revisados (mañana vuelven a aparecer igual si siguen sin resolver), pero se van
+  // al final de la cola de hoy para no verlos en bucle.
+  const [saltadosHoy, setSaltadosHoy] = useState([]);
+  const pendientesHoy = useMemo(() => {
+    const noRevisados = enRiesgoHoy.filter((x) => !revisadosHoy.includes(x.cliente.id));
+    const noSaltados = noRevisados.filter((x) => !saltadosHoy.includes(x.cliente.id));
+    const saltados = saltadosHoy.map((id) => noRevisados.find((x) => x.cliente.id === id)).filter(Boolean);
+    return [...noSaltados, ...saltados];
+  }, [enRiesgoHoy, revisadosHoy, saltadosHoy]);
+  function saltarPorAhora(clienteId) {
+    setSaltadosHoy((prev) => (prev.includes(clienteId) ? prev : [...prev, clienteId]));
+  }
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
+  const [revisionDiariaAbierto, setRevisionDiariaAbierto] = useState(false);
   const [cobroMesAbierto, setCobroMesAbierto] = useState(false);
 
   // ---- Lo que se cobra este mes ----
@@ -3465,32 +3482,40 @@ Early: `;
 
       <div className="rounded-lg overflow-hidden border mb-6" style={ { borderColor: "#E5E7EB" } }>
       {enRiesgoHoy.length > 0 && (
-        <button
-          type="button"
-          onClick={() => setMostrarRevisionDiaria(true)}
-          className="w-full text-left p-4 flex items-center justify-between gap-3 flex-wrap"
-          style={
-            pendientesHoy.length > 0
-              ? { background: "#FBEAEA", border: "1px solid #F3C6C6" }
-              : { background: "#DCF5F3", border: "1px solid #B7E6E1" }
-          }
-        >
-          <div>
-            <div className="text-sm font-semibold" style={ { color: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
+        <div>
+          <button
+            type="button"
+            onClick={() => setRevisionDiariaAbierto((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
+            style={ { background: pendientesHoy.length > 0 ? "#FBEAEA" : "#DCF5F3" } }
+          >
+            <span className="text-sm font-semibold truncate" style={ { color: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
               {pendientesHoy.length > 0
                 ? `🎯 ${pendientesHoy.length} cliente${pendientesHoy.length === 1 ? "" : "s"} necesita${pendientesHoy.length === 1 ? "" : "n"} revisión hoy`
                 : "✓ Ya revisaste tus clientes de hoy"}
+            </span>
+            <span className="text-xs shrink-0" style={ { color: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
+              {revisionDiariaAbierto ? "▲" : "▼"}
+            </span>
+          </button>
+          {revisionDiariaAbierto && (
+            <div className="bg-white p-4">
+              <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+                {pendientesHoy.length > 0
+                  ? "Clientes en ventana de riesgo de churn sin pago confirmado — tocá para revisarlos uno por uno."
+                  : `${enRiesgoHoy.length} en ventana de riesgo, ninguno pendiente de revisar por ahora.`}
+              </p>
+              <button
+                type="button"
+                onClick={() => setMostrarRevisionDiaria(true)}
+                className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                style={ { background: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }
+              >
+                {pendientesHoy.length > 0 ? "Empezar revisión →" : "Ver de nuevo →"}
+              </button>
             </div>
-            <div className="text-xs mt-0.5" style={ { color: pendientesHoy.length > 0 ? "#C23B3B" : "#0F766E" } }>
-              {pendientesHoy.length > 0
-                ? "Clientes en ventana de riesgo de churn sin pago confirmado — tocá para revisarlos uno por uno."
-                : `${enRiesgoHoy.length} en ventana de riesgo, ninguno pendiente de revisar por ahora.`}
-            </div>
-          </div>
-          <span className="text-xs font-medium px-3 py-1.5 rounded-md text-white shrink-0" style={ { background: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
-            {pendientesHoy.length > 0 ? "Empezar revisión →" : "Ver de nuevo →"}
-          </span>
-        </button>
+          )}
+        </div>
       )}
 
       {mostrarRevisionDiaria && (
@@ -3506,6 +3531,7 @@ Early: `;
             onDescartarCliente(clienteId, toISO(new Date()), "falta_pago");
             marcarRevisadoHoy(clienteId);
           } }
+          onSaltar={saltarPorAhora}
           onCopiarSuscriptor={onCopiarSuscriptor}
           copiedSubKey={copiedSubKey}
           onCalcularGanancia={calcularGananciaPorRescate}
@@ -3516,13 +3542,8 @@ Early: `;
         const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2));
         const hayPendientes = rescateCandidatos.length > 0;
         const colorTexto = !comisionConfirmadaHoy.completo ? "#B8791F" : hayPendientes ? "#B91C1C" : "#0F766E";
-        const fondoBanner = !comisionConfirmadaHoy.completo
-          ? "#FBF1DE"
-          : hayPendientes
-          ? rescateDiasRestantes !== null && rescateDiasRestantes <= 3
-            ? "#FBD5D5"
-            : "#FBEAEA"
-          : "#DCF5F3";
+        const fondoBanner = !comisionConfirmadaHoy.completo ? "#FBF1DE" : hayPendientes ? "#FBEAEA" : "#DCF5F3";
+        const urgente = hayPendientes && rescateDiasRestantes !== null && rescateDiasRestantes <= 3;
         const textoResumen = !comisionConfirmadaHoy.completo
           ? `🧮 ${mesPago}: faltan metas por cargar`
           : `🧮 ${mesPago} ${fmtMonto(comisionConfirmadaHoy.total)}${hayPendientes ? " hasta el momento" : " confirmado — todos pagaron"}`;
@@ -3534,7 +3555,10 @@ Early: `;
               className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
               style={ { background: fondoBanner } }
             >
-              <span className="text-xs font-medium truncate" style={ { color: colorTexto } }>
+              <span
+                className="text-xs truncate"
+                style={ { color: colorTexto, fontWeight: urgente ? 700 : 500, textDecoration: urgente ? "underline" : "none" } }
+              >
                 {textoResumen}
                 {hayPendientes &&
                   rescateDiasRestantes !== null &&
