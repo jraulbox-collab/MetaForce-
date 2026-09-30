@@ -2733,13 +2733,26 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
 function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
+  // Período con la ventana de rescate abierta ahora mismo (la más próxima que no ha
+  // vencido). La usan tanto el uno-por-uno como el bloque de rescate del Dashboard,
+  // para que siempre coincidan en a qué ciclo le están dando seguimiento.
+  const periodoRescateActivo = useMemo(() => {
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const candidato = [-1, -2]
+      .map((d) => sumarMesClave(periodoActual, d))
+      .map((p) => ({ p, limite: fechaLimitePrimeraFactura(p) }))
+      .filter((x) => x.limite && x.limite >= hoy)
+      .sort((a, b) => a.limite - b.limite)[0];
+    return candidato ? candidato.p : null;
+  }, [periodoActual]);
   const [rescateAbierto, setRescateAbierto] = useState(false);
   const [rescateSeleccion, setRescateSeleccion] = useState({});
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
   useEffect(() => {
     setRescateSeleccion({});
     setRescateConfirmando(false);
-  }, [periodoVisto]);
+  }, [periodoRescateActivo]);
   const esActual = periodoVisto === periodoActual;
 
   const esNuevo = esquemaNuevo(periodoVisto);
@@ -2979,30 +2992,80 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     bonoFullTigo,
   ]);
 
-  // ---- Simulador: ¿conviene pagar de mi bolsillo la diferencia de un cliente vencido? ----
-  // Solo los clientes de hogar del período que se está viendo que ya perdieron su plazo
-  // (no cuentan para comisión). Impuesto aproximado: 1% para Single, 7% para Doble
-  // (mezcla de 12% TV + 1% internet, ya que el plan Doble se guarda como un solo precio).
-  // Candidatos del simulador: TODOS los clientes de hogar del período que aún no
-  // pagaron su 1ra factura — separados en dos grupos, ya vencidos (no cuentan nada
-  // hoy) y todavía en plazo (cuentan de forma optimista, pero no en lo confirmado).
+  // ---- Simulador: ¿conviene pagar de mi bolsillo la diferencia de un cliente pendiente? ----
+  // A diferencia de la línea "confirmado" de la tarjeta grande (que sigue el período que
+  // navegues), este simulador siempre se queda fijo en el ciclo que tiene la ventana de
+  // rescate abierta ahora mismo (periodoRescateActivo) — el mismo que usa el uno-por-uno.
+  // Como ese ciclo por definición todavía no venció, en la práctica "rescateVencidos"
+  // siempre sale vacío acá — se deja el cálculo por si algún día cambia esa regla.
+  const esNuevoHoy = periodoRescateActivo ? esquemaNuevo(periodoRescateActivo) : false;
+  const metaClientesHogarHoy = periodoRescateActivo ? leerMeta(metas, periodoRescateActivo, "clientesHogar") : null;
+  const metaClientesMovilHoy = periodoRescateActivo ? leerMeta(metas, periodoRescateActivo, "clientesMovil") : null;
+  const metaDineroHoy = periodoRescateActivo ? leerMeta(metas, periodoRescateActivo, "dinero") : null;
+  const metaArpuHoy = periodoRescateActivo ? leerMeta(metas, periodoRescateActivo, "arpu") : null;
+  const metaClientesHoy = periodoRescateActivo ? leerMeta(metas, periodoRescateActivo, "clientes") : null;
+  const convergenciasPeriodoHoy = useMemo(
+    () => (periodoRescateActivo ? convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoRescateActivo) : []),
+    [convergencias, periodoRescateActivo]
+  );
+  const costoPlanesMovilesPeriodoHoy = useMemo(
+    () => convergenciasPeriodoHoy.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
+    [convergenciasPeriodoHoy]
+  );
+  const bonoFullTigoHoy = useMemo(
+    () => convergenciasPeriodoHoy.filter((c) => c.fullTigo).reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
+    [convergenciasPeriodoHoy]
+  );
+  const clientesDelPeriodoHoy = useMemo(
+    () => (periodoRescateActivo ? clientes.filter((c) => c.fechaInstalacion && periodoDelCliente(c) === periodoRescateActivo) : []),
+    [clientes, periodoRescateActivo]
+  );
+  const clientesConfirmadosHoy = useMemo(
+    () => clientesDelPeriodoHoy.filter((c) => c.f1_estado === "pagada"),
+    [clientesDelPeriodoHoy]
+  );
+  const dineroConfirmadoHoy = useMemo(
+    () => clientesConfirmadosHoy.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0),
+    [clientesConfirmadosHoy]
+  );
+  function calcularComisionConSubconjuntoHoy(subset) {
+    const clientesSimulados = clientesConfirmadosHoy.length + subset.length;
+    const dineroSimulado = dineroConfirmadoHoy + subset.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+    const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
+    if (esNuevoHoy) {
+      return calcularComision({
+        periodoKey: periodoRescateActivo,
+        clientesHogar: clientesSimulados,
+        metaClientesHogar: metaClientesHogarHoy,
+        clientesMovil: convergenciasPeriodoHoy.length,
+        metaClientesMovil: metaClientesMovilHoy,
+        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodoHoy,
+        metaIngresos: metaDineroHoy,
+        cantidadConvergencias: convergenciasPeriodoHoy.length,
+      });
+    }
+    return calcularComision({
+      periodoKey: periodoRescateActivo,
+      dineroDelPeriodo: dineroSimulado,
+      metaDinero: metaDineroHoy,
+      arpuPeriodo: arpuSimulado,
+      metaArpu: metaArpuHoy,
+      clientesInstalados: clientesSimulados,
+      metaClientes: metaClientesHoy,
+      bonoFullTigo: bonoFullTigoHoy,
+    });
+  }
+  const comisionConfirmadaHoy = useMemo(
+    () => (periodoRescateActivo ? calcularComisionConSubconjuntoHoy([]) : { completo: false, total: 0 }),
+    [periodoRescateActivo, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, convergenciasPeriodoHoy.length, costoPlanesMovilesPeriodoHoy, bonoFullTigoHoy]
+  );
   const rescateVencidos = useMemo(
-    () =>
-      clientes.filter(
-        (c) => c.fechaInstalacion && periodoDelCliente(c) === periodoVisto && !clienteCuentaParaComision(c)
-      ),
-    [clientes, periodoVisto]
+    () => (periodoRescateActivo ? clientesDelPeriodoHoy.filter((c) => !clienteCuentaParaComision(c)) : []),
+    [clientesDelPeriodoHoy, periodoRescateActivo]
   );
   const rescateEnPlazo = useMemo(
-    () =>
-      clientes.filter(
-        (c) =>
-          c.fechaInstalacion &&
-          periodoDelCliente(c) === periodoVisto &&
-          c.f1_estado !== "pagada" &&
-          clienteCuentaParaComision(c)
-      ),
-    [clientes, periodoVisto]
+    () => (periodoRescateActivo ? clientesDelPeriodoHoy.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c)) : []),
+    [clientesDelPeriodoHoy, periodoRescateActivo]
   );
   const rescateCandidatos = useMemo(() => [...rescateVencidos, ...rescateEnPlazo], [rescateVencidos, rescateEnPlazo]);
   function montoFaltanteCliente(c) {
@@ -3019,148 +3082,59 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [rescateSeleccionados]
   );
   // La comparación siempre parte de tu comisión CONFIRMADA (solo lo ya pagado) — es la
-  // única cifra de la que te puedes fiar hoy, sea que el cliente ya venció o todavía
-  // esté en plazo. Pagar y marcar a alguien como pagado siempre sube desde ahí.
+  // única cifra de la que te puedes fiar hoy.
   const comisionSimulada = useMemo(() => {
-    if (rescateSeleccionados.length === 0) return comisionConfirmada;
-    const clientesSimulados = clientesDelPeriodoConfirmados.length + rescateSeleccionados.length;
-    const dineroSimulado =
-      dineroDelPeriodoConfirmado + rescateSeleccionados.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
-    const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
-    if (esNuevo) {
-      return calcularComision({
-        periodoKey: periodoVisto,
-        clientesHogar: clientesSimulados,
-        metaClientesHogar,
-        clientesMovil: convergenciasPeriodo,
-        metaClientesMovil,
-        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodo,
-        metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasPeriodo,
-      });
-    }
-    return calcularComision({
-      periodoKey: periodoVisto,
-      dineroDelPeriodo: dineroSimulado,
-      metaDinero,
-      arpuPeriodo: arpuSimulado,
-      metaArpu,
-      clientesInstalados: clientesSimulados,
-      metaClientes,
-      bonoFullTigo,
-    });
-  }, [
-    rescateSeleccionados,
-    comisionConfirmada,
-    clientesDelPeriodoConfirmados.length,
-    dineroDelPeriodoConfirmado,
-    esNuevo,
-    periodoVisto,
-    metaClientesHogar,
-    convergenciasPeriodo,
-    metaClientesMovil,
-    costoPlanesMovilesPeriodo,
-    metaDinero,
-    metaArpu,
-    metaClientes,
-    bonoFullTigo,
-  ]);
+    if (rescateSeleccionados.length === 0) return comisionConfirmadaHoy;
+    return calcularComisionConSubconjuntoHoy(rescateSeleccionados);
+  }, [rescateSeleccionados, comisionConfirmadaHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, periodoRescateActivo]);
   const rescateGanancia =
-    comisionSimulada.completo && comisionConfirmada.completo ? comisionSimulada.total - comisionConfirmada.total : 0;
-  // El simulador solo tiene sentido mientras la ventana de rescate de ESTE período
-  // siga abierta (no haya pasado el 5 del mes en que se paga). Después de esa fecha,
-  // Tigo ya audita y paga ese ciclo con el número que haya en ese momento — pagar
-  // después ya no cambia nada, aunque el cliente siga sin contar en la app.
-  const rescateVentanaAbierta = useMemo(() => {
-    const limite = fechaLimitePrimeraFactura(periodoVisto);
-    if (!limite) return false;
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    return hoy <= limite;
-  }, [periodoVisto]);
+    comisionSimulada.completo && comisionConfirmadaHoy.completo ? comisionSimulada.total - comisionConfirmadaHoy.total : 0;
   // Días que faltan para que cierre la ventana de rescate de este período.
   const rescateDiasRestantes = useMemo(() => {
-    const limite = fechaLimitePrimeraFactura(periodoVisto);
+    if (!periodoRescateActivo) return null;
+    const limite = fechaLimitePrimeraFactura(periodoRescateActivo);
     if (!limite) return null;
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
     return Math.round((limite - hoy) / 86400000);
-  }, [periodoVisto]);
+  }, [periodoRescateActivo]);
   // Qué cambió exactamente con la selección actual: si cruzaste de tramo de base, y
   // (en el esquema nuevo) si activaste o desactivaste el acelerador.
-  const rescateCruceTramo = comisionSimulada.completo && comisionConfirmada.completo && comisionSimulada.montoBase !== comisionConfirmada.montoBase;
+  const rescateCruceTramo =
+    comisionSimulada.completo && comisionConfirmadaHoy.completo && comisionSimulada.montoBase !== comisionConfirmadaHoy.montoBase;
   const rescateCruceAcelerador =
-    esNuevo && comisionSimulada.completo && comisionConfirmada.completo && comisionSimulada.factorAcelerador !== comisionConfirmada.factorAcelerador;
+    esNuevoHoy &&
+    comisionSimulada.completo &&
+    comisionConfirmadaHoy.completo &&
+    comisionSimulada.factorAcelerador !== comisionConfirmadaHoy.factorAcelerador;
   // Cuánto te falta para llegar al siguiente tramo de la tabla, partiendo de lo confirmado
   // (en % de ingresos en el esquema viejo, en % de clientes ponderado en el nuevo).
   const rescateProximoTramo = useMemo(() => {
-    if (!comisionConfirmada.completo) return null;
-    const pctActual = esNuevo ? comisionConfirmada.pctClientesPonderado : comisionConfirmada.pctIngreso;
+    if (!comisionConfirmadaHoy.completo) return null;
+    const pctActual = esNuevoHoy ? comisionConfirmadaHoy.pctClientesPonderado : comisionConfirmadaHoy.pctIngreso;
     const siguiente = TABLA_COMISION_BASE.find((t) => t.min > pctActual);
     if (!siguiente) return null;
     return { pctFalta: siguiente.min - pctActual, montoSiguiente: siguiente.monto };
-  }, [comisionConfirmada, esNuevo]);
+  }, [comisionConfirmadaHoy, esNuevoHoy]);
   // Combinación de menor costo que ya alcanza el máximo posible (el mismo total que
   // pagando a todos) — para no poner más de tu bolsillo del que hace falta. Se prueban
   // todas las combinaciones porque la lista de candidatos suele ser chica.
-  function calcularComisionConSubconjunto(subset) {
-    const clientesSimulados = clientesDelPeriodoConfirmados.length + subset.length;
-    const dineroSimulado = dineroDelPeriodoConfirmado + subset.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
-    const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
-    if (esNuevo) {
-      return calcularComision({
-        periodoKey: periodoVisto,
-        clientesHogar: clientesSimulados,
-        metaClientesHogar,
-        clientesMovil: convergenciasPeriodo,
-        metaClientesMovil,
-        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodo,
-        metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasPeriodo,
-      });
-    }
-    return calcularComision({
-      periodoKey: periodoVisto,
-      dineroDelPeriodo: dineroSimulado,
-      metaDinero,
-      arpuPeriodo: arpuSimulado,
-      metaArpu,
-      clientesInstalados: clientesSimulados,
-      metaClientes,
-      bonoFullTigo,
-    });
-  }
   const rescateCombinacionMinima = useMemo(() => {
     if (rescateCandidatos.length === 0 || rescateCandidatos.length > 16) return null;
-    const totalMaximo = calcularComisionConSubconjunto(rescateCandidatos).total;
-    if (!comisionConfirmada.completo || totalMaximo <= comisionConfirmada.total) return null;
+    const totalMaximo = calcularComisionConSubconjuntoHoy(rescateCandidatos).total;
+    if (!comisionConfirmadaHoy.completo || totalMaximo <= comisionConfirmadaHoy.total) return null;
     let mejor = null;
     const n = rescateCandidatos.length;
     for (let mask = 1; mask < 1 << n; mask++) {
       const subset = rescateCandidatos.filter((_, i) => mask & (1 << i));
-      if (calcularComisionConSubconjunto(subset).total < totalMaximo) continue;
+      if (calcularComisionConSubconjuntoHoy(subset).total < totalMaximo) continue;
       const costo = subset.reduce((acc, c) => acc + montoFaltanteCliente(c), 0);
       if (!mejor || subset.length < mejor.subset.length || (subset.length === mejor.subset.length && costo < mejor.costo)) {
         mejor = { subset, costo };
       }
     }
     return mejor ? mejor.subset : null;
-  }, [
-    rescateCandidatos,
-    comisionConfirmada,
-    clientesDelPeriodoConfirmados.length,
-    dineroDelPeriodoConfirmado,
-    esNuevo,
-    periodoVisto,
-    metaClientesHogar,
-    convergenciasPeriodo,
-    metaClientesMovil,
-    costoPlanesMovilesPeriodo,
-    metaDinero,
-    metaArpu,
-    metaClientes,
-    bonoFullTigo,
-  ]);
+  }, [rescateCandidatos, comisionConfirmadaHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, periodoRescateActivo]);
   function marcarCombinacionMinima() {
     if (!rescateCombinacionMinima) return;
     const nuevaSeleccion = {};
@@ -3296,11 +3270,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const enRiesgoHoy = useMemo(() => {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
-    const periodoObjetivo = [-1, -2]
-      .map((d) => sumarMesClave(periodoActual, d))
-      .map((p) => ({ p, limite: fechaLimitePrimeraFactura(p) }))
-      .filter((x) => x.limite && x.limite >= hoy)
-      .sort((a, b) => a.limite - b.limite)[0]?.p;
+    const periodoObjetivo = periodoRescateActivo;
     if (!periodoObjetivo) return [];
     return clientes
       .filter((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) === periodoObjetivo)
@@ -3327,7 +3297,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       })
       .filter((x) => x.diasParaLimite === null || x.diasParaLimite >= 0)
       .sort((a, b) => (a.diasParaLimite ?? 999) - (b.diasParaLimite ?? 999));
-  }, [clientes, periodoActual]);
+  }, [clientes, periodoRescateActivo]);
 
   const pendientesHoy = useMemo(
     () => enRiesgoHoy.filter((x) => !revisadosHoy.includes(x.cliente.id)),
@@ -3493,11 +3463,12 @@ Early: `;
         </div>
       </div>
 
+      <div className="rounded-lg overflow-hidden border mb-6" style={ { borderColor: "#E5E7EB" } }>
       {enRiesgoHoy.length > 0 && (
         <button
           type="button"
           onClick={() => setMostrarRevisionDiaria(true)}
-          className="w-full text-left rounded-lg p-4 mb-6 flex items-center justify-between gap-3 flex-wrap"
+          className="w-full text-left p-4 flex items-center justify-between gap-3 flex-wrap"
           style={
             pendientesHoy.length > 0
               ? { background: "#FBEAEA", border: "1px solid #F3C6C6" }
@@ -3541,6 +3512,202 @@ Early: `;
           onCerrar={() => setMostrarRevisionDiaria(false)}
         />
       )}
+      {periodoRescateActivo && (() => {
+        const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2));
+        const hayPendientes = rescateCandidatos.length > 0;
+        const colorTexto = !comisionConfirmadaHoy.completo ? "#B8791F" : hayPendientes ? "#B91C1C" : "#0F766E";
+        const fondoBanner = !comisionConfirmadaHoy.completo
+          ? "#FBF1DE"
+          : hayPendientes
+          ? rescateDiasRestantes !== null && rescateDiasRestantes <= 3
+            ? "#FBD5D5"
+            : "#FBEAEA"
+          : "#DCF5F3";
+        const textoResumen = !comisionConfirmadaHoy.completo
+          ? `🧮 ${mesPago}: faltan metas por cargar`
+          : `🧮 ${mesPago} ${fmtMonto(comisionConfirmadaHoy.total)}${hayPendientes ? " hasta el momento" : " confirmado — todos pagaron"}`;
+        return (
+          <div>
+            <button
+              type="button"
+              onClick={() => setRescateAbierto((v) => !v)}
+              className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
+              style={ { background: fondoBanner } }
+            >
+              <span className="text-xs font-medium truncate" style={ { color: colorTexto } }>
+                {textoResumen}
+                {hayPendientes &&
+                  rescateDiasRestantes !== null &&
+                  (rescateDiasRestantes <= 0
+                    ? " — ¡vence hoy!"
+                    : rescateDiasRestantes <= 3
+                    ? ` (quedan ${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} ⚠️)`
+                    : ` (quedan ${rescateDiasRestantes} días)`)}
+              </span>
+              <span className="text-xs shrink-0" style={ { color: colorTexto } }>{rescateAbierto ? "▲" : "▼"}</span>
+            </button>
+
+          {rescateAbierto && (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
+              <p className="text-xs mb-2" style={ { color: "#6B7280" } }>
+                Ahora mismo tu comisión confirmada es {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"} (solo lo ya
+                pagado). Marcá a quién le pagarías la diferencia tú y mirá cuánto sube desde ahí.
+              </p>
+              {rescateCandidatos.length === 0 ? (
+                <p className="text-sm font-medium" style={ { color: "#0F766E" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
+              ) : (
+                <>
+              {rescateProximoTramo && (
+                <p className="text-xs mb-3" style={ { color: "#0072CE" } }>
+                  📏 Te falta {rescateProximoTramo.pctFalta.toFixed(1)}% para llegar a la base de {fmtMonto(rescateProximoTramo.montoSiguiente)}.
+                </p>
+              )}
+              {rescateCombinacionMinima && rescateCombinacionMinima.length < rescateCandidatos.length && (
+                <button
+                  type="button"
+                  onClick={marcarCombinacionMinima}
+                  className="text-xs font-medium px-3 py-1.5 rounded-md mb-3"
+                  style={ { background: "#E3EDFA", color: "#0072CE" } }
+                >
+                  ✨ Marcar la combinación mínima ({rescateCombinacionMinima.length} cliente{rescateCombinacionMinima.length === 1 ? "" : "s"})
+                </button>
+              )}
+
+              {rescateVencidosOrdenados.length > 0 && (
+                <>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B91C1C" } }>⛔ Ya vencidos — los rescatás de inmediato</div>
+                  <div className="flex flex-col gap-2 mb-3">
+                    {rescateVencidosOrdenados.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                        style={ {
+                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
+                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
+                        } }
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={!!rescateSeleccion[c.id]}
+                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                          />
+                          <span className="text-sm truncate">{c.nombre}</span>
+                        </span>
+                        <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
+                          le faltan {fmtMonto(montoFaltanteCliente(c))}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {rescateEnPlazoOrdenados.length > 0 && (
+                <>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B8791F" } }>⏳ Todavía en plazo — aseguran que no se caigan</div>
+                  <div className="flex flex-col gap-2 mb-4">
+                    {rescateEnPlazoOrdenados.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                        style={ {
+                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
+                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
+                        } }
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={!!rescateSeleccion[c.id]}
+                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                          />
+                          <span className="text-sm truncate">{c.nombre}</span>
+                        </span>
+                        <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
+                          le faltan {fmtMonto(montoFaltanteCliente(c))}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <div className="rounded-md p-3" style={ { background: "#F4F6FA" } }>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span style={ { color: "#6B7280" } }>Pones de tu bolsillo:</span>
+                  <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span style={ { color: "#6B7280" } }>Tu comisión confirmada pasa de:</span>
+                  <span className="font-mono">
+                    {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"} → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #E5E7EB" } }>
+                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>Ganancia:</span>
+                  <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>
+                    {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
+                    {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x lo que pones)` : ""}
+                  </span>
+                </div>
+                {(rescateCruceTramo || rescateCruceAcelerador) && (
+                  <div className="text-xs mt-2 pt-2" style={ { borderTop: "1px solid #E5E7EB", color: "#0F766E" } }>
+                    {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
+                    {rescateCruceAcelerador && (
+                      <div>
+                        {comisionSimulada.factorAcelerador > comisionConfirmadaHoy.factorAcelerador
+                          ? "⚡ Activarías el acelerador +10% (superarías el 100% de ingresos)."
+                          : "🐢 Dejarías de tener el desacelerador −10%."}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {rescateSeleccionados.length > 0 && (
+                rescateConfirmando ? (
+                  <div className="rounded-md p-3 mt-3" style={ { background: "#DCF5F3" } }>
+                    <p className="text-xs font-medium mb-2" style={ { color: "#0F766E" } }>
+                      ¿Confirmas que vas a pagar {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } }
+                        className="flex-1 py-2 rounded-md text-white font-medium text-sm"
+                        style={ { background: "#0F766E" } }
+                      >
+                        Sí, confirmar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRescateConfirmando(false)}
+                        className="flex-1 py-2 rounded-md border font-medium text-sm"
+                        style={ { borderColor: "#D1D5DB", color: "#374151" } }
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setRescateConfirmando(true)}
+                    className="w-full mt-3 py-2.5 rounded-md text-white font-medium text-sm"
+                    style={ { background: "#0F766E" } }
+                  >
+                    ✅ Ya pagué — marcar como pagados
+                  </button>
+                )
+              )}
+              </>
+              )}
+            </div>
+          )}
+          </div>
+        );
+      })()}
 
       {(() => {
         const nombreMes = (k) => (MESES[parseInt(k.split("-")[1], 10) - 1] || "");
@@ -3551,6 +3718,7 @@ Early: `;
             ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por convergencia (${cobroMes.nConvergencias} × $${BONO_POR_CONVERGENCIA})`
             : null;
         const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B8791F" : definitivo ? "#0F766E" : "#0072CE";
+        const fondoLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#FBF1DE" : definitivo ? "#DCF5F3" : "#E3EDFA";
         const resumenLinea = cobroMes.vacio
           ? `💰 ${nombreMes(periodoActual)}: sin clientes en el ciclo de ${nombreMes(cobroMes.periodoCobro)}`
           : !cobroMes.confirmado.completo
@@ -3559,12 +3727,12 @@ Early: `;
           ? `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado`
           : `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
         return (
-          <div className="mb-6">
+          <div>
             <button
               type="button"
               onClick={() => setCobroMesAbierto((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md"
-              style={ { background: "#F4F6FA" } }
+              className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
+              style={ { background: fondoLinea } }
             >
               <span className="text-xs font-medium truncate" style={ { color: colorLinea } }>{resumenLinea}</span>
               <span className="text-xs shrink-0" style={ { color: "#9CA3AF" } }>{cobroMesAbierto ? "▲" : "▼"}</span>
@@ -3596,7 +3764,12 @@ Early: `;
                     <div className="text-xs font-medium mt-1" style={ { color: "#0F766E" } }>✓ Cierre definitivo</div>
                     <div className="text-xs mt-2" style={ { color: "#6B7280" } }>
                       {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} cuentan
-                      {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : ""}
+                      {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (no llegaron a tiempo)` : " · todos llegaron a tiempo"}
+                    </div>
+                    <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
+                      {cobroMes.nuevo
+                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) × ${cobroMes.confirmado.factorAcelerador === 1 ? "sin acelerador" : cobroMes.confirmado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos)`
+                        : `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos) × ${cobroMes.confirmado.pctArpu.toFixed(1)}% ARPU × ${cobroMes.confirmado.pctClientes.toFixed(1)}% clientes`}
                     </div>
                     {lineaBono && <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>{lineaBono}</div>}
                   </div>
@@ -3619,8 +3792,13 @@ Early: `;
                       </div>
                     </div>
                     <div className="sm:col-span-2 text-xs" style={ { color: "#6B7280" } }>
-                      {cobroMes.nVencidos > 0 ? `⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (venció su plazo)` : "Ninguno ha vencido todavía."}
+                      {cobroMes.nVencidos > 0 ? `⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (no llegaron a tiempo)` : "Ninguno ha quedado fuera todavía."}
                       {lineaBono ? ` · ${lineaBono}` : ""}
+                    </div>
+                    <div className="sm:col-span-2 text-xs" style={ { color: "#6B7280" } }>
+                      {cobroMes.nuevo
+                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) × ${cobroMes.confirmado.factorAcelerador === 1 ? "sin acelerador" : cobroMes.confirmado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos)`
+                        : `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos) × ${cobroMes.confirmado.pctArpu.toFixed(1)}% ARPU × ${cobroMes.confirmado.pctClientes.toFixed(1)}% clientes`}
                     </div>
                   </div>
                 )}
@@ -3629,6 +3807,7 @@ Early: `;
           </div>
         );
       })()}
+      </div>
 
       <div className="flex items-center gap-1.5 mb-6 flex-wrap">
         <button
@@ -3722,181 +3901,6 @@ Early: `;
           </p>
         )}
       </div>
-
-      {rescateCandidatos.length > 0 && rescateVentanaAbierta && (
-        <div className="mb-6">
-          <button
-            type="button"
-            onClick={() => setRescateAbierto((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md"
-            style={ { background: rescateDiasRestantes !== null && rescateDiasRestantes <= 3 ? "#FBD5D5" : "#FBEAEA" } }
-          >
-            <span className="text-xs font-medium truncate" style={ { color: "#B91C1C" } }>
-              🧮 {rescateCandidatos.length} cliente{rescateCandidatos.length === 1 ? "" : "s"} sin pagar su 1ra factura
-              {rescateDiasRestantes !== null &&
-                (rescateDiasRestantes <= 0
-                  ? " — ¡vence hoy!"
-                  : rescateDiasRestantes <= 3
-                  ? ` — quedan ${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} ⚠️`
-                  : ` — quedan ${rescateDiasRestantes} días`)}
-            </span>
-            <span className="text-xs shrink-0" style={ { color: "#C23B3B" } }>{rescateAbierto ? "▲" : "▼"}</span>
-          </button>
-
-          {rescateAbierto && (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
-              <p className="text-xs mb-2" style={ { color: "#6B7280" } }>
-                Ahora mismo tu comisión confirmada es {comisionConfirmada.completo ? fmtMonto(comisionConfirmada.total) : "—"} (solo lo ya
-                pagado). Marcá a quién le pagarías la diferencia tú y mirá cuánto sube desde ahí.
-              </p>
-              {rescateProximoTramo && (
-                <p className="text-xs mb-3" style={ { color: "#0072CE" } }>
-                  📏 Te falta {rescateProximoTramo.pctFalta.toFixed(1)}% para llegar a la base de {fmtMonto(rescateProximoTramo.montoSiguiente)}.
-                </p>
-              )}
-              {rescateCombinacionMinima && rescateCombinacionMinima.length < rescateCandidatos.length && (
-                <button
-                  type="button"
-                  onClick={marcarCombinacionMinima}
-                  className="text-xs font-medium px-3 py-1.5 rounded-md mb-3"
-                  style={ { background: "#E3EDFA", color: "#0072CE" } }
-                >
-                  ✨ Marcar la combinación mínima ({rescateCombinacionMinima.length} cliente{rescateCombinacionMinima.length === 1 ? "" : "s"})
-                </button>
-              )}
-
-              {rescateVencidosOrdenados.length > 0 && (
-                <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B91C1C" } }>⛔ Ya vencidos — los rescatás de inmediato</div>
-                  <div className="flex flex-col gap-2 mb-3">
-                    {rescateVencidosOrdenados.map((c) => (
-                      <label
-                        key={c.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
-                        style={ {
-                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
-                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
-                        } }
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={!!rescateSeleccion[c.id]}
-                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                          />
-                          <span className="text-sm truncate">{c.nombre}</span>
-                        </span>
-                        <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
-                          le faltan {fmtMonto(montoFaltanteCliente(c))}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              {rescateEnPlazoOrdenados.length > 0 && (
-                <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B8791F" } }>⏳ Todavía en plazo — aseguran que no se caigan</div>
-                  <div className="flex flex-col gap-2 mb-4">
-                    {rescateEnPlazoOrdenados.map((c) => (
-                      <label
-                        key={c.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
-                        style={ {
-                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
-                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
-                        } }
-                      >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={!!rescateSeleccion[c.id]}
-                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                          />
-                          <span className="text-sm truncate">{c.nombre}</span>
-                        </span>
-                        <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
-                          le faltan {fmtMonto(montoFaltanteCliente(c))}
-                        </span>
-                      </label>
-                    ))}
-                  </div>
-                </>
-              )}
-
-              <div className="rounded-md p-3" style={ { background: "#F4F6FA" } }>
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#6B7280" } }>Pones de tu bolsillo:</span>
-                  <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
-                </div>
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#6B7280" } }>Tu comisión confirmada pasa de:</span>
-                  <span className="font-mono">
-                    {comisionConfirmada.completo ? fmtMonto(comisionConfirmada.total) : "—"} → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #E5E7EB" } }>
-                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>Ganancia:</span>
-                  <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>
-                    {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
-                    {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x lo que pones)` : ""}
-                  </span>
-                </div>
-                {(rescateCruceTramo || rescateCruceAcelerador) && (
-                  <div className="text-xs mt-2 pt-2" style={ { borderTop: "1px solid #E5E7EB", color: "#0F766E" } }>
-                    {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmada.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
-                    {rescateCruceAcelerador && (
-                      <div>
-                        {comisionSimulada.factorAcelerador > comisionConfirmada.factorAcelerador
-                          ? "⚡ Activarías el acelerador +10% (superarías el 100% de ingresos)."
-                          : "🐢 Dejarías de tener el desacelerador −10%."}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {rescateSeleccionados.length > 0 && (
-                rescateConfirmando ? (
-                  <div className="rounded-md p-3 mt-3" style={ { background: "#DCF5F3" } }>
-                    <p className="text-xs font-medium mb-2" style={ { color: "#0F766E" } }>
-                      ¿Confirmas que vas a pagar {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { onConfirmarRescate(periodoVisto, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } }
-                        className="flex-1 py-2 rounded-md text-white font-medium text-sm"
-                        style={ { background: "#0F766E" } }
-                      >
-                        Sí, confirmar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRescateConfirmando(false)}
-                        className="flex-1 py-2 rounded-md border font-medium text-sm"
-                        style={ { borderColor: "#D1D5DB", color: "#374151" } }
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRescateConfirmando(true)}
-                    className="w-full mt-3 py-2.5 rounded-md text-white font-medium text-sm"
-                    style={ { background: "#0F766E" } }
-                  >
-                    ✅ Ya pagué — marcar como pagados
-                  </button>
-                )
-              )}
-            </div>
-          )}
-        </div>
-      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {esNuevo ? (
