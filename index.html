@@ -2945,30 +2945,49 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   // Solo los clientes de hogar del período que se está viendo que ya perdieron su plazo
   // (no cuentan para comisión). Impuesto aproximado: 1% para Single, 7% para Doble
   // (mezcla de 12% TV + 1% internet, ya que el plan Doble se guarda como un solo precio).
-  const clientesVencidosDelPeriodo = useMemo(
+  // Candidatos del simulador: TODOS los clientes de hogar del período que aún no
+  // pagaron su 1ra factura — separados en dos grupos, ya vencidos (no cuentan nada
+  // hoy) y todavía en plazo (cuentan de forma optimista, pero no en lo confirmado).
+  const rescateVencidos = useMemo(
     () =>
       clientes.filter(
         (c) => c.fechaInstalacion && periodoDelCliente(c) === periodoVisto && !clienteCuentaParaComision(c)
       ),
     [clientes, periodoVisto]
   );
+  const rescateEnPlazo = useMemo(
+    () =>
+      clientes.filter(
+        (c) =>
+          c.fechaInstalacion &&
+          periodoDelCliente(c) === periodoVisto &&
+          c.f1_estado !== "pagada" &&
+          clienteCuentaParaComision(c)
+      ),
+    [clientes, periodoVisto]
+  );
+  const rescateCandidatos = useMemo(() => [...rescateVencidos, ...rescateEnPlazo], [rescateVencidos, rescateEnPlazo]);
   function montoFaltanteCliente(c) {
     const monto = Number(c.montoMensual) || 0;
     const factorImpuesto = c.planTipo === "DOBLE" ? 1.07 : 1.01;
     return (monto * factorImpuesto) / 2;
   }
   const rescateSeleccionados = useMemo(
-    () => clientesVencidosDelPeriodo.filter((c) => rescateSeleccion[c.id]),
-    [clientesVencidosDelPeriodo, rescateSeleccion]
+    () => rescateCandidatos.filter((c) => rescateSeleccion[c.id]),
+    [rescateCandidatos, rescateSeleccion]
   );
   const rescatePones = useMemo(
     () => rescateSeleccionados.reduce((acc, c) => acc + montoFaltanteCliente(c), 0),
     [rescateSeleccionados]
   );
+  // La comparación siempre parte de tu comisión CONFIRMADA (solo lo ya pagado) — es la
+  // única cifra de la que te puedes fiar hoy, sea que el cliente ya venció o todavía
+  // esté en plazo. Pagar y marcar a alguien como pagado siempre sube desde ahí.
   const comisionSimulada = useMemo(() => {
-    if (rescateSeleccionados.length === 0) return comision;
-    const clientesSimulados = clientesDelPeriodo.length + rescateSeleccionados.length;
-    const dineroSimulado = dineroDelPeriodo + rescateSeleccionados.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+    if (rescateSeleccionados.length === 0) return comisionConfirmada;
+    const clientesSimulados = clientesDelPeriodoConfirmados.length + rescateSeleccionados.length;
+    const dineroSimulado =
+      dineroDelPeriodoConfirmado + rescateSeleccionados.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
     const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
     if (esNuevo) {
       return calcularComision({
@@ -2994,9 +3013,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     });
   }, [
     rescateSeleccionados,
-    comision,
-    clientesDelPeriodo.length,
-    dineroDelPeriodo,
+    comisionConfirmada,
+    clientesDelPeriodoConfirmados.length,
+    dineroDelPeriodoConfirmado,
     esNuevo,
     periodoVisto,
     metaClientesHogar,
@@ -3008,7 +3027,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     metaClientes,
     bonoFullTigo,
   ]);
-  const rescateGanancia = comisionSimulada.completo && comision.completo ? comisionSimulada.total - comision.total : 0;
+  const rescateGanancia =
+    comisionSimulada.completo && comisionConfirmada.completo ? comisionSimulada.total - comisionConfirmada.total : 0;
 
   // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
   // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
@@ -3508,7 +3528,7 @@ Early: `;
         )}
       </div>
 
-      {clientesVencidosDelPeriodo.length > 0 && (
+      {rescateCandidatos.length > 0 && (
         <div className="mb-6">
           <button
             type="button"
@@ -3517,7 +3537,7 @@ Early: `;
             style={ { background: "#FBEAEA" } }
           >
             <span className="text-xs font-medium truncate" style={ { color: "#B91C1C" } }>
-              🧮 {clientesVencidosDelPeriodo.length} cliente{clientesVencidosDelPeriodo.length === 1 ? "" : "s"} vencido{clientesVencidosDelPeriodo.length === 1 ? "" : "s"} sin pagar — tocá para ver si conviene rescatarlos
+              🧮 {rescateCandidatos.length} cliente{rescateCandidatos.length === 1 ? "" : "s"} sin pagar su 1ra factura — tocá para ver si te conviene poner la diferencia
             </span>
             <span className="text-xs shrink-0" style={ { color: "#C23B3B" } }>{rescateAbierto ? "▲" : "▼"}</span>
           </button>
@@ -3525,32 +3545,69 @@ Early: `;
           {rescateAbierto && (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
               <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
-                Marcá a los clientes que pagarías tú, y mirá cuánto te conviene según lo que sube tu comisión.
+                Ahora mismo tu comisión confirmada es {comisionConfirmada.completo ? fmtMonto(comisionConfirmada.total) : "—"} (solo lo ya
+                pagado). Marcá a quién le pagarías la diferencia tú y mirá cuánto sube desde ahí.
               </p>
-              <div className="flex flex-col gap-2 mb-4">
-                {clientesVencidosDelPeriodo.map((c) => (
-                  <label
-                    key={c.id}
-                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
-                    style={ {
-                      borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
-                      background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
-                    } }
-                  >
-                    <span className="flex items-center gap-2 min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={!!rescateSeleccion[c.id]}
-                        onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                      />
-                      <span className="text-sm truncate">{c.nombre}</span>
-                    </span>
-                    <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
-                      le faltan {fmtMonto(montoFaltanteCliente(c))}
-                    </span>
-                  </label>
-                ))}
-              </div>
+
+              {rescateVencidos.length > 0 && (
+                <>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B91C1C" } }>⛔ Ya vencidos — los rescatás de inmediato</div>
+                  <div className="flex flex-col gap-2 mb-3">
+                    {rescateVencidos.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                        style={ {
+                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
+                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
+                        } }
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={!!rescateSeleccion[c.id]}
+                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                          />
+                          <span className="text-sm truncate">{c.nombre}</span>
+                        </span>
+                        <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
+                          le faltan {fmtMonto(montoFaltanteCliente(c))}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {rescateEnPlazo.length > 0 && (
+                <>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B8791F" } }>⏳ Todavía en plazo — aseguran que no se caigan el 5</div>
+                  <div className="flex flex-col gap-2 mb-4">
+                    {rescateEnPlazo.map((c) => (
+                      <label
+                        key={c.id}
+                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                        style={ {
+                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
+                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
+                        } }
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={!!rescateSeleccion[c.id]}
+                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                          />
+                          <span className="text-sm truncate">{c.nombre}</span>
+                        </span>
+                        <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
+                          le faltan {fmtMonto(montoFaltanteCliente(c))}
+                        </span>
+                      </label>
+                    ))}
+                  </div>
+                </>
+              )}
 
               <div className="rounded-md p-3" style={ { background: "#F4F6FA" } }>
                 <div className="flex items-center justify-between text-sm mb-1">
@@ -3558,9 +3615,9 @@ Early: `;
                   <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#6B7280" } }>Tu comisión pasa de:</span>
+                  <span style={ { color: "#6B7280" } }>Tu comisión confirmada pasa de:</span>
                   <span className="font-mono">
-                    {comision.completo ? fmtMonto(comision.total) : "—"} → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}
+                    {comisionConfirmada.completo ? fmtMonto(comisionConfirmada.total) : "—"} → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #E5E7EB" } }>
