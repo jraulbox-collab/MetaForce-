@@ -2697,6 +2697,11 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
 function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente }) {
   const periodoActual = periodoComision(toISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
+  const [rescateAbierto, setRescateAbierto] = useState(false);
+  const [rescateSeleccion, setRescateSeleccion] = useState({});
+  useEffect(() => {
+    setRescateSeleccion({});
+  }, [periodoVisto]);
   const esActual = periodoVisto === periodoActual;
 
   const esNuevo = esquemaNuevo(periodoVisto);
@@ -3162,11 +3167,6 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   );
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
   const [cobroMesAbierto, setCobroMesAbierto] = useState(false);
-  const [rescateAbierto, setRescateAbierto] = useState(false);
-  const [rescateSeleccion, setRescateSeleccion] = useState({});
-  useEffect(() => {
-    setRescateSeleccion({});
-  }, [periodoVisto]);
 
   // ---- Lo que se cobra este mes ----
   // Este mes se cobra el ciclo de hace 2 períodos (septiembre cobra julio, octubre cobra
