@@ -2936,6 +2936,75 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     bonoFullTigo,
   ]);
 
+  // ---- Simulador: ¿conviene pagar de mi bolsillo la diferencia de un cliente vencido? ----
+  // Solo los clientes de hogar del período que se está viendo que ya perdieron su plazo
+  // (no cuentan para comisión). Impuesto aproximado: 1% para Single, 7% para Doble
+  // (mezcla de 12% TV + 1% internet, ya que el plan Doble se guarda como un solo precio).
+  const clientesVencidosDelPeriodo = useMemo(
+    () =>
+      clientes.filter(
+        (c) => c.fechaInstalacion && periodoDelCliente(c) === periodoVisto && !clienteCuentaParaComision(c)
+      ),
+    [clientes, periodoVisto]
+  );
+  function montoFaltanteCliente(c) {
+    const monto = Number(c.montoMensual) || 0;
+    const factorImpuesto = c.planTipo === "DOBLE" ? 1.07 : 1.01;
+    return (monto * factorImpuesto) / 2;
+  }
+  const rescateSeleccionados = useMemo(
+    () => clientesVencidosDelPeriodo.filter((c) => rescateSeleccion[c.id]),
+    [clientesVencidosDelPeriodo, rescateSeleccion]
+  );
+  const rescatePones = useMemo(
+    () => rescateSeleccionados.reduce((acc, c) => acc + montoFaltanteCliente(c), 0),
+    [rescateSeleccionados]
+  );
+  const comisionSimulada = useMemo(() => {
+    if (rescateSeleccionados.length === 0) return comision;
+    const clientesSimulados = clientesDelPeriodo.length + rescateSeleccionados.length;
+    const dineroSimulado = dineroDelPeriodo + rescateSeleccionados.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+    const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
+    if (esNuevo) {
+      return calcularComision({
+        periodoKey: periodoVisto,
+        clientesHogar: clientesSimulados,
+        metaClientesHogar,
+        clientesMovil: convergenciasPeriodo,
+        metaClientesMovil,
+        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodo,
+        metaIngresos: metaDinero,
+        cantidadConvergencias: convergenciasPeriodo,
+      });
+    }
+    return calcularComision({
+      periodoKey: periodoVisto,
+      dineroDelPeriodo: dineroSimulado,
+      metaDinero,
+      arpuPeriodo: arpuSimulado,
+      metaArpu,
+      clientesInstalados: clientesSimulados,
+      metaClientes,
+      bonoFullTigo,
+    });
+  }, [
+    rescateSeleccionados,
+    comision,
+    clientesDelPeriodo.length,
+    dineroDelPeriodo,
+    esNuevo,
+    periodoVisto,
+    metaClientesHogar,
+    convergenciasPeriodo,
+    metaClientesMovil,
+    costoPlanesMovilesPeriodo,
+    metaDinero,
+    metaArpu,
+    metaClientes,
+    bonoFullTigo,
+  ]);
+  const rescateGanancia = comisionSimulada.completo && comision.completo ? comisionSimulada.total - comision.total : 0;
+
   // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
   // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
   // La comisión tampoco se extrapola directo (tiene tramos escalonados) — se vuelve a calcular
@@ -3093,6 +3162,11 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   );
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
   const [cobroMesAbierto, setCobroMesAbierto] = useState(false);
+  const [rescateAbierto, setRescateAbierto] = useState(false);
+  const [rescateSeleccion, setRescateSeleccion] = useState({});
+  useEffect(() => {
+    setRescateSeleccion({});
+  }, [periodoVisto]);
 
   // ---- Lo que se cobra este mes ----
   // Este mes se cobra el ciclo de hace 2 períodos (septiembre cobra julio, octubre cobra
@@ -3433,6 +3507,74 @@ Early: `;
           </p>
         )}
       </div>
+
+      {clientesVencidosDelPeriodo.length > 0 && (
+        <div className="mb-6">
+          <button
+            type="button"
+            onClick={() => setRescateAbierto((v) => !v)}
+            className="w-full flex items-center justify-between gap-2 text-left px-3 py-2 rounded-md"
+            style={ { background: "#FBEAEA" } }
+          >
+            <span className="text-xs font-medium truncate" style={ { color: "#B91C1C" } }>
+              🧮 {clientesVencidosDelPeriodo.length} cliente{clientesVencidosDelPeriodo.length === 1 ? "" : "s"} vencido{clientesVencidosDelPeriodo.length === 1 ? "" : "s"} sin pagar — tocá para ver si conviene rescatarlos
+            </span>
+            <span className="text-xs shrink-0" style={ { color: "#C23B3B" } }>{rescateAbierto ? "▲" : "▼"}</span>
+          </button>
+
+          {rescateAbierto && (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
+              <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+                Marcá a los clientes que pagarías tú, y mirá cuánto te conviene según lo que sube tu comisión.
+              </p>
+              <div className="flex flex-col gap-2 mb-4">
+                {clientesVencidosDelPeriodo.map((c) => (
+                  <label
+                    key={c.id}
+                    className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                    style={ {
+                      borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#E5E7EB",
+                      background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
+                    } }
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <input
+                        type="checkbox"
+                        checked={!!rescateSeleccion[c.id]}
+                        onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                      />
+                      <span className="text-sm truncate">{c.nombre}</span>
+                    </span>
+                    <span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>
+                      le faltan {fmtMonto(montoFaltanteCliente(c))}
+                    </span>
+                  </label>
+                ))}
+              </div>
+
+              <div className="rounded-md p-3" style={ { background: "#F4F6FA" } }>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span style={ { color: "#6B7280" } }>Pones de tu bolsillo:</span>
+                  <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
+                </div>
+                <div className="flex items-center justify-between text-sm mb-1">
+                  <span style={ { color: "#6B7280" } }>Tu comisión pasa de:</span>
+                  <span className="font-mono">
+                    {comision.completo ? fmtMonto(comision.total) : "—"} → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #E5E7EB" } }>
+                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>Ganancia:</span>
+                  <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>
+                    {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
+                    {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x lo que pones)` : ""}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
         {esNuevo ? (
