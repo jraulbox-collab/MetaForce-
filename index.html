@@ -103,7 +103,7 @@ const addMonthsKeepDay = (dateStr, monthsToAdd, targetDay) => {
   return toISO(new Date(year, month, day));
 };
 const daysFromToday = (dateStr) => {
-  const today = new Date(toISO(new Date()) + "T00:00:00");
+  const today = new Date(fechaLocalISO(new Date()) + "T00:00:00");
   const target = new Date(dateStr + "T00:00:00");
   return Math.round((target - today) / 86400000);
 };
@@ -317,7 +317,7 @@ function clienteCuentaParaComision(c) {
   return hoy <= fechaLimite;
 }
 function periodosRecientes(count) {
-  const actual = periodoComision(toISO(new Date()));
+  const actual = periodoComision(fechaLocalISO(new Date()));
   const out = [];
   for (let i = 0; i < count; i++) {
     const key = sumarMesClave(actual, -i);
@@ -696,8 +696,8 @@ const emptyForm = () => ({
   velocidad: "",
   planTV: "",
   montoMensual: "",
-  fechaInstalacion: toISO(new Date()),
-  fecha1raFactura: toISO(new Date()),
+  fechaInstalacion: fechaLocalISO(new Date()),
+  fecha1raFactura: fechaLocalISO(new Date()),
   monto1raFactura: "",
   estadoPago: "Pendiente",
   observaciones: "",
@@ -1029,7 +1029,7 @@ function App() {
   });
   const [clientes, setClientes] = useState([]);
   const [loaded, setLoaded] = useState(false);
-  const periodoActualApp = periodoComision(toISO(new Date()));
+  const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
   const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre", "historial"];
   const [tab, setTab] = useState(() => {
     try {
@@ -1042,7 +1042,7 @@ function App() {
   const [origenDetalle, setOrigenDetalle] = useState("clientes");
   // Mes/período que se está viendo en la pestaña Clientes. Vive aquí (y no dentro de
   // ClientesTab) para que no se resetee al período actual cuando entras al detalle
-  // de un cliente y volvés atrás.
+  // de un cliente y vuelves atrás.
   // La vista de Clientes (mes, filtros y orden) también se recuerda al refrescar la
   // página, pero solo durante el mismo día: al día siguiente arranca limpia en el
   // período actual. Se guarda solo en este celular, no en la nube.
@@ -1486,7 +1486,7 @@ function App() {
       tipo: tipoCliente,
       fullTigo: tipoCliente === "fulltigo",
       montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
-      fechaActivacion: fechaActivacion || toISO(new Date()),
+      fechaActivacion: fechaActivacion || fechaLocalISO(new Date()),
       creadoEn: new Date().toISOString(),
     };
     setConvergencias((prev) => [...prev, nueva]);
@@ -1668,7 +1668,7 @@ function App() {
           ? "nombre"
           : "teléfono";
       const continuar = window.confirm(
-        `Ya existe un cliente con el mismo ${campo}: ${duplicado.nombre} (suscriptor ${duplicado.numeroSuscriptor || "—"}).\n\n¿Querés guardar este cliente de todas formas?`
+        `Ya existe un cliente con el mismo ${campo}: ${duplicado.nombre} (suscriptor ${duplicado.numeroSuscriptor || "—"}).\n\n¿Quieres guardar este cliente de todas formas?`
       );
       if (!continuar) return;
     }
@@ -1817,7 +1817,7 @@ function App() {
   // Confirma un rescate del simulador del Dashboard: marca la 1ra factura de cada
   // cliente elegido como pagada (esto ya deja su propio registro en el Historial,
   // como cualquier factura marcada), y además guarda un resumen del rescate en sí
-  // (cuánto pusiste de tu bolsillo y cuánto subió tu comisión), para tener un
+  // (cuánto se cubrió y cuánto subió tu comisión), para tener un
   // registro de si en general te ha convenido usar esto o no.
   function confirmarRescate(periodoKey, clientesSeleccionados, montoInvertido, ganancia) {
     clientesSeleccionados.forEach((c) => {
@@ -1834,7 +1834,7 @@ function App() {
         ganancia,
       },
       cambios: [
-        { campo: "monto", label: "Pusiste de tu bolsillo", anterior: "", nuevo: fmtMonto(montoInvertido) },
+        { campo: "monto", label: "Diferencia cubierta", anterior: "", nuevo: fmtMonto(montoInvertido) },
         { campo: "ganancia", label: "Tu comisión confirmada subió", anterior: "", nuevo: fmtMonto(ganancia) },
         { campo: "clientes", label: "Clientes", anterior: "", nuevo: clientesSeleccionados.map((c) => c.nombre).join(", ") },
       ],
@@ -1868,7 +1868,7 @@ function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `metaforce-respaldo-${toISO(new Date())}.json`;
+    a.download = `metaforce-respaldo-${fechaLocalISO(new Date())}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1893,7 +1893,7 @@ function App() {
           return [...prev, ...nuevos];
         });
       } catch (err) {
-        alert("No se pudo leer el archivo. Verificá que sea un respaldo válido (.json).");
+        alert("No se pudo leer el archivo. Verifica que sea un respaldo válido (.json).");
       }
     };
     reader.readAsText(file);
@@ -2407,7 +2407,7 @@ function SimuladorArpuModal({ arpuActual, clientesActuales, dineroActual, metaAr
           <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
         <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
-          Agregá planes hipotéticos (todavía no vendidos) para ver en cuánto quedarían Clientes, Ingreso, ARPU y tu comisión estimada si los sumaras a lo que ya tenés este período.
+          Agrega planes hipotéticos (todavía no vendidos) para ver en cuánto quedarían Clientes, Ingreso, ARPU y tu comisión estimada si los sumaras a lo que ya tienes este período.
         </p>
 
         <div className="rounded-md p-3 mb-4" style={ { background: "#F4F6FA" } }>
@@ -2619,7 +2619,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
             <div className="text-sm mb-3" style={ { color: "#6B7280" } }>{planLabel(actual.cliente)}</div>
             {ganancia !== null && ganancia > 0 && (
               <div className="text-xs font-medium px-2 py-1 rounded-full inline-block mb-1" style={ { color: "#0F766E", background: "#DCF5F3" } }>
-                💰 Si le pagas tú, tu comisión confirmada sube {fmtMonto(ganancia)}
+                💰 Cubrir la diferencia sube tu comisión confirmada {fmtMonto(ganancia)}
               </div>
             )}
 
@@ -2631,7 +2631,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
               {actual.cliente.numeroSuscriptor || "sin número"}
             </button>
             <div className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
-              {copiedSubKey === actual.cliente.id ? "✓ Copiado" : "Tocá para copiar"}
+              {copiedSubKey === actual.cliente.id ? "✓ Copiado" : "Toca para copiar"}
             </div>
 
             {actual.cliente.telefono && (
@@ -2738,7 +2738,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
 }
 
 function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate }) {
-  const periodoActual = periodoComision(toISO(new Date()));
+  const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   // Período con la ventana de rescate abierta ahora mismo (la más próxima que no ha
   // vencido). La usan tanto el uno-por-uno como el bloque de rescate del Dashboard,
@@ -3124,7 +3124,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return { pctFalta: siguiente.min - pctActual, montoSiguiente: siguiente.monto };
   }, [comisionConfirmadaHoy, esNuevoHoy]);
   // Combinación de menor costo que ya alcanza el máximo posible (el mismo total que
-  // pagando a todos) — para no poner más de tu bolsillo del que hace falta. Se prueban
+  // pagando a todos) — para no cubrir más de lo que hace falta. Se prueban
   // todas las combinaciones porque la lista de candidatos suele ser chica.
   const rescateCombinacionMinima = useMemo(() => {
     if (rescateCandidatos.length === 0 || rescateCandidatos.length > 16) return null;
@@ -3502,7 +3502,7 @@ Early: `;
             <div className="bg-white p-4">
               <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
                 {pendientesHoy.length > 0
-                  ? "Clientes en ventana de riesgo de churn sin pago confirmado — tocá para revisarlos uno por uno."
+                  ? "Clientes en ventana de riesgo de churn sin pago confirmado — toca para revisarlos uno por uno."
                   : `${enRiesgoHoy.length} en ventana de riesgo, ninguno pendiente de revisar por ahora.`}
               </p>
               <button
@@ -3528,7 +3528,7 @@ Early: `;
           } }
           onNoPagoTodavia={marcarRevisadoHoy}
           onDescartar={(clienteId) => {
-            onDescartarCliente(clienteId, toISO(new Date()), "falta_pago");
+            onDescartarCliente(clienteId, fechaLocalISO(new Date()), "falta_pago");
             marcarRevisadoHoy(clienteId);
           } }
           onSaltar={saltarPorAhora}
@@ -3574,8 +3574,7 @@ Early: `;
           {rescateAbierto && (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
               <p className="text-xs mb-2" style={ { color: "#6B7280" } }>
-                Ahora mismo tu comisión confirmada es {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"} (solo lo ya
-                pagado). Marcá a quién le pagarías la diferencia tú y mirá cuánto sube desde ahí.
+                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca a quién cubrir y mira cuánto sube.
               </p>
               {rescateCandidatos.length === 0 ? (
                 <p className="text-sm font-medium" style={ { color: "#0F766E" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
@@ -3659,7 +3658,7 @@ Early: `;
 
               <div className="rounded-md p-3" style={ { background: "#F4F6FA" } }>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#6B7280" } }>Pones de tu bolsillo:</span>
+                  <span style={ { color: "#6B7280" } }>Diferencia a cubrir:</span>
                   <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm mb-1">
@@ -3693,7 +3692,7 @@ Early: `;
                 rescateConfirmando ? (
                   <div className="rounded-md p-3 mt-3" style={ { background: "#DCF5F3" } }>
                     <p className="text-xs font-medium mb-2" style={ { color: "#0F766E" } }>
-                      ¿Confirmas que vas a pagar {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
+                      ¿Confirmas cubrir {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -3750,6 +3749,11 @@ Early: `;
           : definitivo
           ? `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado`
           : `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
+        // Cuando este ciclo es el mismo que el del bloque de rescate de arriba (pasa del
+        // 1 al 5 de cada mes), los dos muestran el mismo número — se oculta este para no
+        // repetir, ya que el de rescate es el más completo (tiene los checkboxes, etc.).
+        // Vuelve a aparecer solo a partir del día 6, cuando cada uno habla de un ciclo distinto.
+        if (cobroMes.periodoCobro === periodoRescateActivo) return null;
         return (
           <div>
             <button
@@ -3920,8 +3924,8 @@ Early: `;
         ) : (
           <p className="text-sm opacity-80">
             {esNuevo
-              ? "Cargá las metas de clientes hogar, clientes móvil e ingresos de este período para ver la comisión estimada."
-              : "Cargá las metas de clientes, dinero y ARPU de este período para ver la comisión estimada."}
+              ? "Carga las metas de clientes hogar, clientes móvil e ingresos de este período para ver la comisión estimada."
+              : "Carga las metas de clientes, dinero y ARPU de este período para ver la comisión estimada."}
           </p>
         )}
       </div>
@@ -3968,7 +3972,7 @@ Early: `;
                   </div>
                 </>
               ) : (
-                <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes hogar de este período.</p>
+                <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes hogar de este período.</p>
               )}
               <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>Peso en el % de clientes: 65%</p>
             </div>
@@ -4004,7 +4008,7 @@ Early: `;
                   </div>
                 </>
               ) : (
-                <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes móvil de este período.</p>
+                <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes móvil de este período.</p>
               )}
               <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
                 Clientes Móvil (Pospago, Convergencia y FULL TIGO) del período · Peso en el % de clientes: 35%
@@ -4043,7 +4047,7 @@ Early: `;
                   </div>
                 </>
               ) : (
-                <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de ingresos de este período.</p>
+                <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de ingresos de este período.</p>
               )}
               <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
                 Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)} · define el acelerador/desacelerador (±10%)
@@ -4091,7 +4095,7 @@ Early: `;
               </div>
             </>
           ) : (
-            <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de clientes de este período.</p>
+            <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes de este período.</p>
           )}
           <LineaProyeccion
             aunEsTemprano={aunEsTemprano}
@@ -4134,7 +4138,7 @@ Early: `;
               </div>
             </>
           ) : (
-            <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de dinero de este período.</p>
+            <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de dinero de este período.</p>
           )}
           <LineaProyeccion
             aunEsTemprano={aunEsTemprano}
@@ -4178,7 +4182,7 @@ Early: `;
               </div>
             </>
           ) : (
-            <p className="text-xs" style={ { color: "#9CA3AF" } }>Cargá la meta de ARPU de este período.</p>
+            <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de ARPU de este período.</p>
           )}
           <button
             type="button"
@@ -4246,7 +4250,7 @@ Early: `;
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
-        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>Tocá o pasá el mouse sobre una barra para ver el detalle y la comparación.</p>
+        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>Toca o pasa el mouse sobre una barra para ver el detalle y la comparación.</p>
 
         <HistorialComisionChart
           data={historialComisiones}
@@ -4571,7 +4575,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
       {alertasHoy.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={ { color: "#6B7280" } }>No tenés alertas pendientes en este momento.</p>
+          <p className="text-sm" style={ { color: "#6B7280" } }>No tienes alertas pendientes en este momento.</p>
         </div>
       ) : alertasFiltradas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
@@ -4612,7 +4616,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                           </button>
                           <button
                             onClick={() => {
-                              if (window.confirm(`¿Confirmás que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
+                              if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
                                 onPagoRealizado(cliente.id, factura.n);
                               }
                             } }
@@ -4657,7 +4661,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                           </a>
                           <button
                             onClick={() => {
-                              if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
+                              if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
                                 onMarcar(cliente.id, milestone.key);
                               }
                             } }
@@ -4696,7 +4700,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                                     </div>
                                     <button
                                       onClick={() => {
-                                        if (window.confirm("¿Confirmás que ya enviaste este mensaje?")) {
+                                        if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
                                           onMarcar(ex.cliente.id, ex.milestone.key);
                                         }
                                       } }
@@ -4754,7 +4758,7 @@ function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose }) 
           <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
         <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
-          Elegí qué columnas ver y usá las flechas para moverlas (también podés arrastrar los encabezados en la tabla).
+          Elige qué columnas ver y usa las flechas para moverlas (también puedes arrastrar los encabezados en la tabla).
         </p>
         <div className="flex flex-col gap-1.5">
           {orden.map((key, i) => {
@@ -4808,8 +4812,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
 
-  // Todos estos filtros viven en App (no acá) para que no se reseteen cuando entrás
-  // al detalle de un cliente y volvés atrás — quedan tal como los dejaste.
+  // Todos estos filtros viven en App (no aquí) para que no se reseteen cuando entras
+  // al detalle de un cliente y vuelves atrás — quedan tal como los dejaste.
   const { modoVerTodos, ordenarPor, ordenDireccion, filtroEstado, filtroInstalacion, filtroPlan, fechaDesde, fechaHasta } = filtrosClientes;
   function hacerSetter(key) {
     return (valOrFn) => {
@@ -5269,7 +5273,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
             </div>
           </div>
 
-          <p className="text-[11px] -mb-1" style={ { color: "#9CA3AF" } }>Tip: tocá el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
+          <p className="text-[11px] -mb-1" style={ { color: "#9CA3AF" } }>Tip: toca el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <FiltroCampo label="Tipo de plan">
@@ -5407,7 +5411,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                         cursor: col.sortable ? "pointer" : "grab",
                         opacity: colArrastrando === key ? 0.4 : 1,
                       } }
-                      title={col.sortable ? "Tocá para ordenar · arrastrá para mover" : "Arrastrá para mover"}
+                      title={col.sortable ? "Toca para ordenar · arrastra para mover" : "Arrastra para mover"}
                     >
                       <span className="inline-flex items-center gap-1">
                         <span style={ { color: "#C7D2E8" } }>⠿</span>
@@ -5508,7 +5512,7 @@ function ClienteDetalle({
   historialCambios,
 }) {
   const [mostrarCancelar, setMostrarCancelar] = useState(false);
-  const [fechaCancel, setFechaCancel] = useState(() => toISO(new Date()));
+  const [fechaCancel, setFechaCancel] = useState(() => fechaLocalISO(new Date()));
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
 
   if (!cliente) {
@@ -5798,9 +5802,9 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [telefono, setTelefono] = useState("");
   const [tipo, setTipo] = useState("pospago");
   const [montoPlan, setMontoPlan] = useState("");
-  const [fechaActivacion, setFechaActivacion] = useState(() => toISO(new Date()));
+  const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
   const [editingId, setEditingId] = useState(null);
-  const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(toISO(new Date())));
+  const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
 
   function handleSubmit(e) {
@@ -5821,7 +5825,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setTelefono("");
     setTipo("pospago");
     setMontoPlan("");
-    setFechaActivacion(toISO(new Date()));
+    setFechaActivacion(fechaLocalISO(new Date()));
     setEditingId(null);
   }
 
@@ -5830,7 +5834,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setTelefono(c.telefono);
     setTipo(tipoClienteMovil(c));
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
-    setFechaActivacion(fechaActivacionMovil(c) || toISO(new Date()));
+    setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
     setEditingId(c.id);
   }
 
@@ -5839,7 +5843,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setTelefono("");
     setTipo("pospago");
     setMontoPlan("");
-    setFechaActivacion(toISO(new Date()));
+    setFechaActivacion(fechaLocalISO(new Date()));
     setEditingId(null);
   }
 
@@ -6189,7 +6193,7 @@ function HistorialTab({ entradas, onDeshacer }) {
 
 function PrecierreTab({ clientes, onIrNuevo }) {
   const [texto, setTexto] = useState("");
-  const hoyISO = toISO(new Date());
+  const hoyISO = fechaLocalISO(new Date());
   const [fechaDesde, setFechaDesde] = useState(() => hoyISO.slice(0, 8) + "01");
   const [fechaHasta, setFechaHasta] = useState(hoyISO);
   const [resultado, setResultado] = useState(null);
@@ -6351,7 +6355,7 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
           resultado.sobrantes.length > 0 ? (
             <div className="flex flex-col gap-2">
               <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
-                Instalados en el rango seleccionado que no aparecen en este precierre. Revisá si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
+                Instalados en el rango seleccionado que no aparecen en este precierre. Revisa si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
               </p>
               {resultado.sobrantes.map((c) => (
                 <div
@@ -6378,7 +6382,7 @@ function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
           resultado.fueraDeRango.length > 0 ? (
             <div className="flex flex-col gap-2">
               <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
-                Están en el precierre y en la app, pero instalados fuera del rango seleccionado. Revisá si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
+                Están en el precierre y en la app, pero instalados fuera del rango seleccionado. Revisa si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
               </p>
               {resultado.fueraDeRango.map((c) => (
                 <div
@@ -6412,7 +6416,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
   const lockedStyle = { borderColor: "#D1D5DB", background: "#F3F4F6", color: "#6B7280", cursor: "not-allowed" };
   const [diasProrrateo, setDiasProrrateo] = useState(null);
 
-  // Aviso en vivo (mientras escribís) si ese N° de suscriptor ya pertenece a otro
+  // Aviso en vivo (mientras escribes) si ese N° de suscriptor ya pertenece a otro
   // cliente — antes esto solo se avisaba al final, al tocar Guardar.
   const suscriptorDuplicado = useMemo(() => {
     const num = (form.numeroSuscriptor || "").trim();
@@ -6514,7 +6518,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                   type="checkbox"
                   checked={!form.fechaInstalacion}
                   onChange={(e) =>
-                    setForm((f) => ({ ...f, fechaInstalacion: e.target.checked ? "" : toISO(new Date()) }))
+                    setForm((f) => ({ ...f, fechaInstalacion: e.target.checked ? "" : fechaLocalISO(new Date()) }))
                   }
                 />
                 Pendiente de instalación (todavía no tiene fecha)
@@ -6688,7 +6692,7 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg p-6 max-w-sm w-full">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-lg">¿Qué querés agregar?</h3>
+          <h3 className="font-semibold text-lg">¿Qué quieres agregar?</h3>
           <button onClick={onClose} className="text-sm" style={ { color: "#6B7280" } }>✕</button>
         </div>
         <div className="flex flex-col gap-2">
