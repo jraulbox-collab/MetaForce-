@@ -3539,14 +3539,14 @@ Early: `;
         />
       )}
       {periodoRescateActivo && (() => {
-        const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2));
+        const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0];
         const hayPendientes = rescateCandidatos.length > 0;
         const colorTexto = !comisionConfirmadaHoy.completo ? "#B8791F" : hayPendientes ? "#B91C1C" : "#0F766E";
         const fondoBanner = !comisionConfirmadaHoy.completo ? "#FBF1DE" : hayPendientes ? "#FBEAEA" : "#DCF5F3";
         const urgente = hayPendientes && rescateDiasRestantes !== null && rescateDiasRestantes <= 3;
         const textoResumen = !comisionConfirmadaHoy.completo
-          ? `🧮 ${mesPago}: faltan metas por cargar`
-          : `🧮 ${mesPago} ${fmtMonto(comisionConfirmadaHoy.total)}${hayPendientes ? " hasta el momento" : " confirmado — todos pagaron"}`;
+          ? `🧮 ${mesPago}: faltan metas`
+          : `🧮 ${mesPago} ${fmtMonto(comisionConfirmadaHoy.total)}${hayPendientes ? "" : " confirmado"}`;
         return (
           <div>
             <button
@@ -3563,10 +3563,10 @@ Early: `;
                 {hayPendientes &&
                   rescateDiasRestantes !== null &&
                   (rescateDiasRestantes <= 0
-                    ? " — ¡vence hoy!"
+                    ? " · hoy"
                     : rescateDiasRestantes <= 3
-                    ? ` (quedan ${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} ⚠️)`
-                    : ` (quedan ${rescateDiasRestantes} días)`)}
+                    ? ` · ${rescateDiasRestantes}d ⚠️`
+                    : ` · ${rescateDiasRestantes}d`)}
               </span>
               <span className="text-xs shrink-0" style={ { color: colorTexto } }>{rescateAbierto ? "▲" : "▼"}</span>
             </button>
@@ -3734,6 +3734,10 @@ Early: `;
 
       {(() => {
         const nombreMes = (k) => (MESES[parseInt(k.split("-")[1], 10) - 1] || "");
+        const nombreMesCap = (k) => {
+          const n = nombreMes(k);
+          return n.charAt(0).toUpperCase() + n.slice(1);
+        };
         const rango = rangoCiclo(cobroMes.periodoCobro);
         const definitivo = cobroMes.nEnPlazo === 0;
         const lineaBono =
@@ -3743,12 +3747,12 @@ Early: `;
         const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B8791F" : definitivo ? "#0F766E" : "#0072CE";
         const fondoLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#FBF1DE" : definitivo ? "#DCF5F3" : "#E3EDFA";
         const resumenLinea = cobroMes.vacio
-          ? `💰 ${nombreMes(periodoActual)}: sin clientes en el ciclo de ${nombreMes(cobroMes.periodoCobro)}`
+          ? `💰 ${nombreMesCap(periodoActual)}: sin clientes en el ciclo de ${nombreMes(cobroMes.periodoCobro)}`
           : !cobroMes.confirmado.completo
-          ? `💰 ${nombreMes(periodoActual)}: falta cargar meta de ${cobroMes.faltantes.join(", ")}`
+          ? `💰 ${nombreMesCap(periodoActual)}: falta cargar meta de ${cobroMes.faltantes.join(", ")}`
           : definitivo
-          ? `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado`
-          : `💰 ${nombreMes(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
+          ? `💰 ${nombreMesCap(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado`
+          : `💰 ${nombreMesCap(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
         // Cuando este ciclo es el mismo que el del bloque de rescate de arriba (pasa del
         // 1 al 5 de cada mes), los dos muestran el mismo número — se oculta este para no
         // repetir, ya que el de rescate es el más completo (tiene los checkboxes, etc.).
