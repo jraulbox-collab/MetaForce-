@@ -6195,6 +6195,28 @@ function HistorialTab({ entradas, onDeshacer }) {
   );
 }
 
+// Copia texto al portapapeles (con respaldo para navegadores que lo bloquean).
+async function copiarTextoPrecierre(texto) {
+  try {
+    await navigator.clipboard.writeText(texto);
+    return true;
+  } catch (e) {
+    try {
+      const ta = document.createElement("textarea");
+      ta.value = texto;
+      ta.style.position = "fixed";
+      ta.style.opacity = "0";
+      document.body.appendChild(ta);
+      ta.select();
+      const ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e2) {
+      return false;
+    }
+  }
+}
+
 function PrecierreTab({ clientes, onIrNuevo }) {
   const [texto, setTexto] = useState("");
   const hoyISO = fechaLocalISO(new Date());
@@ -6202,45 +6224,95 @@ function PrecierreTab({ clientes, onIrNuevo }) {
   const [fechaHasta, setFechaHasta] = useState(hoyISO);
   const [resultado, setResultado] = useState(null);
 
+  // Lee el número de suscriptor de cada línea pegada. Si la línea trae más columnas
+  // (nombre, teléfono, fechas…), toma el número que ya existe en la app y, si ninguno
+  // existe, el primero de 6 o más dígitos. Los teléfonos con guion, fechas y montos
+  // no se confunden con suscriptores porque se parten en trozos cortos.
+  function leerSuscriptores(textoPegado, existentes) {
+    const lineas = textoPegado.split(/\r?\n/).filter((l) => l.trim());
+    const vistos = new Set();
+    const numeros = [];
+    let duplicados = 0;
+    let sinNumero = 0;
+    const agregarNumero = (n) => {
+      if (vistos.has(n)) { duplicados++; return; }
+      vistos.add(n);
+      numeros.push(n);
+    };
+    lineas.forEach((linea) => {
+      const candidatos = (linea.match(/\d+/g) || []).filter((n) => n.length >= 6);
+      if (candidatos.length === 0) { sinNumero++; return; }
+      const soloNumeros = !/[A-Za-zÁ-ÿ]/.test(linea) && !linea.includes("\t");
+      if (soloNumeros) {
+        candidatos.forEach(agregarNumero);
+      } else {
+        agregarNumero(candidatos.find((n) => existentes.has(n)) || candidatos[0]);
+      }
+    });
+    return { numeros, duplicados, sinNumero, lineas: lineas.length };
+  }
+
   function validar() {
-    const numeros = Array.from(new Set((texto.match(/\d+/g) || []).map((n) => n.trim()).filter(Boolean)));
     const existentes = new Set(clientes.map((c) => (c.numeroSuscriptor || "").trim()).filter(Boolean));
-    const faltantes = numeros.filter((n) => !existentes.has(n));
-    const encontrados = numeros.filter((n) => existentes.has(n));
+    const { numeros, duplicados, sinNumero, lineas } = leerSuscriptores(texto, existentes);
 
-    // "Sobrantes": clientes instalados dentro del rango de fechas exacto elegido
-    // cuyo número de suscriptor no aparece en la lista pegada.
-    const instaladosEseRango = clientes.filter(
-      (c) => c.fechaInstalacion && c.fechaInstalacion >= fechaDesde && c.fechaInstalacion <= fechaHasta
-    );
-    const sobrantes = instaladosEseRango.filter(
-      (c) => c.numeroSuscriptor && !numeros.includes(c.numeroSuscriptor.trim())
-    );
-
-    // "Fuera de rango": suscriptores del precierre que SÍ están en la app,
-    // pero cuya fechaInstalacion cae fuera del rango de fechas seleccionado.
     const clientesPorNumero = new Map(
       clientes.filter((c) => c.numeroSuscriptor).map((c) => [c.numeroSuscriptor.trim(), c])
     );
-    const fueraDeRango = encontrados
-      .map((n) => clientesPorNumero.get(n))
-      .filter(
-        (c) => c && c.fechaInstalacion && (c.fechaInstalacion < fechaDesde || c.fechaInstalacion > fechaHasta)
+    const enRango = (c) => !!c.fechaInstalacion && c.fechaInstalacion >= fechaDesde && c.fechaInstalacion <= fechaHasta;
+
+    // 1) En el precierre pero NO en la app -> hay que agregarlos.
+    const agregar = numeros.filter((n) => !clientesPorNumero.has(n));
+
+    // 2) En el precierre Y en la app.
+    const enApp = numeros.filter((n) => clientesPorNumero.has(n)).map((n) => clientesPorNumero.get(n));
+    const coinciden = enApp.filter(enRango);
+    const revisar = enApp
+      .filter((c) => !enRango(c))
+      .map((c) => ({
+        cliente: c,
+        motivo: !c.fechaInstalacion
+          ? "Sin fecha de instalación en la app"
+          : c.fechaInstalacion < fechaDesde
+            ? "Instalado antes del rango"
+            : "Instalado después del rango",
+      }));
+
+    // 3) En la app, instalados dentro del rango, pero NO en el precierre -> reclamar a Tigo.
+    //    Primero los que ya tienen la 1ª factura pagada (esos cuentan para la comisión).
+    const setNumeros = new Set(numeros);
+    const reclamar = clientes
+      .filter((c) => c.numeroSuscriptor && enRango(c) && !setNumeros.has(c.numeroSuscriptor.trim()))
+      .sort(
+        (a, b) =>
+          (b.f1_estado === "pagada" ? 1 : 0) - (a.f1_estado === "pagada" ? 1 : 0) ||
+          (a.fechaInstalacion || "").localeCompare(b.fechaInstalacion || "")
       );
 
-    setResultado({ desde: fechaDesde, hasta: fechaHasta, total: numeros.length, faltantes, encontrados, sobrantes, fueraDeRango });
+    setResultado({
+      desde: fechaDesde,
+      hasta: fechaHasta,
+      total: numeros.length,
+      duplicados,
+      sinNumero,
+      lineas,
+      agregar,
+      coinciden,
+      revisar,
+      reclamar,
+    });
   }
 
   return (
     <div className="max-w-3xl">
       <h1 className="text-2xl font-semibold mb-1">Validar precierre del mes</h1>
       <p className="text-sm mb-6" style={ { color: "#6B7280" } }>
-        Pega aquí los números de suscriptor del archivo de precierre (uno por línea, o como vengan copiados desde Excel). La app detecta cuáles ya están cargados y cuáles faltan.
+        Pega la lista del precierre que te envió Tigo (una fila por línea, tal como la copias desde Excel). La app lee el número de suscriptor de cada fila y te dice qué debes agregar a METAFORCE y qué debes reclamar a Tigo.
       </p>
 
       <div className="mb-4">
         <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>
-          Rango de fechas a verificar
+          Rango de fechas de instalación del precierre
         </label>
         <RangoFechasInput
           desde={fechaDesde}
@@ -6269,146 +6341,198 @@ function PrecierreTab({ clientes, onIrNuevo }) {
       </button>
 
       {resultado && (
-        <div className="mt-6 flex flex-col gap-4">
-          <p className="text-sm font-medium" style={ { color: "#374151" } }>
-            Resultado del precierre del {fmtFecha(resultado.desde)} al {fmtFecha(resultado.hasta)}
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={ { color: "#001E62" } }>{resultado.total}</div>
-              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Suscriptores en el precierre</div>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={ { color: "#0F766E" } }>{resultado.encontrados.length}</div>
-              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Ya cargados en la app</div>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={ { color: "#C23B3B" } }>{resultado.faltantes.length}</div>
-              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Faltan por cargar</div>
-            </div>
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="text-2xl font-mono font-semibold" style={ { color: "#C2761F" } }>{resultado.fueraDeRango.length}</div>
-              <div className="text-xs mt-1" style={ { color: "#6B7280" } }>Fuera de rango</div>
-            </div>
-          </div>
-
-          <ResultadoPrecierreTabs resultado={resultado} onIrNuevo={onIrNuevo} />
+        <div className="mt-6">
+          <ResultadoPrecierre resultado={resultado} onIrNuevo={onIrNuevo} />
         </div>
       )}
     </div>
   );
 }
 
-function ResultadoPrecierreTabs({ resultado, onIrNuevo }) {
-  const subtabs = [
-    { key: "faltantes", label: "Faltantes", count: resultado.faltantes.length, color: "#C23B3B" },
-    { key: "sobrantes", label: "Sobrantes", count: resultado.sobrantes.length, color: "#B8791F" },
-    { key: "fueraDeRango", label: "Fuera de rango", count: resultado.fueraDeRango.length, color: "#C2761F" },
-  ];
-  const [subtab, setSubtab] = useState("faltantes");
+function ResultadoPrecierre({ resultado, onIrNuevo }) {
+  const { agregar, reclamar, revisar, coinciden } = resultado;
+  const [copiado, setCopiado] = useState(false);
+  const pendientes = agregar.length + reclamar.length + revisar.length;
+
+  async function copiarReclamo() {
+    const lineas = reclamar.map(
+      (c) => `${c.numeroSuscriptor} · ${c.nombre || "Sin nombre"} · instalado ${fmtFecha(c.fechaInstalacion)}`
+    );
+    const encabezado = `Suscriptores instalados del ${fmtFecha(resultado.desde)} al ${fmtFecha(resultado.hasta)} que no aparecen en el precierre:`;
+    const ok = await copiarTextoPrecierre([encabezado, ...lineas].join("\n"));
+    if (ok) {
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    }
+  }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm">
-      <div className="flex border-b border-gray-200">
-        {subtabs.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setSubtab(t.key)}
-            className="flex-1 text-sm font-medium px-4 py-3 text-center"
-            style={ {
-              color: subtab === t.key ? t.color : "#6B7280",
-              borderBottom: subtab === t.key ? `2px solid ${t.color}` : "2px solid transparent",
-              background: subtab === t.key ? "#F9FAFB" : "transparent",
-            } }
-          >
-            {t.label} ({t.count})
-          </button>
-        ))}
+    <div className="flex flex-col gap-4">
+      {/* Veredicto */}
+      <div
+        className="rounded-lg border p-4"
+        style={ pendientes === 0
+          ? { borderColor: "#B7E0DA", background: "#EAF6F4" }
+          : { borderColor: "#F3E3C3", background: "#FFFBF2" } }
+      >
+        <p className="text-sm font-semibold" style={ { color: pendientes === 0 ? "#0F766E" : "#7A4E0E" } }>
+          {pendientes === 0
+            ? "✅ Todo cuadra: tu app y el precierre de Tigo coinciden."
+            : `Tienes ${pendientes} ${pendientes === 1 ? "cosa" : "cosas"} por resolver antes de dar el precierre por bueno.`}
+        </p>
+        <p className="text-sm mt-1" style={ { color: "#374151" } }>
+          Tigo reporta <b>{resultado.total}</b> suscriptores del {fmtFecha(resultado.desde)} al {fmtFecha(resultado.hasta)}.{" "}
+          <b>{coinciden.length}</b> coinciden con tu app
+          {agregar.length > 0 && <>, <b>{agregar.length}</b> debes agregarlos a tu app</>}
+          {reclamar.length > 0 && <>, <b>{reclamar.length}</b> debes reclamarlos a Tigo</>}
+          {revisar.length > 0 && <>, <b>{revisar.length}</b> debes revisarlos</>}
+          .
+        </p>
+        {(resultado.duplicados > 0 || resultado.sinNumero > 0) && (
+          <p className="text-xs mt-2" style={ { color: "#6B7280" } }>
+            Lectura: {resultado.lineas} {resultado.lineas === 1 ? "línea" : "líneas"} pegadas
+            {resultado.duplicados > 0 && ` · ${resultado.duplicados} repetidas se contaron una sola vez`}
+            {resultado.sinNumero > 0 && ` · ${resultado.sinNumero} sin número de suscriptor se ignoraron`}
+          </p>
+        )}
       </div>
 
-      <div className="p-5">
-        {subtab === "faltantes" && (
-          resultado.faltantes.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
-                ⚠️ Suscriptores del precierre que no están en la app.
-              </p>
-              {resultado.faltantes.map((n) => (
-                <div
-                  key={n}
-                  className="flex items-center justify-between rounded-md border p-3"
-                  style={ { borderColor: "#F3C6C6", background: "#FBEAEA" } }
+      {/* Agregar a mi app */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+        <h2 className="text-base font-semibold mb-0.5" style={ { color: "#C23B3B" } }>
+          Agregar a mi app ({agregar.length})
+        </h2>
+        <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+          Están en el precierre de Tigo pero no en METAFORCE. Te falta cargarlos.
+        </p>
+        {agregar.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {agregar.map((n) => (
+              <div
+                key={n}
+                className="flex items-center justify-between rounded-md border p-3"
+                style={ { borderColor: "#F3C6C6", background: "#FBEAEA" } }
+              >
+                <span className="font-mono text-sm">{n}</span>
+                <button
+                  onClick={() => onIrNuevo(n)}
+                  className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                  style={ { background: "#001E62" } }
                 >
-                  <span className="font-mono text-sm">{n}</span>
-                  <button
-                    onClick={() => onIrNuevo(n)}
-                    className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                    style={ { background: "#001E62" } }
-                  >
-                    + Agregar cliente
-                  </button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-center" style={ { color: "#0F766E" } }>✅ Todos los suscriptores del precierre ya están cargados en la app.</p>
-          )
+                  + Agregar cliente
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm" style={ { color: "#0F766E" } }>✅ No te falta cargar ninguno.</p>
         )}
+      </div>
 
-        {subtab === "sobrantes" && (
-          resultado.sobrantes.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
-                Instalados en el rango seleccionado que no aparecen en este precierre. Revisa si corresponde alguna baja o si falta que Tigo los actualice en su sistema.
-              </p>
-              {resultado.sobrantes.map((c) => (
+      {/* Reclamar a Tigo */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+        <div className="flex items-start justify-between gap-3 mb-3">
+          <div>
+            <h2 className="text-base font-semibold mb-0.5" style={ { color: "#B8791F" } }>
+              Reclamar a Tigo ({reclamar.length})
+            </h2>
+            <p className="text-xs" style={ { color: "#6B7280" } }>
+              Están en tu app, instalados dentro del rango, pero Tigo no los incluyó en el precierre. Primero van los que ya tienen la 1ª factura pagada, porque esos cuentan para tu comisión.
+            </p>
+          </div>
+          {reclamar.length > 0 && (
+            <button
+              onClick={copiarReclamo}
+              className="text-xs font-medium px-3 py-1.5 rounded-md shrink-0"
+              style={ { color: "#001E62", border: "1px solid #D1D5DB" } }
+            >
+              {copiado ? "✓ Copiado" : "Copiar lista"}
+            </button>
+          )}
+        </div>
+        {reclamar.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {reclamar.map((c) => {
+              const pagada = c.f1_estado === "pagada";
+              return (
                 <div
                   key={c.id}
-                  className="flex items-center justify-between rounded-md border p-3"
+                  className="flex items-center justify-between gap-3 rounded-md border p-3"
                   style={ { borderColor: "#F3E3C3", background: "#FFFBF2" } }
                 >
-                  <div>
+                  <div className="min-w-0">
                     <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                    <div className="text-xs" style={ { color: "#6B7280" } }>{c.nombre}</div>
+                    <div className="text-xs truncate" style={ { color: "#6B7280" } }>{c.nombre}</div>
                   </div>
-                  <span className="text-xs font-mono" style={ { color: "#B8791F" } }>
-                    Instalado: {fmtFecha(c.fechaInstalacion)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-center" style={ { color: "#0F766E" } }>✅ No hay sobrantes en el rango seleccionado.</p>
-          )
-        )}
-
-        {subtab === "fueraDeRango" && (
-          resultado.fueraDeRango.length > 0 ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs mb-1" style={ { color: "#6B7280" } }>
-                Están en el precierre y en la app, pero instalados fuera del rango seleccionado. Revisa si el rango de fechas es correcto o si la fecha de instalación cargada en la app está mal.
-              </p>
-              {resultado.fueraDeRango.map((c) => (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between rounded-md border p-3"
-                  style={ { borderColor: "#F5D9B8", background: "#FFF6EC" } }
-                >
-                  <div>
-                    <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                    <div className="text-xs" style={ { color: "#6B7280" } }>{c.nombre}</div>
+                  <div className="text-right shrink-0">
+                    <div className="text-xs font-mono" style={ { color: "#B8791F" } }>
+                      Instalado: {fmtFecha(c.fechaInstalacion)}
+                    </div>
+                    <div className="text-xs font-medium" style={ { color: pagada ? "#0F766E" : "#6B7280" } }>
+                      {pagada ? "1ª factura pagada" : "1ª factura sin pagar"}
+                    </div>
                   </div>
-                  <span className="text-xs font-mono" style={ { color: "#C2761F" } }>
-                    Instalado: {fmtFecha(c.fechaInstalacion)}
-                  </span>
                 </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-center" style={ { color: "#0F766E" } }>✅ Ninguno fuera de rango.</p>
-          )
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-sm" style={ { color: "#0F766E" } }>✅ Tigo incluyó todos tus instalados del rango.</p>
         )}
       </div>
+
+      {/* Revisar */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+        <h2 className="text-base font-semibold mb-0.5" style={ { color: "#C2761F" } }>
+          Revisar ({revisar.length})
+        </h2>
+        <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+          Están en el precierre y en tu app, pero la fecha de instalación no cae en el rango. Revisa si el rango es correcto o si la fecha cargada en la app está mal.
+        </p>
+        {revisar.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            {revisar.map(({ cliente: c, motivo }) => (
+              <div
+                key={c.id}
+                className="flex items-center justify-between gap-3 rounded-md border p-3"
+                style={ { borderColor: "#F5D9B8", background: "#FFF6EC" } }
+              >
+                <div className="min-w-0">
+                  <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
+                  <div className="text-xs truncate" style={ { color: "#6B7280" } }>{c.nombre}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-xs font-mono" style={ { color: "#C2761F" } }>
+                    {c.fechaInstalacion ? `Instalado: ${fmtFecha(c.fechaInstalacion)}` : "Sin fecha"}
+                  </div>
+                  <div className="text-xs" style={ { color: "#6B7280" } }>{motivo}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm" style={ { color: "#0F766E" } }>✅ Ninguno por revisar.</p>
+        )}
+      </div>
+
+      {/* Coincidencias (plegado) */}
+      <details className="bg-white rounded-lg border border-gray-200 shadow-sm">
+        <summary className="cursor-pointer text-sm font-medium px-5 py-3" style={ { color: "#0F766E" } }>
+          Coinciden con Tigo ({coinciden.length})
+        </summary>
+        <div className="px-5 pb-4 flex flex-col gap-1">
+          {coinciden.length === 0 && (
+            <p className="text-xs" style={ { color: "#6B7280" } }>Ninguno todavía.</p>
+          )}
+          {coinciden.map((c) => (
+            <div key={c.id} className="flex items-center justify-between gap-3 text-xs py-1 border-b border-gray-100 last:border-0">
+              <span className="font-mono">{c.numeroSuscriptor}</span>
+              <span className="truncate flex-1 text-right" style={ { color: "#6B7280" } }>{c.nombre}</span>
+              <span className="font-mono shrink-0" style={ { color: "#6B7280" } }>{fmtFecha(c.fechaInstalacion)}</span>
+            </div>
+          ))}
+        </div>
+      </details>
     </div>
   );
 }
