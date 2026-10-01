@@ -1040,6 +1040,20 @@ function App() {
     }
   });
   const [origenDetalle, setOrigenDetalle] = useState("clientes");
+  // Precierre: lo pegado y el rango viven aquí (no dentro de la pestaña) para que no
+  // se pierdan al cambiar de pestaña, y se guardan en este celular.
+  const [precierre, setPrecierre] = useState(leerPrecierreGuardado);
+  useEffect(() => {
+    try {
+      localStorage.setItem(PRECIERRE_KEY, JSON.stringify(precierre));
+    } catch (e) {}
+  }, [precierre]);
+  // De dónde se abrió el formulario de cliente, para volver a la misma pantalla al
+  // guardar o cancelar (por ejemplo, volver al Precierre después de agregar un cliente).
+  const [origenFormulario, setOrigenFormulario] = useState("clientes");
+  useEffect(() => {
+    if (tab !== "nuevo") setOrigenFormulario("clientes");
+  }, [tab]);
   // Mes/período que se está viendo en la pestaña Clientes. Vive aquí (y no dentro de
   // ClientesTab) para que no se resetee al período actual cuando entras al detalle
   // de un cliente y vuelves atrás.
@@ -1428,7 +1442,13 @@ function App() {
   function irANuevoConSuscriptor(numero) {
     setForm({ ...emptyForm(), numeroSuscriptor: numero });
     setEditingId(null);
+    setOrigenFormulario("precierre");
     setTab("nuevo");
+  }
+
+  function abrirClienteDesdePrecierre(c) {
+    setOrigenFormulario("precierre");
+    startEdit(c);
   }
 
   function cambiarUmbralProrrateo(nuevoValor) {
@@ -1686,7 +1706,7 @@ function App() {
       registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
     resetForm();
-    setTab("clientes");
+    setTab(origenFormulario === "precierre" ? "precierre" : "clientes");
   }
 
   function startEdit(c) {
@@ -2222,7 +2242,13 @@ function App() {
           />
         )}
         {tab === "precierre" && (
-          <PrecierreTab clientes={clientesCalc} onIrNuevo={irANuevoConSuscriptor} />
+          <PrecierreTab
+            clientes={clientesCalc}
+            estado={precierre}
+            setEstado={setPrecierre}
+            onIrNuevo={irANuevoConSuscriptor}
+            onAbrirCliente={abrirClienteDesdePrecierre}
+          />
         )}
         {tab === "historial" && (
           <HistorialTab entradas={historialCambios} onDeshacer={deshacerCambio} />
@@ -2237,7 +2263,7 @@ function App() {
             clientes={clientesCalc}
             onCancel={() => {
               resetForm();
-              setTab("clientes");
+              setTab(origenFormulario === "precierre" ? "precierre" : "clientes");
             } }
           />
         )}
@@ -6217,142 +6243,235 @@ async function copiarTextoPrecierre(texto) {
   }
 }
 
-function PrecierreTab({ clientes, onIrNuevo }) {
-  const [texto, setTexto] = useState("");
-  const hoyISO = fechaLocalISO(new Date());
-  const [fechaDesde, setFechaDesde] = useState(() => hoyISO.slice(0, 8) + "01");
-  const [fechaHasta, setFechaHasta] = useState(hoyISO);
-  const [resultado, setResultado] = useState(null);
-
-  // Lee el número de suscriptor de cada línea pegada. Si la línea trae más columnas
-  // (nombre, teléfono, fechas…), toma el número que ya existe en la app y, si ninguno
-  // existe, el primero de 6 o más dígitos. Los teléfonos con guion, fechas y montos
-  // no se confunden con suscriptores porque se parten en trozos cortos.
-  function leerSuscriptores(textoPegado, existentes) {
-    const lineas = textoPegado.split(/\r?\n/).filter((l) => l.trim());
-    const vistos = new Set();
-    const numeros = [];
-    let duplicados = 0;
-    let sinNumero = 0;
-    const agregarNumero = (n) => {
-      if (vistos.has(n)) { duplicados++; return; }
-      vistos.add(n);
-      numeros.push(n);
+// Lo pegado y el rango del precierre se guardan en este celular para que no se
+// pierdan al cambiar de pestaña o refrescar. Se borran con "Limpiar".
+const PRECIERRE_KEY = "antichurn_precierre";
+function leerPrecierreGuardado() {
+  const hoy = fechaLocalISO(new Date());
+  const base = { texto: "", desde: hoy.slice(0, 8) + "01", hasta: hoy, aplicado: null };
+  try {
+    const raw = localStorage.getItem(PRECIERRE_KEY);
+    if (!raw) return base;
+    const g = JSON.parse(raw);
+    return {
+      texto: typeof g.texto === "string" ? g.texto : "",
+      desde: g.desde || base.desde,
+      hasta: g.hasta || base.hasta,
+      aplicado: g.aplicado && typeof g.aplicado.texto === "string" ? g.aplicado : null,
     };
-    lineas.forEach((linea) => {
-      const candidatos = (linea.match(/\d+/g) || []).filter((n) => n.length >= 6);
-      if (candidatos.length === 0) { sinNumero++; return; }
-      const soloNumeros = !/[A-Za-zÁ-ÿ]/.test(linea) && !linea.includes("\t");
-      if (soloNumeros) {
-        candidatos.forEach(agregarNumero);
-      } else {
-        agregarNumero(candidatos.find((n) => existentes.has(n)) || candidatos[0]);
-      }
-    });
-    return { numeros, duplicados, sinNumero, lineas: lineas.length };
+  } catch (e) {
+    return base;
   }
+}
+
+// Lee el número de suscriptor de cada línea pegada. Si la línea trae más columnas
+// (nombre, teléfono, fechas…), toma el número que ya existe en la app y, si ninguno
+// existe, el primero de 6 o más dígitos. Los teléfonos con guion, fechas y montos
+// no se confunden con suscriptores porque se parten en trozos cortos.
+function leerSuscriptoresPrecierre(textoPegado, existentes) {
+  const lineas = textoPegado.split(/\r?\n/).filter((l) => l.trim());
+  const vistos = new Set();
+  const numeros = [];
+  let duplicados = 0;
+  let sinNumero = 0;
+  const agregarNumero = (n) => {
+    if (vistos.has(n)) { duplicados++; return; }
+    vistos.add(n);
+    numeros.push(n);
+  };
+  lineas.forEach((linea) => {
+    const candidatos = (linea.match(/\d+/g) || []).filter((n) => n.length >= 6);
+    if (candidatos.length === 0) { sinNumero++; return; }
+    const soloNumeros = !/[A-Za-zÁ-ÿ]/.test(linea) && !linea.includes("\t");
+    if (soloNumeros) {
+      candidatos.forEach(agregarNumero);
+    } else {
+      agregarNumero(candidatos.find((n) => existentes.has(n)) || candidatos[0]);
+    }
+  });
+  return { numeros, duplicados, sinNumero, lineas: lineas.length };
+}
+
+// Compara el precierre pegado contra los clientes de la app. Es una función pura:
+// se recalcula sola cada vez que cambian los clientes (por ejemplo, al agregar uno).
+function calcularPrecierre(clientes, textoPegado, desde, hasta) {
+  const existentes = new Set(clientes.map((c) => (c.numeroSuscriptor || "").trim()).filter(Boolean));
+  const { numeros, duplicados, sinNumero, lineas } = leerSuscriptoresPrecierre(textoPegado, existentes);
+
+  const clientesPorNumero = new Map(
+    clientes.filter((c) => c.numeroSuscriptor).map((c) => [c.numeroSuscriptor.trim(), c])
+  );
+  const enRango = (c) => !!c.fechaInstalacion && c.fechaInstalacion >= desde && c.fechaInstalacion <= hasta;
+
+  // En el precierre pero NO en la app -> hay que agregarlos.
+  const agregar = numeros.filter((n) => !clientesPorNumero.has(n));
+
+  // En el precierre Y en la app.
+  const enApp = numeros.filter((n) => clientesPorNumero.has(n)).map((n) => clientesPorNumero.get(n));
+  const coinciden = enApp.filter(enRango);
+  const revisar = enApp
+    .filter((c) => !enRango(c))
+    .map((c) => ({
+      cliente: c,
+      motivo: !c.fechaInstalacion
+        ? "Sin fecha de instalación"
+        : c.fechaInstalacion < desde
+          ? "Instalado antes del rango"
+          : "Instalado después del rango",
+    }));
+
+  // En la app, instalados dentro del rango, pero NO en el precierre -> reclamar a Tigo.
+  // Primero los que ya tienen la 1ª factura pagada (esos cuentan para la comisión).
+  const setNumeros = new Set(numeros);
+  const reclamar = clientes
+    .filter((c) => c.numeroSuscriptor && enRango(c) && !setNumeros.has(c.numeroSuscriptor.trim()))
+    .sort(
+      (a, b) =>
+        (b.f1_estado === "pagada" ? 1 : 0) - (a.f1_estado === "pagada" ? 1 : 0) ||
+        (a.fechaInstalacion || "").localeCompare(b.fechaInstalacion || "")
+    );
+
+  return { desde, hasta, total: numeros.length, duplicados, sinNumero, lineas, agregar, coinciden, revisar, reclamar };
+}
+
+function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente }) {
+  const [editando, setEditando] = useState(!estado.aplicado);
+  const resultado = useMemo(
+    () => (estado.aplicado ? calcularPrecierre(clientes, estado.aplicado.texto, estado.aplicado.desde, estado.aplicado.hasta) : null),
+    [clientes, estado.aplicado]
+  );
 
   function validar() {
-    const existentes = new Set(clientes.map((c) => (c.numeroSuscriptor || "").trim()).filter(Boolean));
-    const { numeros, duplicados, sinNumero, lineas } = leerSuscriptores(texto, existentes);
-
-    const clientesPorNumero = new Map(
-      clientes.filter((c) => c.numeroSuscriptor).map((c) => [c.numeroSuscriptor.trim(), c])
-    );
-    const enRango = (c) => !!c.fechaInstalacion && c.fechaInstalacion >= fechaDesde && c.fechaInstalacion <= fechaHasta;
-
-    // 1) En el precierre pero NO en la app -> hay que agregarlos.
-    const agregar = numeros.filter((n) => !clientesPorNumero.has(n));
-
-    // 2) En el precierre Y en la app.
-    const enApp = numeros.filter((n) => clientesPorNumero.has(n)).map((n) => clientesPorNumero.get(n));
-    const coinciden = enApp.filter(enRango);
-    const revisar = enApp
-      .filter((c) => !enRango(c))
-      .map((c) => ({
-        cliente: c,
-        motivo: !c.fechaInstalacion
-          ? "Sin fecha de instalación en la app"
-          : c.fechaInstalacion < fechaDesde
-            ? "Instalado antes del rango"
-            : "Instalado después del rango",
-      }));
-
-    // 3) En la app, instalados dentro del rango, pero NO en el precierre -> reclamar a Tigo.
-    //    Primero los que ya tienen la 1ª factura pagada (esos cuentan para la comisión).
-    const setNumeros = new Set(numeros);
-    const reclamar = clientes
-      .filter((c) => c.numeroSuscriptor && enRango(c) && !setNumeros.has(c.numeroSuscriptor.trim()))
-      .sort(
-        (a, b) =>
-          (b.f1_estado === "pagada" ? 1 : 0) - (a.f1_estado === "pagada" ? 1 : 0) ||
-          (a.fechaInstalacion || "").localeCompare(b.fechaInstalacion || "")
-      );
-
-    setResultado({
-      desde: fechaDesde,
-      hasta: fechaHasta,
-      total: numeros.length,
-      duplicados,
-      sinNumero,
-      lineas,
-      agregar,
-      coinciden,
-      revisar,
-      reclamar,
-    });
+    setEstado((e) => ({ ...e, aplicado: { texto: e.texto, desde: e.desde, hasta: e.hasta } }));
+    setEditando(false);
+  }
+  function limpiar() {
+    setEstado((e) => ({ ...e, texto: "", aplicado: null }));
+    setEditando(true);
   }
 
   return (
     <div className="max-w-3xl">
-      <h1 className="text-2xl font-semibold mb-1">Validar precierre del mes</h1>
-      <p className="text-sm mb-6" style={ { color: "#6B7280" } }>
-        Pega la lista del precierre que te envió Tigo (una fila por línea, tal como la copias desde Excel). La app lee el número de suscriptor de cada fila y te dice qué debes agregar a METAFORCE y qué debes reclamar a Tigo.
+      <h1 className="text-2xl font-semibold mb-1">Validar precierre</h1>
+      <p className="text-sm mb-4" style={ { color: "#6B7280" } }>
+        Pega la lista que te envió Tigo, una fila por línea.
       </p>
 
-      <div className="mb-4">
-        <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>
-          Rango de fechas de instalación del precierre
-        </label>
-        <RangoFechasInput
-          desde={fechaDesde}
-          hasta={fechaHasta}
-          onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } }
-          className="px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"
-          style={ { borderColor: "#D1D5DB", minWidth: "220px" } }
-        />
-      </div>
-
-      <textarea
-        value={texto}
-        onChange={(e) => setTexto(e.target.value)}
-        rows={10}
-        placeholder="Pega aquí la lista de suscriptores del precierre…"
-        className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 font-mono"
-        style={ { borderColor: "#D1D5DB" } }
-      />
-      <button
-        onClick={validar}
-        disabled={!texto.trim()}
-        className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
-        style={ { background: "#001E62" } }
-      >
-        Validar precierre
-      </button>
-
-      {resultado && (
-        <div className="mt-6">
-          <ResultadoPrecierre resultado={resultado} onIrNuevo={onIrNuevo} />
+      {editando ? (
+        <div className="mb-4">
+          <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>
+            Rango de instalación del precierre
+          </label>
+          <div className="mb-3">
+            <RangoFechasInput
+              desde={estado.desde}
+              hasta={estado.hasta}
+              onChange={(d, h) => setEstado((e) => ({ ...e, desde: d, hasta: h })) }
+              className="px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"
+              style={ { borderColor: "#D1D5DB", minWidth: "220px" } }
+            />
+          </div>
+          <textarea
+            value={estado.texto}
+            onChange={(e) => { const v = e.target.value; setEstado((s) => ({ ...s, texto: v })); } }
+            rows={8}
+            placeholder="Pega aquí la lista de suscriptores del precierre…"
+            className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 font-mono"
+            style={ { borderColor: "#D1D5DB" } }
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={validar}
+              disabled={!estado.texto.trim()}
+              className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
+              style={ { background: "#001E62" } }
+            >
+              Validar precierre
+            </button>
+            {estado.aplicado && (
+              <button
+                onClick={() => setEditando(false)}
+                className="text-sm font-medium px-3 py-2 rounded-md"
+                style={ { color: "#6B7280", border: "1px solid #D1D5DB" } }
+              >
+                Cancelar
+              </button>
+            )}
+          </div>
         </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 mb-4">
+          <span className="text-xs min-w-0 truncate" style={ { color: "#6B7280" } }>
+            {resultado ? resultado.lineas : 0} filas · {fmtFecha(estado.aplicado.desde)} al {fmtFecha(estado.aplicado.hasta)}
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => setEditando(true)}
+              className="text-xs font-medium px-2.5 py-1 rounded-md"
+              style={ { color: "#001E62", border: "1px solid #D1D5DB" } }
+            >
+              Editar
+            </button>
+            <button
+              onClick={limpiar}
+              className="text-xs font-medium px-2.5 py-1 rounded-md"
+              style={ { color: "#C23B3B", border: "1px solid #D1D5DB" } }
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!editando && resultado && (
+        <ResultadoPrecierre resultado={resultado} onIrNuevo={onIrNuevo} onAbrirCliente={onAbrirCliente} />
       )}
     </div>
   );
 }
 
-function ResultadoPrecierre({ resultado, onIrNuevo }) {
+const GRUPOS_PRECIERRE = [
+  { key: "agregar", label: "Agregar a mi app", pista: "Están en Tigo, no en tu app.", color: "#C23B3B", bg: "#FBEAEA", borde: "#F3C6C6" },
+  { key: "reclamar", label: "Reclamar a Tigo", pista: "Están en tu app, no en Tigo.", color: "#B8791F", bg: "#FFFBF2", borde: "#F3E3C3" },
+  { key: "revisar", label: "Revisar", pista: "Fecha de instalación fuera del rango.", color: "#C2761F", bg: "#FFF6EC", borde: "#F5D9B8" },
+  { key: "coinciden", label: "Coinciden", pista: "Todo en orden.", color: "#0F766E", bg: "#EAF6F4", borde: "#B7E0DA" },
+];
+
+function FilaPrecierre({ color, numero, nombre, sub, derecha, onClick, children }) {
+  const clicable = typeof onClick === "function";
+  return (
+    <div
+      role={clicable ? "button" : undefined}
+      tabIndex={clicable ? 0 : undefined}
+      onClick={clicable ? onClick : undefined}
+      onKeyDown={clicable ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
+      className={`flex items-center gap-2.5 py-2.5 border-b border-gray-100 last:border-0 ${clicable ? "cursor-pointer active:bg-gray-50" : ""}`}
+    >
+      <span className="shrink-0 rounded-full" style={ { width: 8, height: 8, background: color } } />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-sm font-medium">{numero}</span>
+          {nombre && <span className="text-xs truncate" style={ { color: "#6B7280" } }>{nombre}</span>}
+        </div>
+        {sub && <div className="text-xs" style={ { color: "#6B7280" } }>{sub}</div>}
+      </div>
+      {derecha}
+      {children}
+      {clicable && <span className="text-gray-300 text-lg leading-none" aria-hidden="true">›</span>}
+    </div>
+  );
+}
+
+function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
   const { agregar, reclamar, revisar, coinciden } = resultado;
+  const conteos = { agregar: agregar.length, reclamar: reclamar.length, revisar: revisar.length, coinciden: coinciden.length };
+  const pendientes = conteos.agregar + conteos.reclamar + conteos.revisar;
+  const primeroConPendientes = ["agregar", "reclamar", "revisar"].find((k) => conteos[k] > 0) || "coinciden";
+  const [grupo, setGrupo] = useState(primeroConPendientes);
+  const [verTodas, setVerTodas] = useState(false);
   const [copiado, setCopiado] = useState(false);
-  const pendientes = agregar.length + reclamar.length + revisar.length;
+  const g = GRUPOS_PRECIERRE.find((x) => x.key === grupo);
+  const LIMITE_COINCIDEN = 8;
 
   async function copiarReclamo() {
     const lineas = reclamar.map(
@@ -6366,173 +6485,161 @@ function ResultadoPrecierre({ resultado, onIrNuevo }) {
     }
   }
 
+  if (resultado.total === 0) {
+    return (
+      <p className="text-sm rounded-lg border p-4" style={ { borderColor: "#F3E3C3", background: "#FFFBF2", color: "#7A4E0E" } }>
+        No encontré números de suscriptor en lo que pegaste. Revisa que cada fila lo incluya.
+      </p>
+    );
+  }
+
+  const barra = ["coinciden", "agregar", "reclamar", "revisar"].filter((k) => conteos[k] > 0);
+
   return (
-    <div className="flex flex-col gap-4">
-      {/* Veredicto */}
-      <div
-        className="rounded-lg border p-4"
-        style={ pendientes === 0
-          ? { borderColor: "#B7E0DA", background: "#EAF6F4" }
-          : { borderColor: "#F3E3C3", background: "#FFFBF2" } }
-      >
-        <p className="text-sm font-semibold" style={ { color: pendientes === 0 ? "#0F766E" : "#7A4E0E" } }>
-          {pendientes === 0
-            ? "✅ Todo cuadra: tu app y el precierre de Tigo coinciden."
-            : `Tienes ${pendientes} ${pendientes === 1 ? "cosa" : "cosas"} por resolver antes de dar el precierre por bueno.`}
-        </p>
-        <p className="text-sm mt-1" style={ { color: "#374151" } }>
-          Tigo reporta <b>{resultado.total}</b> suscriptores del {fmtFecha(resultado.desde)} al {fmtFecha(resultado.hasta)}.{" "}
-          <b>{coinciden.length}</b> coinciden con tu app
-          {agregar.length > 0 && <>, <b>{agregar.length}</b> debes agregarlos a tu app</>}
-          {reclamar.length > 0 && <>, <b>{reclamar.length}</b> debes reclamarlos a Tigo</>}
-          {revisar.length > 0 && <>, <b>{revisar.length}</b> debes revisarlos</>}
-          .
-        </p>
+    <div className="flex flex-col gap-3">
+      {/* Resumen: barra de proporciones */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+        <div className="flex items-baseline justify-between gap-2 mb-2">
+          <span className="text-sm font-semibold" style={ { color: pendientes === 0 ? "#0F766E" : "#374151" } }>
+            {pendientes === 0
+              ? "✅ Todo cuadra"
+              : `${pendientes} ${pendientes === 1 ? "cosa por resolver" : "cosas por resolver"}`}
+          </span>
+          <span className="text-xs" style={ { color: "#6B7280" } }>Tigo: {resultado.total}</span>
+        </div>
+        <div className="flex gap-0.5 overflow-hidden rounded-full" style={ { height: 12 } }>
+          {barra.map((k) => (
+            <div key={k} style={ { flex: conteos[k], background: GRUPOS_PRECIERRE.find((x) => x.key === k).color } } />
+          ))}
+        </div>
         {(resultado.duplicados > 0 || resultado.sinNumero > 0) && (
           <p className="text-xs mt-2" style={ { color: "#6B7280" } }>
-            Lectura: {resultado.lineas} {resultado.lineas === 1 ? "línea" : "líneas"} pegadas
-            {resultado.duplicados > 0 && ` · ${resultado.duplicados} repetidas se contaron una sola vez`}
-            {resultado.sinNumero > 0 && ` · ${resultado.sinNumero} sin número de suscriptor se ignoraron`}
+            {resultado.duplicados > 0 && `${resultado.duplicados} repetidas se contaron una vez`}
+            {resultado.duplicados > 0 && resultado.sinNumero > 0 && " · "}
+            {resultado.sinNumero > 0 && `${resultado.sinNumero} sin número se ignoraron`}
           </p>
         )}
       </div>
 
-      {/* Agregar a mi app */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-        <h2 className="text-base font-semibold mb-0.5" style={ { color: "#C23B3B" } }>
-          Agregar a mi app ({agregar.length})
-        </h2>
-        <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
-          Están en el precierre de Tigo pero no en METAFORCE. Te falta cargarlos.
-        </p>
-        {agregar.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {agregar.map((n) => (
-              <div
-                key={n}
-                className="flex items-center justify-between rounded-md border p-3"
-                style={ { borderColor: "#F3C6C6", background: "#FBEAEA" } }
-              >
-                <span className="font-mono text-sm">{n}</span>
-                <button
-                  onClick={() => onIrNuevo(n)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                  style={ { background: "#001E62" } }
-                >
-                  + Agregar cliente
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm" style={ { color: "#0F766E" } }>✅ No te falta cargar ninguno.</p>
-        )}
+      {/* Grupos tocables */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {GRUPOS_PRECIERRE.map((x) => {
+          const activo = grupo === x.key;
+          return (
+            <button
+              key={x.key}
+              onClick={() => { setGrupo(x.key); setVerTodas(false); } }
+              aria-pressed={activo}
+              className="text-left rounded-lg px-3 py-2.5"
+              style={ {
+                background: x.bg,
+                border: activo ? `2px solid ${x.color}` : `1px solid ${x.borde}`,
+                padding: activo ? "9.5px 11.5px" : undefined,
+              } }
+            >
+              <div className="text-2xl font-mono font-semibold leading-tight" style={ { color: x.color } }>{conteos[x.key]}</div>
+              <div className="text-xs" style={ { color: x.color } }>{x.label}</div>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Reclamar a Tigo */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-        <div className="flex items-start justify-between gap-3 mb-3">
+      {/* Lista del grupo elegido */}
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 pt-3 pb-1">
+        <div className="flex items-start justify-between gap-2 mb-1">
           <div>
-            <h2 className="text-base font-semibold mb-0.5" style={ { color: "#B8791F" } }>
-              Reclamar a Tigo ({reclamar.length})
-            </h2>
-            <p className="text-xs" style={ { color: "#6B7280" } }>
-              Están en tu app, instalados dentro del rango, pero Tigo no los incluyó en el precierre. Primero van los que ya tienen la 1ª factura pagada, porque esos cuentan para tu comisión.
-            </p>
+            <div className="text-sm font-semibold" style={ { color: g.color } }>{g.label} ({conteos[g.key]})</div>
+            <div className="text-xs" style={ { color: "#6B7280" } }>{g.pista}</div>
           </div>
-          {reclamar.length > 0 && (
+          {g.key === "reclamar" && reclamar.length > 0 && (
             <button
               onClick={copiarReclamo}
-              className="text-xs font-medium px-3 py-1.5 rounded-md shrink-0"
+              className="text-xs font-medium px-2.5 py-1 rounded-md shrink-0"
               style={ { color: "#001E62", border: "1px solid #D1D5DB" } }
             >
               {copiado ? "✓ Copiado" : "Copiar lista"}
             </button>
           )}
         </div>
-        {reclamar.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {reclamar.map((c) => {
-              const pagada = c.f1_estado === "pagada";
-              return (
-                <div
-                  key={c.id}
-                  className="flex items-center justify-between gap-3 rounded-md border p-3"
-                  style={ { borderColor: "#F3E3C3", background: "#FFFBF2" } }
-                >
-                  <div className="min-w-0">
-                    <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                    <div className="text-xs truncate" style={ { color: "#6B7280" } }>{c.nombre}</div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-mono" style={ { color: "#B8791F" } }>
-                      Instalado: {fmtFecha(c.fechaInstalacion)}
-                    </div>
-                    <div className="text-xs font-medium" style={ { color: pagada ? "#0F766E" : "#6B7280" } }>
-                      {pagada ? "1ª factura pagada" : "1ª factura sin pagar"}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        ) : (
-          <p className="text-sm" style={ { color: "#0F766E" } }>✅ Tigo incluyó todos tus instalados del rango.</p>
-        )}
-      </div>
 
-      {/* Revisar */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-        <h2 className="text-base font-semibold mb-0.5" style={ { color: "#C2761F" } }>
-          Revisar ({revisar.length})
-        </h2>
-        <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
-          Están en el precierre y en tu app, pero la fecha de instalación no cae en el rango. Revisa si el rango es correcto o si la fecha cargada en la app está mal.
-        </p>
-        {revisar.length > 0 ? (
-          <div className="flex flex-col gap-2">
-            {revisar.map(({ cliente: c, motivo }) => (
-              <div
-                key={c.id}
-                className="flex items-center justify-between gap-3 rounded-md border p-3"
-                style={ { borderColor: "#F5D9B8", background: "#FFF6EC" } }
+        {conteos[g.key] === 0 && (
+          <p className="text-sm py-3" style={ { color: "#0F766E" } }>✅ Ninguno.</p>
+        )}
+
+        {g.key === "agregar" &&
+          agregar.map((n) => (
+            <FilaPrecierre key={n} color={g.color} numero={n}>
+              <button
+                onClick={() => onIrNuevo(n)}
+                className="text-xs font-medium px-3 py-1.5 rounded-md text-white shrink-0"
+                style={ { background: "#001E62" } }
               >
-                <div className="min-w-0">
-                  <div className="font-mono text-sm font-medium">{c.numeroSuscriptor}</div>
-                  <div className="text-xs truncate" style={ { color: "#6B7280" } }>{c.nombre}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-xs font-mono" style={ { color: "#C2761F" } }>
-                    {c.fechaInstalacion ? `Instalado: ${fmtFecha(c.fechaInstalacion)}` : "Sin fecha"}
+                + Agregar
+              </button>
+            </FilaPrecierre>
+          ))}
+
+        {g.key === "reclamar" &&
+          reclamar.map((c) => {
+            const pagada = c.f1_estado === "pagada";
+            return (
+              <FilaPrecierre
+                key={c.id}
+                color={g.color}
+                numero={c.numeroSuscriptor}
+                nombre={c.nombre}
+                onClick={() => onAbrirCliente(c)}
+                derecha={
+                  <div className="text-right shrink-0">
+                    <div className="text-xs font-mono" style={ { color: "#6B7280" } }>{fmtFecha(c.fechaInstalacion)}</div>
+                    <span
+                      className="text-xs font-medium px-1.5 py-0.5 rounded"
+                      style={ pagada ? { background: "#EAF6F4", color: "#0F766E" } : { background: "#F3F4F6", color: "#6B7280" } }
+                    >
+                      {pagada ? "pagada" : "sin pagar"}
+                    </span>
                   </div>
-                  <div className="text-xs" style={ { color: "#6B7280" } }>{motivo}</div>
-                </div>
-              </div>
+                }
+              />
+            );
+          })}
+
+        {g.key === "revisar" &&
+          revisar.map(({ cliente: c, motivo }) => (
+            <FilaPrecierre
+              key={c.id}
+              color={g.color}
+              numero={c.numeroSuscriptor}
+              nombre={c.nombre}
+              sub={`${c.fechaInstalacion ? fmtFecha(c.fechaInstalacion) + " · " : ""}${motivo}`}
+              onClick={() => onAbrirCliente(c)}
+            />
+          ))}
+
+        {g.key === "coinciden" && (
+          <>
+            {(verTodas ? coinciden : coinciden.slice(0, LIMITE_COINCIDEN)).map((c) => (
+              <FilaPrecierre
+                key={c.id}
+                color={g.color}
+                numero={c.numeroSuscriptor}
+                nombre={c.nombre}
+                onClick={() => onAbrirCliente(c)}
+                derecha={<span className="text-xs font-mono shrink-0" style={ { color: "#6B7280" } }>{fmtFecha(c.fechaInstalacion)}</span>}
+              />
             ))}
-          </div>
-        ) : (
-          <p className="text-sm" style={ { color: "#0F766E" } }>✅ Ninguno por revisar.</p>
+            {coinciden.length > LIMITE_COINCIDEN && (
+              <button
+                onClick={() => setVerTodas((v) => !v)}
+                className="text-xs font-medium py-2.5 w-full text-center"
+                style={ { color: "#001E62" } }
+              >
+                {verTodas ? "Ver menos" : `Ver las ${coinciden.length - LIMITE_COINCIDEN} restantes`}
+              </button>
+            )}
+          </>
         )}
       </div>
-
-      {/* Coincidencias (plegado) */}
-      <details className="bg-white rounded-lg border border-gray-200 shadow-sm">
-        <summary className="cursor-pointer text-sm font-medium px-5 py-3" style={ { color: "#0F766E" } }>
-          Coinciden con Tigo ({coinciden.length})
-        </summary>
-        <div className="px-5 pb-4 flex flex-col gap-1">
-          {coinciden.length === 0 && (
-            <p className="text-xs" style={ { color: "#6B7280" } }>Ninguno todavía.</p>
-          )}
-          {coinciden.map((c) => (
-            <div key={c.id} className="flex items-center justify-between gap-3 text-xs py-1 border-b border-gray-100 last:border-0">
-              <span className="font-mono">{c.numeroSuscriptor}</span>
-              <span className="truncate flex-1 text-right" style={ { color: "#6B7280" } }>{c.nombre}</span>
-              <span className="font-mono shrink-0" style={ { color: "#6B7280" } }>{fmtFecha(c.fechaInstalacion)}</span>
-            </div>
-          ))}
-        </div>
-      </details>
     </div>
   );
 }
