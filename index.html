@@ -2294,7 +2294,7 @@ function App() {
           } }
           onConvergencia={() => {
             setTab("clientes");
-            setSaltarAMes({ subVista: "movil", token: Date.now() });
+            setSaltarAMes({ subVista: "movil", abrirForm: true, token: Date.now() });
             setMostrarSelectorNuevo(false);
           } }
         />
@@ -4863,10 +4863,12 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const setFechaHasta = hacerSetter("fechaHasta");
 
   const [subVista, setSubVista] = useState("clientes");
+  const [abrirFormMovil, setAbrirFormMovil] = useState(false);
   useEffect(() => {
     if (saltarAMes) {
       if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
       setSubVista(saltarAMes.subVista === "movil" ? "movil" : "clientes");
+      if (saltarAMes.abrirForm) setAbrirFormMovil(true);
       setFiltrosClientes((prev) => ({
         ...prev,
         fechaDesde: "",
@@ -5160,6 +5162,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           onEditar={onEditarMovil}
           onEliminar={onEliminarMovil}
           mesActivo={mesActivoEfectivo}
+          abrirForm={abrirFormMovil}
+          onFormAbierto={() => setAbrirFormMovil(false)}
         />
       ) : (
         <>
@@ -5827,15 +5831,45 @@ function ClienteDetalle({
   );
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo }) {
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto }) {
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [tipo, setTipo] = useState("pospago");
   const [montoPlan, setMontoPlan] = useState("");
   const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
   const [editingId, setEditingId] = useState(null);
+  const [formAbierto, setFormAbierto] = useState(!!abrirForm);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
+  const formRef = useRef(null);
+  const nombreRef = useRef(null);
+
+  // El formulario viene minimizado: solo se abre desde el botón flotante (+) o al editar un cliente.
+  useEffect(() => {
+    if (abrirForm) {
+      setFormAbierto(true);
+      if (onFormAbierto) onFormAbierto();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [abrirForm]);
+
+  useEffect(() => {
+    if (!formAbierto) return;
+    const t = setTimeout(() => {
+      if (formRef.current) formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+      if (nombreRef.current) nombreRef.current.focus({ preventScroll: true });
+    }, 50);
+    return () => clearTimeout(t);
+  }, [formAbierto, editingId]);
+
+  function limpiarForm() {
+    setNombre("");
+    setTelefono("");
+    setTipo("pospago");
+    setMontoPlan("");
+    setFechaActivacion(fechaLocalISO(new Date()));
+    setEditingId(null);
+  }
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -5851,12 +5885,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     } else {
       onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion);
     }
-    setNombre("");
-    setTelefono("");
-    setTipo("pospago");
-    setMontoPlan("");
-    setFechaActivacion(fechaLocalISO(new Date()));
-    setEditingId(null);
+    limpiarForm();
+    setFormAbierto(false);
   }
 
   function startEdit(c) {
@@ -5866,92 +5896,114 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
     setEditingId(c.id);
+    setFormAbierto(true);
   }
 
   function cancelEdit() {
-    setNombre("");
-    setTelefono("");
-    setTipo("pospago");
-    setMontoPlan("");
-    setFechaActivacion(fechaLocalISO(new Date()));
-    setEditingId(null);
+    limpiarForm();
+    setFormAbierto(false);
   }
+
+  const campoCls = "w-full px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm outline-none";
+  const etiquetaCls = "text-xs font-medium block mb-1";
 
   return (
     <div>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
-        <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar Cliente Móvil" : "Nuevo Cliente Móvil"}</h2>
-        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
-          <div className="flex-1">
-            <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Nombre</label>
-            <input
-              required
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Número de celular</label>
-            <input
-              required
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
-          <div className="flex gap-2">
-            <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
-              {editingId ? "Guardar" : "Agregar"}
+      {formAbierto && (
+        <div ref={formRef} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 sm:p-5 mb-4 scroll-mt-4">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold">{editingId ? "Editar Cliente Móvil" : "Nuevo Cliente Móvil"}</h2>
+            <button
+              type="button"
+              onClick={cancelEdit}
+              className="text-lg leading-none w-9 h-9 flex items-center justify-center rounded-md"
+              style={ { color: "#6B7280" } }
+              aria-label="Cerrar formulario"
+            >
+              ✕
             </button>
-            {editingId && (
-              <button type="button" onClick={cancelEdit} className="text-sm font-medium px-4 py-2 rounded-md border" style={ { borderColor: "#D1D5DB" } }>
+          </div>
+          <form onSubmit={handleSubmit} className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className={etiquetaCls} style={ { color: "#6B7280" } }>Nombre</label>
+              <input
+                ref={nombreRef}
+                required
+                value={nombre}
+                onChange={(e) => setNombre(e.target.value)}
+                className={campoCls}
+                style={ { borderColor: "#D1D5DB" } }
+              />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#6B7280" } }>Número de celular</label>
+              <input
+                required
+                type="tel"
+                inputMode="tel"
+                value={telefono}
+                onChange={(e) => setTelefono(e.target.value)}
+                className={campoCls}
+                style={ { borderColor: "#D1D5DB" } }
+              />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#6B7280" } }>Tipo</label>
+              <select
+                value={tipo}
+                onChange={(e) => setTipo(e.target.value)}
+                className={campoCls + " bg-white"}
+                style={ { borderColor: "#D1D5DB" } }
+              >
+                {TIPOS_CLIENTE_MOVIL.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#6B7280" } }>Costo del plan móvil</label>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.01"
+                min="0"
+                value={montoPlan}
+                onChange={(e) => setMontoPlan(e.target.value)}
+                placeholder="$0.00"
+                className={campoCls}
+                style={ { borderColor: "#D1D5DB" } }
+              />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#6B7280" } }>Fecha de activación</label>
+              <input
+                type="date"
+                value={fechaActivacion}
+                onChange={(e) => setFechaActivacion(e.target.value)}
+                className={campoCls}
+                style={ { borderColor: "#D1D5DB" } }
+              />
+            </div>
+            <div className="flex gap-2 sm:col-span-2 sm:justify-end">
+              <button
+                type="submit"
+                className="flex-1 sm:flex-none text-sm font-medium px-5 py-3 sm:py-2 rounded-md text-white"
+                style={ { background: "#001E62" } }
+              >
+                {editingId ? "Guardar" : "Agregar"}
+              </button>
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="flex-1 sm:flex-none text-sm font-medium px-5 py-3 sm:py-2 rounded-md border"
+                style={ { borderColor: "#D1D5DB" } }
+              >
                 Cancelar
               </button>
-            )}
-          </div>
-        </form>
-        <div className="flex flex-wrap items-end gap-3 mt-3 pt-3 border-t" style={ { borderColor: "#F0F0EF" } }>
-          <div>
-            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Tipo</label>
-            <select
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value)}
-              className="px-2 py-1.5 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            >
-              {TIPOS_CLIENTE_MOVIL.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Costo del plan móvil</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={montoPlan}
-              onChange={(e) => setMontoPlan(e.target.value)}
-              placeholder="$0.00"
-              className="w-28 px-2 py-1.5 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
-          <div>
-            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Fecha de activación</label>
-            <input
-              type="date"
-              value={fechaActivacion}
-              onChange={(e) => setFechaActivacion(e.target.value)}
-              className="px-2 py-1.5 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
+            </div>
+          </form>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
@@ -5961,18 +6013,22 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
               <button
                 onClick={() => setMesExpandido(abierto ? null : m.key)}
-                className="w-full flex items-center justify-between px-4 py-3 text-left"
+                className="w-full px-4 py-3 text-left"
               >
-                <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
-                <span className="text-sm font-mono flex items-center gap-2" style={ { color: "#001E62" } }>
-                  {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
+                  <span style={ { color: "#9CA3AF" } }>{abierto ? "▲" : "▼"}</span>
+                </div>
+                <div className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap mt-1">
+                  <span className="text-sm font-mono" style={ { color: "#001E62" } }>
+                    {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
+                  </span>
                   {delMes.length > 0 && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#DCF5F3", color: "#0F766E" } }>
                       BONO POR CONVERGENCIA = {fmtMonto(delMes.length * BONO_POR_CONVERGENCIA)}
                     </span>
                   )}
-                  <span style={ { color: "#9CA3AF" } }>{abierto ? "▲" : "▼"}</span>
-                </span>
+                </div>
               </button>
               {abierto && (
                 <div className="border-t" style={ { borderColor: "#F0F0EF" } }>
@@ -5980,31 +6036,44 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                     <p className="text-sm px-4 py-3" style={ { color: "#6B7280" } }>Sin Clientes Móvil este mes.</p>
                   ) : (
                     delMes.map((c) => (
-                      <div key={c.id} className="flex items-center justify-between px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
-                        <div>
-                          <div className="text-sm font-medium flex items-center gap-2 flex-wrap">
-                            {c.nombre}
-                            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
-                              {etiquetaTipoMovil(tipoClienteMovil(c))}
+                      <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
+                        <div className="text-base sm:text-sm font-medium break-words">{c.nombre}</div>
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
+                            {etiquetaTipoMovil(tipoClienteMovil(c))}
+                          </span>
+                          {c.montoPlan != null && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#F4F6FA", color: "#374151" } }>
+                              Plan: {fmtMonto(c.montoPlan)}
                             </span>
-                            {c.montoPlan != null && (
-                              <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#F4F6FA", color: "#374151" } }>
-                                Plan: {fmtMonto(c.montoPlan)}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>
-                            {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
-                          </div>
+                          )}
                         </div>
-                        <div className="flex gap-3">
-                          <button onClick={() => startEdit(c)} className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
+                        <div className="text-xs font-mono mt-1.5" style={ { color: "#6B7280" } }>
+                          {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
+                        </div>
+                        <div className="flex gap-2 mt-3">
+                          <a
+                            href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="flex-1 sm:flex-none text-center text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
+                            style={ { color: "#0F766E", borderColor: "#0F766E" } }
+                          >
+                            WhatsApp
+                          </a>
+                          <button
+                            onClick={() => startEdit(c)}
+                            className="flex-1 sm:flex-none text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
+                            style={ { color: "#0072CE", borderColor: "#0072CE" } }
+                          >
+                            Editar
+                          </button>
                           <button
                             onClick={() => {
                               if (window.confirm(`¿Eliminar a ${c.nombre} de Clientes Móvil?`)) onEliminar(c.id);
                             } }
-                            className="text-xs font-medium"
-                            style={ { color: "#C23B3B" } }
+                            className="flex-1 sm:flex-none text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
+                            style={ { color: "#C23B3B", borderColor: "#C23B3B" } }
                           >
                             Eliminar
                           </button>
