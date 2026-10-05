@@ -1048,6 +1048,13 @@ function App() {
       localStorage.setItem(PRECIERRE_KEY, JSON.stringify(precierre));
     } catch (e) {}
   }, [precierre]);
+  // Verificar órdenes (dentro de Precierre): lo pegado y el modo se guardan en este celular.
+  const [verifOrdenes, setVerifOrdenes] = useState(leerVerifOrdenesGuardado);
+  useEffect(() => {
+    try {
+      localStorage.setItem(VERIF_ORDENES_KEY, JSON.stringify(verifOrdenes));
+    } catch (e) {}
+  }, [verifOrdenes]);
   // De dónde se abrió el formulario de cliente, para volver a la misma pantalla al
   // guardar o cancelar (por ejemplo, volver al Precierre después de agregar un cliente).
   const [origenFormulario, setOrigenFormulario] = useState("clientes");
@@ -1449,6 +1456,31 @@ function App() {
   function abrirClienteDesdePrecierre(c) {
     setOrigenFormulario("precierre");
     startEdit(c);
+  }
+
+  // Desde "Verificar órdenes": abre el formulario con el nombre ya puesto.
+  // Si la orden ya está instalada trae la fecha de Tigo; si no, queda marcado como
+  // "Pendiente de instalación" (fecha vacía), igual que cuando lo haces a mano.
+  function irANuevoDesdeOrden(nombre, fechaInstalacionISO) {
+    setForm({ ...emptyForm(), nombre: nombre || "", fechaInstalacion: fechaInstalacionISO || "" });
+    setEditingId(null);
+    setOrigenFormulario("precierre");
+    setTab("nuevo");
+  }
+
+  // Desde "Verificar órdenes": cambia solo la fecha de instalación de un cliente.
+  // Si el cliente ya tiene ciclo y monto, recalcula la 1ra factura igual que el formulario.
+  function cambiarFechaInstalacionDesdeOrden(clienteId, fechaISO) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes || !fechaISO) return;
+    let despues = { ...antes, fechaInstalacion: fechaISO };
+    const r = calcularPrimeraFactura(fechaISO, parseInt(antes.cicloFacturacion, 10), antes.montoMensual);
+    if (r && antes.montoMensual !== "" && antes.montoMensual != null) {
+      const total = +((Number(antes.montoMensual) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
+      despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
+    }
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
   function cambiarUmbralProrrateo(nuevoValor) {
@@ -2248,6 +2280,10 @@ function App() {
             setEstado={setPrecierre}
             onIrNuevo={irANuevoConSuscriptor}
             onAbrirCliente={abrirClienteDesdePrecierre}
+            verif={verifOrdenes}
+            setVerif={setVerifOrdenes}
+            onAgregarOrden={irANuevoDesdeOrden}
+            onCambiarFecha={cambiarFechaInstalacionDesdeOrden}
           />
         )}
         {tab === "historial" && (
@@ -6403,7 +6439,7 @@ function calcularPrecierre(clientes, textoPegado, desde, hasta) {
   return { desde, hasta, total: numeros.length, duplicados, sinNumero, lineas, agregar, coinciden, revisar, reclamar };
 }
 
-function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente }) {
+function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente, verif, setVerif, onAgregarOrden, onCambiarFecha }) {
   const [editando, setEditando] = useState(!estado.aplicado);
   const resultado = useMemo(
     () => (estado.aplicado ? calcularPrecierre(clientes, estado.aplicado.texto, estado.aplicado.desde, estado.aplicado.hasta) : null),
@@ -6419,8 +6455,45 @@ function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente }
     setEditando(true);
   }
 
+  const modoOrdenes = verif && verif.modo === "ordenes";
+  const botonModo = (activo) => ({
+    background: activo ? "#001E62" : "#FFFFFF",
+    color: activo ? "#FFFFFF" : "#374151",
+    border: "1px solid " + (activo ? "#001E62" : "#D1D5DB"),
+  });
+
   return (
     <div className="max-w-3xl">
+      <div className="flex gap-2 mb-4">
+        <button
+          onClick={() => setVerif((v) => ({ ...v, modo: "precierre" }))}
+          aria-pressed={!modoOrdenes}
+          className="text-sm font-medium px-3 py-1.5 rounded-md"
+          style={botonModo(!modoOrdenes)}
+        >
+          Precierre
+        </button>
+        <button
+          onClick={() => setVerif((v) => ({ ...v, modo: "ordenes" }))}
+          aria-pressed={modoOrdenes}
+          className="text-sm font-medium px-3 py-1.5 rounded-md"
+          style={botonModo(modoOrdenes)}
+        >
+          Verificar órdenes
+        </button>
+      </div>
+
+      {modoOrdenes ? (
+        <VerificarOrdenes
+          clientes={clientes}
+          verif={verif}
+          setVerif={setVerif}
+          onAgregar={onAgregarOrden}
+          onAbrirCliente={onAbrirCliente}
+          onCambiarFecha={onCambiarFecha}
+        />
+      ) : (
+      <React.Fragment>
       <h1 className="text-2xl font-semibold mb-1">Validar precierre</h1>
       <p className="text-sm mb-4" style={ { color: "#6B7280" } }>
         Pega la lista que te envió Tigo, una fila por línea.
@@ -6494,6 +6567,8 @@ function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente }
 
       {!editando && resultado && (
         <ResultadoPrecierre resultado={resultado} onIrNuevo={onIrNuevo} onAbrirCliente={onAbrirCliente} />
+      )}
+      </React.Fragment>
       )}
     </div>
   );
@@ -6709,6 +6784,545 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------- Verificar órdenes (lista de órdenes de la herramienta de Tigo) ----------
+// Se pega la lista tal como sale de la página de Tigo (columnas separadas por tab):
+// N.° de orden · Tipo · Estado · Nombre · Cédula · Fecha de creación · Fecha de cierre.
+// Los clientes se comparan POR NOMBRE contra los de la app.
+const VERIF_ORDENES_KEY = "antichurn_verif_ordenes";
+// Solo se verifican órdenes de estos tipos (en minúsculas). MATCH DIGITAL queda fuera.
+const ORDENES_TIPOS_VERIFICABLES = ["hogar"];
+// Estados que significan "ya ingresada en Tigo, todavía no instalada" (en minúsculas).
+// "Propuesta enviada" a propósito NO está aquí: todavía no es una orden ingresada.
+const ORDENES_ESTADOS_EN_PROCESO = ["procesando", "agendar visita"];
+
+function leerVerifOrdenesGuardado() {
+  const base = { modo: "precierre", texto: "", aplicado: null, descartados: [] };
+  try {
+    const raw = localStorage.getItem(VERIF_ORDENES_KEY);
+    if (!raw) return base;
+    const g = JSON.parse(raw);
+    return {
+      modo: g.modo === "ordenes" ? "ordenes" : "precierre",
+      texto: typeof g.texto === "string" ? g.texto : "",
+      aplicado: typeof g.aplicado === "string" ? g.aplicado : null,
+      descartados: Array.isArray(g.descartados) ? g.descartados : [],
+    };
+  } catch (e) {
+    return base;
+  }
+}
+
+// Minúsculas, sin tildes ni signos y sin espacios de más: "Nuñez  López" = "nunez lopez".
+function normalizarNombreOrden(s) {
+  return String(s || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Tigo muestra las fechas como MM/DD/YYYY. La app las guarda como YYYY-MM-DD.
+function fechaTigoAISO(s) {
+  const m = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s || "").trim());
+  if (!m) return "";
+  return m[3] + "-" + m[1].padStart(2, "0") + "-" + m[2].padStart(2, "0");
+}
+
+function distanciaTexto(a, b) {
+  if (a === b) return 0;
+  let prev = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+function leerOrdenesTigo(texto) {
+  const filas = [];
+  let ignoradas = 0;
+  String(texto || "").split(/\r?\n/).forEach((linea) => {
+    if (!linea.trim()) return;
+    let cols = linea.split("\t").map((c) => c.trim());
+    if (cols.length < 5) cols = linea.trim().split(/\s{2,}/).map((c) => c.trim());
+    if (cols.length < 5 || !/^\d+$/.test(cols[0])) {
+      ignoradas++;
+      return;
+    }
+    filas.push({
+      orden: cols[0],
+      tipo: cols[1] || "",
+      estado: cols[2] || "",
+      nombre: cols[3] || "",
+      cedula: cols[4] || "",
+      creada: fechaTigoAISO(cols[5]),
+      fin: fechaTigoAISO(cols[6]),
+    });
+  });
+  return { filas, ignoradas };
+}
+
+function claseEstadoOrden(estado) {
+  const e = normalizarNombreOrden(estado);
+  if (e.includes("completad")) return "completada";
+  if (ORDENES_ESTADOS_EN_PROCESO.includes(e)) return "proceso";
+  return "otro";
+}
+
+// Un cliente de la app con nombre casi igual (error de dedo) o que contiene todos los
+// nombres/apellidos del otro. Solo sirve para avisar: nunca se une nada automáticamente.
+function buscarClienteParecido(key, clientes) {
+  const largos = (s) => s.split(" ").filter((t) => t.length > 2);
+  const tk = largos(key);
+  for (const c of clientes) {
+    const ck = normalizarNombreOrden(c.nombre);
+    if (!ck || ck === key) continue;
+    if (key.length >= 10 && Math.abs(ck.length - key.length) <= 2 && distanciaTexto(ck, key) <= 2) return c;
+    const tc = largos(ck);
+    const corto = tk.length <= tc.length ? tk : tc;
+    const largo = tk.length <= tc.length ? tc : tk;
+    if (corto.length >= 2 && corto.every((t) => largo.includes(t))) return c;
+  }
+  return null;
+}
+
+function compararOrdenes(clientes, texto, descartados) {
+  const { filas, ignoradas } = leerOrdenesTigo(texto);
+  const porNombre = new Map();
+  clientes.forEach((c) => {
+    const k = normalizarNombreOrden(c.nombre);
+    if (k && !porNombre.has(k)) porNombre.set(k, c);
+  });
+  const r = {
+    total: filas.length,
+    ignoradas,
+    repetidas: 0,
+    faltan: [],
+    procesoFaltan: [],
+    fechaDistinta: [],
+    pendientesInstalados: [],
+    alertas: [],
+    posibles: [],
+    bien: [],
+    noVerificadas: [],
+  };
+  const vistos = new Set();
+  filas.forEach((f) => {
+    const tipoOk = ORDENES_TIPOS_VERIFICABLES.includes(normalizarNombreOrden(f.tipo));
+    const clase = claseEstadoOrden(f.estado);
+    const key = normalizarNombreOrden(f.nombre);
+    if (!tipoOk || clase === "otro" || !key) {
+      r.noVerificadas.push(f);
+      return;
+    }
+    const clave = key + "|" + clase;
+    if (vistos.has(clave)) {
+      r.repetidas++;
+      return;
+    }
+    vistos.add(clave);
+    const c = porNombre.get(key);
+    if (!c) {
+      const parecido = descartados.has(key) ? null : buscarClienteParecido(key, clientes);
+      if (parecido) {
+        r.posibles.push({ fila: f, cliente: parecido, key });
+        return;
+      }
+      (clase === "completada" ? r.faltan : r.procesoFaltan).push(f);
+      return;
+    }
+    if (clase === "completada") {
+      if (!c.fechaInstalacion) r.pendientesInstalados.push({ fila: f, cliente: c });
+      else if (f.fin && c.fechaInstalacion !== f.fin) r.fechaDistinta.push({ fila: f, cliente: c });
+      else r.bien.push({ fila: f, cliente: c });
+    } else {
+      if (c.fechaInstalacion) r.alertas.push({ fila: f, cliente: c });
+      else r.bien.push({ fila: f, cliente: c });
+    }
+  });
+  return r;
+}
+
+const GRUPOS_ORDENES = [
+  { key: "faltan", label: "Te faltan", pista: "Instaladas en Tigo y no están en tu app.", color: "#C23B3B", bg: "#FBEAEA", borde: "#F3C6C6" },
+  { key: "procesoFaltan", label: "En proceso sin agregar", pista: "Ya ingresadas en Tigo (Procesando o Agendar visita) y no están en tu app.", color: "#B8791F", bg: "#FFFBF2", borde: "#F3E3C3" },
+  { key: "fechaDistinta", label: "Fecha distinta", pista: "La fecha de instalación de tu app no es la de Tigo.", color: "#C2761F", bg: "#FFF6EC", borde: "#F5D9B8" },
+  { key: "pendientesInstalados", label: "Ya instalados en Tigo", pista: "Los tienes como pendientes, pero Tigo ya los instaló.", color: "#1D5FA8", bg: "#EEF5FC", borde: "#C5DAF0" },
+  { key: "alertas", label: "Alertas", pista: "Los tienes instalados, pero en Tigo siguen en proceso.", color: "#8A3FA8", bg: "#F6EEFA", borde: "#E0C9EC" },
+  { key: "posibles", label: "Posibles coincidencias", pista: "No hay nombre igual, pero hay uno parecido en tu app.", color: "#6B7280", bg: "#F3F4F6", borde: "#D1D5DB" },
+  { key: "bien", label: "Todo bien", pista: "Nombre y fecha coinciden.", color: "#0F766E", bg: "#EAF6F4", borde: "#B7E0DA" },
+];
+
+function BotonCopiarOrden({ texto, label, vacio }) {
+  const [ok, setOk] = useState(false);
+  async function copiar(e) {
+    e.stopPropagation();
+    if (!texto) return;
+    const res = await copiarTextoPrecierre(String(texto));
+    if (res) {
+      setOk(true);
+      setTimeout(() => setOk(false), 1500);
+    }
+  }
+  return (
+    <button
+      onClick={copiar}
+      disabled={!texto}
+      className="text-xs font-medium px-2.5 py-1 rounded-md disabled:opacity-40"
+      style={{ color: "#001E62", border: "1px solid #D1D5DB" }}
+    >
+      {!texto ? vacio || "Sin dato" : ok ? "✓ Copiado" : label}
+    </button>
+  );
+}
+
+function FilaOrden({ color, nombre, sub, children }) {
+  return (
+    <div className="py-2.5 border-b border-gray-100 last:border-0">
+      <div className="flex items-start gap-2.5">
+        <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: color, marginTop: 6 }} />
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-medium break-words">{nombre}</div>
+          {sub && <div className="text-xs" style={{ color: "#6B7280" }}>{sub}</div>}
+        </div>
+      </div>
+      {children && <div className="flex flex-wrap items-center gap-2 mt-2" style={{ marginLeft: 18 }}>{children}</div>}
+    </div>
+  );
+}
+
+function confirmarCambioFechaOrden(cliente, nueva) {
+  const antes = cliente.fechaInstalacion ? fmtFecha(cliente.fechaInstalacion) : "pendiente (sin fecha)";
+  return window.confirm(
+    "¿Cambiar la fecha de instalación de " + cliente.nombre + "?\n\nAntes: " + antes + "\nAhora: " + fmtFecha(nueva)
+  );
+}
+
+function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(cliente.fechaInstalacion || "");
+  function aplicar(nueva) {
+    if (!nueva) return;
+    if (confirmarCambioFechaOrden(cliente, nueva)) onCambiarFecha(cliente.id, nueva);
+  }
+  const estiloBoton = { color: "#001E62", border: "1px solid #D1D5DB" };
+  return (
+    <FilaOrden
+      color={color}
+      nombre={cliente.nombre}
+      sub={"Tu app: " + fmtFecha(cliente.fechaInstalacion) + " · Tigo: " + fmtFecha(fila.fin)}
+    >
+      <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
+      {editando ? (
+        <>
+          <input
+            type="date"
+            value={valor}
+            onChange={(e) => setValor(e.target.value)}
+            className="text-xs px-2 py-1 rounded-md border"
+            style={{ borderColor: "#D1D5DB" }}
+          />
+          <button
+            onClick={() => aplicar(valor)}
+            disabled={!valor}
+            className="text-xs font-medium px-2.5 py-1 rounded-md text-white disabled:opacity-40"
+            style={{ background: "#001E62" }}
+          >
+            Guardar
+          </button>
+          <button onClick={() => setEditando(false)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+            Cancelar
+          </button>
+        </>
+      ) : (
+        <>
+          <button onClick={() => setEditando(true)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+            Editar fecha
+          </button>
+          <button
+            onClick={() => aplicar(fila.fin)}
+            className="text-xs font-medium px-2.5 py-1 rounded-md text-white"
+            style={{ background: "#001E62" }}
+          >
+            Usar la de Tigo
+          </button>
+        </>
+      )}
+    </FilaOrden>
+  );
+}
+
+function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente, onCambiarFecha }) {
+  const [editando, setEditando] = useState(!verif.aplicado);
+  const [grupo, setGrupo] = useState(null);
+  const [verNoVerif, setVerNoVerif] = useState(false);
+  const descartados = useMemo(() => new Set(verif.descartados || []), [verif.descartados]);
+  const resultado = useMemo(
+    () => (verif.aplicado ? compararOrdenes(clientes, verif.aplicado, descartados) : null),
+    [clientes, verif.aplicado, descartados]
+  );
+
+  function verificar() {
+    setVerif((v) => ({ ...v, aplicado: v.texto, descartados: [] }));
+    setEditando(false);
+    setGrupo(null);
+  }
+  function limpiar() {
+    setVerif((v) => ({ ...v, texto: "", aplicado: null, descartados: [] }));
+    setEditando(true);
+    setGrupo(null);
+  }
+  function descartarParecido(key) {
+    setVerif((v) => ({ ...v, descartados: [...(v.descartados || []), key] }));
+  }
+
+  const estiloBoton = { color: "#001E62", border: "1px solid #D1D5DB" };
+  const conteos = resultado
+    ? {
+        faltan: resultado.faltan.length,
+        procesoFaltan: resultado.procesoFaltan.length,
+        fechaDistinta: resultado.fechaDistinta.length,
+        pendientesInstalados: resultado.pendientesInstalados.length,
+        alertas: resultado.alertas.length,
+        posibles: resultado.posibles.length,
+        bien: resultado.bien.length,
+      }
+    : {};
+  const porResolver = resultado
+    ? conteos.faltan + conteos.procesoFaltan + conteos.fechaDistinta + conteos.pendientesInstalados + conteos.alertas + conteos.posibles
+    : 0;
+  const primero = ["faltan", "procesoFaltan", "fechaDistinta", "pendientesInstalados", "alertas", "posibles"].find((k) => conteos[k] > 0) || "bien";
+  const activo = grupo && GRUPOS_ORDENES.some((x) => x.key === grupo) ? grupo : primero;
+  const g = GRUPOS_ORDENES.find((x) => x.key === activo);
+
+  return (
+    <div>
+      <h1 className="text-2xl font-semibold mb-1">Verificar órdenes</h1>
+      <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
+        Pega las filas de la herramienta de Tigo (con todas las columnas). Se comparan por nombre con tus clientes.
+      </p>
+
+      {editando ? (
+        <div className="mb-4">
+          <textarea
+            value={verif.texto}
+            onChange={(e) => { const v = e.target.value; setVerif((s) => ({ ...s, texto: v })); }}
+            rows={8}
+            placeholder="Pega aquí las órdenes de Tigo…"
+            className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 font-mono"
+            style={{ borderColor: "#D1D5DB" }}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              onClick={verificar}
+              disabled={!verif.texto.trim()}
+              className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
+              style={{ background: "#001E62" }}
+            >
+              Verificar órdenes
+            </button>
+            {verif.aplicado && (
+              <button onClick={() => setEditando(false)} className="text-sm font-medium px-3 py-2 rounded-md" style={{ color: "#6B7280", border: "1px solid #D1D5DB" }}>
+                Cancelar
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 mb-4">
+          <span className="text-xs min-w-0 truncate" style={{ color: "#6B7280" }}>
+            {resultado ? resultado.total : 0} órdenes leídas
+          </span>
+          <div className="flex items-center gap-2 shrink-0">
+            <button onClick={() => setEditando(true)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+              Editar
+            </button>
+            <button onClick={limpiar} className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ color: "#C23B3B", border: "1px solid #D1D5DB" }}>
+              Limpiar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {!editando && resultado && resultado.total === 0 && (
+        <p className="text-sm rounded-lg border p-4" style={{ borderColor: "#F3E3C3", background: "#FFFBF2", color: "#7A4E0E" }}>
+          No encontré órdenes en lo que pegaste. Copia las filas desde la página de Tigo con todas las columnas
+          (orden, tipo, estado, nombre, cédula y fechas).
+        </p>
+      )}
+
+      {!editando && resultado && resultado.total > 0 && (
+        <div className="flex flex-col gap-3">
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+            <div className="text-sm font-semibold" style={{ color: porResolver === 0 ? "#0F766E" : "#374151" }}>
+              {porResolver === 0 ? "✅ Todo cuadra" : porResolver + (porResolver === 1 ? " cosa por resolver" : " cosas por resolver")}
+            </div>
+            {(resultado.repetidas > 0 || resultado.ignoradas > 0 || resultado.noVerificadas.length > 0) && (
+              <p className="text-xs mt-1" style={{ color: "#6B7280" }}>
+                {[
+                  resultado.repetidas > 0 ? resultado.repetidas + " repetidas se contaron una vez" : null,
+                  resultado.ignoradas > 0 ? resultado.ignoradas + " líneas no se pudieron leer" : null,
+                  resultado.noVerificadas.length > 0 ? resultado.noVerificadas.length + " órdenes no se verifican" : null,
+                ].filter(Boolean).join(" · ")}
+              </p>
+            )}
+            {resultado.noVerificadas.length > 0 && (
+              <div className="mt-1">
+                <button onClick={() => setVerNoVerif((v) => !v)} className="text-xs font-medium" style={{ color: "#001E62" }}>
+                  {verNoVerif ? "Ocultar las que no se verifican" : "Ver las que no se verifican"}
+                </button>
+                {verNoVerif && (
+                  <ul className="text-xs mt-1" style={{ color: "#6B7280" }}>
+                    {resultado.noVerificadas.map((f) => (
+                      <li key={f.orden}>{f.nombre} · {f.tipo} · {f.estado}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {GRUPOS_ORDENES.map((x) => {
+              const sel = activo === x.key;
+              return (
+                <button
+                  key={x.key}
+                  onClick={() => setGrupo(x.key)}
+                  aria-pressed={sel}
+                  className="text-left rounded-lg px-3 py-2.5"
+                  style={{
+                    background: x.bg,
+                    border: sel ? "2px solid " + x.color : "1px solid " + x.borde,
+                    padding: sel ? "9.5px 11.5px" : undefined,
+                  }}
+                >
+                  <div className="text-2xl font-mono font-semibold leading-tight" style={{ color: x.color }}>{conteos[x.key]}</div>
+                  <div className="text-xs" style={{ color: x.color }}>{x.label}</div>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 pt-3 pb-1">
+            <div className="mb-1">
+              <div className="text-sm font-semibold" style={{ color: g.color }}>{g.label} ({conteos[g.key]})</div>
+              <div className="text-xs" style={{ color: "#6B7280" }}>{g.pista}</div>
+            </div>
+
+            {conteos[g.key] === 0 && <p className="text-sm py-3" style={{ color: "#0F766E" }}>✅ Ninguno.</p>}
+
+            {activo === "faltan" &&
+              resultado.faltan.map((f) => (
+                <FilaOrden
+                  key={f.orden}
+                  color={g.color}
+                  nombre={f.nombre}
+                  sub={"Cédula " + f.cedula + (f.fin ? " · instalada " + fmtFecha(f.fin) : "")}
+                >
+                  <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
+                  <button
+                    onClick={() => onAgregar(f.nombre, f.fin)}
+                    className="text-xs font-medium px-3 py-1 rounded-md text-white"
+                    style={{ background: "#001E62" }}
+                  >
+                    + Agregar
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {activo === "procesoFaltan" &&
+              resultado.procesoFaltan.map((f) => (
+                <FilaOrden key={f.orden} color={g.color} nombre={f.nombre} sub={f.estado + " · cédula " + f.cedula}>
+                  <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
+                  <button
+                    onClick={() => onAgregar(f.nombre, "")}
+                    className="text-xs font-medium px-3 py-1 rounded-md text-white"
+                    style={{ background: "#001E62" }}
+                  >
+                    + Agregar (pendiente)
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {activo === "fechaDistinta" &&
+              resultado.fechaDistinta.map(({ fila, cliente }) => (
+                <FilaFechaDistinta key={cliente.id + fila.orden} fila={fila} cliente={cliente} color={g.color} onCambiarFecha={onCambiarFecha} />
+              ))}
+
+            {activo === "pendientesInstalados" &&
+              resultado.pendientesInstalados.map(({ fila, cliente }) => (
+                <FilaOrden
+                  key={cliente.id + fila.orden}
+                  color={g.color}
+                  nombre={cliente.nombre}
+                  sub={fila.fin ? "Tigo lo instaló el " + fmtFecha(fila.fin) : "Tigo no trae fecha de cierre"}
+                >
+                  <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
+                  <button
+                    onClick={() => { if (confirmarCambioFechaOrden(cliente, fila.fin)) onCambiarFecha(cliente.id, fila.fin); }}
+                    disabled={!fila.fin}
+                    className="text-xs font-medium px-3 py-1 rounded-md text-white disabled:opacity-40"
+                    style={{ background: "#001E62" }}
+                  >
+                    Marcar como instalado
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {activo === "alertas" &&
+              resultado.alertas.map(({ fila, cliente }) => (
+                <FilaOrden
+                  key={cliente.id + fila.orden}
+                  color={g.color}
+                  nombre={cliente.nombre}
+                  sub={"Tigo: " + fila.estado + " · en tu app instalado el " + fmtFecha(cliente.fechaInstalacion)}
+                >
+                  <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
+                  <button onClick={() => onAbrirCliente(cliente)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                    Abrir cliente
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {activo === "posibles" &&
+              resultado.posibles.map(({ fila, cliente, key }) => (
+                <FilaOrden
+                  key={fila.orden}
+                  color={g.color}
+                  nombre={fila.nombre}
+                  sub={"Parecido en tu app: " + cliente.nombre + (cliente.fechaInstalacion ? " · instalado " + fmtFecha(cliente.fechaInstalacion) : " · pendiente")}
+                >
+                  <button onClick={() => onAbrirCliente(cliente)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                    Abrir cliente
+                  </button>
+                  <button onClick={() => descartarParecido(key)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                    No es el mismo
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {activo === "bien" &&
+              resultado.bien.map(({ fila, cliente }) => (
+                <FilaOrden
+                  key={cliente.id + fila.orden}
+                  color={g.color}
+                  nombre={cliente.nombre}
+                  sub={cliente.fechaInstalacion ? "Instalado " + fmtFecha(cliente.fechaInstalacion) : "Pendiente · " + fila.estado}
+                />
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
