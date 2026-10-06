@@ -3452,21 +3452,36 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const [mostrarSimuladorArpu, setMostrarSimuladorArpu] = useState(false);
 
   function generarReporteDiario() {
-    const hoy = fechaLocalISO(new Date());
-    const instaladosHoy = clientes.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
-    const doblesHoy = instaladosHoy.filter((c) => c.planTipo === "DOBLE");
-    const singlesHoy = instaladosHoy.filter((c) => c.planTipo === "SINGLE");
+    const ahora = new Date();
+    const hoy = fechaLocalISO(ahora);
+    const hora = ahora.getHours();
+    const saludo = hora < 12 ? "Buenos días" : hora < 18 ? "Buenas tardes" : "Buenas noches";
+    const ingresadosHoy = clientes.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
+    const doblesHoy = ingresadosHoy.filter((c) => c.planTipo === "DOBLE");
+    const singlesHoy = ingresadosHoy.filter((c) => c.planTipo === "SINGLE");
     const converHoy = convergencias.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
-    const listaSusc = (arr) => arr.map((c) => c.numeroSuscriptor).filter(Boolean).join(", ");
 
-    const texto = `Buenas tardes
-Gestión de hoy
+    // Una línea por cliente: "• suscriptor · plan" (si falta uno de los dos, solo el otro).
+    const lineaCliente = (c) => {
+      const partes = [(c.numeroSuscriptor || "").trim(), planResumen(c) === "—" ? "" : planResumen(c)].filter(Boolean);
+      return "• " + (partes.length ? partes.join(" · ") : "Sin datos");
+    };
+    const bloque = (titulo, lista) =>
+      lista.length ? `*${titulo}: ${lista.length}*\n${lista.map(lineaCliente).join("\n")}` : "";
 
-Dobles: ${doblesHoy.length}${doblesHoy.length ? " - " + listaSusc(doblesHoy) : ""}
-Singles: ${singlesHoy.length}${singlesHoy.length ? " - " + listaSusc(singlesHoy) : ""}
-Conver: ${converHoy.length}
-Port: 
-Early: `;
+    // Conver: solo cantidad y desglose por tipo, sin nombres.
+    const porTipo = new Map();
+    converHoy.forEach((c) => {
+      const et = etiquetaTipoMovil(tipoClienteMovil(c));
+      porTipo.set(et, (porTipo.get(et) || 0) + 1);
+    });
+    const bloqueConver = converHoy.length
+      ? `*Conver: ${converHoy.length}* (${[...porTipo.entries()].map(([t, n]) => `${n} ${t}`).join(" · ")})`
+      : "";
+
+    const bloques = [bloque("Dobles", doblesHoy), bloque("Singles", singlesHoy), bloqueConver].filter(Boolean);
+    const cuerpo = bloques.length ? bloques.join("\n\n") : "Sin resultados, solo prospectos.";
+    const texto = `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
 
     navigator.clipboard
       ?.writeText(texto)
