@@ -554,9 +554,13 @@ function valorOrdenColumna(c, key) {
 }
 
 
-// Limpia el teléfono y le antepone el código de país de Panamá (507) si no lo tiene.
+// Limpia el teléfono para WhatsApp.
+// - Si empieza con "+", ya trae su código de país (ej. +1 859…, +507 6…): se usa tal cual.
+// - Si no, se asume Panamá y se le antepone 507 (salvo que ya empiece con 507).
 function telefonoWhatsapp(telefono) {
-  const digits = (telefono || "").replace(/\D/g, "");
+  const texto = (telefono || "").trim();
+  const digits = texto.replace(/\D/g, "");
+  if (texto.startsWith("+")) return digits;
   if (digits.startsWith("507")) return digits;
   return `507${digits}`;
 }
