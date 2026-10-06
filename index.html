@@ -3461,23 +3461,25 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     const singlesHoy = ingresadosHoy.filter((c) => c.planTipo === "SINGLE");
     const converHoy = convergencias.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
 
-    // Una línea por cliente: "• suscriptor · plan" (si falta uno de los dos, solo el otro).
-    const lineaCliente = (c) => {
-      const partes = [(c.numeroSuscriptor || "").trim(), planResumen(c) === "—" ? "" : planResumen(c)].filter(Boolean);
-      return "• " + (partes.length ? partes.join(" · ") : "Sin datos");
+    // Una línea por plan: "300 Megas + COMBO PACK: 111, 222". Cada plan se escribe una sola vez.
+    const textoPlan = (c) => {
+      const partes = [(c.velocidad || "").trim(), c.planTipo === "DOBLE" && c.planTV ? "+ " + String(c.planTV).trim() : ""].filter(Boolean);
+      return partes.length ? partes.join(" ") : "Sin plan";
     };
-    const bloque = (titulo, lista) =>
-      lista.length ? `*${titulo}: ${lista.length}*\n${lista.map(lineaCliente).join("\n")}` : "";
+    const bloque = (titulo, lista) => {
+      if (!lista.length) return "";
+      const porPlan = new Map();
+      lista.forEach((c) => {
+        const p = textoPlan(c);
+        if (!porPlan.has(p)) porPlan.set(p, []);
+        porPlan.get(p).push((c.numeroSuscriptor || "").trim() || "sin suscriptor");
+      });
+      const lineas = [...porPlan.entries()].map(([plan, susc]) => `${plan}: ${susc.join(", ")}`);
+      return `*${titulo}: ${lista.length}*\n${lineas.join("\n")}`;
+    };
 
-    // Conver: solo cantidad y desglose por tipo, sin nombres.
-    const porTipo = new Map();
-    converHoy.forEach((c) => {
-      const et = etiquetaTipoMovil(tipoClienteMovil(c));
-      porTipo.set(et, (porTipo.get(et) || 0) + 1);
-    });
-    const bloqueConver = converHoy.length
-      ? `*Conver: ${converHoy.length}* (${[...porTipo.entries()].map(([t, n]) => `${n} ${t}`).join(" · ")})`
-      : "";
+    // Convergencias: solo el total del día, sin nombres ni tipo.
+    const bloqueConver = converHoy.length ? `*Convergencias: ${converHoy.length}*` : "";
 
     const bloques = [bloque("Dobles", doblesHoy), bloque("Singles", singlesHoy), bloqueConver].filter(Boolean);
     const cuerpo = bloques.length ? bloques.join("\n\n") : "Sin resultados, solo prospectos.";
