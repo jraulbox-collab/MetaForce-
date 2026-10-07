@@ -316,6 +316,39 @@ function clienteCuentaParaComision(c) {
   hoy.setHours(0, 0, 0, 0);
   return hoy <= fechaLimite;
 }
+// Esquema nuevo (desde octubre 2026): un Cliente Móvil solo cuenta para tu comisión
+// (porcentaje de clientes e ingresos) si pagó su 1ra factura o todavía está dentro de su
+// plazo (el mismo que Hogar: día 5 del segundo período después de la activación). En los
+// períodos anteriores al esquema nuevo, todos los móviles cuentan como siempre.
+function periodoDelMovil(c) {
+  return periodoComision(fechaActivacionMovil(c));
+}
+function movilCuentaParaComision(c) {
+  const periodo = periodoDelMovil(c);
+  if (!esquemaNuevo(periodo)) return true;
+  if (c.f1_estado === "pagada") return true;
+  const fechaLimite = fechaLimitePrimeraFactura(periodo);
+  if (!fechaLimite) return true;
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  return hoy <= fechaLimite;
+}
+// Resume los móviles de un período para la fórmula nueva. "soloConfirmados" deja fuera
+// a los que aún no pagan su 1ra factura (versión "confirmada"); sin eso, cuentan los
+// pagados y los que siguen dentro de su plazo. El bono de $6 solo existe para
+// portabilidades: "bonoConfirmado" son las que ya pagaron y "bonoPendiente" las que
+// siguen dentro de su plazo sin pagar.
+function resumenMovilesNuevo(lista, soloConfirmados) {
+  const base = lista.filter((c) => (soloConfirmados ? c.f1_estado === "pagada" : movilCuentaParaComision(c)));
+  const portabilidades = base.filter((c) => c.esPortabilidad);
+  const bonoConfirmado = portabilidades.filter((c) => c.f1_estado === "pagada").length;
+  return {
+    cantidad: base.length,
+    costoPlanes: base.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
+    bonoConfirmado,
+    bonoPendiente: portabilidades.length - bonoConfirmado,
+  };
+}
 function periodosRecientes(count) {
   const actual = periodoComision(fechaLocalISO(new Date()));
   const out = [];
@@ -374,9 +407,27 @@ function montoBaseComision(pctIngreso) {
   const tramo = TABLA_COMISION_BASE.find((t) => pctIngreso >= t.min && pctIngreso <= t.max);
   return tramo ? tramo.monto : 1700;
 }
-const BONO_POR_CONVERGENCIA = 6;
+const BONO_POR_CONVERGENCIA = 6; // bono por portabilidad pospago con 1ra factura pagada
 const PESO_CLIENTES_HOGAR = 0.65;
 const PESO_CLIENTES_MOVIL = 0.35;
+
+// Tabla de posicionamiento del esquema nuevo (columna "Acelerador de Desempeño" del PDF
+// de Tigo): incluye el tramo de 70% a 79.9%, que la tabla vieja no tenía.
+const TABLA_POSICION_NUEVA = [
+  { min: 70, max: 79.9999, monto: 250 },
+  { min: 80, max: 89.9999, monto: 550 },
+  { min: 90, max: 99.9999, monto: 750 },
+  { min: 100, max: 109.9999, monto: 950 },
+  { min: 110, max: 119.9999, monto: 1150 },
+  { min: 120, max: 129.9999, monto: 1300 },
+  { min: 130, max: 139.9999, monto: 1500 },
+  { min: 140, max: Infinity, monto: 1700 },
+];
+function montoPosicionNueva(pctClientes) {
+  if (pctClientes == null || pctClientes < 70) return 0;
+  const tramo = TABLA_POSICION_NUEVA.find((t) => pctClientes >= t.min && pctClientes <= t.max);
+  return tramo ? tramo.monto : 1700;
+}
 
 // ---- Fórmula vieja (hasta el período "2026-09" inclusive) ----
 // Comisión final = monto base (según % ingreso) × (% ARPU / 100) × (% clientes / 100).
@@ -397,13 +448,17 @@ function calcularComisionVieja({ dineroDelPeriodo, metaDinero, arpuPeriodo, meta
 }
 
 // ---- Fórmula nueva (desde el período "2026-10" en adelante) ----
-// El monto base ahora sale del % de clientes (hogar 65% + móvil 35%, ponderado),
-// usando la MISMA tabla de tramos que antes usaba % de ingreso. Ya no se mide ARPU.
-// El % de logro de la meta de ingresos (hogar + costo de planes móviles, sin peso)
-// aplica un acelerador (+10% si >100%) o desacelerador (-10% si <100%) sobre el
-// monto final en dólares; si da exactamente 100%, no aplica ninguno de los dos.
-// Además se suma un bono fijo de $6 por cada convergencia (o FULL TIGO) del período,
-// independiente de todo lo demás.
+// La posición sale del % de clientes (hogar 65% + móvil 35%, ponderado, sin redondear)
+// en la tabla de posicionamiento. Ya no se mide ARPU.
+// El % de logro de la meta de ingresos (hogar + costo de planes móviles, sin peso) ajusta
+// ese monto así (esquema de Tigo):
+//   · más de 100%: posición × (% de ingresos + 10 puntos)   → acelerador
+//   · menos de 100%: posición × % de ingresos               → desacelerador
+//   · exactamente 100%: posición × 1
+// Ejemplo del PDF: 108% de ingresos → ×1.18; 91% → ×0.91.
+// Además se suma $6 por cada portabilidad pospago con su 1ra factura pagada.
+// "cantidadBonoMovil" es cuántas portabilidades entran en el total y
+// "cantidadBonoPendiente" cuántas de esas siguen sin pagar su 1ra factura (solo informativo).
 function calcularComisionNueva({
   clientesHogar,
   metaClientesHogar,
@@ -411,18 +466,30 @@ function calcularComisionNueva({
   metaClientesMovil,
   ingresosDelPeriodo,
   metaIngresos,
-  cantidadConvergencias,
+  cantidadBonoMovil,
+  cantidadBonoPendiente,
 }) {
   const pctHogar = metaClientesHogar ? (clientesHogar / metaClientesHogar) * 100 : null;
   const pctMovil = metaClientesMovil ? (clientesMovil / metaClientesMovil) * 100 : null;
   const pctClientesPonderado =
     pctHogar != null && pctMovil != null ? pctHogar * PESO_CLIENTES_HOGAR + pctMovil * PESO_CLIENTES_MOVIL : null;
-  const montoBase = montoBaseComision(pctClientesPonderado);
+  const montoBase = montoPosicionNueva(pctClientesPonderado);
 
   const pctIngreso = metaIngresos ? (ingresosDelPeriodo / metaIngresos) * 100 : null;
-  const factorAcelerador = pctIngreso == null ? 1 : pctIngreso > 100 ? 1.1 : pctIngreso < 100 ? 0.9 : 1;
+  let ajusteIngreso = "ninguno";
+  let factorAcelerador = 1;
+  if (pctIngreso != null) {
+    if (pctIngreso > 100) {
+      ajusteIngreso = "acelerador";
+      factorAcelerador = pctIngreso / 100 + 0.1;
+    } else if (pctIngreso < 100) {
+      ajusteIngreso = "desacelerador";
+      factorAcelerador = pctIngreso / 100;
+    }
+  }
 
-  const bonoConvergencias = BONO_POR_CONVERGENCIA * (cantidadConvergencias || 0);
+  const bonoConvergencias = BONO_POR_CONVERGENCIA * (cantidadBonoMovil || 0);
+  const bonoPendiente = BONO_POR_CONVERGENCIA * (cantidadBonoPendiente || 0);
   const completo = pctHogar != null && pctMovil != null && pctIngreso != null;
   const comisionSinBono = completo ? montoBase * factorAcelerador : 0;
   const total = comisionSinBono + bonoConvergencias;
@@ -435,12 +502,25 @@ function calcularComisionNueva({
     pctMovil,
     pctClientesPonderado,
     pctIngreso,
+    ajusteIngreso,
     factorAcelerador,
     comisionSinBono,
     bonoConvergencias,
-    cantidadConvergencias: cantidadConvergencias || 0,
+    bonoPendiente,
+    cantidadConvergencias: cantidadBonoMovil || 0,
+    cantidadBonoPendiente: cantidadBonoPendiente || 0,
     completo,
   };
+}
+
+// Texto corto que explica cómo se ajusta la posición según el % de ingresos.
+function textoAjusteIngreso(r) {
+  if (r.pctIngreso == null) return "";
+  if (r.ajusteIngreso === "acelerador")
+    return `× ${(r.factorAcelerador * 100).toFixed(1)}% (${r.pctIngreso.toFixed(1)}% de ingresos + 10 puntos de acelerador)`;
+  if (r.ajusteIngreso === "desacelerador")
+    return `× ${(r.factorAcelerador * 100).toFixed(1)}% (cobras lo que lograste de ingresos)`;
+  return "× 100% (justo en la meta de ingresos)";
 }
 
 // Despachador: usa la fórmula que corresponda según el período (params.periodoKey).
@@ -1487,6 +1567,24 @@ function App() {
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
+  // Desde "Verificar órdenes" (móviles): abre Clientes Móvil con el formulario de nuevo
+  // cliente ya con el nombre y la fecha de activación de Tigo. Al guardar vuelve al Precierre.
+  function irANuevoMovilDesdeOrden(nombre, fechaISO) {
+    setTab("clientes");
+    setSaltarAMes({
+      subVista: "movil",
+      abrirForm: true,
+      prefill: { nombre: nombre || "", fecha: fechaISO || "" },
+      token: Date.now(),
+    });
+  }
+
+  // Desde "Verificar órdenes" (móviles): cambia solo la fecha de activación (queda en el Historial).
+  function cambiarFechaActivacionMovilDesdeOrden(id, fechaISO) {
+    if (!id || !fechaISO) return;
+    editarConvergencia(id, { fechaActivacion: fechaISO });
+  }
+
   function cambiarUmbralProrrateo(nuevoValor) {
     const valorAnterior = umbralProrrateo;
     setUmbralProrrateo(nuevoValor);
@@ -1534,7 +1632,9 @@ function App() {
 
   // Cliente Móvil (Plan Pospago, Convergencia o FULL TIGO). "fullTigo" se guarda además
   // de "tipo" por compatibilidad con la fórmula de comisión anterior a octubre 2026.
-  function agregarConvergencia(nombre, telefono, tipoCliente, montoPlan, fechaActivacion) {
+  // "extra" trae las dos casillas del esquema nuevo: esPortabilidad y f1_estado ("pagada" o "").
+  function agregarConvergencia(nombre, telefono, tipoCliente, montoPlan, fechaActivacion, extra) {
+    const pagada = !!extra && extra.f1_estado === "pagada";
     const nueva = {
       id: uid(),
       nombre,
@@ -1543,6 +1643,9 @@ function App() {
       fullTigo: tipoCliente === "fulltigo",
       montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
       fechaActivacion: fechaActivacion || fechaLocalISO(new Date()),
+      esPortabilidad: !!extra && !!extra.esPortabilidad,
+      f1_estado: pagada ? "pagada" : "",
+      ...(pagada ? { f1_pagadaEn: new Date().toISOString() } : {}),
       creadoEn: new Date().toISOString(),
     };
     setConvergencias((prev) => [...prev, nueva]);
@@ -1575,6 +1678,20 @@ function App() {
           label: "Fecha de activación",
           anterior: fechaActivacionMovil(antes),
           nuevo: fechaActivacionMovil(despues),
+        });
+      if (!!antes.esPortabilidad !== !!despues.esPortabilidad)
+        cambios.push({
+          campo: "esPortabilidad",
+          label: "Es portabilidad",
+          anterior: antes.esPortabilidad ? "sí" : "no",
+          nuevo: despues.esPortabilidad ? "sí" : "no",
+        });
+      if ((antes.f1_estado === "pagada") !== (despues.f1_estado === "pagada"))
+        cambios.push({
+          campo: "f1_estado",
+          label: "1ra factura",
+          anterior: etiquetaEstadoFactura(antes.f1_estado),
+          nuevo: etiquetaEstadoFactura(despues.f1_estado),
         });
       if (cambios.length > 0) {
         registrarCambio({ entidad: "convergencia", tipo: "editar", etiqueta: despues.nombre, antes, despues, cambios, refId: id });
@@ -2237,6 +2354,7 @@ function App() {
             onAgregarMovil={agregarConvergencia}
             onEditarMovil={editarConvergencia}
             onEliminarMovil={eliminarConvergencia}
+            onVolverAPrecierre={() => setTab("precierre")}
           />
         )}
         {tab === "detalle" && (
@@ -2288,6 +2406,9 @@ function App() {
             setVerif={setVerifOrdenes}
             onAgregarOrden={irANuevoDesdeOrden}
             onCambiarFecha={cambiarFechaInstalacionDesdeOrden}
+            convergencias={convergencias}
+            onAgregarMovil={irANuevoMovilDesdeOrden}
+            onCambiarFechaMovil={cambiarFechaActivacionMovilDesdeOrden}
           />
         )}
         {tab === "historial" && (
@@ -2890,13 +3011,14 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     () => convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoVisto),
     [convergencias, periodoVisto]
   );
-  const convergenciasPeriodo = convergenciasDelPeriodo.length;
-  // Esquema nuevo (desde octubre 2026): el costo del plan de TODAS las convergencias
-  // (sean o no FULL TIGO) suma al ingreso del período.
-  const costoPlanesMovilesPeriodo = useMemo(
-    () => convergenciasDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
-    [convergenciasDelPeriodo]
-  );
+  // Esquema nuevo: solo cuentan los móviles que pagaron su 1ra factura o siguen dentro
+  // de su plazo (antes de octubre cuentan todos).
+  const resumenMovilesEsperado = useMemo(() => resumenMovilesNuevo(convergenciasDelPeriodo, false), [convergenciasDelPeriodo]);
+  const resumenMovilesConfirmado = useMemo(() => resumenMovilesNuevo(convergenciasDelPeriodo, true), [convergenciasDelPeriodo]);
+  const convergenciasPeriodo = resumenMovilesEsperado.cantidad;
+  // Esquema nuevo (desde octubre 2026): el costo del plan de los móviles que cuentan
+  // suma al ingreso del período.
+  const costoPlanesMovilesPeriodo = resumenMovilesEsperado.costoPlanes;
 
   const historialPeriodos = useMemo(() => {
     const out = [];
@@ -2919,16 +3041,17 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         const converDelPeriodo = convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === key);
 
         if (esquemaNuevo(key)) {
-          const costoPlanesP = converDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
+          const rm = resumenMovilesNuevo(converDelPeriodo, false);
           const com = calcularComision({
             periodoKey: key,
             clientesHogar: cantidad,
             metaClientesHogar: leerMeta(metas, key, "clientesHogar"),
-            clientesMovil: converDelPeriodo.length,
+            clientesMovil: rm.cantidad,
             metaClientesMovil: leerMeta(metas, key, "clientesMovil"),
-            ingresosDelPeriodo: dinero + costoPlanesP,
+            ingresosDelPeriodo: dinero + rm.costoPlanes,
             metaIngresos: leerMeta(metas, key, "dinero"),
-            cantidadConvergencias: converDelPeriodo.length,
+            cantidadBonoMovil: rm.bonoConfirmado + rm.bonoPendiente,
+            cantidadBonoPendiente: rm.bonoPendiente,
           });
           return { key, cantidad, dinero, arpu: arpuP, ...com };
         }
@@ -2982,7 +3105,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         metaClientesMovil,
         ingresosDelPeriodo: dineroDelPeriodo + costoPlanesMovilesPeriodo,
         metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasPeriodo,
+        cantidadBonoMovil: resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente,
+        cantidadBonoPendiente: resumenMovilesEsperado.bonoPendiente,
       });
     }
     return calcularComision({
@@ -3004,6 +3128,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     metaClientesMovil,
     dineroDelPeriodo,
     costoPlanesMovilesPeriodo,
+    resumenMovilesEsperado,
     metaDinero,
     arpuPeriodo,
     metaArpu,
@@ -3013,7 +3138,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
   // Versión "confirmada": lo mismo, pero contando solo los clientes de hogar que ya
   // tienen su 1ra factura pagada (deja fuera a los que aún están dentro de su plazo
-  // pero todavía no pagan). Los Clientes Móvil no tienen este concepto y cuentan igual.
+  // pero todavía no pagan). Los Clientes Móvil siguen la misma regla en el esquema nuevo.
   const clientesDelPeriodoConfirmados = useMemo(
     () => clientesDelPeriodo.filter((c) => c.f1_estado === "pagada"),
     [clientesDelPeriodo]
@@ -3032,11 +3157,12 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         periodoKey: periodoVisto,
         clientesHogar: clientesDelPeriodoConfirmados.length,
         metaClientesHogar,
-        clientesMovil: convergenciasPeriodo,
+        clientesMovil: resumenMovilesConfirmado.cantidad,
         metaClientesMovil,
-        ingresosDelPeriodo: dineroDelPeriodoConfirmado + costoPlanesMovilesPeriodo,
+        ingresosDelPeriodo: dineroDelPeriodoConfirmado + resumenMovilesConfirmado.costoPlanes,
         metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasPeriodo,
+        cantidadBonoMovil: resumenMovilesConfirmado.bonoConfirmado,
+        cantidadBonoPendiente: 0,
       });
     }
     return calcularComision({
@@ -3054,10 +3180,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     periodoVisto,
     clientesDelPeriodoConfirmados.length,
     metaClientesHogar,
-    convergenciasPeriodo,
+    resumenMovilesConfirmado,
     metaClientesMovil,
     dineroDelPeriodoConfirmado,
-    costoPlanesMovilesPeriodo,
     metaDinero,
     arpuPeriodoConfirmado,
     metaArpu,
@@ -3081,10 +3206,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     () => (periodoRescateActivo ? convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoRescateActivo) : []),
     [convergencias, periodoRescateActivo]
   );
-  const costoPlanesMovilesPeriodoHoy = useMemo(
-    () => convergenciasPeriodoHoy.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
-    [convergenciasPeriodoHoy]
-  );
+  const resumenMovilesConfirmadoHoy = useMemo(() => resumenMovilesNuevo(convergenciasPeriodoHoy, true), [convergenciasPeriodoHoy]);
+  const costoPlanesMovilesPeriodoHoy = resumenMovilesConfirmadoHoy.costoPlanes;
   const bonoFullTigoHoy = useMemo(
     () => convergenciasPeriodoHoy.filter((c) => c.fullTigo).reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
     [convergenciasPeriodoHoy]
@@ -3110,11 +3233,12 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         periodoKey: periodoRescateActivo,
         clientesHogar: clientesSimulados,
         metaClientesHogar: metaClientesHogarHoy,
-        clientesMovil: convergenciasPeriodoHoy.length,
+        clientesMovil: resumenMovilesConfirmadoHoy.cantidad,
         metaClientesMovil: metaClientesMovilHoy,
         ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodoHoy,
         metaIngresos: metaDineroHoy,
-        cantidadConvergencias: convergenciasPeriodoHoy.length,
+        cantidadBonoMovil: resumenMovilesConfirmadoHoy.bonoConfirmado,
+        cantidadBonoPendiente: 0,
       });
     }
     return calcularComision({
@@ -3130,7 +3254,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   }
   const comisionConfirmadaHoy = useMemo(
     () => (periodoRescateActivo ? calcularComisionConSubconjuntoHoy([]) : { completo: false, total: 0 }),
-    [periodoRescateActivo, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, convergenciasPeriodoHoy.length, costoPlanesMovilesPeriodoHoy, bonoFullTigoHoy]
+    [periodoRescateActivo, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, resumenMovilesConfirmadoHoy, bonoFullTigoHoy]
   );
   const rescateVencidos = useMemo(
     () => (periodoRescateActivo ? clientesDelPeriodoHoy.filter((c) => !clienteCuentaParaComision(c)) : []),
@@ -3179,13 +3303,13 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     esNuevoHoy &&
     comisionSimulada.completo &&
     comisionConfirmadaHoy.completo &&
-    comisionSimulada.factorAcelerador !== comisionConfirmadaHoy.factorAcelerador;
+    (comisionSimulada.ajusteIngreso === "acelerador") !== (comisionConfirmadaHoy.ajusteIngreso === "acelerador");
   // Cuánto te falta para llegar al siguiente tramo de la tabla, partiendo de lo confirmado
   // (en % de ingresos en el esquema viejo, en % de clientes ponderado en el nuevo).
   const rescateProximoTramo = useMemo(() => {
     if (!comisionConfirmadaHoy.completo) return null;
     const pctActual = esNuevoHoy ? comisionConfirmadaHoy.pctClientesPonderado : comisionConfirmadaHoy.pctIngreso;
-    const siguiente = TABLA_COMISION_BASE.find((t) => t.min > pctActual);
+    const siguiente = (esNuevoHoy ? TABLA_POSICION_NUEVA : TABLA_COMISION_BASE).find((t) => t.min > pctActual);
     if (!siguiente) return null;
     return { pctFalta: siguiente.min - pctActual, montoSiguiente: siguiente.monto };
   }, [comisionConfirmadaHoy, esNuevoHoy]);
@@ -3238,6 +3362,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
     if (esNuevo) {
       const convergenciasProy = Math.round(convergenciasPeriodo * factor);
+      const bonoMovilProy = Math.round((resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente) * factor);
       const costoPlanesProy = costoPlanesMovilesPeriodo * factor;
       const comisionProy = calcularComision({
         periodoKey: periodoVisto,
@@ -3247,7 +3372,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         metaClientesMovil,
         ingresosDelPeriodo: dineroProy + costoPlanesProy,
         metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasProy,
+        cantidadBonoMovil: bonoMovilProy,
+        cantidadBonoPendiente: 0,
       });
       return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
     }
@@ -3277,6 +3403,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     metaClientes,
     convergenciasPeriodo,
     costoPlanesMovilesPeriodo,
+    resumenMovilesEsperado,
     metaClientesHogar,
     metaClientesMovil,
   ]);
@@ -3403,21 +3530,22 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     const vencidos = delCiclo.filter((c) => !clienteCuentaParaComision(c));
     const converDelCiclo = convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoCobro);
     const bonoFullTigoCiclo = converDelCiclo.filter((c) => c.fullTigo).reduce((a, c) => a + (Number(c.montoPlan) || 0), 0);
-    const costoPlanesCiclo = converDelCiclo.reduce((a, c) => a + (Number(c.montoPlan) || 0), 0);
 
-    const calcular = (lista) => {
+    const calcular = (lista, soloConfirmados) => {
       const dinero = lista.reduce((a, c) => a + (Number(c.montoMensual) || 0), 0);
       const cant = lista.length;
       if (nuevo) {
+        const rm = resumenMovilesNuevo(converDelCiclo, soloConfirmados);
         return calcularComision({
           periodoKey: periodoCobro,
           clientesHogar: cant,
           metaClientesHogar: leerMeta(metas, periodoCobro, "clientesHogar"),
-          clientesMovil: converDelCiclo.length,
+          clientesMovil: rm.cantidad,
           metaClientesMovil: leerMeta(metas, periodoCobro, "clientesMovil"),
-          ingresosDelPeriodo: dinero + costoPlanesCiclo,
+          ingresosDelPeriodo: dinero + rm.costoPlanes,
           metaIngresos: leerMeta(metas, periodoCobro, "dinero"),
-          cantidadConvergencias: converDelCiclo.length,
+          cantidadBonoMovil: rm.bonoConfirmado + rm.bonoPendiente,
+          cantidadBonoPendiente: rm.bonoPendiente,
         });
       }
       return calcularComision({
@@ -3442,8 +3570,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return {
       periodoCobro,
       nuevo,
-      confirmado: calcular(pagados),
-      siPagan: calcular([...pagados, ...enPlazo]),
+      confirmado: calcular(pagados, true),
+      siPagan: calcular([...pagados, ...enPlazo], false),
       nPagados: pagados.length,
       nEnPlazo: enPlazo.length,
       nVencidos: vencidos.length,
@@ -3510,7 +3638,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       (c) => c.fechaInstalacion && periodoDelCliente(c) === periodoCliente && c.f1_estado === "pagada"
     );
     const converDelPeriodo = convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoCliente);
-    const costoPlanesDelPeriodo = converDelPeriodo.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0);
+    const rmConfirmados = resumenMovilesNuevo(converDelPeriodo, true);
 
     function calcularCon(lista) {
       const dinero = lista.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
@@ -3519,11 +3647,12 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           periodoKey: periodoCliente,
           clientesHogar: lista.length,
           metaClientesHogar: leerMeta(metas, periodoCliente, "clientesHogar"),
-          clientesMovil: converDelPeriodo.length,
+          clientesMovil: rmConfirmados.cantidad,
           metaClientesMovil: leerMeta(metas, periodoCliente, "clientesMovil"),
-          ingresosDelPeriodo: dinero + costoPlanesDelPeriodo,
+          ingresosDelPeriodo: dinero + rmConfirmados.costoPlanes,
           metaIngresos: leerMeta(metas, periodoCliente, "dinero"),
-          cantidadConvergencias: converDelPeriodo.length,
+          cantidadBonoMovil: rmConfirmados.bonoConfirmado,
+          cantidadBonoPendiente: 0,
         });
       }
       return calcularComision({
@@ -3762,9 +3891,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
                     {rescateCruceAcelerador && (
                       <div>
-                        {comisionSimulada.factorAcelerador > comisionConfirmadaHoy.factorAcelerador
-                          ? "⚡ Activarías el acelerador +10% (superarías el 100% de ingresos)."
-                          : "🐢 Dejarías de tener el desacelerador −10%."}
+                        {comisionSimulada.ajusteIngreso === "acelerador"
+                          ? "⚡ Superarías el 100% de ingresos y se activaría el acelerador (+10 puntos)."
+                          : "🐢 Dejarías de superar el 100% de ingresos y se perdería el acelerador."}
                       </div>
                     )}
                   </div>
@@ -3824,8 +3953,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         const rango = rangoCiclo(cobroMes.periodoCobro);
         const definitivo = cobroMes.nEnPlazo === 0;
         const lineaBono =
-          cobroMes.nuevo && cobroMes.confirmado.bonoConvergencias > 0
-            ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por convergencia (${cobroMes.nConvergencias} × $${BONO_POR_CONVERGENCIA})`
+          cobroMes.nuevo && (cobroMes.confirmado.bonoConvergencias > 0 || cobroMes.siPagan.bonoPendiente > 0)
+            ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por portabilidad (${cobroMes.confirmado.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` +
+              (cobroMes.siPagan.bonoPendiente > 0 ? ` · ${fmtMonto(cobroMes.siPagan.bonoPendiente)} más si pagan su 1ra factura` : "")
             : null;
         const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B8791F" : definitivo ? "#0F766E" : "#0072CE";
         const fondoLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#FBF1DE" : definitivo ? "#DCF5F3" : "#E3EDFA";
@@ -3883,7 +4013,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     </div>
                     <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
                       {cobroMes.nuevo
-                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) × ${cobroMes.confirmado.factorAcelerador === 1 ? "sin acelerador" : cobroMes.confirmado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos)`
+                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) ${textoAjusteIngreso(cobroMes.confirmado)}`
                         : `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos) × ${cobroMes.confirmado.pctArpu.toFixed(1)}% ARPU × ${cobroMes.confirmado.pctClientes.toFixed(1)}% clientes`}
                     </div>
                     {lineaBono && <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>{lineaBono}</div>}
@@ -3912,7 +4042,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     </div>
                     <div className="sm:col-span-2 text-xs" style={ { color: "#6B7280" } }>
                       {cobroMes.nuevo
-                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) × ${cobroMes.confirmado.factorAcelerador === 1 ? "sin acelerador" : cobroMes.confirmado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos)`
+                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) ${textoAjusteIngreso(cobroMes.confirmado)}`
                         : `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos) × ${cobroMes.confirmado.pctArpu.toFixed(1)}% ARPU × ${cobroMes.confirmado.pctClientes.toFixed(1)}% clientes`}
                     </div>
                   </div>
@@ -3978,7 +4108,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           )}
           {esNuevo && comision.factorAcelerador !== 1 && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
-              {comision.factorAcelerador > 1 ? "⚡ acelerador +10%" : "🐢 desacelerador −10%"}
+              {comision.ajusteIngreso === "acelerador" ? "⚡ acelerador +10 puntos" : `🐢 desacelerador (cobras ${(comision.factorAcelerador * 100).toFixed(0)}% de tu posición)`}
             </span>
           )}
         </div>
@@ -3988,10 +4118,10 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             {esNuevo ? (
               <div className="text-xs opacity-80 leading-relaxed">
                 Base {fmtMonto(comision.montoBase)} ({comision.pctClientesPonderado.toFixed(1)}% clientes ponderado: {comision.pctHogar.toFixed(1)}% hogar × 65% + {comision.pctMovil.toFixed(1)}% móvil × 35%)
-                {" × "}
-                {comision.factorAcelerador === 1 ? "sin acelerador (100% ingresos)" : comision.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}
-                {" "}({comision.pctIngreso.toFixed(1)}% ingresos)
-                {comision.bonoConvergencias > 0 ? ` + ${fmtMonto(comision.bonoConvergencias)} bono por convergencia (${comision.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` : ""}
+                {" "}
+                {textoAjusteIngreso(comision)}
+                {comision.bonoConvergencias > 0 ? ` + ${fmtMonto(comision.bonoConvergencias)} bono por portabilidad (${comision.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` : ""}
+                {comision.bonoPendiente > 0 ? ` (${fmtMonto(comision.bonoPendiente)} de ese bono dependen de que paguen su 1ra factura)` : ""}
               </div>
             ) : (
               <div className="text-xs opacity-80 leading-relaxed">
@@ -4137,7 +4267,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                 <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de ingresos de este período.</p>
               )}
               <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
-                Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)} · define el acelerador/desacelerador (±10%)
+                Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)} · define el acelerador o desacelerador
               </p>
             </div>
           </>
@@ -4357,7 +4487,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             <div className="text-xs" style={ { color: "#6B7280" } }>
               {detalleMostrado.completo
                 ? detalleMostrado.esquema === "nuevo"
-                  ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) × ${detalleMostrado.factorAcelerador === 1 ? "sin acelerador" : detalleMostrado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMonto(detalleMostrado.bonoConvergencias)} bono convergencias` : ""}`
+                  ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) ${textoAjusteIngreso(detalleMostrado)}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMonto(detalleMostrado.bonoConvergencias)} bono portabilidad` : ""}`
                   : `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
                 : "Faltan metas cargadas en este período para calcular la comisión completa."}
             </div>
@@ -4894,7 +5024,7 @@ function pasaFiltroFactura(c, f) {
   return true;
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil }) {
+function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -4921,11 +5051,15 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
 
   const [subVista, setSubVista] = useState("clientes");
   const [abrirFormMovil, setAbrirFormMovil] = useState(false);
+  const [prefillMovil, setPrefillMovil] = useState(null);
   useEffect(() => {
     if (saltarAMes) {
       if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
       setSubVista(saltarAMes.subVista === "movil" ? "movil" : "clientes");
-      if (saltarAMes.abrirForm) setAbrirFormMovil(true);
+      if (saltarAMes.abrirForm) {
+        setPrefillMovil(saltarAMes.prefill || null);
+        setAbrirFormMovil(true);
+      }
       setFiltrosClientes((prev) => ({
         ...prev,
         fechaDesde: "",
@@ -5220,7 +5354,9 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           onEliminar={onEliminarMovil}
           mesActivo={mesActivoEfectivo}
           abrirForm={abrirFormMovil}
-          onFormAbierto={() => setAbrirFormMovil(false)}
+          prefill={prefillMovil}
+          onFormAbierto={() => { setAbrirFormMovil(false); setPrefillMovil(null); }}
+          onVolverAPrecierre={onVolverAPrecierre}
         />
       ) : (
         <>
@@ -5888,22 +6024,37 @@ function ClienteDetalle({
   );
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto }) {
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre }) {
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [tipo, setTipo] = useState("pospago");
   const [montoPlan, setMontoPlan] = useState("");
   const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
+  const [esPortabilidad, setEsPortabilidad] = useState(false);
+  const [f1Pagada, setF1Pagada] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formAbierto, setFormAbierto] = useState(!!abrirForm);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
   const formRef = useRef(null);
   const nombreRef = useRef(null);
+  // true cuando el formulario se abrió desde "Verificar órdenes": al guardar vuelve al Precierre.
+  const vieneDePrecierre = useRef(false);
 
   // El formulario viene minimizado: solo se abre desde el botón flotante (+) o al editar un cliente.
   useEffect(() => {
     if (abrirForm) {
+      if (prefill) {
+        setEditingId(null);
+        setNombre(prefill.nombre || "");
+        setTelefono("");
+        setTipo("pospago");
+        setMontoPlan("");
+        setFechaActivacion(prefill.fecha || fechaLocalISO(new Date()));
+        setEsPortabilidad(false);
+        setF1Pagada(false);
+        vieneDePrecierre.current = true;
+      }
       setFormAbierto(true);
       if (onFormAbierto) onFormAbierto();
     }
@@ -5920,17 +6071,22 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   }, [formAbierto, editingId]);
 
   function limpiarForm() {
+    vieneDePrecierre.current = false;
     setNombre("");
     setTelefono("");
     setTipo("pospago");
     setMontoPlan("");
     setFechaActivacion(fechaLocalISO(new Date()));
+    setEsPortabilidad(false);
+    setF1Pagada(false);
     setEditingId(null);
   }
 
   function handleSubmit(e) {
     e.preventDefault();
     if (!nombre.trim() || !telefono.trim()) return;
+    const volver = vieneDePrecierre.current && !editingId;
+    const editando = editingId ? clientesMovil.find((x) => x.id === editingId) : null;
     if (editingId) {
       onEditar(editingId, {
         nombre: nombre.trim(),
@@ -5938,22 +6094,47 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         tipo,
         montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
         fechaActivacion,
+        esPortabilidad,
+        ...fijarFactura(editando, f1Pagada),
       });
     } else {
-      onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion);
+      onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion, {
+        esPortabilidad,
+        f1_estado: f1Pagada ? "pagada" : "",
+      });
     }
     limpiarForm();
     setFormAbierto(false);
+    if (volver && onVolverAPrecierre) onVolverAPrecierre();
   }
 
   function startEdit(c) {
+    vieneDePrecierre.current = false;
     setNombre(c.nombre);
     setTelefono(c.telefono);
     setTipo(tipoClienteMovil(c));
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
+    setEsPortabilidad(!!c.esPortabilidad);
+    setF1Pagada(c.f1_estado === "pagada");
     setEditingId(c.id);
     setFormAbierto(true);
+  }
+
+  // Campos de 1ra factura a guardar al editar: conserva la fecha en que se marcó pagada
+  // y la limpia si se desmarca.
+  function fijarFactura(cliente, pagada) {
+    const estabaPagada = !!cliente && cliente.f1_estado === "pagada";
+    if (pagada) return { f1_estado: "pagada", f1_pagadaEn: estabaPagada && cliente.f1_pagadaEn ? cliente.f1_pagadaEn : new Date().toISOString() };
+    return { f1_estado: "", f1_pagadaEn: null };
+  }
+
+  // Interruptores rápidos de cada tarjeta (sin abrir el formulario).
+  function alternarPortabilidad(c) {
+    onEditar(c.id, { esPortabilidad: !c.esPortabilidad });
+  }
+  function alternarFactura(c) {
+    onEditar(c.id, fijarFactura(c, c.f1_estado !== "pagada"));
   }
 
   function cancelEdit() {
@@ -6041,6 +6222,16 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 style={ { borderColor: "#D1D5DB" } }
               />
             </div>
+            <div className="sm:col-span-2 flex flex-col gap-2 rounded-md p-3" style={ { background: "#F4F6FA" } }>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={esPortabilidad} onChange={(e) => setEsPortabilidad(e.target.checked)} className="w-4 h-4" />
+                <span>Es portabilidad <span className="text-xs" style={ { color: "#6B7280" } }>(el número viene de otra compañía)</span></span>
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={f1Pagada} onChange={(e) => setF1Pagada(e.target.checked)} className="w-4 h-4" />
+                <span>Primera factura pagada <span className="text-xs" style={ { color: "#6B7280" } }>(cuenta para tu comisión desde octubre)</span></span>
+              </label>
+            </div>
             <div className="flex gap-2 sm:col-span-2 sm:justify-end">
               <button
                 type="submit"
@@ -6065,6 +6256,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
           const delMes = clientesMovil.filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key);
+          const resumenMes = esquemaNuevo(m.key) ? resumenMovilesNuevo(delMes, false) : null;
           const abierto = mesExpandido === m.key;
           return (
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -6080,9 +6272,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                   <span className="text-sm font-mono" style={ { color: "#001E62" } }>
                     {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
                   </span>
-                  {delMes.length > 0 && (
+                  {resumenMes && (resumenMes.bonoConfirmado > 0 || resumenMes.bonoPendiente > 0) && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#DCF5F3", color: "#0F766E" } }>
-                      BONO POR CONVERGENCIA = {fmtMonto(delMes.length * BONO_POR_CONVERGENCIA)}
+                      BONO POR PORTABILIDAD = {fmtMonto(resumenMes.bonoConfirmado * BONO_POR_CONVERGENCIA)}
+                      {resumenMes.bonoPendiente > 0 ? ` · ${fmtMonto(resumenMes.bonoPendiente * BONO_POR_CONVERGENCIA)} pendiente` : ""}
                     </span>
                   )}
                 </div>
@@ -6108,6 +6301,37 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         <div className="text-xs font-mono mt-1.5" style={ { color: "#6B7280" } }>
                           {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
                         </div>
+                        {esquemaNuevo(m.key) && (
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            <button
+                              type="button"
+                              onClick={() => alternarPortabilidad(c)}
+                              title="Clic para cambiar"
+                              className="text-xs font-medium px-2.5 py-1 rounded-full border"
+                              style={ c.esPortabilidad
+                                ? { background: "#E3EDFA", color: "#0072CE", borderColor: "#0072CE" }
+                                : { background: "white", color: "#6B7280", borderColor: "#D1D5DB" } }
+                            >
+                              {c.esPortabilidad ? "✓ Portabilidad" : "Portabilidad: no"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => alternarFactura(c)}
+                              title="Clic para cambiar"
+                              className="text-xs font-medium px-2.5 py-1 rounded-full border"
+                              style={ c.f1_estado === "pagada"
+                                ? { background: "#DCF5F3", color: "#0F766E", borderColor: "#0F766E" }
+                                : { background: "white", color: "#6B7280", borderColor: "#D1D5DB" } }
+                            >
+                              {c.f1_estado === "pagada" ? "✓ 1ra factura pagada" : "1ra factura: sin pagar"}
+                            </button>
+                            {!movilCuentaParaComision(c) && (
+                              <span className="text-xs font-medium px-2 py-1 rounded-full" style={ { background: "#FBE9E9", color: "#C23B3B" } }>
+                                ⛔ No cuenta (venció el plazo)
+                              </span>
+                            )}
+                          </div>
+                        )}
                         <div className="flex gap-2 mt-3">
                           <a
                             href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`}
@@ -6460,7 +6684,7 @@ function calcularPrecierre(clientes, textoPegado, desde, hasta) {
   return { desde, hasta, total: numeros.length, duplicados, sinNumero, lineas, agregar, coinciden, revisar, reclamar };
 }
 
-function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente, verif, setVerif, onAgregarOrden, onCambiarFecha }) {
+function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, verif, setVerif, onAgregarOrden, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
   const [editando, setEditando] = useState(!estado.aplicado);
   const resultado = useMemo(
     () => (estado.aplicado ? calcularPrecierre(clientes, estado.aplicado.texto, estado.aplicado.desde, estado.aplicado.hasta) : null),
@@ -6512,6 +6736,9 @@ function PrecierreTab({ clientes, estado, setEstado, onIrNuevo, onAbrirCliente, 
           onAgregar={onAgregarOrden}
           onAbrirCliente={onAbrirCliente}
           onCambiarFecha={onCambiarFecha}
+          convergencias={convergencias}
+          onAgregarMovil={onAgregarMovil}
+          onCambiarFechaMovil={onCambiarFechaMovil}
         />
       ) : (
       <React.Fragment>
@@ -6814,14 +7041,16 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
 // N.° de orden · Tipo · Estado · Nombre · Cédula · Fecha de creación · Fecha de cierre.
 // Los clientes se comparan POR NOMBRE contra los de la app.
 const VERIF_ORDENES_KEY = "antichurn_verif_ordenes";
-// Solo se verifican órdenes de estos tipos (en minúsculas). MATCH DIGITAL queda fuera.
+// Órdenes de estos tipos son clientes de Hogar (en minúsculas).
 const ORDENES_TIPOS_VERIFICABLES = ["hogar"];
+// Órdenes de estos tipos son Clientes Móvil (se comparan contra la lista de móviles).
+const ORDENES_TIPOS_MOVIL = ["match digital", "convergente puro"];
 // Estados que significan "ya ingresada en Tigo, todavía no instalada" (en minúsculas).
 // "Propuesta enviada" a propósito NO está aquí: todavía no es una orden ingresada.
 const ORDENES_ESTADOS_EN_PROCESO = ["procesando", "agendar visita"];
 
 function leerVerifOrdenesGuardado() {
-  const base = { modo: "precierre", texto: "", aplicado: null, descartados: [] };
+  const base = { modo: "precierre", texto: "", aplicado: null, descartados: [], seccion: null };
   try {
     const raw = localStorage.getItem(VERIF_ORDENES_KEY);
     if (!raw) return base;
@@ -6831,6 +7060,7 @@ function leerVerifOrdenesGuardado() {
       texto: typeof g.texto === "string" ? g.texto : "",
       aplicado: typeof g.aplicado === "string" ? g.aplicado : null,
       descartados: Array.isArray(g.descartados) ? g.descartados : [],
+      seccion: g.seccion === "movil" || g.seccion === "hogar" ? g.seccion : null,
     };
   } catch (e) {
     return base;
@@ -6916,12 +7146,18 @@ function buscarClienteParecido(key, clientes) {
   return null;
 }
 
-function compararOrdenes(clientes, texto, descartados) {
+function compararOrdenes(clientes, texto, descartados, convergencias) {
   const { filas, ignoradas } = leerOrdenesTigo(texto);
   const porNombre = new Map();
   clientes.forEach((c) => {
     const k = normalizarNombreOrden(c.nombre);
     if (k && !porNombre.has(k)) porNombre.set(k, c);
+  });
+  const moviles = convergencias || [];
+  const porNombreMovil = new Map();
+  moviles.forEach((c) => {
+    const k = normalizarNombreOrden(c.nombre);
+    if (k && !porNombreMovil.has(k)) porNombreMovil.set(k, c);
   });
   const r = {
     total: filas.length,
@@ -6935,12 +7171,47 @@ function compararOrdenes(clientes, texto, descartados) {
     posibles: [],
     bien: [],
     noVerificadas: [],
+    movil: { faltan: [], proceso: [], fechaDistinta: [], alertas: [], posibles: [], bien: [] },
   };
   const vistos = new Set();
   filas.forEach((f) => {
-    const tipoOk = ORDENES_TIPOS_VERIFICABLES.includes(normalizarNombreOrden(f.tipo));
+    const tipoNorm = normalizarNombreOrden(f.tipo);
     const clase = claseEstadoOrden(f.estado);
     const key = normalizarNombreOrden(f.nombre);
+
+    // Órdenes móviles (MATCH DIGITAL / CONVERGENTE PURO): se comparan contra Clientes Móvil.
+    // "Completada" cuenta como completada (aunque Tigo la rechace después, no se puede saber).
+    if (ORDENES_TIPOS_MOVIL.includes(tipoNorm)) {
+      if (clase === "otro" || !key) {
+        r.noVerificadas.push(f);
+        return;
+      }
+      const claveM = "m|" + key + "|" + clase;
+      if (vistos.has(claveM)) {
+        r.repetidas++;
+        return;
+      }
+      vistos.add(claveM);
+      const m = porNombreMovil.get(key);
+      if (!m) {
+        const parecidoM = descartados.has("m:" + key) ? null : buscarClienteParecido(key, moviles);
+        if (parecidoM) {
+          r.movil.posibles.push({ fila: f, cliente: parecidoM, key: "m:" + key });
+          return;
+        }
+        (clase === "completada" ? r.movil.faltan : r.movil.proceso).push(f);
+        return;
+      }
+      if (clase === "completada") {
+        if (f.fin && fechaActivacionMovil(m) !== f.fin) r.movil.fechaDistinta.push({ fila: f, cliente: m });
+        else r.movil.bien.push({ fila: f, cliente: m });
+      } else {
+        r.movil.alertas.push({ fila: f, cliente: m });
+      }
+      return;
+    }
+
+    const tipoOk = ORDENES_TIPOS_VERIFICABLES.includes(tipoNorm);
     if (!tipoOk || clase === "otro" || !key) {
       r.noVerificadas.push(f);
       return;
@@ -6983,6 +7254,15 @@ const GRUPOS_ORDENES = [
   { key: "bien", label: "Todo bien", pista: "Nombre y fecha coinciden.", color: "#0F766E", bg: "#EAF6F4", borde: "#B7E0DA" },
 ];
 
+const GRUPOS_MOVIL = [
+  { key: "faltan", label: "Te faltan", pista: "Completadas en Tigo y no están en tus Clientes Móvil.", color: "#C23B3B", bg: "#FBEAEA", borde: "#F3C6C6" },
+  { key: "fechaDistinta", label: "Fecha distinta", pista: "La fecha de activación de tu app no es la de Tigo.", color: "#C2761F", bg: "#FFF6EC", borde: "#F5D9B8" },
+  { key: "alertas", label: "Alertas", pista: "Las tienes en tu app, pero en Tigo siguen en proceso.", color: "#8A3FA8", bg: "#F6EEFA", borde: "#E0C9EC" },
+  { key: "posibles", label: "Posibles coincidencias", pista: "No hay nombre igual, pero hay uno parecido en tus Clientes Móvil.", color: "#6B7280", bg: "#F3F4F6", borde: "#D1D5DB" },
+  { key: "proceso", label: "En proceso", pista: "Todavía en proceso en Tigo. Solo informativo: se agregan cuando salgan completadas.", color: "#B8791F", bg: "#FFFBF2", borde: "#F3E3C3" },
+  { key: "bien", label: "Todo bien", pista: "Nombre y fecha coinciden.", color: "#0F766E", bg: "#EAF6F4", borde: "#B7E0DA" },
+];
+
 function BotonCopiarOrden({ texto, label, vacio }) {
   const [ok, setOk] = useState(false);
   async function copiar(e) {
@@ -7021,28 +7301,34 @@ function FilaOrden({ color, nombre, sub, children }) {
   );
 }
 
-function confirmarCambioFechaOrden(cliente, nueva) {
-  const antes = cliente.fechaInstalacion ? fmtFecha(cliente.fechaInstalacion) : "pendiente (sin fecha)";
+function confirmarCambioFechaOrden(cliente, nueva, esMovil) {
+  const actual = esMovil ? fechaActivacionMovil(cliente) : cliente.fechaInstalacion;
+  const antes = actual ? fmtFecha(actual) : "pendiente (sin fecha)";
   return window.confirm(
-    "¿Cambiar la fecha de instalación de " + cliente.nombre + "?\n\nAntes: " + antes + "\nAhora: " + fmtFecha(nueva)
+    "¿Cambiar la fecha de " + (esMovil ? "activación" : "instalación") + " de " + cliente.nombre + "?\n\nAntes: " + antes + "\nAhora: " + fmtFecha(nueva)
   );
 }
 
-function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha }) {
+function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha, movil }) {
+  const fechaApp = movil ? fechaActivacionMovil(cliente) : cliente.fechaInstalacion;
   const [editando, setEditando] = useState(false);
-  const [valor, setValor] = useState(cliente.fechaInstalacion || "");
+  const [valor, setValor] = useState(fechaApp || "");
   function aplicar(nueva) {
     if (!nueva) return;
-    if (confirmarCambioFechaOrden(cliente, nueva)) onCambiarFecha(cliente.id, nueva);
+    if (confirmarCambioFechaOrden(cliente, nueva, movil)) onCambiarFecha(cliente.id, nueva);
   }
   const estiloBoton = { color: "#001E62", border: "1px solid #D1D5DB" };
   return (
     <FilaOrden
       color={color}
       nombre={cliente.nombre}
-      sub={"Tu app: " + fmtFecha(cliente.fechaInstalacion) + " · Tigo: " + fmtFecha(fila.fin)}
+      sub={"Tu app: " + fmtFecha(fechaApp) + " · Tigo: " + fmtFecha(fila.fin)}
     >
-      <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
+      {movil ? (
+        <BotonCopiarOrden texto={fila.cedula} label="Copiar cédula" />
+      ) : (
+        <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
+      )}
       {editando ? (
         <>
           <input
@@ -7082,14 +7368,23 @@ function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha }) {
   );
 }
 
-function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente, onCambiarFecha }) {
+// Días que lleva una orden en proceso, según la fecha de creación que trae Tigo.
+function textoDiasEnProceso(f) {
+  if (!f.creada) return "";
+  const d = Math.max(0, -daysFromToday(f.creada));
+  if (d === 0) return "ingresada hoy";
+  if (d === 1) return "1 día en proceso";
+  return d + " días en proceso";
+}
+
+function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar, onAbrirCliente, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
   const [editando, setEditando] = useState(!verif.aplicado);
   const [grupo, setGrupo] = useState(null);
   const [verNoVerif, setVerNoVerif] = useState(false);
   const descartados = useMemo(() => new Set(verif.descartados || []), [verif.descartados]);
   const resultado = useMemo(
-    () => (verif.aplicado ? compararOrdenes(clientes, verif.aplicado, descartados) : null),
-    [clientes, verif.aplicado, descartados]
+    () => (verif.aplicado ? compararOrdenes(clientes, verif.aplicado, descartados, convergencias || []) : null),
+    [clientes, convergencias, verif.aplicado, descartados]
   );
 
   function verificar() {
@@ -7098,16 +7393,21 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
     setGrupo(null);
   }
   function limpiar() {
-    setVerif((v) => ({ ...v, texto: "", aplicado: null, descartados: [] }));
+    setVerif((v) => ({ ...v, texto: "", aplicado: null, descartados: [], seccion: null }));
     setEditando(true);
     setGrupo(null);
   }
   function descartarParecido(key) {
     setVerif((v) => ({ ...v, descartados: [...(v.descartados || []), key] }));
   }
+  function cambiarSeccion(s) {
+    setVerif((v) => ({ ...v, seccion: s }));
+    setGrupo(null);
+  }
 
   const estiloBoton = { color: "#001E62", border: "1px solid #D1D5DB" };
-  const conteos = resultado
+  const m = resultado ? resultado.movil : null;
+  const cH = resultado
     ? {
         faltan: resultado.faltan.length,
         procesoFaltan: resultado.procesoFaltan.length,
@@ -7118,12 +7418,36 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
         bien: resultado.bien.length,
       }
     : {};
-  const porResolver = resultado
-    ? conteos.faltan + conteos.procesoFaltan + conteos.fechaDistinta + conteos.pendientesInstalados + conteos.alertas + conteos.posibles
-    : 0;
-  const primero = ["faltan", "procesoFaltan", "fechaDistinta", "pendientesInstalados", "alertas", "posibles"].find((k) => conteos[k] > 0) || "bien";
-  const activo = grupo && GRUPOS_ORDENES.some((x) => x.key === grupo) ? grupo : primero;
-  const g = GRUPOS_ORDENES.find((x) => x.key === activo);
+  const cM = m
+    ? {
+        faltan: m.faltan.length,
+        fechaDistinta: m.fechaDistinta.length,
+        alertas: m.alertas.length,
+        posibles: m.posibles.length,
+        proceso: m.proceso.length,
+        bien: m.bien.length,
+      }
+    : {};
+  const pendH = resultado ? cH.faltan + cH.procesoFaltan + cH.fechaDistinta + cH.pendientesInstalados + cH.alertas + cH.posibles : 0;
+  // En Móvil, "En proceso" es solo informativo y no cuenta como algo por resolver.
+  const pendM = m ? cM.faltan + cM.fechaDistinta + cM.alertas + cM.posibles : 0;
+
+  const seccionActiva = verif.seccion === "movil" || verif.seccion === "hogar" ? verif.seccion : pendH === 0 && pendM > 0 ? "movil" : "hogar";
+  const esMovil = seccionActiva === "movil";
+  const grupos = esMovil ? GRUPOS_MOVIL : GRUPOS_ORDENES;
+  const conteos = esMovil ? cM : cH;
+  const porResolver = esMovil ? pendM : pendH;
+  const ordenPrimero = esMovil
+    ? ["faltan", "fechaDistinta", "alertas", "posibles", "proceso"]
+    : ["faltan", "procesoFaltan", "fechaDistinta", "pendientesInstalados", "alertas", "posibles"];
+  const primero = ordenPrimero.find((k) => conteos[k] > 0) || "bien";
+  const activo = grupo && grupos.some((x) => x.key === grupo) ? grupo : primero;
+  const g = grupos.find((x) => x.key === activo);
+  const estiloSeccion = (sel) => ({
+    background: sel ? "#001E62" : "#FFFFFF",
+    color: sel ? "#FFFFFF" : "#374151",
+    border: "1px solid " + (sel ? "#001E62" : "#D1D5DB"),
+  });
 
   return (
     <div>
@@ -7183,6 +7507,20 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
 
       {!editando && resultado && resultado.total > 0 && (
         <div className="flex flex-col gap-3">
+          <div className="flex gap-2">
+            {[["hogar", "🏠 Hogar", pendH], ["movil", "📱 Móvil", pendM]].map(([k, label, n]) => (
+              <button
+                key={k}
+                onClick={() => cambiarSeccion(k)}
+                aria-pressed={seccionActiva === k}
+                className="text-sm font-medium px-3 py-1.5 rounded-md"
+                style={estiloSeccion(seccionActiva === k)}
+              >
+                {label}{n > 0 ? " (" + n + ")" : ""}
+              </button>
+            ))}
+          </div>
+
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
             <div className="text-sm font-semibold" style={{ color: porResolver === 0 ? "#0F766E" : "#374151" }}>
               {porResolver === 0 ? "✅ Todo cuadra" : porResolver + (porResolver === 1 ? " cosa por resolver" : " cosas por resolver")}
@@ -7213,7 +7551,7 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
           </div>
 
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {GRUPOS_ORDENES.map((x) => {
+            {grupos.map((x) => {
               const sel = activo === x.key;
               return (
                 <button
@@ -7242,7 +7580,8 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
 
             {conteos[g.key] === 0 && <p className="text-sm py-3" style={{ color: "#0F766E" }}>✅ Ninguno.</p>}
 
-            {activo === "faltan" &&
+            {/* ---------- HOGAR ---------- */}
+            {!esMovil && activo === "faltan" &&
               resultado.faltan.map((f) => (
                 <FilaOrden
                   key={f.orden}
@@ -7261,7 +7600,7 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
                 </FilaOrden>
               ))}
 
-            {activo === "procesoFaltan" &&
+            {!esMovil && activo === "procesoFaltan" &&
               resultado.procesoFaltan.map((f) => (
                 <FilaOrden key={f.orden} color={g.color} nombre={f.nombre} sub={f.estado + " · cédula " + f.cedula}>
                   <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
@@ -7275,12 +7614,12 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
                 </FilaOrden>
               ))}
 
-            {activo === "fechaDistinta" &&
+            {!esMovil && activo === "fechaDistinta" &&
               resultado.fechaDistinta.map(({ fila, cliente }) => (
                 <FilaFechaDistinta key={cliente.id + fila.orden} fila={fila} cliente={cliente} color={g.color} onCambiarFecha={onCambiarFecha} />
               ))}
 
-            {activo === "pendientesInstalados" &&
+            {!esMovil && activo === "pendientesInstalados" &&
               resultado.pendientesInstalados.map(({ fila, cliente }) => (
                 <FilaOrden
                   key={cliente.id + fila.orden}
@@ -7300,7 +7639,7 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
                 </FilaOrden>
               ))}
 
-            {activo === "alertas" &&
+            {!esMovil && activo === "alertas" &&
               resultado.alertas.map(({ fila, cliente }) => (
                 <FilaOrden
                   key={cliente.id + fila.orden}
@@ -7315,7 +7654,7 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
                 </FilaOrden>
               ))}
 
-            {activo === "posibles" &&
+            {!esMovil && activo === "posibles" &&
               resultado.posibles.map(({ fila, cliente, key }) => (
                 <FilaOrden
                   key={fila.orden}
@@ -7332,13 +7671,88 @@ function VerificarOrdenes({ clientes, verif, setVerif, onAgregar, onAbrirCliente
                 </FilaOrden>
               ))}
 
-            {activo === "bien" &&
+            {!esMovil && activo === "bien" &&
               resultado.bien.map(({ fila, cliente }) => (
                 <FilaOrden
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
                   sub={cliente.fechaInstalacion ? "Instalado " + fmtFecha(cliente.fechaInstalacion) : "Pendiente · " + fila.estado}
+                />
+              ))}
+
+            {/* ---------- MÓVIL ---------- */}
+            {esMovil && activo === "faltan" &&
+              m.faltan.map((f) => (
+                <FilaOrden
+                  key={f.orden}
+                  color={g.color}
+                  nombre={f.nombre}
+                  sub={f.tipo + " · cédula " + f.cedula + (f.fin ? " · completada " + fmtFecha(f.fin) : "")}
+                >
+                  <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
+                  <button
+                    onClick={() => onAgregarMovil(f.nombre, f.fin)}
+                    className="text-xs font-medium px-3 py-1 rounded-md text-white"
+                    style={{ background: "#001E62" }}
+                  >
+                    + Agregar
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {esMovil && activo === "fechaDistinta" &&
+              m.fechaDistinta.map(({ fila, cliente }) => (
+                <FilaFechaDistinta key={cliente.id + fila.orden} fila={fila} cliente={cliente} color={g.color} onCambiarFecha={onCambiarFechaMovil} movil />
+              ))}
+
+            {esMovil && activo === "alertas" &&
+              m.alertas.map(({ fila, cliente }) => (
+                <FilaOrden
+                  key={cliente.id + fila.orden}
+                  color={g.color}
+                  nombre={cliente.nombre}
+                  sub={"Tigo: " + fila.estado + " · en tu app activada el " + fmtFecha(fechaActivacionMovil(cliente))}
+                >
+                  <BotonCopiarOrden texto={fila.cedula} label="Copiar cédula" />
+                </FilaOrden>
+              ))}
+
+            {esMovil && activo === "posibles" &&
+              m.posibles.map(({ fila, cliente, key }) => (
+                <FilaOrden
+                  key={fila.orden}
+                  color={g.color}
+                  nombre={fila.nombre}
+                  sub={"Parecido en tus Clientes Móvil: " + cliente.nombre + " · activada " + fmtFecha(fechaActivacionMovil(cliente))}
+                >
+                  <button onClick={() => descartarParecido(key)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                    No es el mismo
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {esMovil && activo === "proceso" &&
+              [...m.proceso]
+                .sort((a, b) => (a.creada || "9999").localeCompare(b.creada || "9999"))
+                .map((f) => (
+                  <FilaOrden
+                    key={f.orden}
+                    color={g.color}
+                    nombre={f.nombre}
+                    sub={[f.tipo, f.estado, textoDiasEnProceso(f)].filter(Boolean).join(" · ") + " · cédula " + f.cedula}
+                  >
+                    <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
+                  </FilaOrden>
+                ))}
+
+            {esMovil && activo === "bien" &&
+              m.bien.map(({ fila, cliente }) => (
+                <FilaOrden
+                  key={cliente.id + fila.orden}
+                  color={g.color}
+                  nombre={cliente.nombre}
+                  sub={"Activada " + fmtFecha(fechaActivacionMovil(cliente))}
                 />
               ))}
           </div>
