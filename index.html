@@ -220,7 +220,7 @@ function estadoRiesgoChurn(c, periodoActualKey) {
   const f1Pagada = c.f1_estado === "pagada";
   if (mes === 2) {
     return f1Pagada
-      ? { tipo: "ok", texto: "✅ Mes 2 · 1ra factura pagada", color: "#0F766E", bg: "#DCF5F3" }
+      ? { tipo: "ok", texto: c.f1_saldoPendiente ? "✅ Mes 2 · 1ra factura pagada (saldo pendiente)" : "✅ Mes 2 · 1ra factura pagada", color: "#0F766E", bg: "#DCF5F3" }
       : { tipo: "alerta", texto: "⚠️ Mes 2 · falta pagar la 1ra factura", color: "#8A6D00", bg: "#FBF3D9" };
   }
 
@@ -243,7 +243,7 @@ function estadoRiesgoChurn(c, periodoActualKey) {
   if (!f1Pagada) {
     return { tipo: "alerta", texto: `⚠️ Mes ${mes} · nunca pagó la 1ra factura`, color: "#8A6D00", bg: "#FBF3D9" };
   }
-  return { tipo: "ok", texto: `✅ Mes ${mes} · al día`, color: "#0F766E", bg: "#DCF5F3" };
+  return { tipo: "ok", texto: c.f1_saldoPendiente ? `✅ Mes ${mes} · 1ra factura pagada (saldo pendiente)` : `✅ Mes ${mes} · al día`, color: "#0F766E", bg: "#DCF5F3" };
 }
 // Suma (o resta) meses a una clave "YYYY-MM", para navegar entre períodos de comisión.
 function sumarMesClave(mesKey, delta) {
@@ -668,13 +668,14 @@ function calcularPrimeraFactura(fechaInstalacion, cicloDia, montoMensual) {
 }
 
 // ---------- Plantillas de mensajes por tipo de aviso ----------
-// Extrae el primer nombre de forma robusta: ignora espacios extra al inicio/fin
-// y entre palabras, y da un saludo genérico si el nombre viniera vacío.
-// Nombre completo del cliente, recortando espacios extra; da un saludo
-// genérico si el nombre viniera vacío.
-function nombreCompleto(c) {
-  const n = (c.nombre || "").trim();
-  return n || "estimado cliente";
+// Primer nombre del cliente para el saludo de TODOS los mensajes: ignora espacios
+// extra, toma solo la primera palabra y la pasa a formato normal (HUGO GABRIEL
+// GUERRA -> "Hugo"). Si el nombre viniera vacío, da un saludo genérico.
+function primerNombre(c) {
+  const primera = (c.nombre || "").trim().split(/\s+/)[0] || "";
+  if (!primera) return "estimado cliente";
+  const minus = primera.toLocaleLowerCase("es");
+  return minus.charAt(0).toLocaleUpperCase("es") + minus.slice(1);
 }
 
 // Frase de vencimiento calculada según los días reales que faltan hoy
@@ -687,7 +688,7 @@ function fraseVencimiento(dias) {
 }
 
 function textoD1(c, n) {
-  const nombre = nombreCompleto(c);
+  const nombre = primerNombre(c);
   if (n === 1) {
     const finProrrateo = addDays(c.fecha1raFactura, -1);
     return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
@@ -706,7 +707,7 @@ Una vez realizado el pago, compárteme el comprobante para validar el ingreso. C
   return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
 }
 function textoT15(c, n) {
-  const nombre = nombreCompleto(c);
+  const nombre = primerNombre(c);
   const dias = daysFromToday(c._venc);
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
@@ -717,7 +718,7 @@ Le recuerdo que su factura ${fraseVencimiento(dias)}:
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier consulta sobre su plan, con gusto le ayudo.`;
 }
 function textoT3(c, n) {
-  const nombre = nombreCompleto(c);
+  const nombre = primerNombre(c);
   const dias = daysFromToday(c._venc);
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
@@ -731,30 +732,73 @@ Le recomiendo realizar el pago a tiempo para evitar la suspensión del servicio.
 // Mensajes preventivos para clientes de prorrateo alto instalados desde septiembre
 // 2026 en adelante: en vez de esperar a que exista la factura real (con el número
 // grande de prorrateo + mensualidad), se le pide completar el resto de su primer
-// mes con una fecha sugerida (instalación + 30 días) — sin mencionar montos ni la
-// factura oficial de Tigo.
-function fechaSugeridaAbono(fechaInstalacion) {
-  return addDays(fechaInstalacion, 30);
+// mes en una fecha de QUINCENA (día 15 o 30) — sin mencionar montos, la factura
+// oficial de Tigo ni su fecha de vencimiento.
+const DIAS_SEMANA = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+// "viernes 30 de octubre"
+function fmtFechaConDia(dateStr) {
+  if (!dateStr) return "—";
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return `${DIAS_SEMANA[new Date(y, m - 1, d).getDay()]} ${d} de ${MESES[m - 1]}`;
+}
+// Quincenas (día 15 y día 30, o el último día si el mes es más corto) de `meses`
+// meses seguidos desde el mes de `desdeISO`. Si caen en fin de semana, se corren
+// al viernes anterior. Los feriados no se consideran.
+function quincenasDesde(desdeISO, meses) {
+  const [y0, m0] = desdeISO.split("-").map(Number);
+  const out = [];
+  for (let i = 0; i < meses; i++) {
+    const total = (m0 - 1) + i;
+    const y = y0 + Math.floor(total / 12);
+    const m = (total % 12) + 1;
+    const ultimo = Math.min(30, daysInMonth(y, m - 1));
+    [15, ultimo].forEach((d) => {
+      const dt = new Date(y, m - 1, d);
+      while (dt.getDay() === 0 || dt.getDay() === 6) dt.setDate(dt.getDate() - 1);
+      out.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`);
+    });
+  }
+  return out.sort();
+}
+// Fecha de pago que se le pide al cliente: la ÚLTIMA quincena anterior a la fecha en
+// que sale su 1ra factura y que quede al menos 10 días después de la instalación.
+// Si no hay ninguna, la primera quincena que quede a 10 días o más de la instalación.
+function fechaPagoQuincena(c) {
+  if (!c.fechaInstalacion) return null;
+  const minimo = addDays(c.fechaInstalacion, 10);
+  const quincenas = quincenasDesde(c.fechaInstalacion, 4).filter((q) => q >= minimo);
+  if (c.fecha1raFactura) {
+    const antes = quincenas.filter((q) => q < c.fecha1raFactura);
+    if (antes.length) return antes[antes.length - 1];
+  }
+  return quincenas.length ? quincenas[0] : null;
 }
 function textoToque1(c) {
-  const nombre = nombreCompleto(c);
-  const fechaSugerida = fechaSugeridaAbono(c.fechaInstalacion);
+  const nombre = primerNombre(c);
+  const fechaPago = fechaPagoQuincena(c) || addDays(c.fechaInstalacion, 30);
   return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
 
 Le confirmamos que su instalación quedó activa. ✅
 
-Como ya realizó su abono al momento de contratar, ese pago se toma en cuenta para completar el costo de su primer mes — le recomendamos completar el resto antes del *${fmtFechaLarga(fechaSugerida)}*, así no se le junta con su próximo cobro regular.
+Como ya realizó su abono al contratar, ese pago se toma en cuenta para completar el costo de su primer mes. Le recomendamos completar el resto el *${fmtFechaConDia(fechaPago)}*, aprovechando la quincena, para dejar su cuenta al día desde el inicio.
 
-Puede realizar este pago indicando su número de suscriptor *${c.numeroSuscriptor}* al momento de hacerlo. Cualquier duda, quedo atento.`;
+Puede pagar indicando su número de suscriptor *${c.numeroSuscriptor}*. Cualquier duda, quedo atento.`;
 }
 function textoToque2(c) {
-  const nombre = nombreCompleto(c);
-  const fechaSugerida = fechaSugeridaAbono(c.fechaInstalacion);
+  const nombre = primerNombre(c);
+  const fechaPago = fechaPagoQuincena(c) || addDays(c.fechaInstalacion, 30);
+  const dias = daysFromToday(fechaPago);
+  const dia = fmtFechaConDia(fechaPago);
+  const frase =
+    dias === 1 ? `Le recuerdo que mañana *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
+    : dias === 0 ? `Le recuerdo que hoy *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
+    : dias > 1 ? `Le recuerdo que el *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
+    : `Le recuerdo completar el pago restante de su primer mes para dejar su cuenta al día.`;
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
-Le recuerdo completar el pago restante de su primer mes — le recomendamos hacerlo antes del *${fmtFechaLarga(fechaSugerida)}*, así evita que se le junte con su próximo cobro regular y mantiene su cuenta al día.
+${frase}
 
-Puede realizar este pago indicando su número de suscriptor *${c.numeroSuscriptor}* al momento de hacerlo. Una vez realizado, compárteme el comprobante para confirmar que ingresó correctamente. Cualquier duda, quedo atento.`;
+Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Una vez realizado, compárteme el comprobante para confirmar que ingresó correctamente. Quedo atento.`;
 }
 
 const MILESTONE_TYPES = [
@@ -787,6 +831,19 @@ const emptyForm = () => ({
   estadoPago: "Pendiente",
   observaciones: "",
 });
+
+// Cliente de "prorrateo alto": instalado desde el 1 de septiembre de 2026 y cuyo
+// prorrateo de la 1ra factura es igual o mayor al umbral configurado (por defecto 25 %).
+// A estos clientes se les mandan los mensajes de abono (bienvenida y recordatorio) y,
+// al marcar su 1ra factura como pagada, pueden quedar en PAGO PARCIAL.
+function esProrrateoAlto(cliente, umbralProrrateo) {
+  const cicloDia = parseInt(cliente.cicloFacturacion, 10) || null;
+  if (!(cicloDia && cliente.montoMensual && cliente.fechaInstalacion >= "2026-09-01")) return false;
+  const r = calcularPrimeraFactura(cliente.fechaInstalacion, cicloDia, cliente.montoMensual);
+  if (!r || !(Number(r.monto1raFactura) > 0)) return false;
+  const pct = (Number(r.monto1raFactura) / Number(cliente.montoMensual)) * 100;
+  return pct >= Number(umbralProrrateo ?? 25);
+}
 
 function calcularFacturas(cliente, umbralProrrateo) {
   if (!cliente.fechaInstalacion) return [];
@@ -821,18 +878,16 @@ function calcularFacturas(cliente, umbralProrrateo) {
 
     // Solo para la 1ra factura, de clientes instalados desde septiembre 2026 en
     // adelante: si el prorrateo es igual o mayor al umbral configurado, se agregan
-    // dos avisos preventivos (Toque 1 a los 2 días, Toque 2 a los 25 días) para que
-    // adelante el abono antes de que exista la factura real con el número grande.
-    if (n === 1 && cicloDia && cliente.montoMensual && cliente.fechaInstalacion >= "2026-09-01") {
-      const rProrrateo = calcularPrimeraFactura(cliente.fechaInstalacion, cicloDia, cliente.montoMensual);
-      if (rProrrateo && Number(rProrrateo.monto1raFactura) > 0) {
-        const pctProrrateo = (Number(rProrrateo.monto1raFactura) / Number(cliente.montoMensual)) * 100;
-        if (pctProrrateo >= Number(umbralProrrateo ?? 25)) {
+    // dos avisos preventivos (Toque 1 a los 2 días de la instalación, Toque 2 el día
+    // ANTES de la fecha de quincena de pago) para que adelante el abono antes de que
+    // exista la factura real con el número grande.
+    if (n === 1 && esProrrateoAlto(cliente, umbralProrrateo)) {
+        {
           [
-            { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", dias: 2, key: "aviso_toque1", getTexto: textoToque1 },
-            { type: "toque2", tag: "🔔", label: "Recordatorio de abono", dias: 25, key: "aviso_toque2", getTexto: textoToque2 },
+            { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", getFecha: (cl) => addDays(cl.fechaInstalacion, 2), key: "aviso_toque1", getTexto: textoToque1 },
+            { type: "toque2", tag: "🔔", label: "Recordatorio de abono", getFecha: (cl) => { const fp = fechaPagoQuincena(cl); return fp ? addDays(fp, -1) : addDays(cl.fechaInstalacion, 25); }, key: "aviso_toque2", getTexto: textoToque2 },
           ].forEach((t) => {
-            const triggerDate = addDays(cliente.fechaInstalacion, t.dias);
+            const triggerDate = t.getFecha(cliente);
             const enviado = !!cliente[t.key];
             const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado;
             const texto = t.getTexto(cliente);
@@ -851,7 +906,6 @@ function calcularFacturas(cliente, umbralProrrateo) {
             });
           });
         }
-      }
     }
 
     facturas.push({ n, generada, vencimiento, milestones });
@@ -1916,38 +1970,45 @@ function App() {
   // Cambia el estado de pago de una factura puntual: "pagada" o "" (no pagada).
   // Al marcar como pagada, silencia sus 3 avisos; al desmarcar, los reactiva por si
   // corresponde que sigan recordándole al cliente.
-  function actualizarEstadoFactura(clienteId, n, nuevoEstado) {
+  // Excepción, solo para la 1ra factura de clientes de prorrateo alto: con
+  // opciones.parcial queda "pagada" (cuenta para la comisión) pero con saldo pendiente
+  // (f1_saldoPendiente) y SUS AVISOS NO SE SILENCIAN, para seguir cobrando el saldo.
+  // Cuando el cliente paga el saldo se vuelve a llamar sin parcial: ahí sí se silencian.
+  function actualizarEstadoFactura(clienteId, n, nuevoEstado, opciones = {}) {
     const antes = clientes.find((c) => c.id === clienteId);
     // Al marcarla como pagada se anota sola el día y la hora (sin editar nada);
     // al desmarcarla, esa fecha se borra.
     const ahoraISO = new Date().toISOString();
-    actualizarClientes((prev) =>
-      prev.map((c) => {
-        if (c.id !== clienteId) return c;
-        const marcarEnviado = nuevoEstado === "pagada";
-        const yaPagada = c[`f${n}_estado`] === "pagada" && c[`f${n}_pagadaEn`];
-        return {
-          ...c,
-          [`f${n}_estado`]: nuevoEstado,
-          [`f${n}_pagadaEn`]: marcarEnviado ? (yaPagada ? c[`f${n}_pagadaEn`] : ahoraISO) : "",
-          [`f${n}_d1`]: marcarEnviado,
-          [`f${n}_t15`]: marcarEnviado,
-          [`f${n}_t3`]: marcarEnviado,
-        };
-      })
-    );
-    if (antes) {
-      const marcarEnviado = nuevoEstado === "pagada";
-      const despues = {
-        ...antes,
+    const parcial = nuevoEstado === "pagada" && n === 1 && !!(opciones && opciones.parcial);
+    const marcarEnviado = nuevoEstado === "pagada" && !parcial;
+    const aplicar = (c) => {
+      const yaPagada = c[`f${n}_estado`] === "pagada" && c[`f${n}_pagadaEn`];
+      const nuevo = {
+        ...c,
         [`f${n}_estado`]: nuevoEstado,
-        [`f${n}_pagadaEn`]: marcarEnviado ? ahoraISO : "",
-        [`f${n}_d1`]: marcarEnviado,
-        [`f${n}_t15`]: marcarEnviado,
-        [`f${n}_t3`]: marcarEnviado,
+        [`f${n}_pagadaEn`]: nuevoEstado === "pagada" ? (yaPagada ? c[`f${n}_pagadaEn`] : ahoraISO) : "",
+        [`f${n}_d1`]: parcial ? !!c[`f${n}_d1`] : marcarEnviado,
+        [`f${n}_t15`]: parcial ? !!c[`f${n}_t15`] : marcarEnviado,
+        [`f${n}_t3`]: parcial ? !!c[`f${n}_t3`] : marcarEnviado,
       };
-      const anteriorLabel = etiquetaEstadoFactura(antes[`f${n}_estado`]);
-      const nuevoLabel = etiquetaEstadoFactura(nuevoEstado);
+      if (n === 1) {
+        nuevo.f1_saldoPendiente = parcial;
+        // La 1ra factura pagada (parcial o completa) ya cubre lo que pedían los
+        // mensajes de abono (bienvenida y recordatorio): dejan de salir.
+        if (nuevoEstado === "pagada") {
+          nuevo.aviso_toque1 = true;
+          nuevo.aviso_toque2 = true;
+        }
+      }
+      return nuevo;
+    };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicar(c) : c)));
+    if (antes) {
+      const despues = aplicar(antes);
+      const etiqueta = (c) =>
+        n === 1 && c.f1_estado === "pagada" && c.f1_saldoPendiente ? "pagada (pago parcial)" : etiquetaEstadoFactura(c[`f${n}_estado`]);
+      const anteriorLabel = etiqueta(antes);
+      const nuevoLabel = etiqueta(despues);
       if (anteriorLabel !== nuevoLabel) {
         registrarCambio({
           entidad: "factura",
@@ -1995,12 +2056,15 @@ function App() {
   // registro de si en general te ha convenido usar esto o no.
   function confirmarRescate(periodoKey, clientesSeleccionados, montoInvertido, ganancia) {
     clientesSeleccionados.forEach((c) => {
-      actualizarEstadoFactura(c.id, 1, "pagada");
+      // Lo que cubre el rescate es la mitad pendiente del primer mes: en un cliente de
+      // prorrateo alto eso equivale a un PAGO PARCIAL (queda saldo de la factura por cobrar).
+      const cliente = clientes.find((x) => x.id === c.id) || c;
+      actualizarEstadoFactura(c.id, 1, "pagada", { parcial: esProrrateoAlto(cliente, umbralProrrateo) });
     });
     registrarCambio({
       entidad: "rescate",
       tipo: "rescate",
-      etiqueta: `Rescate en ${mesLabel(periodoKey)} (${clientesSeleccionados.length} cliente${clientesSeleccionados.length === 1 ? "" : "s"})`,
+      etiqueta: `Pendientes regularizados en ${mesLabel(periodoKey)} (${clientesSeleccionados.length} cliente${clientesSeleccionados.length === 1 ? "" : "s"})`,
       despues: {
         periodo: periodoKey,
         clientes: clientesSeleccionados.map((c) => c.nombre).join(", "),
@@ -2008,8 +2072,8 @@ function App() {
         ganancia,
       },
       cambios: [
-        { campo: "monto", label: "Diferencia cubierta", anterior: "", nuevo: fmtMonto(montoInvertido) },
-        { campo: "ganancia", label: "Tu comisión confirmada subió", anterior: "", nuevo: fmtMonto(ganancia) },
+        { campo: "monto", label: "Pendiente regularizado", anterior: "", nuevo: fmtMonto(montoInvertido) },
+        { campo: "ganancia", label: "Impacto en comisión", anterior: "", nuevo: fmtMonto(ganancia) },
         { campo: "clientes", label: "Clientes", anterior: "", nuevo: clientesSeleccionados.map((c) => c.nombre).join(", ") },
       ],
       refId: uid(),
@@ -2445,9 +2509,11 @@ function App() {
           nombre={clientes.find((c) => c.id === confirmarFactura.clienteId).nombre}
           n={confirmarFactura.n}
           nuevoEstado={confirmarFactura.nuevoEstado}
+          permiteParcial={esProrrateoAlto(clientes.find((c) => c.id === confirmarFactura.clienteId), umbralProrrateo)}
+          saldoPendiente={!!clientes.find((c) => c.id === confirmarFactura.clienteId)[`f${confirmarFactura.n}_saldoPendiente`]}
           onCancel={() => setConfirmarFactura(null)}
-          onConfirm={() => {
-            actualizarEstadoFactura(confirmarFactura.clienteId, confirmarFactura.n, confirmarFactura.nuevoEstado);
+          onConfirm={(opciones) => {
+            actualizarEstadoFactura(confirmarFactura.clienteId, confirmarFactura.n, confirmarFactura.nuevoEstado, opciones || {});
             setConfirmarFactura(null);
           } }
         />
@@ -2816,7 +2882,7 @@ function MetaInput({ valor, onConfirmar, width, step }) {
 }
 
 // ---------- Modo revisión diaria de churn ----------
-function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavia, onDescartar, onSaltar, onCopiarSuscriptor, copiedSubKey, onCalcularGanancia, onCerrar }) {
+function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada, onNoPagoTodavia, onDescartar, onSaltar, onCopiarSuscriptor, copiedSubKey, onCalcularGanancia, onCerrar }) {
   const actual = pendientes[0] || null;
   const revisados = total - pendientes.length;
   const [confirmando, setConfirmando] = useState(null); // null | "pagada" | "descartar"
@@ -2846,7 +2912,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
             <div className="text-sm mb-3" style={ { color: "#6B7280" } }>{planLabel(actual.cliente)}</div>
             {ganancia !== null && ganancia > 0 && (
               <div className="text-xs font-medium px-2 py-1 rounded-full inline-block mb-1" style={ { color: "#0F766E", background: "#DCF5F3" } }>
-                💰 Cubrir la diferencia sube tu comisión confirmada {fmtMonto(ganancia)}
+                💰 Regularizar la diferencia sube tu comisión confirmada {fmtMonto(ganancia)}
               </div>
             )}
 
@@ -2877,7 +2943,32 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
               Revisa en el sistema de Tigo si ya pagó su factura, y confirma abajo.
             </p>
 
-            {confirmando === "pagada" ? (
+            {confirmando === "pagada" && permiteParcial && permiteParcial(actual.cliente) ? (
+              <div className="rounded-md p-3 mb-2" style={ { background: "#EEF3FB" } }>
+                <p className="text-sm font-medium mb-2" style={ { color: "#001E62" } }>¿Qué pagó?</p>
+                <div className="flex flex-col gap-2">
+                  <button
+                    onClick={() => actual.facturaPendiente && onMarcarPagada(actual.cliente.id, actual.facturaPendiente.n, { parcial: true })}
+                    className="w-full py-2 rounded-md border-2 font-bold text-sm"
+                    style={ { borderColor: "#001E62", color: "#001E62", background: "white" } }
+                  >
+                    PAGO PARCIAL
+                    <span className="block text-xs font-normal" style={ { color: "#6B7280" } }>Completó su primer mes · siguen los recordatorios del saldo</span>
+                  </button>
+                  <button
+                    onClick={() => actual.facturaPendiente && onMarcarPagada(actual.cliente.id, actual.facturaPendiente.n, { parcial: false })}
+                    className="w-full py-2 rounded-md font-bold text-sm text-white"
+                    style={ { background: "#001E62" } }
+                  >
+                    PAGO FACTURA COMPLETA
+                    <span className="block text-xs font-normal" style={ { color: "#B9C4E0" } }>Pagó toda la factura · se apagan los recordatorios</span>
+                  </button>
+                  <button onClick={() => setConfirmando(null)} className="w-full py-2 rounded-md border font-medium text-sm" style={ { borderColor: "#D1D5DB", color: "#374151" } }>
+                    Cancelar
+                  </button>
+                </div>
+              </div>
+            ) : confirmando === "pagada" ? (
               <div className="rounded-md p-3 mb-2" style={ { background: "#DCF5F3" } }>
                 <p className="text-sm font-medium mb-2" style={ { color: "#0F766E" } }>¿Confirmas que ya pagó?</p>
                 <div className="flex gap-2">
@@ -3724,41 +3815,45 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const vistaCobros = (
     <div>
       <h1 className="text-2xl font-semibold mb-4">Cobros</h1>
-      <div className="rounded-xl overflow-hidden border mb-8" style={ { borderColor: "#E5E7EB" } }>
+
+      {/* Sección 1: lo que hay que cobrar sí o sí para que cuente en la comisión */}
+      <h2 className="text-xs font-bold uppercase tracking-wide mb-2" style={ { color: "#6B7280" } }>1 · Cobrar sí o sí</h2>
+      <div className="rounded-xl overflow-hidden border mb-8 bg-white" style={ { borderColor: "#E5E7EB" } }>
+      <div className="px-4 py-3">
+        {enRiesgoHoy.length > 0 ? (
+          <>
+            <div className="text-sm font-bold" style={ { color: "#001E62" } }>
+              <span style={ { color: "#B45309", fontSize: 18 } }>{enRiesgoHoy.length}</span> por cobrar
+            </div>
+            <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>
+              Si no pagan, no cuentan
+              {rescateDiasRestantes !== null && (
+                <React.Fragment>
+                  {" · "}
+                  <span style={ rescateDiasRestantes <= 7 ? { color: "#B45309", fontWeight: 700 } : undefined }>
+                    {rescateDiasRestantes <= 7 ? "⏳ " : ""}
+                    {rescateDiasRestantes <= 0 ? "vence hoy" : rescateDiasRestantes === 1 ? "queda 1 día" : `quedan ${rescateDiasRestantes} días`}
+                  </span>
+                </React.Fragment>
+              )}
+            </div>
+          </>
+        ) : (
+          <div className="text-sm font-bold" style={ { color: "#001E62" } }>✓ Todos pagaron su 1ra factura</div>
+        )}
+      </div>
       {enRiesgoHoy.length > 0 && (
-        <div>
+        <div className="px-4 pb-3">
           <button
             type="button"
-            onClick={() => setRevisionDiariaAbierto((v) => !v)}
-            className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
-            style={ { background: pendientesHoy.length > 0 ? "#FFF6E3" : "#EEF3FB" } }
+            onClick={() => setMostrarRevisionDiaria(true)}
+            className="w-full py-3 rounded-lg text-white font-semibold text-sm"
+            style={ { background: "#001E62" } }
           >
-            <span className="text-sm font-semibold truncate" style={ { color: pendientesHoy.length > 0 ? "#B45309" : "#001E62" } }>
-              {pendientesHoy.length > 0
-                ? `Revisar uno a uno · ${pendientesHoy.length} por revisar hoy`
-                : "✓ Ya revisaste tus clientes de hoy"}
-            </span>
-            <span className="text-xs shrink-0" style={ { color: pendientesHoy.length > 0 ? "#B45309" : "#001E62" } }>
-              {revisionDiariaAbierto ? "▲" : "▼"}
-            </span>
+            {pendientesHoy.length > 0
+              ? `Revisar uno a uno · ${pendientesHoy.length} por revisar hoy`
+              : "✓ Ya revisaste tus clientes de hoy · Ver de nuevo"}
           </button>
-          {revisionDiariaAbierto && (
-            <div className="bg-white p-4">
-              <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
-                {pendientesHoy.length > 0
-                  ? "Clientes con la 1ra factura sin pagar. Revísalos uno por uno y marca a los que ya pagaron."
-                  : `${enRiesgoHoy.length} con factura por pagar, ninguno pendiente de revisar por ahora.`}
-              </p>
-              <button
-                type="button"
-                onClick={() => setMostrarRevisionDiaria(true)}
-                className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                style={ { background: pendientesHoy.length > 0 ? "#B45309" : "#001E62" } }
-              >
-                {pendientesHoy.length > 0 ? "Empezar revisión →" : "Ver de nuevo →"}
-              </button>
-            </div>
-          )}
         </div>
       )}
 
@@ -3766,8 +3861,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         <RevisionDiariaModal
           pendientes={pendientesHoy}
           total={enRiesgoHoy.length}
-          onMarcarPagada={(clienteId, n) => {
-            onActualizarEstadoFactura(clienteId, n, "pagada");
+          permiteParcial={(c) => (c.facturas || []).some((f) => f.n === 1 && f.milestones.some((m) => m.type === "toque1"))}
+          onMarcarPagada={(clienteId, n, opciones) => {
+            onActualizarEstadoFactura(clienteId, n, "pagada", opciones || {});
             marcarRevisadoHoy(clienteId);
           } }
           onNoPagoTodavia={marcarRevisadoHoy}
@@ -3789,8 +3885,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         const fondoBanner = !comisionConfirmadaHoy.completo ? "#FFF6E3" : hayPendientes ? "#FFF6E3" : "#EEF3FB";
         const urgente = hayPendientes && rescateDiasRestantes !== null && rescateDiasRestantes <= 3;
         const textoResumen = !comisionConfirmadaHoy.completo
-          ? `Rescate para ${mesPago}: faltan metas`
-          : `Rescate para ${mesPago} · confirmado ${fmtMonto(comisionConfirmadaHoy.total)}`;
+          ? `Asegurar comisión de ${mesPago}: faltan metas`
+          : `Asegurar comisión de ${mesPago} · confirmado ${fmtMonto(comisionConfirmadaHoy.total)}`;
         return (
           <div style={ { borderTop: "1px solid #E5E7EB" } }>
             <button
@@ -3816,9 +3912,9 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             </button>
 
           {rescateAbierto && (
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2">
+            <div className="bg-white border-t border-gray-200 p-4">
               <p className="text-xs mb-2" style={ { color: "#6B7280" } }>
-                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca a quién cubrir y mira cuánto sube.
+                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca los clientes a regularizar y mira cuánto sube.
               </p>
               {rescateCandidatos.length === 0 ? (
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
@@ -3842,7 +3938,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               {rescateVencidosOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⛔ Ya vencidos — los rescatas de inmediato</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⛔ Ya vencidos — regularízalos de inmediato</div>
                   <div className="flex flex-col gap-2 mb-3">
                     {rescateVencidosOrdenados.map((c) => (
                       <label
@@ -3872,7 +3968,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               {rescateEnPlazoOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo — aseguran que no se caigan</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo — conviene asegurarlos ya</div>
                   <div className="flex flex-col gap-2 mb-4">
                     {rescateEnPlazoOrdenados.map((c) => (
                       <label
@@ -3902,7 +3998,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               <div className="rounded-md p-3" style={ { background: "#F4F6FA" } }>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#6B7280" } }>Diferencia a cubrir:</span>
+                  <span style={ { color: "#6B7280" } }>Pendiente por regularizar:</span>
                   <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm mb-1">
@@ -3912,10 +4008,10 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #E5E7EB" } }>
-                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>Ganancia:</span>
+                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>Impacto en comisión:</span>
                   <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>
                     {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
-                    {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x lo que pones)` : ""}
+                    {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x)` : ""}
                   </span>
                 </div>
                 {(rescateCruceTramo || rescateCruceAcelerador) && (
@@ -3936,7 +4032,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                 rescateConfirmando ? (
                   <div className="rounded-md p-3 mt-3" style={ { background: "#EEF3FB" } }>
                     <p className="text-xs font-medium mb-2" style={ { color: "#001E62" } }>
-                      ¿Confirmas cubrir {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
+                      ¿Confirmas regularizar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"}? Pendiente: {fmtMonto(rescatePones)}.
                     </p>
                     <div className="flex gap-2">
                       <button
@@ -3964,7 +4060,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     className="w-full mt-3 py-2.5 rounded-md text-white font-medium text-sm"
                     style={ { background: "#001E62" } }
                   >
-                    ✅ Ya pagué — marcar como pagados
+                    ✅ Marcar como regularizados
                   </button>
                 )
               )}
@@ -4002,60 +4098,20 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       {(() => {
         const nFact = enRiesgoHoy.length;
         const nRec = (stats && stats.alHoy) || 0;
-        const dias = rescateDiasRestantes;
-        const urgente = dias !== null && dias <= 7;
-        const textoDias = dias === null ? "" : dias <= 0 ? "vence hoy" : dias === 1 ? "queda 1 día" : `quedan ${dias} días`;
-        const fila = (activo, icono, titulo, sub, boton, onClick) => (
-          <div className="flex items-center gap-3 px-4 py-3" style={ { borderLeft: activo ? "4px solid #B45309" : "4px solid transparent" } }>
-            <span
-              className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-bold"
-              style={ { background: activo ? "#FFF6E3" : "#EEF3FB", color: "#001E62" } }
-            >
-              {icono}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className="text-sm font-bold" style={ { color: "#001E62" } }>{titulo}</div>
-              <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>{sub}</div>
-            </div>
-            {boton && (
-              <button type="button" onClick={onClick} className="shrink-0 text-xs font-semibold px-3 py-2 rounded-lg text-white" style={ { background: "#001E62" } }>
-                {boton}
-              </button>
-            )}
-          </div>
-        );
+        if (nFact === 0 && nRec === 0) return null;
+        const num = (n) => <b style={ { color: "#B45309", fontWeight: 700 } }>{n}</b>;
+        const partes = [];
+        if (nFact > 0) partes.push(<React.Fragment key="f">{num(nFact)} {nFact === 1 ? "factura por pagar" : "facturas por pagar"}</React.Fragment>);
+        if (nRec > 0) partes.push(<React.Fragment key="r">{num(nRec)} {nRec === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>);
         return (
-          <div className="mb-6">
-            <h2 className="text-xs font-bold uppercase tracking-wide mb-2" style={ { color: "#6B7280" } }>Para atender hoy</h2>
-            <div className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#E5E7EB" } }>
-              {nFact > 0
-                ? fila(
-                    true,
-                    "🧾",
-                    <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{nFact}</span> {nFact === 1 ? "factura por pagar" : "facturas por pagar"}</React.Fragment>,
-                    <React.Fragment>
-                      Si no pagan, no cuentan
-                      {textoDias && (
-                        <React.Fragment> · <span style={ urgente ? { color: "#B45309", fontWeight: 700 } : undefined }>{urgente ? "⏳ " : ""}{textoDias}</span></React.Fragment>
-                      )}
-                    </React.Fragment>,
-                    "Ver",
-                    onIrACobros
-                  )
-                : fila(false, "✓", "Facturas al día", "Todos pagaron su 1ra factura", null, null)}
-              <div style={ { borderTop: "1px solid #E5E7EB" } } />
-              {nRec > 0
-                ? fila(
-                    true,
-                    "💬",
-                    <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{nRec}</span> {nRec === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>,
-                    "Mensaje automático para que paguen su factura",
-                    "Enviar",
-                    onIrACobros
-                  )
-                : fila(false, "✓", "Sin recordatorios por enviar", "No hay mensajes pendientes", null, null)}
-            </div>
-          </div>
+          <button
+            type="button"
+            onClick={onIrACobros}
+            className="block w-full text-left text-sm mb-4 py-1.5 hover:underline"
+            style={ { color: "#6B7280", background: "none", border: 0, cursor: "pointer" } }
+          >
+            {partes.map((p, i) => (i === 0 ? p : <React.Fragment key={i}> · {p}</React.Fragment>))} <span style={ { color: "#001E62" } }>›</span>
+          </button>
         );
       })()}
 
@@ -4762,6 +4818,7 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
 function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
   const [expandidos, setExpandidos] = useState(new Set());
   const [extrasAbiertos, setExtrasAbiertos] = useState(new Set());
+  const [listaAbierta, setListaAbierta] = useState(false);
 
   // ---- Envío en cadena por WhatsApp ----
   // Cola de alertas pendientes de recorrer una por una: abre WhatsApp con el
@@ -4872,10 +4929,40 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-1">Recordatorios por enviar</h2>
-      <p className="text-sm mb-4" style={ { color: "#6B7280" } }>
-        Un recordatorio principal por cliente — el más urgente. Al marcarlo como enviado o pagar la factura, no vuelve a aparecer.
-      </p>
+      <h2 className="text-xs font-bold uppercase tracking-wide mb-2 mt-8" style={ { color: "#6B7280" } }>2 · Recordatorios</h2>
+      <div className="bg-white rounded-xl border overflow-hidden mb-4" style={ { borderColor: "#E5E7EB" } }>
+        <div className="px-4 py-3.5" style={ { borderBottom: "1px solid #E5E7EB" } }>
+          <div className="text-sm font-bold" style={ { color: "#001E62" } }>
+            {alertasHoy.length > 0 ? (
+              <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{alertasHoy.length}</span> {alertasHoy.length === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>
+            ) : "✓ Sin recordatorios por enviar"}
+          </div>
+          <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>Mensaje automático para que paguen su factura</div>
+        </div>
+        {alertasHoy.length > 0 && (
+          <div className="p-4">
+            <button
+              type="button"
+              onClick={() => iniciarEnvioEnCadena(alertasHoy)}
+              disabled={!!colaEnvio}
+              className="w-full py-3 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+              style={ { background: "#001E62" } }
+            >
+              Enviar recordatorios <span style={ { fontWeight: 500, opacity: 0.8 } }>· {alertasHoy.length} por WhatsApp</span>
+            </button>
+          </div>
+        )}
+        {alertasHoy.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setListaAbierta((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-left"
+            style={ { background: "#EEF3FB", color: "#001E62", border: 0, borderTop: "1px solid #E5E7EB", cursor: "pointer" } }
+          >
+            <span>Ver lista</span><span>{listaAbierta ? "▲" : "▼"}</span>
+          </button>
+        )}
+      </div>
 
       {colaEnvio && (
         <div
@@ -4932,7 +5019,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
         </div>
       )}
 
-      {alertasHoy.length > 0 && (
+      {listaAbierta && alertasHoy.length > 0 && (
         <div className="flex flex-col gap-3 mb-6">
           <div className="flex items-center gap-3 flex-wrap">
             <input
@@ -4943,15 +5030,6 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
               className="w-full max-w-sm px-3 py-2 rounded-md border text-sm outline-none"
               style={ { borderColor: "#D1D5DB" } }
             />
-            {!colaEnvio && alertasFiltradas.length > 0 && (
-              <button
-                onClick={() => iniciarEnvioEnCadena(alertasFiltradas)}
-                className="text-sm font-medium px-3 py-2 rounded-md text-white whitespace-nowrap"
-                style={ { background: "#25D366" } }
-              >
-                📲 Empezar envío en cadena ({alertasFiltradas.length})
-              </button>
-            )}
           </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
@@ -4985,11 +5063,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
         </div>
       )}
 
-      {alertasHoy.length === 0 ? (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={ { color: "#6B7280" } }>No tienes recordatorios por enviar en este momento.</p>
-        </div>
-      ) : alertasFiltradas.length === 0 ? (
+      {alertasHoy.length === 0 || !listaAbierta ? null : alertasFiltradas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
           <p className="text-sm" style={ { color: "#6B7280" } }>No hay recordatorios que coincidan con la búsqueda o el filtro.</p>
         </div>
@@ -5028,14 +5102,17 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                           </button>
                           <button
                             onClick={() => {
-                              if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
+                              const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
+                              if (window.confirm(saldo
+                                ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
+                                : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
                                 onPagoRealizado(cliente.id, factura.n);
                               }
                             } }
                             className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
                             style={ { background: "#0F766E" } }
                           >
-                            Pago realizado
+                            {factura.n === 1 && cliente.f1_saldoPendiente ? "Saldo pagado" : "Pago realizado"}
                           </button>
                         </div>
                       </div>
@@ -5799,7 +5876,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                   <div className="flex items-center gap-4 mt-2.5 pt-2.5 border-t" style={ { borderColor: "#F0F0EF" } }>
                     {c.actual && (
                       <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium" style={ { color: "#0F766E" } }>
-                        Marcar pagada
+                        {c.actual.n === 1 && c.f1_saldoPendiente ? "Saldo pagado" : "Marcar pagada"}
                       </button>
                     )}
                     <button onClick={() => onEdit(c)} className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
@@ -5854,7 +5931,7 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
                   ))}
                   <td className="px-4 py-3 text-right whitespace-nowrap">
                     {c.actual && (
-                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={ { color: "#0F766E" } }>Marcar pagada</button>
+                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium mr-3" style={ { color: "#0F766E" } }>{c.actual.n === 1 && c.f1_saldoPendiente ? "Saldo pagado" : "Marcar pagada"}</button>
                     )}
                     <button onClick={() => onEdit(c)} className="text-xs font-medium mr-3" style={ { color: "#0072CE" } }>Editar</button>
                     <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={ { color: "#C23B3B" } }>Eliminar</button>
@@ -8272,29 +8349,64 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
   );
 }
 
-function ConfirmarFacturaModal({ nombre, n, nuevoEstado, onCancel, onConfirm }) {
+// Confirmación al marcar/desmarcar una factura como pagada. En la 1ra factura de un
+// cliente de prorrateo alto pregunta QUÉ pagó: PAGO PARCIAL (completó su primer mes:
+// cuenta para la comisión y siguen los recordatorios del saldo) o PAGO FACTURA
+// COMPLETA. Si ya tiene saldo pendiente, la confirmación es "saldo pagado".
+function ConfirmarFacturaModal({ nombre, n, nuevoEstado, permiteParcial, saldoPendiente, onCancel, onConfirm }) {
   const pagar = nuevoEstado === "pagada";
+  const elegir = pagar && n === 1 && !!permiteParcial && !saldoPendiente;
+  const saldo = pagar && n === 1 && !!saldoPendiente;
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg p-6 max-w-sm w-full">
         <h3 className="font-semibold mb-2 flex items-center gap-2" style={ { color: "#001E62" } }>
           <span aria-hidden="true">{pagar ? "✓" : "↩"}</span>
-          {pagar ? "¿Marcar como pagada?" : "¿Desmarcar como pagada?"}
+          {elegir ? `¿Qué pagó ${nombre}?` : saldo ? "¿Pagó el saldo?" : pagar ? "¿Marcar como pagada?" : "¿Desmarcar como pagada?"}
         </h3>
-        <p className="text-sm mb-5" style={ { color: "#6B7280" } }>
-          {pagar
-            ? `La ${ORDINAL[n]} factura de ${nombre} se va a marcar como pagada.`
-            : `La ${ORDINAL[n]} factura de ${nombre} va a volver a quedar como no pagada.`}
-        </p>
+        {elegir ? (
+          <div className="flex flex-col gap-2 mb-4">
+            <button
+              onClick={() => onConfirm({ parcial: true })}
+              className="text-left px-3 py-2.5 rounded-md border-2"
+              style={ { borderColor: "#001E62", color: "#001E62", background: "white" } }
+            >
+              <div className="text-sm font-bold">PAGO PARCIAL</div>
+              <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>
+                Completó su primer mes. Cuenta para tu comisión y siguen los recordatorios del saldo.
+              </div>
+            </button>
+            <button
+              onClick={() => onConfirm({ parcial: false })}
+              className="text-left px-3 py-2.5 rounded-md border-2"
+              style={ { borderColor: "#001E62", color: "white", background: "#001E62" } }
+            >
+              <div className="text-sm font-bold">PAGO FACTURA COMPLETA</div>
+              <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>
+                Pagó toda la factura. Cuenta para tu comisión y se apagan los recordatorios.
+              </div>
+            </button>
+          </div>
+        ) : (
+          <p className="text-sm mb-5" style={ { color: "#6B7280" } }>
+            {saldo
+              ? `El saldo de la ${ORDINAL[n]} factura de ${nombre} se va a marcar como pagado y se apagan los recordatorios.`
+              : pagar
+              ? `La ${ORDINAL[n]} factura de ${nombre} se va a marcar como pagada.`
+              : `La ${ORDINAL[n]} factura de ${nombre} va a volver a quedar como no pagada.`}
+          </p>
+        )}
         <div className="flex gap-2 justify-end">
           <button onClick={onCancel} className="text-sm px-3 py-1.5 rounded-md border" style={ { borderColor: "#D1D5DB" } }>Cancelar</button>
-          <button
-            onClick={onConfirm}
-            className="text-sm px-3 py-1.5 rounded-md text-white"
-            style={ { background: pagar ? "#0F766E" : "#001E62" } }
-          >
-            {pagar ? "Sí, pagada" : "Sí, desmarcar"}
-          </button>
+          {!elegir && (
+            <button
+              onClick={() => onConfirm({})}
+              className="text-sm px-3 py-1.5 rounded-md text-white"
+              style={ { background: pagar ? "#0F766E" : "#001E62" } }
+            >
+              {saldo ? "Sí, saldo pagado" : pagar ? "Sí, pagada" : "Sí, desmarcar"}
+            </button>
+          )}
         </div>
       </div>
     </div>
