@@ -1634,6 +1634,13 @@ function App() {
     });
   }
 
+  // Desde "Verificar órdenes" (móviles): abre ese cliente móvil ya en edición. Al guardar vuelve al Precierre.
+  function abrirMovilDesdeOrden(id) {
+    if (!id) return;
+    setTab("clientes");
+    setSaltarAMes({ subVista: "movil", abrirForm: true, prefill: { editarId: id }, token: Date.now() });
+  }
+
   // Desde "Verificar órdenes" (móviles): cambia solo la fecha de activación (queda en el Historial).
   function cambiarFechaActivacionMovilDesdeOrden(id, fechaISO) {
     if (!id || !fechaISO) return;
@@ -2473,6 +2480,7 @@ function App() {
             setEstado={setPrecierre}
             onIrNuevo={irANuevoConSuscriptor}
             onAbrirCliente={abrirClienteDesdePrecierre}
+            onAbrirMovil={abrirMovilDesdeOrden}
             verif={verifOrdenes}
             setVerif={setVerifOrdenes}
             onAgregarOrden={irANuevoDesdeOrden}
@@ -6310,7 +6318,18 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   // El formulario viene minimizado: solo se abre desde el botón flotante (+) o al editar un cliente.
   useEffect(() => {
     if (abrirForm) {
-      if (prefill) {
+      const aEditar = prefill && prefill.editarId ? clientesMovil.find((x) => x.id === prefill.editarId) : null;
+      if (aEditar) {
+        setNombre(aEditar.nombre);
+        setTelefono(aEditar.telefono);
+        setTipo(tipoClienteMovil(aEditar));
+        setMontoPlan(aEditar.montoPlan != null ? String(aEditar.montoPlan) : "");
+        setFechaActivacion(fechaActivacionMovil(aEditar) || fechaLocalISO(new Date()));
+        setEsPortabilidad(!!aEditar.esPortabilidad);
+        setF1Pagada(aEditar.f1_estado === "pagada");
+        setEditingId(aEditar.id);
+        vieneDePrecierre.current = true;
+      } else if (prefill) {
         setEditingId(null);
         setNombre(prefill.nombre || "");
         setTelefono("");
@@ -6351,7 +6370,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   function handleSubmit(e) {
     e.preventDefault();
     if (!nombre.trim() || !telefono.trim()) return;
-    const volver = vieneDePrecierre.current && !editingId;
+    const volver = vieneDePrecierre.current;
     const editando = editingId ? clientesMovil.find((x) => x.id === editingId) : null;
     if (editingId) {
       onEditar(editingId, {
@@ -6948,7 +6967,7 @@ function calcularPrecierre(clientes, textoPegado, desde, hasta) {
   return { desde, hasta, total: numeros.length, duplicados, sinNumero, lineas, agregar, coinciden, revisar, reclamar };
 }
 
-function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, verif, setVerif, onAgregarOrden, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
+function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, onAbrirMovil, verif, setVerif, onAgregarOrden, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
   const [editando, setEditando] = useState(!estado.aplicado);
   const resultado = useMemo(
     () => (estado.aplicado ? calcularPrecierre(clientes, estado.aplicado.texto, estado.aplicado.desde, estado.aplicado.hasta) : null),
@@ -6999,6 +7018,7 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
           setVerif={setVerif}
           onAgregar={onAgregarOrden}
           onAbrirCliente={onAbrirCliente}
+          onAbrirMovil={onAbrirMovil}
           onCambiarFecha={onCambiarFecha}
           convergencias={convergencias}
           onAgregarMovil={onAgregarMovil}
@@ -7362,7 +7382,40 @@ function distanciaTexto(a, b) {
   return prev[b.length];
 }
 
+// Formato del celular: cada orden viene en varias líneas ("No. Orden: …", "Tipo: …",
+// "Estado: …", "Cliente: …", "ID: …", "Creado: …", "Fin: …"). Se convierte a las mismas
+// filas que el formato de la PC.
+function leerOrdenesTigoCelular(texto) {
+  const filas = [];
+  let actual = null;
+  const cerrar = () => {
+    if (actual && actual.orden) filas.push(actual);
+    actual = null;
+  };
+  String(texto || "").split(/\r?\n/).forEach((linea) => {
+    const m = /^\s*([^:]+?)\s*:\s*(.*?)\s*$/.exec(linea);
+    if (!m) return;
+    const campo = m[1].toLowerCase().replace(/\./g, "").trim();
+    const valor = m[2];
+    if (campo === "no orden" || campo === "n orden" || campo === "orden") {
+      cerrar();
+      actual = { orden: valor.replace(/\D/g, ""), tipo: "", estado: "", nombre: "", cedula: "", creada: "", fin: "" };
+      return;
+    }
+    if (!actual) return;
+    if (campo === "tipo") actual.tipo = valor;
+    else if (campo === "estado") actual.estado = valor;
+    else if (campo === "cliente") actual.nombre = valor;
+    else if (campo === "id") actual.cedula = valor;
+    else if (campo === "creado") actual.creada = fechaTigoAISO(valor);
+    else if (campo === "fin") actual.fin = fechaTigoAISO(valor);
+  });
+  cerrar();
+  return { filas, ignoradas: 0 };
+}
+
 function leerOrdenesTigo(texto) {
+  if (/no\.?\s*orden\s*:/i.test(String(texto || ""))) return leerOrdenesTigoCelular(texto);
   const filas = [];
   let ignoradas = 0;
   String(texto || "").split(/\r?\n/).forEach((linea) => {
@@ -7550,13 +7603,19 @@ function BotonCopiarOrden({ texto, label, vacio }) {
   );
 }
 
-function FilaOrden({ color, nombre, sub, children }) {
+function FilaOrden({ color, nombre, sub, children, onClickNombre }) {
   return (
     <div className="py-2.5 border-b border-gray-100 last:border-0">
       <div className="flex items-start gap-2.5">
         <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: color, marginTop: 6 }} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-medium break-words">{nombre}</div>
+          {onClickNombre ? (
+            <button type="button" onClick={onClickNombre} className="text-sm font-medium break-words text-left underline" style={{ color: "#001E62" }}>
+              {nombre} ›
+            </button>
+          ) : (
+            <div className="text-sm font-medium break-words">{nombre}</div>
+          )}
           {sub && <div className="text-xs" style={{ color: "#6B7280" }}>{sub}</div>}
         </div>
       </div>
@@ -7641,7 +7700,7 @@ function textoDiasEnProceso(f) {
   return d + " días en proceso";
 }
 
-function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar, onAbrirCliente, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
+function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar, onAbrirCliente, onAbrirMovil, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
   const [editando, setEditando] = useState(!verif.aplicado);
   const [grupo, setGrupo] = useState(null);
   const [verNoVerif, setVerNoVerif] = useState(false);
@@ -7716,7 +7775,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
     <div>
       <h1 className="text-2xl font-semibold mb-1">Verificar órdenes</h1>
       <p className="text-sm mb-4" style={{ color: "#6B7280" }}>
-        Pega las filas de la herramienta de Tigo (con todas las columnas). Se comparan por nombre con tus clientes.
+        Pega las órdenes de la herramienta de Tigo, desde la PC (filas con todas las columnas) o desde el celular (tal como salen). Se comparan por nombre con tus clientes.
       </p>
 
       {editando ? (
@@ -7961,6 +8020,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   color={g.color}
                   nombre={cliente.nombre}
                   sub={cliente.fechaInstalacion ? "Instalado " + fmtFecha(cliente.fechaInstalacion) : "Pendiente · " + fila.estado}
+                  onClickNombre={() => onAbrirCliente(cliente)}
                 />
               ))}
 
@@ -8036,6 +8096,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   color={g.color}
                   nombre={cliente.nombre}
                   sub={"Activada " + fmtFecha(fechaActivacionMovil(cliente))}
+                  onClickNombre={() => onAbrirMovil && onAbrirMovil(cliente.id)}
                 />
               ))}
           </div>
