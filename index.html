@@ -7664,9 +7664,9 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
   function descartarParecido(key) {
     setVerif((v) => ({ ...v, descartados: [...(v.descartados || []), key] }));
   }
-  function cambiarSeccion(s) {
-    setVerif((v) => ({ ...v, seccion: s }));
-    setGrupo(null);
+  function seleccionar(sec, key) {
+    setVerif((v) => ({ ...v, seccion: sec }));
+    setGrupo(key);
   }
 
   const estiloBoton = { color: "#001E62", border: "1px solid #D1D5DB" };
@@ -7700,7 +7700,6 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
   const esMovil = seccionActiva === "movil";
   const grupos = esMovil ? GRUPOS_MOVIL : GRUPOS_ORDENES;
   const conteos = esMovil ? cM : cH;
-  const porResolver = esMovil ? pendM : pendH;
   const ordenPrimero = esMovil
     ? ["faltan", "fechaDistinta", "alertas", "posibles", "proceso"]
     : ["faltan", "procesoFaltan", "fechaDistinta", "pendientesInstalados", "alertas", "posibles"];
@@ -7771,23 +7770,14 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
 
       {!editando && resultado && resultado.total > 0 && (
         <div className="flex flex-col gap-3">
-          <div className="flex gap-2">
-            {[["hogar", "🏠 Hogar", pendH], ["movil", "📱 Móvil", pendM]].map(([k, label, n]) => (
-              <button
-                key={k}
-                onClick={() => cambiarSeccion(k)}
-                aria-pressed={seccionActiva === k}
-                className="text-sm font-medium px-3 py-1.5 rounded-md"
-                style={estiloSeccion(seccionActiva === k)}
-              >
-                {label}{n > 0 ? " (" + n + ")" : ""}
-              </button>
-            ))}
-          </div>
-
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-            <div className="text-sm font-semibold" style={{ color: porResolver === 0 ? "#0F766E" : "#374151" }}>
-              {porResolver === 0 ? "✅ Todo cuadra" : porResolver + (porResolver === 1 ? " cosa por resolver" : " cosas por resolver")}
+            <div className="text-sm font-semibold" style={{ color: pendH + pendM === 0 ? "#0F766E" : "#374151" }}>
+              {pendH + pendM === 0 ? "✅ Todo cuadra" : pendH + pendM + (pendH + pendM === 1 ? " cosa por resolver" : " cosas por resolver")}
+            </div>
+            <div className="text-xs mt-1" style={{ color: "#6B7280" }}>
+              <span style={pendH > 0 ? { color: "#B45309", fontWeight: 700 } : undefined}>🏠 Hogar: {pendH === 0 ? "✅ cuadra" : pendH}</span>
+              {" · "}
+              <span style={pendM > 0 ? { color: "#B45309", fontWeight: 700 } : undefined}>📱 Móvil: {pendM === 0 ? "✅ cuadra" : pendM}</span>
             </div>
             {(resultado.repetidas > 0 || resultado.ignoradas > 0 || resultado.noVerificadas.length > 0) && (
               <p className="text-xs mt-1" style={{ color: "#6B7280" }}>
@@ -7814,27 +7804,36 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
             )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            {grupos.map((x) => {
-              const sel = activo === x.key;
-              return (
-                <button
-                  key={x.key}
-                  onClick={() => setGrupo(x.key)}
-                  aria-pressed={sel}
-                  className="text-left rounded-lg px-3 py-2.5"
-                  style={{
-                    background: x.bg,
-                    border: sel ? "2px solid " + x.color : "1px solid " + x.borde,
-                    padding: sel ? "9.5px 11.5px" : undefined,
-                  }}
-                >
-                  <div className="text-2xl font-mono font-semibold leading-tight" style={{ color: x.color }}>{conteos[x.key]}</div>
-                  <div className="text-xs" style={{ color: x.color }}>{x.label}</div>
-                </button>
-              );
-            })}
-          </div>
+          {[["hogar", "🏠 Hogar", GRUPOS_ORDENES, cH, pendH, ["bien"]], ["movil", "📱 Móvil", GRUPOS_MOVIL, cM, pendM, ["proceso", "bien"]]].map(([sec, titulo, lista, cont, pend, tranquilos]) => (
+            <div key={sec}>
+              <div className="text-xs font-bold mb-1.5" style={{ color: pend > 0 ? "#B45309" : "#6B7280" }}>
+                {titulo}{pend > 0 ? " · " + pend + " por resolver" : " · ✅ cuadra"}
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {lista.map((x) => {
+                  const sel = seccionActiva === sec && activo === x.key;
+                  const apagado = tranquilos.includes(x.key) || cont[x.key] === 0;
+                  return (
+                    <button
+                      key={x.key}
+                      onClick={() => seleccionar(sec, x.key)}
+                      aria-pressed={sel}
+                      className="text-left rounded-lg px-3 py-2.5"
+                      style={{
+                        background: apagado ? "#F9FAFB" : x.bg,
+                        border: sel ? "2px solid " + x.color : "1px solid " + (apagado ? "#E5E7EB" : x.borde),
+                        padding: sel ? "9.5px 11.5px" : undefined,
+                        opacity: apagado && !sel ? 0.75 : 1,
+                      }}
+                    >
+                      <div className="text-2xl font-mono font-semibold leading-tight" style={{ color: apagado ? "#6B7280" : x.color }}>{cont[x.key]}</div>
+                      <div className="text-xs" style={{ color: apagado ? "#6B7280" : x.color }}>{x.label}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
 
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 pt-3 pb-1">
             <div className="mb-1">
