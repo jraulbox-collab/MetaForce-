@@ -423,6 +423,7 @@ const TABLA_POSICION_NUEVA = [
   { min: 130, max: 139.9999, monto: 1500 },
   { min: 140, max: Infinity, monto: 1700 },
 ];
+const MINIMO_COBRO = TABLA_POSICION_NUEVA[0].min; // % de clientes mínimo para empezar a cobrar comisión base
 function montoPosicionNueva(pctClientes) {
   if (pctClientes == null || pctClientes < 70) return 0;
   const tramo = TABLA_POSICION_NUEVA.find((t) => pctClientes >= t.min && pctClientes <= t.max);
@@ -759,7 +760,7 @@ Puede realizar este pago indicando su número de suscriptor *${c.numeroSuscripto
 const MILESTONE_TYPES = [
   { type: "d1", tag: "🧾", label: "Nueva factura", color: "#0F766E", bg: "#DCF5F3", getTexto: textoD1 },
   { type: "t15", tag: "⏰", label: "15 días", color: "#B8791F", bg: "#FBF1DE", getTexto: textoT15 },
-  { type: "t3", tag: "🚨", label: "3 días", color: "#C23B3B", bg: "#FBEAEA", getTexto: textoT3 },
+  { type: "t3", tag: "⏰", label: "3 días", color: "#B45309", bg: "#FFF6E3", getTexto: textoT3 },
 ];
 
 // Igual que MILESTONE_TYPES pero incluye también los avisos preventivos de abono
@@ -2076,7 +2077,7 @@ function App() {
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: "📊" },
     { key: "clientes", label: "Clientes", icon: "👥" },
-    { key: "alertas", label: "Alertas de hoy", icon: "🔔", badge: stats.alHoy },
+    { key: "alertas", label: "Cobros", icon: "💵", badge: stats.alHoy },
     { key: "precierre", label: "Precierre", icon: "🧾" },
     { key: "historial", label: "Historial", icon: "📜" },
   ];
@@ -2187,7 +2188,7 @@ function App() {
         {[
           { key: "dashboard", label: "Inicio", icon: "🏠" },
           { key: "clientes", label: "Clientes", icon: "👥" },
-          { key: "alertas", label: "Alertas", icon: "🔔", badge: stats.alHoy },
+          { key: "alertas", label: "Cobros", icon: "💵", badge: stats.alHoy },
         ].map((item) => (
           <button
             key={item.key}
@@ -2200,8 +2201,8 @@ function App() {
               {!!item.badge && (
                 <span
                   className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full"
-                  style={ { background: "#C23B3B" } }
-                  aria-label={`${item.badge} alertas pendientes`}
+                  style={ { background: "#D97706" } }
+                  aria-label={`${item.badge} cobros pendientes`}
                 />
               )}
             </span>
@@ -2288,21 +2289,6 @@ function App() {
           <SkeletonCargando />
         ) : (
         <React.Fragment>
-        {stats.alHoy > 0 && !bannerDismissed && tab !== "alertas" && (
-          <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={ { background: "#FBEAEA", borderColor: "#F3C6C6" } }>
-            <span className="text-sm font-medium" style={ { color: "#C23B3B" } }>
-              🔔 Alertas pendientes: {stats.alHoy}
-            </span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setTab("alertas")} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#C23B3B" } }>
-                Ver alertas
-              </button>
-              <button onClick={() => setBannerDismissed(true)} className="text-xs font-medium px-2" style={ { color: "#6B7280" } }>
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
         {tab === "dashboard" && (
           <Dashboard
             stats={stats}
@@ -2316,6 +2302,7 @@ function App() {
             copiedSubKey={copiedSubKey}
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
+            onIrACobros={() => setTab("alertas")}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               setTab("clientes");
@@ -2361,7 +2348,7 @@ function App() {
           <ClienteDetalle
             cliente={clienteDetalle}
             onVolver={() => setTab(origenDetalle)}
-            volverLabel={origenDetalle === "alertas" ? "← Volver a Alertas" : "← Volver a Clientes"}
+            volverLabel={origenDetalle === "alertas" ? "← Volver a Cobros" : "← Volver a Clientes"}
             onEditar={startEdit}
             onMarcarPagada={pedirMarcarPagada}
             onActualizarEstadoFactura={pedirCambioFactura}
@@ -2377,6 +2364,25 @@ function App() {
           />
         )}
         {tab === "alertas" && (
+          <React.Fragment>
+          <Dashboard
+            vista="cobros"
+            stats={stats}
+            clientes={clientesCalc}
+            metas={metas}
+            onActualizarMeta={actualizarMeta}
+            convergencias={convergencias}
+            onNuevo={() => setMostrarSelectorNuevo(true)}
+            onActualizarEstadoFactura={actualizarEstadoFactura}
+            onCopiarSuscriptor={copySuscriptor}
+            copiedSubKey={copiedSubKey}
+            onDescartarCliente={cancelarCliente}
+            onConfirmarRescate={confirmarRescate}
+            onVerClientes={(payload) => {
+              setSaltarAMes({ ...payload, token: Date.now() });
+              setTab("clientes");
+            } }
+          />
           <AlertasTab
             alertasHoy={alertasPorCliente}
             alertasTodas={alertasHoy}
@@ -2394,6 +2400,7 @@ function App() {
             filtroTipo={filtroTipoAlertas}
             setFiltroTipo={setFiltroTipoAlertas}
           />
+          </React.Fragment>
         )}
         {tab === "precierre" && (
           <PrecierreTab
@@ -2535,6 +2542,39 @@ function LoginScreen({ onSuccess }) {
         </button>
       </form>
     </div>
+  );
+}
+
+// Colores de las barras según el ritmo. Solo azules y ámbar (nunca rojo/verde: se confunden
+// con daltonismo) y siempre con un símbolo + palabra además del color.
+function estiloBarra(valor, meta, proyectado) {
+  if (meta && valor >= meta) return { fill: "#001E62", track: "#D6DEEF", texto: "#001E62", tag: null };
+  if (proyectado == null || !meta) return { fill: "#0072CE", track: "#E3EDFA", texto: "#001E62", tag: null };
+  const r = proyectado / meta;
+  if (r >= 1) return { fill: "#0072CE", track: "#D6E8F8", texto: "#0072CE", tag: "✓ vas en camino" };
+  if (r >= 0.8) return { fill: "#D97706", track: "#FCE9C6", texto: "#B45309", tag: "◐ vas cerca" };
+  return { fill: "#92400E", track: "#F4D9B0", texto: "#92400E", tag: "⚠ vas lejos" };
+}
+function BarraMeta({ valor, meta, proyectado, formato }) {
+  const fmt = formato || ((x) => x);
+  const pct = meta ? (valor / meta) * 100 : 0;
+  const e = estiloBarra(valor, meta, proyectado);
+  const falta = meta - valor;
+  return (
+    <React.Fragment>
+      <p className="text-sm mb-2" style={ { color: "#374151" } }>
+        <span className="font-semibold">{fmt(valor)}</span> de <span className="font-semibold">{fmt(meta)}</span> ·{" "}
+        {falta > 0 ? (
+          <React.Fragment>faltan <span className="font-bold" style={ { color: e.texto } }>{fmt(falta)}</span></React.Fragment>
+        ) : (
+          <span className="font-bold" style={ { color: e.texto } }>{falta === 0 ? "✓ meta cumplida" : `✓ meta superada +${fmt(-falta)}`}</span>
+        )}
+      </p>
+      <div className="w-full h-2.5 rounded-full" style={ { background: e.track } }>
+        <div className="h-2.5 rounded-full" style={ { width: `${Math.min(100, pct)}%`, background: e.fill } } />
+      </div>
+      {e.tag && <div className="text-[11px] font-semibold mt-1.5" style={ { color: e.texto } }>{e.tag}</div>}
+    </React.Fragment>
   );
 }
 
@@ -2924,7 +2964,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate }) {
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   // Período con la ventana de rescate abierta ahora mismo (la más próxima que no ha
@@ -3375,7 +3415,15 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         cantidadBonoMovil: bonoMovilProy,
         cantidadBonoPendiente: 0,
       });
-      return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
+      return {
+        clientes: clientesProy,
+        dinero: dineroProy,
+        arpu: arpuProy,
+        comision: comisionProy.total,
+        convergencias: convergenciasProy,
+        ingresos: dineroProy + costoPlanesProy,
+        montoBase: comisionProy.montoBase,
+      };
     }
 
     const bonoFullTigoProy = bonoFullTigo * factor;
@@ -3483,16 +3531,16 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           diasParaLimite === null
             ? "⚠️ Debe pagar su 1ra factura para contar en tu comisión"
             : vencido
-            ? `🔴 Venció el ${fmtFecha(fechaLocalISO(fechaLimite))} — ya no cuenta si no paga ya`
+            ? `⛔ Venció el ${fmtFecha(fechaLocalISO(fechaLimite))} — ya no cuenta si no paga ya`
             : diasParaLimite === 0
-            ? "🔴 Vence HOY — última oportunidad"
+            ? "⏰ Vence HOY — última oportunidad"
             : `⚠️ Vence el ${fmtFecha(fechaLocalISO(fechaLimite))} (${diasParaLimite} día${diasParaLimite === 1 ? "" : "s"})`;
         return {
           cliente: c,
           facturaPendiente,
           fechaLimite,
           diasParaLimite,
-          riesgo: { texto, color: vencido || diasParaLimite === 0 ? "#B91C1C" : "#B8791F", bg: vencido || diasParaLimite === 0 ? "#FBEAEA" : "#FBF1DE" },
+          riesgo: { texto, color: vencido || diasParaLimite === 0 ? "#B45309" : "#B45309", bg: vencido || diasParaLimite === 0 ? "#FFF6E3" : "#FFF6E3" },
         };
       })
       .filter((x) => x.diasParaLimite === null || x.diasParaLimite >= 0)
@@ -3513,7 +3561,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     setSaltadosHoy((prev) => (prev.includes(clienteId) ? prev : [...prev, clienteId]));
   }
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
-  const [revisionDiariaAbierto, setRevisionDiariaAbierto] = useState(false);
+  const [revisionDiariaAbierto, setRevisionDiariaAbierto] = useState(vista === "cobros");
   const [cobroMesAbierto, setCobroMesAbierto] = useState(false);
 
   // ---- Lo que se cobra este mes ----
@@ -3673,40 +3721,24 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     return comisionCon.total - comisionBase.total;
   }
 
-  return (
+  const vistaCobros = (
     <div>
-      <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
-        <h1 className="text-2xl font-semibold">Dashboard</h1>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={generarReporteDiario}
-            className="text-sm font-medium px-4 py-2 rounded-md border"
-            style={ { borderColor: "#001E62", color: "#001E62" } }
-            title="Copia el reporte de la gestión de hoy"
-          >
-            {copiadoReporte ? "Copiado ✓" : "📋 REPORTE DIARIO"}
-          </button>
-          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
-            + Nuevo cliente
-          </button>
-        </div>
-      </div>
-
-      <div className="rounded-lg overflow-hidden border mb-6" style={ { borderColor: "#E5E7EB" } }>
+      <h1 className="text-2xl font-semibold mb-4">Cobros</h1>
+      <div className="rounded-xl overflow-hidden border mb-8" style={ { borderColor: "#E5E7EB" } }>
       {enRiesgoHoy.length > 0 && (
         <div>
           <button
             type="button"
             onClick={() => setRevisionDiariaAbierto((v) => !v)}
             className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
-            style={ { background: pendientesHoy.length > 0 ? "#FBEAEA" : "#DCF5F3" } }
+            style={ { background: pendientesHoy.length > 0 ? "#FFF6E3" : "#EEF3FB" } }
           >
-            <span className="text-sm font-semibold truncate" style={ { color: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
+            <span className="text-sm font-semibold truncate" style={ { color: pendientesHoy.length > 0 ? "#B45309" : "#001E62" } }>
               {pendientesHoy.length > 0
-                ? `🎯 ${pendientesHoy.length} cliente${pendientesHoy.length === 1 ? "" : "s"} necesita${pendientesHoy.length === 1 ? "" : "n"} revisión hoy`
+                ? `Revisar uno a uno · ${pendientesHoy.length} por revisar hoy`
                 : "✓ Ya revisaste tus clientes de hoy"}
             </span>
-            <span className="text-xs shrink-0" style={ { color: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }>
+            <span className="text-xs shrink-0" style={ { color: pendientesHoy.length > 0 ? "#B45309" : "#001E62" } }>
               {revisionDiariaAbierto ? "▲" : "▼"}
             </span>
           </button>
@@ -3714,14 +3746,14 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             <div className="bg-white p-4">
               <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
                 {pendientesHoy.length > 0
-                  ? "Clientes en ventana de riesgo de churn sin pago confirmado — toca para revisarlos uno por uno."
-                  : `${enRiesgoHoy.length} en ventana de riesgo, ninguno pendiente de revisar por ahora.`}
+                  ? "Clientes con la 1ra factura sin pagar. Revísalos uno por uno y marca a los que ya pagaron."
+                  : `${enRiesgoHoy.length} con factura por pagar, ninguno pendiente de revisar por ahora.`}
               </p>
               <button
                 type="button"
                 onClick={() => setMostrarRevisionDiaria(true)}
                 className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                style={ { background: pendientesHoy.length > 0 ? "#B91C1C" : "#0F766E" } }
+                style={ { background: pendientesHoy.length > 0 ? "#B45309" : "#001E62" } }
               >
                 {pendientesHoy.length > 0 ? "Empezar revisión →" : "Ver de nuevo →"}
               </button>
@@ -3753,14 +3785,14 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       {periodoRescateActivo && (() => {
         const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0];
         const hayPendientes = rescateCandidatos.length > 0;
-        const colorTexto = !comisionConfirmadaHoy.completo ? "#B8791F" : hayPendientes ? "#B91C1C" : "#0F766E";
-        const fondoBanner = !comisionConfirmadaHoy.completo ? "#FBF1DE" : hayPendientes ? "#FBEAEA" : "#DCF5F3";
+        const colorTexto = !comisionConfirmadaHoy.completo ? "#B45309" : hayPendientes ? "#B45309" : "#001E62";
+        const fondoBanner = !comisionConfirmadaHoy.completo ? "#FFF6E3" : hayPendientes ? "#FFF6E3" : "#EEF3FB";
         const urgente = hayPendientes && rescateDiasRestantes !== null && rescateDiasRestantes <= 3;
         const textoResumen = !comisionConfirmadaHoy.completo
-          ? `🧮 ${mesPago}: faltan metas`
-          : `🧮 ${mesPago} ${fmtMonto(comisionConfirmadaHoy.total)}${hayPendientes ? "" : " confirmado"}`;
+          ? `Rescate para ${mesPago}: faltan metas`
+          : `Rescate para ${mesPago} · confirmado ${fmtMonto(comisionConfirmadaHoy.total)}`;
         return (
-          <div>
+          <div style={ { borderTop: "1px solid #E5E7EB" } }>
             <button
               type="button"
               onClick={() => setRescateAbierto((v) => !v)}
@@ -3789,7 +3821,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                 Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca a quién cubrir y mira cuánto sube.
               </p>
               {rescateCandidatos.length === 0 ? (
-                <p className="text-sm font-medium" style={ { color: "#0F766E" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
+                <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
                 <>
               {rescateProximoTramo && (
@@ -3810,7 +3842,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               {rescateVencidosOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B91C1C" } }>⛔ Ya vencidos — los rescatás de inmediato</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⛔ Ya vencidos — los rescatas de inmediato</div>
                   <div className="flex flex-col gap-2 mb-3">
                     {rescateVencidosOrdenados.map((c) => (
                       <label
@@ -3840,7 +3872,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               {rescateEnPlazoOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B8791F" } }>⏳ Todavía en plazo — aseguran que no se caigan</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo — aseguran que no se caigan</div>
                   <div className="flex flex-col gap-2 mb-4">
                     {rescateEnPlazoOrdenados.map((c) => (
                       <label
@@ -3880,14 +3912,14 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #E5E7EB" } }>
-                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>Ganancia:</span>
-                  <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#0F766E" : "#374151" } }>
+                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>Ganancia:</span>
+                  <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>
                     {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
                     {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x lo que pones)` : ""}
                   </span>
                 </div>
                 {(rescateCruceTramo || rescateCruceAcelerador) && (
-                  <div className="text-xs mt-2 pt-2" style={ { borderTop: "1px solid #E5E7EB", color: "#0F766E" } }>
+                  <div className="text-xs mt-2 pt-2" style={ { borderTop: "1px solid #E5E7EB", color: "#001E62" } }>
                     {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
                     {rescateCruceAcelerador && (
                       <div>
@@ -3902,8 +3934,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               {rescateSeleccionados.length > 0 && (
                 rescateConfirmando ? (
-                  <div className="rounded-md p-3 mt-3" style={ { background: "#DCF5F3" } }>
-                    <p className="text-xs font-medium mb-2" style={ { color: "#0F766E" } }>
+                  <div className="rounded-md p-3 mt-3" style={ { background: "#EEF3FB" } }>
+                    <p className="text-xs font-medium mb-2" style={ { color: "#001E62" } }>
                       ¿Confirmas cubrir {fmtMonto(rescatePones)} y marcar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} como pagados?
                     </p>
                     <div className="flex gap-2">
@@ -3911,7 +3943,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                         type="button"
                         onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } }
                         className="flex-1 py-2 rounded-md text-white font-medium text-sm"
-                        style={ { background: "#0F766E" } }
+                        style={ { background: "#001E62" } }
                       >
                         Sí, confirmar
                       </button>
@@ -3930,7 +3962,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     type="button"
                     onClick={() => setRescateConfirmando(true)}
                     className="w-full mt-3 py-2.5 rounded-md text-white font-medium text-sm"
-                    style={ { background: "#0F766E" } }
+                    style={ { background: "#001E62" } }
                   >
                     ✅ Ya pagué — marcar como pagados
                   </button>
@@ -3940,6 +3972,89 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
               )}
             </div>
           )}
+          </div>
+        );
+      })()}
+      </div>
+    </div>
+  );
+  if (vista === "cobros") return vistaCobros;
+
+  return (
+    <div>
+      <div className="mb-5">
+        <h1 className="text-2xl font-semibold mb-3">Dashboard</h1>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={generarReporteDiario}
+            className="text-sm font-semibold px-4 py-2.5 rounded-lg border-2"
+            style={ { borderColor: "#001E62", color: "#001E62", background: "white" } }
+            title="Copia el reporte de la gestión de hoy"
+          >
+            {copiadoReporte ? "Copiado ✓" : "📋 REPORTE DIARIO"}
+          </button>
+          <button onClick={onNuevo} className="text-sm font-semibold px-4 py-2.5 rounded-lg text-white border-2" style={ { background: "#001E62", borderColor: "#001E62" } }>
+            + Nuevo cliente
+          </button>
+        </div>
+      </div>
+
+      {(() => {
+        const nFact = enRiesgoHoy.length;
+        const nRec = (stats && stats.alHoy) || 0;
+        const dias = rescateDiasRestantes;
+        const urgente = dias !== null && dias <= 7;
+        const textoDias = dias === null ? "" : dias <= 0 ? "vence hoy" : dias === 1 ? "queda 1 día" : `quedan ${dias} días`;
+        const fila = (activo, icono, titulo, sub, boton, onClick) => (
+          <div className="flex items-center gap-3 px-4 py-3" style={ { borderLeft: activo ? "4px solid #B45309" : "4px solid transparent" } }>
+            <span
+              className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-bold"
+              style={ { background: activo ? "#FFF6E3" : "#EEF3FB", color: "#001E62" } }
+            >
+              {icono}
+            </span>
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-bold" style={ { color: "#001E62" } }>{titulo}</div>
+              <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>{sub}</div>
+            </div>
+            {boton && (
+              <button type="button" onClick={onClick} className="shrink-0 text-xs font-semibold px-3 py-2 rounded-lg text-white" style={ { background: "#001E62" } }>
+                {boton}
+              </button>
+            )}
+          </div>
+        );
+        return (
+          <div className="mb-6">
+            <h2 className="text-xs font-bold uppercase tracking-wide mb-2" style={ { color: "#6B7280" } }>Para atender hoy</h2>
+            <div className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#E5E7EB" } }>
+              {nFact > 0
+                ? fila(
+                    true,
+                    "🧾",
+                    <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{nFact}</span> {nFact === 1 ? "factura por pagar" : "facturas por pagar"}</React.Fragment>,
+                    <React.Fragment>
+                      Si no pagan, no cuentan
+                      {textoDias && (
+                        <React.Fragment> · <span style={ urgente ? { color: "#B45309", fontWeight: 700 } : undefined }>{urgente ? "⏳ " : ""}{textoDias}</span></React.Fragment>
+                      )}
+                    </React.Fragment>,
+                    "Ver",
+                    onIrACobros
+                  )
+                : fila(false, "✓", "Facturas al día", "Todos pagaron su 1ra factura", null, null)}
+              <div style={ { borderTop: "1px solid #E5E7EB" } } />
+              {nRec > 0
+                ? fila(
+                    true,
+                    "💬",
+                    <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{nRec}</span> {nRec === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>,
+                    "Mensaje automático para que paguen su factura",
+                    "Enviar",
+                    onIrACobros
+                  )
+                : fila(false, "✓", "Sin recordatorios por enviar", "No hay mensajes pendientes", null, null)}
+            </div>
           </div>
         );
       })()}
@@ -3957,8 +4072,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por portabilidad (${cobroMes.confirmado.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` +
               (cobroMes.siPagan.bonoPendiente > 0 ? ` · ${fmtMonto(cobroMes.siPagan.bonoPendiente)} más si pagan su 1ra factura` : "")
             : null;
-        const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B8791F" : definitivo ? "#0F766E" : "#0072CE";
-        const fondoLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#FBF1DE" : definitivo ? "#DCF5F3" : "#E3EDFA";
+        const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B45309" : definitivo ? "#001E62" : "#0072CE";
+        const fondoLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#FFF6E3" : definitivo ? "#EEF3FB" : "#E3EDFA";
         const resumenLinea = cobroMes.vacio
           ? `💰 ${nombreMesCap(periodoActual)}: sin clientes en el ciclo de ${nombreMes(cobroMes.periodoCobro)}`
           : !cobroMes.confirmado.completo
@@ -3966,25 +4081,65 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           : definitivo
           ? `💰 ${nombreMesCap(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado`
           : `💰 ${nombreMesCap(periodoActual)}: ${fmtMonto(cobroMes.confirmado.total)} confirmado · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
-        // Cuando este ciclo es el mismo que el del bloque de rescate de arriba (pasa del
-        // 1 al 5 de cada mes), los dos muestran el mismo número — se oculta este para no
-        // repetir, ya que el de rescate es el más completo (tiene los checkboxes, etc.).
-        // Vuelve a aparecer solo a partir del día 6, cuando cada uno habla de un ciclo distinto.
-        if (cobroMes.periodoCobro === periodoRescateActivo) return null;
+        const mostrarCobroMes = cobroMes.periodoCobro !== periodoRescateActivo;
+        const subCobro = cobroMes.vacio
+          ? `Sin clientes en el ciclo de ${nombreMes(cobroMes.periodoCobro)}`
+          : !cobroMes.confirmado.completo
+          ? `Falta cargar meta de ${cobroMes.faltantes.join(", ")}`
+          : definitivo
+          ? `De tus ventas de ${nombreMes(cobroMes.periodoCobro)} · ya pagado y seguro`
+          : `De tus ventas de ${nombreMes(cobroMes.periodoCobro)} · ${cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"} si pagan ${cobroMes.nEnPlazo} pendiente${cobroMes.nEnPlazo === 1 ? "" : "s"}`;
+        const fila = (icono, titulo, sub, valor, extra, onClick) => (
+          <button type="button" onClick={onClick} className="w-full text-left flex items-center gap-3 px-4 py-3">
+            <span className="w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm font-bold" style={ { background: "#EEF3FB", color: "#001E62" } }>{icono}</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold" style={ { color: "#001E62" } }>{titulo}</span>
+              <span className="block text-xs mt-0.5" style={ { color: "#6B7280" } }>{sub}</span>
+            </span>
+            <span className="text-right shrink-0">
+              <span className="block text-base font-bold font-mono" style={ { color: "#001E62" } }>{valor}</span>
+              {extra && <span className="block text-[11px] mt-0.5" style={ { color: "#6B7280" } }>{extra}</span>}
+            </span>
+          </button>
+        );
+        let filaRescate = null;
+        if (periodoRescateActivo) {
+          const mesPagoNombre = nombreMesCap(sumarMesClave(periodoRescateActivo, 2));
+          const hayPend = rescateCandidatos.length > 0;
+          const textoPlazo =
+            hayPend && rescateDiasRestantes !== null
+              ? rescateDiasRestantes <= 0
+                ? "hoy es el último día"
+                : `${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} para sumar más`
+              : "";
+          filaRescate = fila(
+            hayPend ? "⏳" : "✓",
+            mesPagoNombre,
+            !comisionConfirmadaHoy.completo
+              ? "Faltan cargar las metas de ese ciclo"
+              : `De tus ventas de ${nombreMes(periodoRescateActivo)} · ${hayPend ? "asegurado hasta hoy" : "todo pagado y seguro"}`,
+            comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—",
+            textoPlazo,
+            onIrACobros
+          );
+        }
+        if (!mostrarCobroMes && !filaRescate) return null;
         return (
-          <div>
-            <button
-              type="button"
-              onClick={() => setCobroMesAbierto((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
-              style={ { background: fondoLinea } }
-            >
-              <span className="text-xs font-medium truncate" style={ { color: colorLinea } }>{resumenLinea}</span>
-              <span className="text-xs shrink-0" style={ { color: "#9CA3AF" } }>{cobroMesAbierto ? "▲" : "▼"}</span>
-            </button>
-
-            {cobroMesAbierto && (
-              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mt-2">
+          <div className="mb-6">
+            <h2 className="text-xs font-bold uppercase tracking-wide mb-2" style={ { color: "#6B7280" } }>Tu dinero</h2>
+            <div className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#E5E7EB" } }>
+              {mostrarCobroMes && (
+                <div>
+                  {fila(
+                    definitivo && !cobroMes.vacio ? "✓" : "◐",
+                    `${nombreMesCap(periodoActual)} · este mes`,
+                    subCobro,
+                    cobroMes.confirmado.completo && !cobroMes.vacio ? fmtMonto(cobroMes.confirmado.total) : "—",
+                    cobroMesAbierto ? "ocultar detalle ▲" : "ver detalle ▼",
+                    () => setCobroMesAbierto((v) => !v)
+                  )}
+                  {cobroMesAbierto && (
+              <div className="px-4 pb-4 pt-3" style={ { borderTop: "1px solid #E5E7EB" } }>
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
                   <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>
                     💰 Lo que cobras en {nombreMes(periodoActual)}
@@ -4000,13 +4155,13 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                 {cobroMes.vacio ? (
                   <p className="text-sm" style={ { color: "#6B7280" } }>No hay clientes ni Clientes Móvil en este ciclo.</p>
                 ) : !cobroMes.confirmado.completo ? (
-                  <p className="text-sm" style={ { color: "#B8791F" } }>
+                  <p className="text-sm" style={ { color: "#B45309" } }>
                     ⚠ Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.
                   </p>
                 ) : definitivo ? (
                   <div>
-                    <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
-                    <div className="text-xs font-medium mt-1" style={ { color: "#0F766E" } }>✓ Cierre definitivo</div>
+                    <div className="text-3xl font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
+                    <div className="text-xs font-medium mt-1" style={ { color: "#001E62" } }>✓ Cierre definitivo</div>
                     <div className="text-xs mt-2" style={ { color: "#6B7280" } }>
                       {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} cuentan
                       {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (no llegaron a tiempo)` : " · todos llegaron a tiempo"}
@@ -4021,15 +4176,15 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <div className="text-xs font-medium" style={ { color: "#0F766E" } }>✓ Confirmado</div>
-                      <div className="text-3xl font-mono font-bold" style={ { color: "#0F766E" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
+                      <div className="text-xs font-medium" style={ { color: "#001E62" } }>✓ Confirmado</div>
+                      <div className="text-3xl font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
                       <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
                         {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} ya pagaron
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs font-medium" style={ { color: "#B8791F" } }>◐ Si pagan los pendientes</div>
-                      <div className="text-3xl font-mono font-bold" style={ { color: "#B8791F" } }>
+                      <div className="text-xs font-medium" style={ { color: "#B45309" } }>◐ Si pagan los pendientes</div>
+                      <div className="text-3xl font-mono font-bold" style={ { color: "#B45309" } }>
                         {cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"}
                       </div>
                       <div className="text-xs mt-1" style={ { color: "#6B7280" } }>
@@ -4048,11 +4203,15 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   </div>
                 )}
               </div>
-            )}
+                  )}
+                </div>
+              )}
+              {filaRescate && <div style={ mostrarCobroMes ? { borderTop: "1px solid #E5E7EB" } : undefined }>{filaRescate}</div>}
+            </div>
           </div>
         );
       })()}
-      </div>
+
 
       <div className="flex items-center gap-1.5 mb-6 flex-wrap">
         <button
@@ -4106,23 +4265,86 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
               + bono FULL TIGO aplicado
             </span>
           )}
-          {esNuevo && comision.factorAcelerador !== 1 && (
-            <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
-              {comision.ajusteIngreso === "acelerador" ? "⚡ acelerador +10 puntos" : `🐢 desacelerador (cobras ${(comision.factorAcelerador * 100).toFixed(0)}% de tu posición)`}
-            </span>
-          )}
         </div>
         {comision.completo ? (
           <>
-            <div className="text-4xl font-mono font-bold mb-2">{fmtMonto(comision.total)}</div>
+            <div className="text-4xl font-mono font-bold mb-2">{fmtMonto(comision.total)}{esNuevo && esActual && <span className="text-sm font-normal font-sans opacity-80 ml-2">si todos pagan</span>}</div>
             {esNuevo ? (
-              <div className="text-xs opacity-80 leading-relaxed">
-                Base {fmtMonto(comision.montoBase)} ({comision.pctClientesPonderado.toFixed(1)}% clientes ponderado: {comision.pctHogar.toFixed(1)}% hogar × 65% + {comision.pctMovil.toFixed(1)}% móvil × 35%)
-                {" "}
-                {textoAjusteIngreso(comision)}
-                {comision.bonoConvergencias > 0 ? ` + ${fmtMonto(comision.bonoConvergencias)} bono por portabilidad (${comision.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` : ""}
-                {comision.bonoPendiente > 0 ? ` (${fmtMonto(comision.bonoPendiente)} de ese bono dependen de que paguen su 1ra factura)` : ""}
-              </div>
+              <React.Fragment>
+                {esActual && aunEsTemprano && (
+                  <div className="mt-3 text-sm rounded-lg px-3 py-2.5" style={ { background: "rgba(255,255,255,0.14)" } }>
+                    ⏳ Aún es temprano para proyectar tu cierre
+                  </div>
+                )}
+                {esActual && !aunEsTemprano && proyeccion && (
+                  <div
+                    className="mt-3 text-sm rounded-lg px-3 py-2.5 leading-relaxed"
+                    style={ { background: proyeccion.montoBase === 0 ? "rgba(255,209,102,0.28)" : "rgba(255,255,255,0.14)" } }
+                  >
+                    {proyeccion.montoBase === 0
+                      ? "⚠️ Si sigues a este ritmo no llegarás al mínimo y cerrarías en "
+                      : "📈 Si sigues a este ritmo cerrarás en "}
+                    <span className="font-bold">~{fmtMonto(proyeccion.comision)}</span>
+                    <div className="text-xs mt-0.5 opacity-90">
+                      con <b>{proyeccion.clientes} clientes hogar</b>, <b>{proyeccion.convergencias} móvil</b> e <b>{fmtMonto(proyeccion.ingresos)}</b> de ingresos
+                    </div>
+                  </div>
+                )}
+                {esActual && metaClientesHogar && metaClientesMovil && comision.pctClientesPonderado < MINIMO_COBRO && (() => {
+                  const pts = MINIMO_COBRO - comision.pctClientesPonderado;
+                  const nHogar = Math.ceil(pts / (PESO_CLIENTES_HOGAR * 100 / metaClientesHogar) - 1e-9);
+                  const nMovil = Math.ceil(pts / (PESO_CLIENTES_MOVIL * 100 / metaClientesMovil) - 1e-9);
+                  return (
+                    <div className="mt-2 text-sm rounded-lg px-3 py-2.5" style={ { background: "rgba(255,209,102,0.22)" } }>
+                      Para llegar al mínimo de cobro te faltan <b>{nHogar} cliente{nHogar === 1 ? "" : "s"} hogar</b> o <b>{nMovil} móvil</b>
+                    </div>
+                  );
+                })()}
+                <details className="mt-3 text-xs" style={ { borderTop: "1px solid rgba(255,255,255,0.22)", paddingTop: 10 } }>
+                  <summary className="cursor-pointer opacity-90" style={ { listStyle: "none" } }>Ver detalle ▾</summary>
+                  <div className="mt-2">
+                    <div className="flex justify-between gap-2 py-1.5" style={ { borderBottom: "1px solid rgba(255,255,255,0.12)" } }>
+                      <span>
+                        Clientes
+                        <span className="block opacity-75 text-[11px]">
+                          {comision.pctClientesPonderado.toFixed(1)}% de la meta · hogar {comision.pctHogar.toFixed(0)}% · móvil {comision.pctMovil.toFixed(0)}%
+                        </span>
+                      </span>
+                      <b className="font-mono whitespace-nowrap">Base {fmtMonto(comision.montoBase)}</b>
+                    </div>
+                    <div className="flex justify-between gap-2 py-1.5" style={ { borderBottom: "1px solid rgba(255,255,255,0.12)" } }>
+                      <span>
+                        Ingresos
+                        <span className="block opacity-75 text-[11px]">
+                          {comision.pctIngreso.toFixed(1)}% de la meta{comision.ajusteIngreso === "acelerador" ? " + 10 puntos de acelerador" : ""}
+                        </span>
+                      </span>
+                      <b className="font-mono whitespace-nowrap">{comision.montoBase === 0 ? "aún no afecta" : `× ${(comision.factorAcelerador * 100).toFixed(0)}%`}</b>
+                    </div>
+                    <div className="flex justify-between gap-2 py-1.5" style={ { borderBottom: "1px solid rgba(255,255,255,0.12)" } }>
+                      <span>
+                        Bono portabilidad
+                        <span className="block opacity-75 text-[11px]">
+                          {comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA}
+                          {comision.bonoPendiente > 0 ? ` · ⏳ ${fmtMonto(comision.bonoPendiente)} dependen de que paguen su 1ra factura` : ""}
+                        </span>
+                      </span>
+                      <b className="font-mono whitespace-nowrap">+ {fmtMonto(comision.bonoConvergencias)}</b>
+                    </div>
+                    {comisionConfirmada.completo && (
+                      <div className="flex justify-between gap-2 py-2 px-2 mt-2 rounded-md" style={ { background: "rgba(255,255,255,0.1)" } }>
+                        <span>
+                          ✓ Confirmado hoy
+                          <span className="block opacity-75 text-[11px]">
+                            {clientesDelPeriodoConfirmados.length} de {clientesDelPeriodo.length} clientes hogar ya pagaron su 1ra factura
+                          </span>
+                        </span>
+                        <b className="font-mono whitespace-nowrap">{fmtMonto(comisionConfirmada.total)}</b>
+                      </div>
+                    )}
+                  </div>
+                </details>
+              </React.Fragment>
             ) : (
               <div className="text-xs opacity-80 leading-relaxed">
                 Base {fmtMonto(comision.montoBase)} ({comision.pctIngreso.toFixed(1)}% ingresos
@@ -4130,8 +4352,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                 {comision.pctArpu.toFixed(1)}% ARPU × {comision.pctClientes.toFixed(1)}% clientes
               </div>
             )}
-            <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.comision) : null} variant="claro" />
-            {comisionConfirmada.completo && (
+            {!esNuevo && <LineaProyeccion aunEsTemprano={aunEsTemprano} texto={proyeccion ? fmtMonto(proyeccion.comision) : null} variant="claro" />}
+            {!esNuevo && comisionConfirmada.completo && (
               <div className="text-xs mt-2 pt-2 opacity-90" style={ { borderTop: "1px solid rgba(255,255,255,0.2)" } }>
                 ✓ Solo con 1ra factura pagada: <span className="font-mono font-semibold">{fmtMonto(comisionConfirmada.total)}</span>{" "}
                 ({clientesDelPeriodoConfirmados.length} de {clientesDelPeriodo.length} clientes hogar)
@@ -4172,21 +4394,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
               </div>
               {metaClientesHogar ? (
                 <>
-                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
-                    <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientesHogar}</span> ·{" "}
-                    <span className="font-semibold" style={ { color: progresoClientesHogarPct >= 100 ? "#0F766E" : "#0072CE" } }>
-                      {progresoClientesHogarPct >= 100 ? "✓ " : ""}{progresoClientesHogarPct}%
-                    </span>
-                  </p>
-                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
-                    <div
-                      className="h-2 rounded-full"
-                      style={ {
-                        width: `${Math.min(100, progresoClientesHogarPct)}%`,
-                        background: clientesDelPeriodo.length >= metaClientesHogar ? "#0F766E" : "#0072CE",
-                      } }
-                    />
-                  </div>
+                  <BarraMeta valor={clientesDelPeriodo.length} meta={metaClientesHogar} proyectado={proyeccion ? proyeccion.clientes : null} />
                 </>
               ) : (
                 <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes hogar de este período.</p>
@@ -4208,21 +4416,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
               </div>
               {metaClientesMovil ? (
                 <>
-                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
-                    <span className="font-semibold">{convergenciasPeriodo}</span> de <span className="font-semibold">{metaClientesMovil}</span> ·{" "}
-                    <span className="font-semibold" style={ { color: progresoClientesMovilPct >= 100 ? "#0F766E" : "#0072CE" } }>
-                      {progresoClientesMovilPct >= 100 ? "✓ " : ""}{progresoClientesMovilPct}%
-                    </span>
-                  </p>
-                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
-                    <div
-                      className="h-2 rounded-full"
-                      style={ {
-                        width: `${Math.min(100, progresoClientesMovilPct)}%`,
-                        background: convergenciasPeriodo >= metaClientesMovil ? "#0F766E" : "#0072CE",
-                      } }
-                    />
-                  </div>
+                  <BarraMeta valor={convergenciasPeriodo} meta={metaClientesMovil} proyectado={proyeccion ? proyeccion.convergencias : null} />
                 </>
               ) : (
                 <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes móvil de este período.</p>
@@ -4246,28 +4440,29 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
               </div>
               {metaDinero ? (
                 <>
-                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
-                    <span className="font-semibold">{fmtMonto(dineroDelPeriodo + costoPlanesMovilesPeriodo)}</span> de{" "}
-                    <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
-                    <span className="font-semibold" style={ { color: progresoIngresoNuevoPct >= 100 ? "#0F766E" : "#0072CE" } }>
-                      {progresoIngresoNuevoPct >= 100 ? "✓ " : ""}{progresoIngresoNuevoPct}%
-                    </span>
-                  </p>
-                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
-                    <div
-                      className="h-2 rounded-full"
-                      style={ {
-                        width: `${Math.min(100, progresoIngresoNuevoPct)}%`,
-                        background: progresoIngresoNuevoPct >= 100 ? "#0F766E" : "#0072CE",
-                      } }
-                    />
-                  </div>
+                  <BarraMeta valor={dineroDelPeriodo + costoPlanesMovilesPeriodo} meta={metaDinero} proyectado={proyeccion ? proyeccion.ingresos : null} formato={fmtMonto} />
                 </>
               ) : (
                 <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de ingresos de este período.</p>
               )}
+              {metaDinero && comision.completo && (() => {
+                let txt = "";
+                let estilo = { background: "#F1F5F9", color: "#334155" };
+                if (comision.montoBase === 0) {
+                  txt = "Cuando pases el mínimo de clientes, este porcentaje ajusta tu base.";
+                } else if (comision.ajusteIngreso === "desacelerador") {
+                  txt = `Estás debajo de la meta: cobras el ${Math.round(comision.factorAcelerador * 100)}% de tu base (te cuesta ${fmtMonto(comision.montoBase * (1 - comision.factorAcelerador))}).`;
+                  estilo = { background: "#FFF6E3", color: "#92400E" };
+                } else if (comision.ajusteIngreso === "acelerador") {
+                  txt = `⚡ Sobre la meta: tu base sube a ${Math.round(comision.factorAcelerador * 100)}%.`;
+                  estilo = { background: "#EEF3FB", color: "#001E62" };
+                } else {
+                  txt = "Justo en la meta: cobras tu base completa.";
+                }
+                return <div className="text-xs mt-3 rounded-md px-3 py-2" style={ estilo }>{txt}</div>;
+              })()}
               <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
-                Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)} · define el acelerador o desacelerador
+                Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)}
               </p>
             </div>
           </>
@@ -4297,7 +4492,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             <>
               <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientes}</span> ·{" "}
-                <span className="font-semibold" style={ { color: progresoClientesPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                <span className="font-semibold" style={ { color: progresoClientesPct >= 100 ? "#001E62" : "#0072CE" } }>
                   {progresoClientesPct >= 100 ? "✓ " : ""}{progresoClientesPct}%
                 </span>
               </p>
@@ -4306,7 +4501,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   className="h-2 rounded-full"
                   style={ {
                     width: `${Math.min(100, progresoClientesPct)}%`,
-                    background: clientesDelPeriodo.length >= metaClientes ? "#0F766E" : "#0072CE",
+                    background: clientesDelPeriodo.length >= metaClientes ? "#001E62" : "#0072CE",
                   } }
                 />
               </div>
@@ -4340,7 +4535,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             <>
               <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{fmtMonto(dineroDelPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
-                <span className="font-semibold" style={ { color: progresoDineroPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                <span className="font-semibold" style={ { color: progresoDineroPct >= 100 ? "#001E62" : "#0072CE" } }>
                   {progresoDineroPct >= 100 ? "✓ " : ""}{progresoDineroPct}%
                 </span>
               </p>
@@ -4349,7 +4544,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   className="h-2 rounded-full"
                   style={ {
                     width: `${Math.min(100, progresoDineroPct)}%`,
-                    background: dineroDelPeriodo >= metaDinero ? "#0F766E" : "#0072CE",
+                    background: dineroDelPeriodo >= metaDinero ? "#001E62" : "#0072CE",
                   } }
                 />
               </div>
@@ -4384,7 +4579,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             <>
               <p className="text-sm mb-2" style={ { color: "#374151" } }>
                 <span className="font-semibold">{fmtMonto(arpuPeriodo)}</span> de <span className="font-semibold">{fmtMonto(metaArpu)}</span> ·{" "}
-                <span className="font-semibold" style={ { color: progresoArpuPct >= 100 ? "#0F766E" : "#0072CE" } }>
+                <span className="font-semibold" style={ { color: progresoArpuPct >= 100 ? "#001E62" : "#0072CE" } }>
                   {progresoArpuPct >= 100 ? "✓ " : ""}{progresoArpuPct}%
                 </span>
               </p>
@@ -4393,7 +4588,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   className="h-2 rounded-full"
                   style={ {
                     width: `${Math.min(100, progresoArpuPct)}%`,
-                    background: arpuPeriodo >= metaArpu ? "#0F766E" : "#0072CE",
+                    background: arpuPeriodo >= metaArpu ? "#001E62" : "#0072CE",
                   } }
                 />
               </div>
@@ -4410,7 +4605,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             🧮 Simular ARPU con planes hipotéticos →
           </button>
           {recomendacionArpu && (recomendacionArpu.alcanzado || recomendacionArpu.doble || recomendacionArpu.single) && (
-            <div className="text-[11px] mt-1 leading-relaxed" style={ { color: recomendacionArpu.alcanzado ? "#0F766E" : "#9CA3AF" } }>
+            <div className="text-[11px] mt-1 leading-relaxed" style={ { color: recomendacionArpu.alcanzado ? "#001E62" : "#9CA3AF" } }>
               {recomendacionArpu.alcanzado
                 ? "✓ Ya alcanzaste el 100% de ARPU"
                 : [
@@ -4448,13 +4643,13 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         <MiniStat
           valor={pendientesAhora}
           label="Pendientes de instalación"
-          color="#B8791F"
+          color="#B45309"
           onClick={() => onVerClientes({ filtroInstalacion: "pendientes", todosLosMeses: true })}
         />
         <MiniStat
           valor={noCuentanComision}
           label="No cuentan para comisión"
-          color="#C23B3B"
+          color="#B45309"
           onClick={() => onVerClientes({ filtroEstado: "nocuenta", todosLosMeses: true })}
         />
         <MiniStat
@@ -4498,7 +4693,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             {detalleAnterior && (
               <div
                 className="text-xs mt-2 font-semibold flex items-center gap-1"
-                style={ { color: detalleMostrado.total >= detalleAnterior.total ? "#0F766E" : "#C23B3B" } }
+                style={ { color: detalleMostrado.total >= detalleAnterior.total ? "#001E62" : "#B45309" } }
               >
                 <span>{detalleMostrado.total >= detalleAnterior.total ? "▲" : "▼"}</span>
                 <span>
@@ -4639,7 +4834,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
   // Agrupa por urgencia para que se puedan escanear las más críticas primero.
   const GRUPOS = [
-    { type: "t3", titulo: "🚨 3 días (urgente)" },
+    { type: "t3", titulo: "⏰ 3 días (urgente)" },
     { type: "t15", titulo: "⏰ 15 días" },
     { type: "d1", titulo: "🧾 Nueva factura" },
     { type: "toque2", titulo: "🔔 Recordatorio de abono" },
@@ -4677,9 +4872,9 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold mb-1">Alertas de hoy</h1>
+      <h2 className="text-lg font-semibold mb-1">Recordatorios por enviar</h2>
       <p className="text-sm mb-4" style={ { color: "#6B7280" } }>
-        Una alerta principal por cliente — la más urgente. Al marcarla como enviada o pagar la factura, no vuelve a aparecer.
+        Un recordatorio principal por cliente — el más urgente. Al marcarlo como enviado o pagar la factura, no vuelve a aparecer.
       </p>
 
       {colaEnvio && (
@@ -4792,11 +4987,11 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
 
       {alertasHoy.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={ { color: "#6B7280" } }>No tienes alertas pendientes en este momento.</p>
+          <p className="text-sm" style={ { color: "#6B7280" } }>No tienes recordatorios por enviar en este momento.</p>
         </div>
       ) : alertasFiltradas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-10 text-center">
-          <p className="text-sm" style={ { color: "#6B7280" } }>No hay alertas que coincidan con la búsqueda o el filtro.</p>
+          <p className="text-sm" style={ { color: "#6B7280" } }>No hay recordatorios que coincidan con la búsqueda o el filtro.</p>
         </div>
       ) : (
         <div className="flex flex-col gap-6">
