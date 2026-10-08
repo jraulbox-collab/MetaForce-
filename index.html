@@ -2930,8 +2930,6 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
             {actual.cliente.telefono && (
               <a
                 href={`https://wa.me/${telefonoWhatsapp(actual.cliente.telefono)}`}
-                target="_blank"
-                rel="noopener noreferrer"
                 className="w-full py-2.5 rounded-md border font-medium mb-4 inline-flex items-center justify-center gap-2"
                 style={ { borderColor: "#0F766E", color: "#0F766E" } }
               >
@@ -4834,7 +4832,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
     setIndiceEnvio(0);
     setContadorEnviados(0);
     setResumenEnvio(null);
-    window.open(whatsappLink(lista[0].cliente, lista[0].milestone), "_blank", "noopener,noreferrer");
+    window.location.href = whatsappLink(lista[0].cliente, lista[0].milestone);
   }
 
   function avanzarEnvio(marcarComoEnviado) {
@@ -4851,7 +4849,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
       setContadorEnviados(nuevosEnviados);
       setIndiceEnvio(siguienteIndice);
       const siguiente = colaEnvio[siguienteIndice];
-      window.open(whatsappLink(siguiente.cliente, siguiente.milestone), "_blank", "noopener,noreferrer");
+      window.location.href = whatsappLink(siguiente.cliente, siguiente.milestone);
     }
   }
 
@@ -5141,8 +5139,6 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                         <div className="flex items-center gap-2 flex-wrap">
                           <a
                             href={whatsappLink(cliente, milestone)}
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
                             style={ { background: "#25D366" } }
                           >
@@ -6259,8 +6255,6 @@ function ClienteDetalle({
                           <div className="flex items-center gap-2 flex-wrap">
                             <a
                               href={whatsappLink(cliente, m)}
-                              target="_blank"
-                              rel="noopener noreferrer"
                               className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
                               style={ { background: "#25D366" } }
                             >
@@ -6607,8 +6601,6 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         <div className="flex gap-2 mt-3">
                           <a
                             href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
                             className="flex-1 sm:flex-none text-center text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
                             style={ { color: "#0F766E", borderColor: "#0F766E" } }
                           >
