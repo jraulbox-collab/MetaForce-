@@ -7810,9 +7810,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                 {titulo}{pend > 0 ? " · " + pend + " por resolver" : " · ✅ cuadra"}
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {lista.map((x) => {
+                {lista.filter((x) => !tranquilos.includes(x.key) && cont[x.key] > 0).map((x) => {
                   const sel = seccionActiva === sec && activo === x.key;
-                  const apagado = tranquilos.includes(x.key) || cont[x.key] === 0;
                   return (
                     <button
                       key={x.key}
@@ -7820,18 +7819,39 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                       aria-pressed={sel}
                       className="text-left rounded-lg px-3 py-2.5"
                       style={{
-                        background: apagado ? "#F9FAFB" : x.bg,
-                        border: sel ? "2px solid " + x.color : "1px solid " + (apagado ? "#E5E7EB" : x.borde),
+                        background: x.bg,
+                        border: sel ? "2px solid " + x.color : "1px solid " + x.borde,
                         padding: sel ? "9.5px 11.5px" : undefined,
-                        opacity: apagado && !sel ? 0.75 : 1,
                       }}
                     >
-                      <div className="text-2xl font-mono font-semibold leading-tight" style={{ color: apagado ? "#6B7280" : x.color }}>{cont[x.key]}</div>
-                      <div className="text-xs" style={{ color: apagado ? "#6B7280" : x.color }}>{x.label}</div>
+                      <div className="text-2xl font-mono font-semibold leading-tight" style={{ color: x.color }}>{cont[x.key]}</div>
+                      <div className="text-xs" style={{ color: x.color }}>{x.label}</div>
                     </button>
                   );
                 })}
               </div>
+              {lista.some((x) => tranquilos.includes(x.key) && cont[x.key] > 0) && (
+                <div className="flex flex-wrap items-center gap-2 mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  {lista.filter((x) => tranquilos.includes(x.key) && cont[x.key] > 0).map((x) => {
+                    const sel = seccionActiva === sec && activo === x.key;
+                    return (
+                      <button
+                        key={x.key}
+                        onClick={() => seleccionar(sec, x.key)}
+                        aria-pressed={sel}
+                        className="text-xs font-medium px-2.5 py-1 rounded-full"
+                        style={{
+                          background: sel ? "#001E62" : "#F3F4F6",
+                          color: sel ? "#FFFFFF" : "#374151",
+                          border: "1px solid " + (sel ? "#001E62" : "#E5E7EB"),
+                        }}
+                      >
+                        {cont[x.key]} {x.label.toLowerCase()} ›
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           ))}
 
