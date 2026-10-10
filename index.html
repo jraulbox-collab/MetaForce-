@@ -304,6 +304,10 @@ const TIPOS_CLIENTE_MOVIL = [
 function tipoClienteMovil(c) {
   return c.tipo || (c.fullTigo ? "fulltigo" : "convergencia");
 }
+// Portabilidad: el cliente trajo su número de otra compañía. Solo esos pagan el bono de $6.
+function esPortabilidad(c) {
+  return c.portabilidad === true;
+}
 function etiquetaTipoMovil(t) {
   return (TIPOS_CLIENTE_MOVIL.find((x) => x.value === t) || {}).label || t;
 }
@@ -408,7 +412,7 @@ function calcularComisionVieja({ dineroDelPeriodo, metaDinero, arpuPeriodo, meta
 // El % de logro de la meta de ingresos (hogar + costo de planes móviles, sin peso)
 // aplica un acelerador (+10% si >100%) o desacelerador (-10% si <100%) sobre el
 // monto final en dólares; si da exactamente 100%, no aplica ninguno de los dos.
-// Además se suma un bono fijo de $6 por cada convergencia (o FULL TIGO) del período,
+// Además se suma un bono fijo de $6 por cada cliente móvil con PORTABILIDAD del período,
 // independiente de todo lo demás.
 function calcularComisionNueva({
   clientesHogar,
@@ -1563,13 +1567,14 @@ function App() {
 
   // Cliente Móvil (Plan Pospago, Convergencia o FULL TIGO). "fullTigo" se guarda además
   // de "tipo" por compatibilidad con la fórmula de comisión anterior a octubre 2026.
-  function agregarConvergencia(nombre, telefono, tipoCliente, montoPlan, fechaActivacion) {
+  function agregarConvergencia(nombre, telefono, tipoCliente, montoPlan, fechaActivacion, portabilidad) {
     const nueva = {
       id: uid(),
       nombre,
       telefono,
       tipo: tipoCliente,
       fullTigo: tipoCliente === "fulltigo",
+      portabilidad: portabilidad === true,
       montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
       fechaActivacion: fechaActivacion || fechaLocalISO(new Date()),
       creadoEn: new Date().toISOString(),
@@ -1596,6 +1601,8 @@ function App() {
           anterior: etiquetaTipoMovil(tipoClienteMovil(antes)),
           nuevo: etiquetaTipoMovil(tipoClienteMovil(despues)),
         });
+      if (esPortabilidad(antes) !== esPortabilidad(despues))
+        cambios.push({ campo: "portabilidad", label: "Portabilidad", anterior: esPortabilidad(antes) ? "Sí" : "No", nuevo: esPortabilidad(despues) ? "Sí" : "No" });
       if (String(antes.montoPlan ?? "") !== String(despues.montoPlan ?? ""))
         cambios.push({ campo: "montoPlan", label: "Monto del plan", anterior: antes.montoPlan, nuevo: despues.montoPlan });
       if (String(fechaActivacionMovil(antes)) !== String(fechaActivacionMovil(despues)))
@@ -2970,6 +2977,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [convergencias, periodoVisto]
   );
   const convergenciasPeriodo = convergenciasDelPeriodo.length;
+  const portabilidadesPeriodo = convergenciasDelPeriodo.filter(esPortabilidad).length;
   // Esquema nuevo (desde octubre 2026): el costo del plan de TODAS las convergencias
   // (sean o no FULL TIGO) suma al ingreso del período.
   const costoPlanesMovilesPeriodo = useMemo(
@@ -3007,7 +3015,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
             metaClientesMovil: leerMeta(metas, key, "clientesMovil"),
             ingresosDelPeriodo: dinero + costoPlanesP,
             metaIngresos: leerMeta(metas, key, "dinero"),
-            cantidadConvergencias: converDelPeriodo.length,
+            cantidadConvergencias: converDelPeriodo.filter(esPortabilidad).length,
           });
           return { key, cantidad, dinero, arpu: arpuP, ...com };
         }
@@ -3061,7 +3069,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         metaClientesMovil,
         ingresosDelPeriodo: dineroDelPeriodo + costoPlanesMovilesPeriodo,
         metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasPeriodo,
+        cantidadConvergencias: portabilidadesPeriodo,
       });
     }
     return calcularComision({
@@ -3115,7 +3123,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         metaClientesMovil,
         ingresosDelPeriodo: dineroDelPeriodoConfirmado + costoPlanesMovilesPeriodo,
         metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasPeriodo,
+        cantidadConvergencias: portabilidadesPeriodo,
       });
     }
     return calcularComision({
@@ -3193,7 +3201,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         metaClientesMovil: metaClientesMovilHoy,
         ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodoHoy,
         metaIngresos: metaDineroHoy,
-        cantidadConvergencias: convergenciasPeriodoHoy.length,
+        cantidadConvergencias: convergenciasPeriodoHoy.filter(esPortabilidad).length,
       });
     }
     return calcularComision({
@@ -3317,6 +3325,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
     if (esNuevo) {
       const convergenciasProy = Math.round(convergenciasPeriodo * factor);
+      const portabilidadesProy = Math.round(portabilidadesPeriodo * factor);
       const costoPlanesProy = costoPlanesMovilesPeriodo * factor;
       const comisionProy = calcularComision({
         periodoKey: periodoVisto,
@@ -3326,7 +3335,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         metaClientesMovil,
         ingresosDelPeriodo: dineroProy + costoPlanesProy,
         metaIngresos: metaDinero,
-        cantidadConvergencias: convergenciasProy,
+        cantidadConvergencias: portabilidadesProy,
       });
       return { clientes: clientesProy, dinero: dineroProy, arpu: arpuProy, comision: comisionProy.total };
     }
@@ -3496,7 +3505,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           metaClientesMovil: leerMeta(metas, periodoCobro, "clientesMovil"),
           ingresosDelPeriodo: dinero + costoPlanesCiclo,
           metaIngresos: leerMeta(metas, periodoCobro, "dinero"),
-          cantidadConvergencias: converDelCiclo.length,
+          cantidadConvergencias: converDelCiclo.filter(esPortabilidad).length,
         });
       }
       return calcularComision({
@@ -3526,7 +3535,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       nPagados: pagados.length,
       nEnPlazo: enPlazo.length,
       nVencidos: vencidos.length,
-      nConvergencias: converDelCiclo.length,
+      nConvergencias: converDelCiclo.filter(esPortabilidad).length,
       fechaLimite: fechaLimitePrimeraFactura(periodoCobro),
       faltantes,
       vacio: delCiclo.length === 0 && converDelCiclo.length === 0,
@@ -3585,7 +3594,7 @@ Early: `;
           metaClientesMovil: leerMeta(metas, periodoCliente, "clientesMovil"),
           ingresosDelPeriodo: dinero + costoPlanesDelPeriodo,
           metaIngresos: leerMeta(metas, periodoCliente, "dinero"),
-          cantidadConvergencias: converDelPeriodo.length,
+          cantidadConvergencias: converDelPeriodo.filter(esPortabilidad).length,
         });
       }
       return calcularComision({
@@ -3918,7 +3927,7 @@ Early: `;
         const definitivo = cobroMes.nEnPlazo === 0;
         const lineaBono =
           cobroMes.nuevo && cobroMes.confirmado.bonoConvergencias > 0
-            ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por convergencia (${cobroMes.nConvergencias} × $${BONO_POR_CONVERGENCIA})`
+            ? `incluye ${fmtMonto(cobroMes.confirmado.bonoConvergencias)} de bono por portabilidad (${cobroMes.nConvergencias} × $${BONO_POR_CONVERGENCIA})`
             : null;
         const colorLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#B8791F" : definitivo ? "#0F766E" : "#0072CE";
         const fondoLinea = cobroMes.vacio || !cobroMes.confirmado.completo ? "#FBF1DE" : definitivo ? "#DCF5F3" : "#E3EDFA";
@@ -4086,7 +4095,7 @@ Early: `;
                 {" × "}
                 {comision.factorAcelerador === 1 ? "sin acelerador (100% ingresos)" : comision.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}
                 {" "}({comision.pctIngreso.toFixed(1)}% ingresos)
-                {comision.bonoConvergencias > 0 ? ` + ${fmtMonto(comision.bonoConvergencias)} bono por convergencia (${comision.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` : ""}
+                {comision.bonoConvergencias > 0 ? ` + ${fmtMonto(comision.bonoConvergencias)} bono por portabilidad (${comision.cantidadConvergencias} × $${BONO_POR_CONVERGENCIA})` : ""}
               </div>
             ) : (
               <div className="text-xs opacity-80 leading-relaxed">
@@ -4356,7 +4365,7 @@ Early: `;
             <div className="text-xs" style={ { color: "#6B7280" } }>
               {detalleMostrado.completo
                 ? detalleMostrado.esquema === "nuevo"
-                  ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) × ${detalleMostrado.factorAcelerador === 1 ? "sin acelerador" : detalleMostrado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMonto(detalleMostrado.bonoConvergencias)} bono convergencias` : ""}`
+                  ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) × ${detalleMostrado.factorAcelerador === 1 ? "sin acelerador" : detalleMostrado.factorAcelerador > 1 ? "×1.10 acelerador" : "×0.90 desacelerador"}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMonto(detalleMostrado.bonoConvergencias)} bono portabilidad` : ""}`
                   : `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
                 : "Faltan metas cargadas en este período para calcular la comisión completa."}
             </div>
@@ -6380,6 +6389,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [telefono, setTelefono] = useState("");
   const [tipo, setTipo] = useState("pospago");
   const [montoPlan, setMontoPlan] = useState("");
+  const [portabilidad, setPortabilidad] = useState(false);
+  const [soloPorta, setSoloPorta] = useState(false);
   const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
   const [editingId, setEditingId] = useState(null);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
@@ -6400,14 +6411,16 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         tipo,
         montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
         fechaActivacion,
+        portabilidad,
       });
     } else {
-      onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion);
+      onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion, portabilidad);
     }
     setNombre("");
     setTelefono("");
     setTipo("pospago");
     setMontoPlan("");
+    setPortabilidad(false);
     setFechaActivacion(fechaLocalISO(new Date()));
     setEditingId(null);
   }
@@ -6417,6 +6430,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setTelefono(c.telefono);
     setTipo(tipoClienteMovil(c));
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
+    setPortabilidad(esPortabilidad(c));
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
     setEditingId(c.id);
     // El formulario está arriba de la lista: se sube hasta él para que se vea que se está editando.
@@ -6430,6 +6444,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setTelefono("");
     setTipo("pospago");
     setMontoPlan("");
+    setPortabilidad(false);
     setFechaActivacion(fechaLocalISO(new Date()));
     setEditingId(null);
   }
@@ -6497,6 +6512,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
               style={ { borderColor: "#D1D5DB" } }
             />
           </div>
+          <label className="flex items-center gap-2 text-sm pb-1.5 cursor-pointer" style={ { color: "#374151" } }>
+            <input type="checkbox" checked={portabilidad} onChange={(e) => setPortabilidad(e.target.checked)} />
+            Portabilidad (trajo su número de otra compañía · bono ${BONO_POR_CONVERGENCIA})
+          </label>
           <div>
             <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Fecha de activación</label>
             <input
@@ -6510,9 +6529,15 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         </div>
       </div>
 
+      <label className="flex items-center gap-2 text-xs mb-2 cursor-pointer" style={ { color: "#6B7280" } }>
+        <input type="checkbox" checked={soloPorta} onChange={(e) => setSoloPorta(e.target.checked)} />
+        Ver solo portabilidades
+      </label>
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
-          const delMes = clientesMovil.filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key);
+          const delMesTodos = clientesMovil.filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key);
+          const nPorta = delMesTodos.filter(esPortabilidad).length;
+          const delMes = soloPorta ? delMesTodos.filter(esPortabilidad) : delMesTodos;
           const abierto = mesExpandido === m.key;
           return (
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
@@ -6522,10 +6547,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
               >
                 <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
                 <span className="text-sm font-mono flex items-center gap-2" style={ { color: "#001E62" } }>
-                  {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
-                  {delMes.length > 0 && (
+                  {delMesTodos.length} Cliente{delMesTodos.length !== 1 ? "s" : ""} Móvil
+                  {nPorta > 0 && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#DCF5F3", color: "#0F766E" } }>
-                      BONO POR CONVERGENCIA = {fmtMonto(delMes.length * BONO_POR_CONVERGENCIA)}
+                      BONO POR PORTABILIDAD = {fmtMonto(nPorta * BONO_POR_CONVERGENCIA)} ({nPorta})
                     </span>
                   )}
                   <span style={ { color: "#9CA3AF" } }>{abierto ? "▲" : "▼"}</span>
@@ -6549,6 +6574,15 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                                 Plan: {fmtMonto(c.montoPlan)}
                               </span>
                             )}
+                            <button
+                              type="button"
+                              onClick={() => onEditar(c.id, { portabilidad: !esPortabilidad(c) })}
+                              className="text-xs font-medium px-2 py-0.5 rounded-full border"
+                              style={ esPortabilidad(c) ? { background: "#DCF5F3", color: "#0F766E", borderColor: "#0F766E" } : { background: "#fff", color: "#6B7280", borderColor: "#D1D5DB" } }
+                              title="Toca para cambiar si es portabilidad"
+                            >
+                              {esPortabilidad(c) ? "✓ Portabilidad" : "Sin portabilidad"}
+                            </button>
                           </div>
                           <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>
                             {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
