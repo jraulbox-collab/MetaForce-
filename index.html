@@ -1748,6 +1748,7 @@ function App() {
       id: uid(),
       nombre,
       telefono,
+      whatsapp: extra && extra.whatsapp ? extra.whatsapp : "",
       tipo: tipoCliente,
       fullTigo: tipoCliente === "fulltigo",
       montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
@@ -6665,6 +6666,7 @@ function ClienteDetalle({
 function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre }) {
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
   const [tipo, setTipo] = useState("pospago");
   const [montoPlan, setMontoPlan] = useState("");
   const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
@@ -6686,6 +6688,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
       if (aEditar) {
         setNombre(aEditar.nombre);
         setTelefono(aEditar.telefono);
+        setWhatsapp(aEditar.whatsapp || "");
         setTipo(tipoClienteMovil(aEditar));
         setMontoPlan(aEditar.montoPlan != null ? String(aEditar.montoPlan) : "");
         setFechaActivacion(fechaActivacionMovil(aEditar) || fechaLocalISO(new Date()));
@@ -6697,6 +6700,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setEditingId(null);
         setNombre(prefill.nombre || "");
         setTelefono("");
+        setWhatsapp("");
         setTipo("pospago");
         setMontoPlan("");
         setFechaActivacion(prefill.fecha || fechaLocalISO(new Date()));
@@ -6722,6 +6726,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     vieneDePrecierre.current = false;
     setNombre("");
     setTelefono("");
+    setWhatsapp("");
     setTipo("pospago");
     setMontoPlan("");
     setFechaActivacion(fechaLocalISO(new Date()));
@@ -6739,6 +6744,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
       onEditar(editingId, {
         nombre: nombre.trim(),
         telefono: telefono.trim(),
+        whatsapp: whatsapp.trim(),
         tipo,
         montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
         fechaActivacion,
@@ -6747,6 +6753,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
       });
     } else {
       onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion, {
+        whatsapp: whatsapp.trim(),
         esPortabilidad,
         f1_estado: f1Pagada ? "pagada" : "",
       });
@@ -6760,6 +6767,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     vieneDePrecierre.current = false;
     setNombre(c.nombre);
     setTelefono(c.telefono);
+    setWhatsapp(c.whatsapp || "");
     setTipo(tipoClienteMovil(c));
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
@@ -6775,14 +6783,6 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     const estabaPagada = !!cliente && cliente.f1_estado === "pagada";
     if (pagada) return { f1_estado: "pagada", f1_pagadaEn: estabaPagada && cliente.f1_pagadaEn ? cliente.f1_pagadaEn : new Date().toISOString() };
     return { f1_estado: "", f1_pagadaEn: null };
-  }
-
-  // Interruptores rápidos de cada tarjeta (sin abrir el formulario).
-  function alternarPortabilidad(c) {
-    onEditar(c.id, { esPortabilidad: !c.esPortabilidad });
-  }
-  function alternarFactura(c) {
-    onEditar(c.id, fijarFactura(c, c.f1_estado !== "pagada"));
   }
 
   function cancelEdit() {
@@ -6830,6 +6830,18 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 inputMode="tel"
                 value={telefono}
                 onChange={(e) => setTelefono(e.target.value)}
+                className={campoCls}
+                style={ { borderColor: "#D1D5DB" } }
+              />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#6B7280" } }>WhatsApp (solo si es distinto al celular)</label>
+              <input
+                type="tel"
+                inputMode="tel"
+                value={whatsapp}
+                onChange={(e) => setWhatsapp(e.target.value)}
+                placeholder="Déjalo vacío para usar el mismo"
                 className={campoCls}
                 style={ { borderColor: "#D1D5DB" } }
               />
@@ -6949,32 +6961,26 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                           )}
                         </div>
                         <div className="text-xs font-mono mt-1.5" style={ { color: "#6B7280" } }>
-                          {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
+                          {c.telefono}{c.whatsapp ? ` · WhatsApp ${c.whatsapp}` : ""} · activado {fmtFecha(fechaActivacionMovil(c))}
                         </div>
                         {esquemaNuevo(m.key) && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
-                            <button
-                              type="button"
-                              onClick={() => alternarPortabilidad(c)}
-                              title="Clic para cambiar"
+                            <span
                               className="text-xs font-medium px-2.5 py-1 rounded-full border"
                               style={ c.esPortabilidad
                                 ? { background: "#E3EDFA", color: "#0072CE", borderColor: "#0072CE" }
                                 : { background: "white", color: "#6B7280", borderColor: "#D1D5DB" } }
                             >
                               {c.esPortabilidad ? "✓ Portabilidad" : "Portabilidad: no"}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => alternarFactura(c)}
-                              title="Clic para cambiar"
+                            </span>
+                            <span
                               className="text-xs font-medium px-2.5 py-1 rounded-full border"
                               style={ c.f1_estado === "pagada"
                                 ? { background: "#DCF5F3", color: "#0F766E", borderColor: "#0F766E" }
                                 : { background: "white", color: "#6B7280", borderColor: "#D1D5DB" } }
                             >
                               {c.f1_estado === "pagada" ? "✓ 1ra factura pagada" : "1ra factura: sin pagar"}
-                            </button>
+                            </span>
                             {!movilCuentaParaComision(c) && (
                               <span className="text-xs font-medium px-2 py-1 rounded-full" style={ { background: "#FBE9E9", color: "#C23B3B" } }>
                                 ⛔ No cuenta (venció el plazo)
@@ -6984,7 +6990,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         )}
                         <div className="flex gap-2 mt-3">
                           <a
-                            href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`}
+                            href={`https://wa.me/${telefonoWhatsapp(c.whatsapp || c.telefono)}`}
                             className="flex-1 sm:flex-none text-center text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
                             style={ { color: "#0F766E", borderColor: "#0F766E" } }
                           >
