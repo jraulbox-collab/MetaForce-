@@ -313,7 +313,7 @@ function fechaActivacionMovil(c) {
   return c.fechaActivacion || (c.creadoEn || "").slice(0, 10);
 }
 function clienteCuentaParaComision(c) {
-  if (c.penalizado) return false;
+  if (clienteExcluido(c)) return false;
   if (!c.fechaInstalacion) return true;
   if (c.f1_estado === "pagada") return true;
   const fechaLimite = fechaLimitePrimeraFactura(periodoDelCliente(c));
@@ -456,7 +456,44 @@ function calcularComision(params) {
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-const ESTADOS = ["Pendiente", "Pagado", "Atrasado", "Suspendido"];
+const ESTADOS_CLIENTE = [
+  { value: "activo", label: "Activo" },
+  { value: "cancelado", label: "Cancelado" },
+  { value: "penalizado", label: "Penalizado" },
+];
+// Un cliente cancelado que nunca pagó su 1ra factura, o uno penalizado, no cuenta para nada.
+function clienteExcluido(c) {
+  return !!c.penalizado || (!!c.cancelado && c.f1_estado !== "pagada");
+}
+// Pasa los campos de estado del formulario a los campos reales del cliente.
+function camposEstadoCliente(form, previo) {
+  const { estadoCliente, fechaCancelacion, motivoCancelacion, motivoPenalizacion, ...resto } = form;
+  const hoy = fechaLocalISO(new Date());
+  const out = { ...resto };
+  if (estadoCliente === "cancelado") {
+    out.cancelado = true;
+    out.fechaCancelacion = fechaCancelacion || hoy;
+    out.motivoCancelacion = motivoCancelacion || "voluntaria";
+    out.penalizado = false;
+    out.motivoPenalizacion = "";
+    out.fechaPenalizacion = "";
+  } else if (estadoCliente === "penalizado") {
+    out.penalizado = true;
+    out.motivoPenalizacion = (motivoPenalizacion || "").trim();
+    out.fechaPenalizacion = (previo && previo.penalizado && previo.fechaPenalizacion) || hoy;
+    out.cancelado = false;
+    out.fechaCancelacion = "";
+    out.motivoCancelacion = "";
+  } else {
+    out.cancelado = false;
+    out.fechaCancelacion = "";
+    out.motivoCancelacion = "";
+    out.penalizado = false;
+    out.motivoPenalizacion = "";
+    out.fechaPenalizacion = "";
+  }
+  return out;
+}
 const CICLOS = [
   { value: "1", label: "Ciclo 1 (factura el 1, cubre 1–fin de mes)" },
   { value: "6", label: "Ciclo 6 (factura el 6, cubre 6–5 del sig. mes)" },
@@ -728,6 +765,10 @@ const emptyForm = () => ({
   fecha1raFactura: fechaLocalISO(new Date()),
   monto1raFactura: "",
   estadoPago: "Pendiente",
+  estadoCliente: "activo",
+  fechaCancelacion: "",
+  motivoCancelacion: "voluntaria",
+  motivoPenalizacion: "",
   observaciones: "",
 });
 
@@ -758,7 +799,7 @@ function calcularFacturas(cliente, umbralProrrateo) {
     // Solo la 1ra factura (la que decide si el cliente cuenta para tu comisión)
     // mantiene los 3 avisos completos. De la 2da en adelante, con el aviso de
     // 3 días antes alcanza — ya no hace falta la insistencia de D+1 y 15 días.
-    const tiposParaEstaFactura = n === 1 ? MILESTONE_TYPES : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
+    const tiposParaEstaFactura = cliente.cancelado ? [] : n === 1 ? MILESTONE_TYPES : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
     const milestones = tiposParaEstaFactura.map((mt) => {
       const key = `f${n}_${mt.type}`;
       const triggerDate =
@@ -775,7 +816,7 @@ function calcularFacturas(cliente, umbralProrrateo) {
     // adelante: si el prorrateo es igual o mayor al umbral configurado, se agregan
     // dos avisos preventivos (Toque 1 a los 2 días, Toque 2 a los 25 días) para que
     // adelante el abono antes de que exista la factura real con el número grande.
-    if (n === 1 && cicloDia && cliente.montoMensual && cliente.fechaInstalacion >= "2026-09-01") {
+    if (n === 1 && !cliente.cancelado && cicloDia && cliente.montoMensual && cliente.fechaInstalacion >= "2026-09-01") {
       const rProrrateo = calcularPrimeraFactura(cliente.fechaInstalacion, cicloDia, cliente.montoMensual);
       if (rProrrateo && Number(rProrrateo.monto1raFactura) > 0) {
         const pctProrrateo = (Number(rProrrateo.monto1raFactura) / Number(cliente.montoMensual)) * 100;
@@ -1354,7 +1395,7 @@ function App() {
   }, [clientes, umbralProrrateo]);
 
   // Clientes que sí cuentan (sin los penalizados): lo usan Dashboard, comisión, reportes y precierre.
-  const clientesActivos = useMemo(() => clientesCalc.filter((c) => !c.penalizado), [clientesCalc]);
+  const clientesActivos = useMemo(() => clientesCalc.filter((c) => !clienteExcluido(c)), [clientesCalc]);
 
   const clienteDetalle = useMemo(
     () => clientesCalc.find((c) => c.id === clienteDetalleId) || null,
@@ -1413,14 +1454,14 @@ function App() {
   }, [clientesCalc, search]);
 
   const stats = useMemo(() => {
-    const total = clientes.filter((c) => !c.penalizado).length;
+    const total = clientes.filter((c) => !clienteExcluido(c)).length;
     const alHoy = alertasPorCliente.length;
     const proximos7 = clientesCalc.filter((c) =>
       c.facturas.some((f) =>
         f.milestones.some((m) => !m.enviado && daysFromToday(m.triggerDate) > 0 && daysFromToday(m.triggerDate) <= 7)
       )
     ).length;
-    const atrasados = clientes.filter((c) => !c.penalizado && c.estadoPago === "Atrasado").length;
+    const atrasados = clientes.filter((c) => !clienteExcluido(c) && c.estadoPago === "Atrasado").length;
     return { total, alHoy, proximos7, atrasados };
   }, [clientes, alertasPorCliente, clientesCalc]);
 
@@ -1719,13 +1760,14 @@ function App() {
 
     if (editingId) {
       const antes = clientes.find((c) => c.id === editingId);
-      const despues = antes ? { ...antes, ...form } : null;
-      actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...form } : c)));
+      const camposForm = camposEstadoCliente(form, antes);
+      const despues = antes ? { ...antes, ...camposForm } : null;
+      actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...camposForm } : c)));
       if (antes && despues) {
         registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: editingId });
       }
     } else {
-      const nuevo = { id: uid(), ...form, creadoEn: new Date().toISOString() };
+      const nuevo = { id: uid(), ...camposEstadoCliente(form, null), creadoEn: new Date().toISOString() };
       actualizarClientes((prev) => [...prev, nuevo]);
       registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
@@ -1747,6 +1789,10 @@ function App() {
       fecha1raFactura: c.fecha1raFactura,
       monto1raFactura: c.monto1raFactura,
       estadoPago: c.estadoPago,
+      estadoCliente: c.penalizado ? "penalizado" : c.cancelado ? "cancelado" : "activo",
+      fechaCancelacion: c.fechaCancelacion || "",
+      motivoCancelacion: c.motivoCancelacion || "voluntaria",
+      motivoPenalizacion: c.motivoPenalizacion || "",
       observaciones: c.observaciones,
     });
     setEditingId(c.id);
@@ -2195,21 +2241,6 @@ function App() {
           <SkeletonCargando />
         ) : (
         <React.Fragment>
-        {stats.alHoy > 0 && !bannerDismissed && tab !== "alertas" && (
-          <div className="mb-4 rounded-lg border flex items-center justify-between px-4 py-3" style={ { background: "#FBEAEA", borderColor: "#F3C6C6" } }>
-            <span className="text-sm font-medium" style={ { color: "#C23B3B" } }>
-              🔔 Recordatorios pendientes: {stats.alHoy}
-            </span>
-            <div className="flex items-center gap-2">
-              <button onClick={() => setTab("alertas")} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#C23B3B" } }>
-                Ver cobros
-              </button>
-              <button onClick={() => setBannerDismissed(true)} className="text-xs font-medium px-2" style={ { color: "#6B7280" } }>
-                ✕
-              </button>
-            </div>
-          </div>
-        )}
         {tab === "dashboard" && (
           <Dashboard
             stats={stats}
@@ -2219,6 +2250,7 @@ function App() {
             convergencias={convergencias}
             onNuevo={() => setMostrarSelectorNuevo(true)}
             onActualizarEstadoFactura={actualizarEstadoFactura}
+            onPedirPago={pedirMarcarPagada}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
             onDescartarCliente={cancelarCliente}
@@ -2294,6 +2326,7 @@ function App() {
             convergencias={convergencias}
             onNuevo={() => setMostrarSelectorNuevo(true)}
             onActualizarEstadoFactura={actualizarEstadoFactura}
+            onPedirPago={pedirMarcarPagada}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
             onDescartarCliente={cancelarCliente}
@@ -2429,7 +2462,7 @@ function LoginScreen({ onSuccess }) {
           <div className="w-2.5 h-2.5 rounded-full" style={ { background: "#00AEEF" } } />
           <span className="font-semibold text-lg" style={ { color: "#001E62" } }>MetaForce CRM</span>
         </div>
-        <p className="text-sm mb-4" style={ { color: "#6B7280" } }>Ingresá la clave de acceso para continuar.</p>
+        <p className="text-sm mb-4" style={ { color: "#6B7280" } }>Ingresa la clave de acceso para continuar.</p>
         <input
           type="password"
           value={clave}
@@ -2841,7 +2874,7 @@ function RevisionDiariaModal({ pendientes, total, onMarcarPagada, onNoPagoTodavi
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "inicio", onIrACobros }) {
+function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "inicio", onIrACobros, onPedirPago }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(periodoActual);
   // Período con la ventana de rescate abierta ahora mismo (la más próxima que no ha
@@ -3657,7 +3690,7 @@ Early: `;
           pendientes={pendientesHoy}
           total={enRiesgoHoy.length}
           onMarcarPagada={(clienteId, n) => {
-            onActualizarEstadoFactura(clienteId, n, "pagada");
+            onPedirPago ? onPedirPago(clienteId, n) : onActualizarEstadoFactura(clienteId, n, "pagada");
             marcarRevisadoHoy(clienteId);
           } }
           onNoPagoTodavia={marcarRevisadoHoy}
@@ -6244,9 +6277,6 @@ function FacturaDot({ cliente, n, onCambiar }) {
 // Resumen real del estado de pago de un cliente, mirando TODAS las facturas ya
 // generadas (no solo la última que se tocó) — para la ficha de detalle.
 function resumenPagoCliente(c) {
-  if (c.estadoPago === "Suspendido") {
-    return { texto: "⏸ Suspendido", color: "#4B5563", bg: "#EFEFEF" };
-  }
   const facturas = Array.isArray(c.facturas) ? c.facturas : [];
   const generadas = facturas.filter((f) => daysFromToday(f.generada) <= 0);
   if (generadas.length === 0) {
@@ -6838,11 +6868,29 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
             <Field label="Monto 1ra factura (recurrente + prorrateo)">
               <input type="number" step="0.01" value={form.monto1raFactura} onChange={set("monto1raFactura")} className={inputClass} style={inputStyle} />
             </Field>
-            <Field label="Estado de pago">
-              <select value={form.estadoPago} onChange={set("estadoPago")} className={inputClass} style={inputStyle}>
-                {ESTADOS.map((e) => <option key={e} value={e}>{e}</option>)}
+            <Field label="Estado del cliente">
+              <select value={form.estadoCliente || "activo"} onChange={set("estadoCliente")} className={inputClass} style={inputStyle}>
+                {ESTADOS_CLIENTE.map((e) => <option key={e.value} value={e.value}>{e.label}</option>)}
               </select>
             </Field>
+            {form.estadoCliente === "cancelado" && (
+              <>
+                <Field label="Fecha de cancelación">
+                  <input type="date" value={form.fechaCancelacion || ""} onChange={set("fechaCancelacion")} className={inputClass} style={inputStyle} />
+                </Field>
+                <Field label="Motivo de cancelación">
+                  <select value={form.motivoCancelacion || "voluntaria"} onChange={set("motivoCancelacion")} className={inputClass} style={inputStyle}>
+                    <option value="voluntaria">Cancelación voluntaria</option>
+                    <option value="falta_pago">Falta de pago</option>
+                  </select>
+                </Field>
+              </>
+            )}
+            {form.estadoCliente === "penalizado" && (
+              <Field label="Motivo de la penalización (opcional)">
+                <input type="text" value={form.motivoPenalizacion || ""} onChange={set("motivoPenalizacion")} className={inputClass} style={inputStyle} />
+              </Field>
+            )}
           </div>
         </SeccionFormulario>
 
