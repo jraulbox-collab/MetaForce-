@@ -4422,6 +4422,18 @@ Early: `;
         />
       </div>
 
+      <AvanceDiarioCard
+        periodoKey={periodoVisto}
+        esActual={esActual}
+        esNuevo={esNuevo}
+        hogar={clientesDelPeriodo}
+        moviles={convergenciasDelPeriodo}
+        metaDinero={metaDinero}
+        metaClientes={metaClientes}
+        metaClientesHogar={metaClientesHogar}
+        metaClientesMovil={metaClientesMovil}
+      />
+
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
         <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>Toca o pasa el mouse sobre una barra para ver el detalle y la comparación.</p>
@@ -4482,6 +4494,115 @@ Early: `;
         />
       )}
       </>)}
+    </div>
+  );
+}
+
+// Avance día a día del período: línea acumulada (ingresos o clientes) contra la meta.
+function AvanceDiarioCard({ periodoKey, esActual, esNuevo, hogar, moviles, metaDinero, metaClientes, metaClientesHogar, metaClientesMovil }) {
+  const opciones = esNuevo
+    ? [{ key: "ingresos", label: "Ingresos" }, { key: "hogar", label: "Clientes hogar" }, { key: "movil", label: "Clientes móvil" }]
+    : [{ key: "ingresos", label: "Ingresos" }, { key: "clientes", label: "Clientes" }];
+  const [metrica, setMetrica] = useState("ingresos");
+  const metricaOk = opciones.some((o) => o.key === metrica) ? metrica : "ingresos";
+
+  const serie = useMemo(() => {
+    const { inicio, fin } = rangoCiclo(periodoKey);
+    const dias = [];
+    const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+    const ultimo = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
+    while (cursor <= ultimo) {
+      dias.push(fechaLocalISO(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const hoyISO = fechaLocalISO(new Date());
+    const eventos = [];
+    const sumaHogar = metricaOk === "ingresos" || metricaOk === "hogar" || metricaOk === "clientes";
+    const sumaMovil = (metricaOk === "ingresos" && esNuevo) || metricaOk === "movil";
+    if (sumaHogar) {
+      hogar.forEach((c) => {
+        if (c.fechaInstalacion) eventos.push({ f: c.fechaInstalacion, v: metricaOk === "ingresos" ? Number(c.montoMensual) || 0 : 1 });
+      });
+    }
+    if (sumaMovil) {
+      moviles.forEach((c) => {
+        const f = fechaActivacionMovil(c);
+        if (f) eventos.push({ f, v: metricaOk === "ingresos" ? Number(c.montoPlan) || 0 : 1 });
+      });
+    }
+    let acumulado = 0;
+    const puntos = [];
+    dias.forEach((d) => {
+      if (esActual && d > hoyISO) return;
+      eventos.forEach((e) => { if (e.f === d) acumulado += e.v; });
+      puntos.push({ d, v: acumulado });
+    });
+    // lo que cayó antes del primer día del ciclo se suma al inicio
+    const antes = eventos.filter((e) => e.f < dias[0]).reduce((a, e) => a + e.v, 0);
+    if (antes > 0) puntos.forEach((p) => { p.v += antes; });
+    return { dias, puntos };
+  }, [periodoKey, esActual, esNuevo, hogar, moviles, metricaOk]);
+
+  const meta =
+    metricaOk === "ingresos" ? metaDinero :
+    metricaOk === "hogar" ? metaClientesHogar :
+    metricaOk === "movil" ? metaClientesMovil :
+    metaClientes;
+  const esDinero = metricaOk === "ingresos";
+  const fmtV = (v) => (esDinero ? fmtMonto(v) : String(Math.round(v)));
+  const actual = serie.puntos.length ? serie.puntos[serie.puntos.length - 1].v : 0;
+  const maxY = Math.max(1, actual, meta || 0) * 1.1;
+  const W = 600, H = 190, PL = 8, PR = 8, PT = 14, PB = 24;
+  const n = Math.max(1, serie.dias.length - 1);
+  const x = (i) => PL + (i / n) * (W - PL - PR);
+  const y = (v) => PT + (1 - v / maxY) * (H - PT - PB);
+  const linea = serie.puntos.map((p, i) => `${x(i).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ");
+  const ultimo = serie.puntos.length - 1;
+  const diaDe = (iso) => parseInt(iso.split("-")[2], 10);
+  const marcasX = serie.dias.length ? [0, Math.floor(serie.dias.length / 2), serie.dias.length - 1] : [];
+  const pct = meta ? Math.round((actual / meta) * 100) : null;
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6">
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
+        <h2 className="font-semibold text-sm">{esActual ? "Avance del período" : "Cómo fue avanzando el período"}</h2>
+        <select
+          value={metricaOk}
+          onChange={(e) => setMetrica(e.target.value)}
+          className="text-xs font-medium px-2 py-1 rounded-md border"
+          style={ { borderColor: "#D1D5DB", color: "#001E62" } }
+        >
+          {opciones.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+      </div>
+      <p className="text-xs mb-3" style={ { color: "#6B7280" } }>
+        {esActual ? "Hoy" : "Cerró en"}: <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fmtV(actual)}</span>
+        {meta ? <> de <span className="font-mono">{fmtV(meta)}</span> de meta{pct !== null ? ` (${pct}%)` : ""}</> : " · sin meta cargada para este período"}
+      </p>
+      {serie.puntos.length === 0 ? (
+        <p className="text-xs" style={ { color: "#9CA3AF" } }>Este período todavía no empieza.</p>
+      ) : (
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Avance día a día del período">
+          <line x1={PL} y1={y(0)} x2={W - PR} y2={y(0)} stroke="#E5E7EB" strokeWidth="1" />
+          {meta ? (
+            <>
+              <line x1={PL} y1={y(meta)} x2={W - PR} y2={y(meta)} stroke="#B45309" strokeWidth="1.5" strokeDasharray="5 4" />
+              <text x={W - PR} y={y(meta) - 4} textAnchor="end" fontSize="11" fill="#B45309">Meta {fmtV(meta)}</text>
+            </>
+          ) : null}
+          <polyline points={linea} fill="none" stroke="#001E62" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
+          <circle cx={x(ultimo)} cy={y(actual)} r="4" fill="#001E62" />
+          {marcasX.map((i) => (
+            <text key={i} x={x(i)} y={H - 6} textAnchor={i === 0 ? "start" : i === serie.dias.length - 1 ? "end" : "middle"} fontSize="11" fill="#6B7280">
+              {diaDe(serie.dias[i])}
+            </text>
+          ))}
+        </svg>
+      )}
+      <div className="flex items-center gap-4 text-[11px] mt-1" style={ { color: "#6B7280" } }>
+        <span>━ Tu avance</span>
+        {meta ? <span style={ { color: "#B45309" } }>╌ Meta</span> : null}
+      </div>
     </div>
   );
 }
@@ -6072,6 +6193,11 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [editingId, setEditingId] = useState(null);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
+  const formRef = useRef(null);
+  // Si desde otro lado te mandan a un mes concreto, se abre ese mes.
+  useEffect(() => {
+    if (mesActivo) setMesExpandido(mesActivo);
+  }, [mesActivo]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -6102,6 +6228,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setMontoPlan(c.montoPlan != null ? String(c.montoPlan) : "");
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
     setEditingId(c.id);
+    // El formulario está arriba de la lista: se sube hasta él para que se vea que se está editando.
+    setTimeout(() => {
+      if (formRef.current) formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   }
 
   function cancelEdit() {
@@ -6115,7 +6245,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
 
   return (
     <div>
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
+      <div ref={formRef} className="bg-white rounded-lg border shadow-sm p-5 mb-4" style={ { borderColor: editingId ? "#0072CE" : "#E5E7EB", scrollMarginTop: "80px" } }>
         <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar Cliente Móvil" : "Nuevo Cliente Móvil"}</h2>
         <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
           <div className="flex-1">
