@@ -6574,15 +6574,11 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                                 Plan: {fmtMonto(c.montoPlan)}
                               </span>
                             )}
-                            <button
-                              type="button"
-                              onClick={() => onEditar(c.id, { portabilidad: !esPortabilidad(c) })}
-                              className="text-xs font-medium px-2 py-0.5 rounded-full border"
-                              style={ esPortabilidad(c) ? { background: "#DCF5F3", color: "#0F766E", borderColor: "#0F766E" } : { background: "#fff", color: "#6B7280", borderColor: "#D1D5DB" } }
-                              title="Toca para cambiar si es portabilidad"
-                            >
-                              {esPortabilidad(c) ? "✓ Portabilidad" : "Sin portabilidad"}
-                            </button>
+                            {esPortabilidad(c) && (
+                              <span className="text-xs font-medium px-2 py-0.5 rounded-full border" style={ { background: "#DCF5F3", color: "#0F766E", borderColor: "#0F766E" } }>
+                                ✓ Portabilidad
+                              </span>
+                            )}
                           </div>
                           <div className="text-xs font-mono" style={ { color: "#9CA3AF" } }>
                             {c.telefono} · activado {fmtFecha(fechaActivacionMovil(c))}
