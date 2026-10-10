@@ -2418,7 +2418,7 @@ function App() {
           } }
           onConvergencia={() => {
             setTab("clientes");
-            setSaltarAMes({ subVista: "movil", token: Date.now() });
+            setSaltarAMes({ subVista: "movil", abrirNuevoMovil: true, token: Date.now() });
             setMostrarSelectorNuevo(false);
           } }
         />
@@ -5330,9 +5330,11 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
   const setFechaHasta = hacerSetter("fechaHasta");
 
   const [subVista, setSubVista] = useState("clientes");
+  const [tokenNuevoMovil, setTokenNuevoMovil] = useState(null);
   useEffect(() => {
     if (saltarAMes) {
       if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
+      if (saltarAMes.abrirNuevoMovil) setTokenNuevoMovil(saltarAMes.token);
       setSubVista(saltarAMes.subVista === "movil" ? "movil" : "clientes");
       setFiltrosClientes((prev) => ({
         ...prev,
@@ -5628,6 +5630,8 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
           onEditar={onEditarMovil}
           onEliminar={onEliminarMovil}
           mesActivo={mesActivoEfectivo}
+          abrirNuevo={tokenNuevoMovil}
+          onNuevoAbierto={() => setTokenNuevoMovil(null)}
         />
       ) : (
         <>
@@ -6384,7 +6388,7 @@ function ClienteDetalle({
   );
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo }) {
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirNuevo, onNuevoAbierto }) {
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
   const [tipo, setTipo] = useState("pospago");
@@ -6393,13 +6397,21 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [soloPorta, setSoloPorta] = useState(false);
   const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
   const [editingId, setEditingId] = useState(null);
+  const [modalAbierto, setModalAbierto] = useState(false);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
   const meses = useMemo(() => periodosRecientes(6), []);
-  const formRef = useRef(null);
   // Si desde otro lado te mandan a un mes concreto, se abre ese mes.
   useEffect(() => {
     if (mesActivo) setMesExpandido(mesActivo);
   }, [mesActivo]);
+  // Desde el botón flotante ("Cliente Móvil") se abre la ventana para agregar uno nuevo.
+  useEffect(() => {
+    if (abrirNuevo) {
+      limpiarForm();
+      setModalAbierto(true);
+      if (onNuevoAbierto) onNuevoAbierto();
+    }
+  }, [abrirNuevo]);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -6423,6 +6435,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setPortabilidad(false);
     setFechaActivacion(fechaLocalISO(new Date()));
     setEditingId(null);
+    setModalAbierto(false);
   }
 
   function startEdit(c) {
@@ -6433,13 +6446,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setPortabilidad(esPortabilidad(c));
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
     setEditingId(c.id);
-    // El formulario está arriba de la lista: se sube hasta él para que se vea que se está editando.
-    setTimeout(() => {
-      if (formRef.current) formRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
-    }, 0);
+    setModalAbierto(true);
   }
 
-  function cancelEdit() {
+  function limpiarForm() {
     setNombre("");
     setTelefono("");
     setTipo("pospago");
@@ -6449,85 +6459,96 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setEditingId(null);
   }
 
+  function cancelEdit() {
+    limpiarForm();
+    setModalAbierto(false);
+  }
+
   return (
     <div>
-      <div ref={formRef} className="bg-white rounded-lg border shadow-sm p-5 mb-4" style={ { borderColor: editingId ? "#0072CE" : "#E5E7EB", scrollMarginTop: "80px" } }>
-        <h2 className="text-sm font-semibold mb-3">{editingId ? "Editar Cliente Móvil" : "Nuevo Cliente Móvil"}</h2>
-        <form onSubmit={handleSubmit} className="flex flex-col sm:flex-row gap-3 sm:items-end">
-          <div className="flex-1">
-            <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Nombre</label>
-            <input
-              required
-              value={nombre}
-              onChange={(e) => setNombre(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
-          <div className="flex-1">
-            <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Número de celular</label>
-            <input
-              required
-              value={telefono}
-              onChange={(e) => setTelefono(e.target.value)}
-              className="w-full px-3 py-2 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
-          <div className="flex gap-2">
-            <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
-              {editingId ? "Guardar" : "Agregar"}
-            </button>
-            {editingId && (
-              <button type="button" onClick={cancelEdit} className="text-sm font-medium px-4 py-2 rounded-md border" style={ { borderColor: "#D1D5DB" } }>
-                Cancelar
-              </button>
-            )}
-          </div>
-        </form>
-        <div className="flex flex-wrap items-end gap-3 mt-3 pt-3 border-t" style={ { borderColor: "#F0F0EF" } }>
-          <div>
-            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Tipo</label>
-            <select
-              value={tipo}
-              onChange={(e) => setTipo(e.target.value)}
-              className="px-2 py-1.5 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            >
-              {TIPOS_CLIENTE_MOVIL.map((t) => (
-                <option key={t.value} value={t.value}>{t.label}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Costo del plan móvil</label>
-            <input
-              type="number"
-              step="0.01"
-              min="0"
-              value={montoPlan}
-              onChange={(e) => setMontoPlan(e.target.value)}
-              placeholder="$0.00"
-              className="w-28 px-2 py-1.5 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
-          </div>
-          <label className="flex items-center gap-2 text-sm pb-1.5 cursor-pointer" style={ { color: "#374151" } }>
-            <input type="checkbox" checked={portabilidad} onChange={(e) => setPortabilidad(e.target.checked)} />
-            Portabilidad (trajo su número de otra compañía · bono ${BONO_POR_CONVERGENCIA})
-          </label>
-          <div>
-            <label className="text-xs block mb-1" style={ { color: "#6B7280" } }>Fecha de activación</label>
-            <input
-              type="date"
-              value={fechaActivacion}
-              onChange={(e) => setFechaActivacion(e.target.value)}
-              className="px-2 py-1.5 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#D1D5DB" } }
-            />
+      {modalAbierto && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 max-w-md w-full max-h-full overflow-y-auto">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-lg">{editingId ? "Editar Cliente Móvil" : "Nuevo Cliente Móvil"}</h3>
+              <button type="button" onClick={cancelEdit} className="text-sm" style={ { color: "#6B7280" } } title="Cerrar sin guardar">✕</button>
+            </div>
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3">
+              <div>
+                <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Nombre</label>
+                <input
+                  required
+                  autoFocus
+                  value={nombre}
+                  onChange={(e) => setNombre(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md border text-sm outline-none"
+                  style={ { borderColor: "#D1D5DB" } }
+                />
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Número de celular</label>
+                <input
+                  required
+                  value={telefono}
+                  onChange={(e) => setTelefono(e.target.value)}
+                  className="w-full px-3 py-2 rounded-md border text-sm outline-none"
+                  style={ { borderColor: "#D1D5DB" } }
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Tipo</label>
+                  <select
+                    value={tipo}
+                    onChange={(e) => setTipo(e.target.value)}
+                    className="w-full px-2 py-2 rounded-md border text-sm outline-none"
+                    style={ { borderColor: "#D1D5DB" } }
+                  >
+                    {TIPOS_CLIENTE_MOVIL.map((t) => (
+                      <option key={t.value} value={t.value}>{t.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Costo del plan móvil</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={montoPlan}
+                    onChange={(e) => setMontoPlan(e.target.value)}
+                    placeholder="$0.00"
+                    className="w-full px-2 py-2 rounded-md border text-sm outline-none"
+                    style={ { borderColor: "#D1D5DB" } }
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-medium block mb-1" style={ { color: "#6B7280" } }>Fecha de activación</label>
+                <input
+                  type="date"
+                  value={fechaActivacion}
+                  onChange={(e) => setFechaActivacion(e.target.value)}
+                  className="w-full px-2 py-2 rounded-md border text-sm outline-none"
+                  style={ { borderColor: "#D1D5DB" } }
+                />
+              </div>
+              <label className="flex items-start gap-2 text-sm cursor-pointer" style={ { color: "#374151" } }>
+                <input type="checkbox" className="mt-1" checked={portabilidad} onChange={(e) => setPortabilidad(e.target.checked)} />
+                <span>Portabilidad <span className="text-xs" style={ { color: "#6B7280" } }>(trajo su número de otra compañía · bono ${BONO_POR_CONVERGENCIA})</span></span>
+              </label>
+              <div className="flex gap-2 justify-end mt-1">
+                <button type="button" onClick={cancelEdit} className="text-sm font-medium px-4 py-2 rounded-md border" style={ { borderColor: "#D1D5DB" } }>
+                  Cancelar
+                </button>
+                <button type="submit" className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
+                  {editingId ? "Guardar" : "Agregar"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
-      </div>
+      )}
 
       <label className="flex items-center gap-2 text-xs mb-2 cursor-pointer" style={ { color: "#6B7280" } }>
         <input type="checkbox" checked={soloPorta} onChange={(e) => setSoloPorta(e.target.checked)} />
