@@ -4104,132 +4104,22 @@ Early: `;
         )}
       </div>
 
+      {esNuevo ? (
+        <AvanceMetasCard
+          periodoKey={periodoVisto}
+          esActual={esActual}
+          hogar={clientesDelPeriodo}
+          moviles={convergenciasDelPeriodo}
+          dineroHogar={dineroDelPeriodo}
+          dineroMovil={costoPlanesMovilesPeriodo}
+          metaClientesHogar={metaClientesHogar}
+          metaClientesMovil={metaClientesMovil}
+          metaDinero={metaDinero}
+          onActualizarMeta={onActualizarMeta}
+          onVerClientes={onVerClientes}
+        />
+      ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-        {esNuevo ? (
-          <>
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => onVerClientes({ periodo: periodoVisto })}
-                  className="font-semibold text-sm underline-offset-2 hover:underline"
-                  style={ { color: "#001E62" } }
-                  title="Ver clientes de este período"
-                >
-                  CLIENTES HOGAR →
-                </button>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
-                  <MetaInput
-                    valor={metaClientesHogar}
-                    onConfirmar={(v) => onActualizarMeta(periodoVisto, "clientesHogar", v)}
-                    width="w-16"
-                  />
-                </div>
-              </div>
-              {metaClientesHogar ? (
-                <>
-                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
-                    <span className="font-semibold">{clientesDelPeriodo.length}</span> de <span className="font-semibold">{metaClientesHogar}</span> ·{" "}
-                    <span className="font-semibold" style={ { color: progresoClientesHogarPct >= 100 ? "#0F766E" : "#0072CE" } }>
-                      {progresoClientesHogarPct >= 100 ? "✓ " : ""}{progresoClientesHogarPct}%
-                    </span>
-                  </p>
-                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
-                    <div
-                      className="h-2 rounded-full"
-                      style={ {
-                        width: `${Math.min(100, progresoClientesHogarPct)}%`,
-                        background: clientesDelPeriodo.length >= metaClientesHogar ? "#0F766E" : "#0072CE",
-                      } }
-                    />
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes hogar de este período.</p>
-              )}
-              <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>Peso en el % de clientes: 65%</p>
-            </div>
-
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h2 className="font-semibold text-sm">CLIENTES MÓVIL</h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
-                  <MetaInput
-                    valor={metaClientesMovil}
-                    onConfirmar={(v) => onActualizarMeta(periodoVisto, "clientesMovil", v)}
-                    width="w-16"
-                  />
-                </div>
-              </div>
-              {metaClientesMovil ? (
-                <>
-                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
-                    <span className="font-semibold">{convergenciasPeriodo}</span> de <span className="font-semibold">{metaClientesMovil}</span> ·{" "}
-                    <span className="font-semibold" style={ { color: progresoClientesMovilPct >= 100 ? "#0F766E" : "#0072CE" } }>
-                      {progresoClientesMovilPct >= 100 ? "✓ " : ""}{progresoClientesMovilPct}%
-                    </span>
-                  </p>
-                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
-                    <div
-                      className="h-2 rounded-full"
-                      style={ {
-                        width: `${Math.min(100, progresoClientesMovilPct)}%`,
-                        background: convergenciasPeriodo >= metaClientesMovil ? "#0F766E" : "#0072CE",
-                      } }
-                    />
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de clientes móvil de este período.</p>
-              )}
-              <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
-                Clientes Móvil (Pospago, Convergencia y FULL TIGO) del período · Peso en el % de clientes: 35%
-              </p>
-            </div>
-
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h2 className="font-semibold text-sm">INGRESO $</h2>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs" style={ { color: "#6B7280" } }>Meta:</span>
-                  <MetaInput
-                    valor={metaDinero}
-                    onConfirmar={(v) => onActualizarMeta(periodoVisto, "dinero", v)}
-                    width="w-20"
-                  />
-                </div>
-              </div>
-              {metaDinero ? (
-                <>
-                  <p className="text-sm mb-2" style={ { color: "#374151" } }>
-                    <span className="font-semibold">{fmtMonto(dineroDelPeriodo + costoPlanesMovilesPeriodo)}</span> de{" "}
-                    <span className="font-semibold">{fmtMonto(metaDinero)}</span> ·{" "}
-                    <span className="font-semibold" style={ { color: progresoIngresoNuevoPct >= 100 ? "#0F766E" : "#0072CE" } }>
-                      {progresoIngresoNuevoPct >= 100 ? "✓ " : ""}{progresoIngresoNuevoPct}%
-                    </span>
-                  </p>
-                  <div className="w-full h-2 rounded-full" style={ { background: "#E3EDFA" } }>
-                    <div
-                      className="h-2 rounded-full"
-                      style={ {
-                        width: `${Math.min(100, progresoIngresoNuevoPct)}%`,
-                        background: progresoIngresoNuevoPct >= 100 ? "#0F766E" : "#0072CE",
-                      } }
-                    />
-                  </div>
-                </>
-              ) : (
-                <p className="text-xs" style={ { color: "#9CA3AF" } }>Carga la meta de ingresos de este período.</p>
-              )}
-              <p className="text-[11px] mt-2" style={ { color: "#9CA3AF" } }>
-                Hogar {fmtMonto(dineroDelPeriodo)} + planes móviles {fmtMonto(costoPlanesMovilesPeriodo)} · define el acelerador/desacelerador (±10%)
-              </p>
-            </div>
-          </>
-        ) : (
-          <>
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
           <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
             <button
@@ -4385,9 +4275,8 @@ Early: `;
             </div>
           )}
         </div>
-          </>
-        )}
       </div>
+      )}
 
       <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
         <MiniStat
@@ -4422,17 +4311,19 @@ Early: `;
         />
       </div>
 
-      <AvanceDiarioCard
-        periodoKey={periodoVisto}
-        esActual={esActual}
-        esNuevo={esNuevo}
-        hogar={clientesDelPeriodo}
-        moviles={convergenciasDelPeriodo}
-        metaDinero={metaDinero}
-        metaClientes={metaClientes}
-        metaClientesHogar={metaClientesHogar}
-        metaClientesMovil={metaClientesMovil}
-      />
+      {!esNuevo && (
+        <AvanceDiarioCard
+          periodoKey={periodoVisto}
+          esActual={esActual}
+          esNuevo={esNuevo}
+          hogar={clientesDelPeriodo}
+          moviles={convergenciasDelPeriodo}
+          metaDinero={metaDinero}
+          metaClientes={metaClientes}
+          metaClientesHogar={metaClientesHogar}
+          metaClientesMovil={metaClientesMovil}
+        />
+      )}
 
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
@@ -4494,6 +4385,266 @@ Early: `;
         />
       )}
       </>)}
+    </div>
+  );
+}
+
+// Tarjeta única de avance del período (esquema nuevo): barras de clientes hogar,
+// clientes móvil e ingresos con ritmo esperado, resumen por tipo y gráfica diaria apilada.
+// Una venta se instala ~2 días después (y si cae en domingo pasa al lunes), así que el
+// "último día que cuenta" es el último del mes cuya instalación todavía cae dentro del mes.
+function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes }) {
+  const [vista, setVista] = useState("clientes");
+  const [editMetas, setEditMetas] = useState(false);
+  const [diaSel, setDiaSel] = useState(null);
+
+  const info = useMemo(() => {
+    const { inicio, fin } = rangoCiclo(periodoKey);
+    const dias = [];
+    const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+    const ultimoDia = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate());
+    while (cursor <= ultimoDia) {
+      dias.push(fechaLocalISO(cursor));
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    const tot = dias.length;
+    // último día en que una venta todavía se instala dentro del período
+    let lim = tot;
+    for (let d = tot; d >= 1; d--) {
+      const inst = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate() + d - 1 + 2);
+      if (inst.getDay() === 0) inst.setDate(inst.getDate() + 1);
+      if (inst <= ultimoDia) { lim = d; break; }
+    }
+    const hoyISO = fechaLocalISO(new Date());
+    let hoy = tot;
+    if (esActual) {
+      const idx = dias.indexOf(hoyISO);
+      hoy = idx >= 0 ? idx + 1 : (hoyISO < dias[0] ? 0 : tot);
+    }
+    const A = dias.map(() => []);
+    const B = dias.map(() => []);
+    const colocar = (lista, arr, fechaDe, valorDe) => {
+      lista.forEach((c) => {
+        const f = fechaDe(c);
+        if (!f) return;
+        let i = dias.indexOf(f);
+        if (i < 0) i = f < dias[0] ? 0 : -1;
+        if (i >= 0) arr[i].push({ nombre: c.nombre || "Sin nombre", v: valorDe(c) });
+      });
+    };
+    colocar(hogar, A, (c) => c.fechaInstalacion, (c) => Number(c.montoMensual) || 0);
+    colocar(moviles, B, (c) => fechaActivacionMovil(c), (c) => Number(c.montoPlan) || 0);
+    return { dias, tot, lim, hoy, A, B };
+  }, [periodoKey, esActual, hogar, moviles]);
+
+  const { dias, tot, lim, hoy, A, B } = info;
+  const cerrado = !esActual;
+  const esp = cerrado ? 100 : lim ? Math.min(100, (hoy / lim) * 100) : 100;
+  const esDinero = vista === "ingresos";
+  const fx = (v) => (esDinero ? fmtMonto(v) : String(Math.round(v)));
+  const fx0 = (v) => (esDinero ? "$" + Math.round(v).toLocaleString("en-US") : String(Math.round(v)));
+  const sumaDia = (arr) => arr.reduce((a, e) => a + (esDinero ? e.v : 1), 0);
+  const serieA = A.map(sumaDia);
+  const serieB = B.map(sumaDia);
+  const totA = serieA.reduce((a, v) => a + v, 0);
+  const totB = serieB.reduce((a, v) => a + v, 0);
+  const totDia = serieA.map((v, i) => v + serieB[i]);
+  const totAll = totA + totB;
+  const metaGrafica = esDinero ? metaDinero : (metaClientesHogar || 0) + (metaClientesMovil || 0);
+  const ritmo = metaGrafica && lim ? metaGrafica / lim : 0;
+
+  // texto de estado de cada línea: cumplida / proyección / lo que falta
+  const textoEstado = (meta, actual) => {
+    if (!meta) return null;
+    const falta = Math.max(0, meta - actual);
+    if (cerrado) return actual >= meta ? "✓ Meta cumplida" : "No llegó a la meta (faltaron " + fx(falta) + ")";
+    const dRest = lim - hoy + 1;
+    const pr = hoy >= 4 ? Math.floor((actual / hoy) * lim) : 0;
+    if (falta <= 0) return "✓ Meta cumplida" + (pr > meta ? " · vas para ~" + fx0(pr) : "");
+    if (dRest <= 0) return "Ya no entran más ventas";
+    if (pr >= meta) return "A este ritmo cierras con ~" + fx0(pr) + " (meta " + fx0(meta) + ")";
+    return "Te faltan " + fx(falta) + " en " + dRest + " días";
+  };
+  const promedio = (v) => (hoy > 0 ? (esDinero ? fmtMonto(v / hoy) : (v / hoy).toFixed(1)) : "—");
+
+  const barras = [
+    { nom: "Clientes hogar", actual: hogar.length, meta: metaClientesHogar, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey }) },
+    { nom: "Clientes móvil", actual: moviles.length, meta: metaClientesMovil, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey, subVista: "movil" }) },
+    { nom: "Ingresos", actual: dineroHogar + dineroMovil, meta: metaDinero, fmt: (v) => fmtMonto(v), extra: "Hogar " + fmtMonto(dineroHogar) + " + planes móviles " + fmtMonto(dineroMovil) },
+  ];
+
+  // gráfica
+  const W = 640, H = 190, PL = 40, PR = 8, PT = 18, PB = 22;
+  const mx = Math.max(1, ...totDia, ritmo) * 1.2;
+  const y = (v) => PT + (1 - v / mx) * (H - PT - PB);
+  const dw = (W - PL - PR) / Math.max(1, tot);
+  const bw = Math.max(2, dw - 3);
+  const mejor = totDia.reduce((bi, v, i) => (v > totDia[bi] ? i : bi), 0);
+  const marcasX = [1, 5, 10, 15, 20, 25, tot].filter((d, i, a) => d <= tot && a.indexOf(d) === i);
+  const sel = diaSel !== null && diaSel < tot ? diaSel : null;
+  const acumHasta = (i) => totDia.slice(0, i + 1).reduce((a, v) => a + v, 0);
+  const uid = "avm" + periodoKey.replace("-", "");
+
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6">
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{cerrado ? "Cómo cerró el período" : "Avance del período"}</h2>
+        <div className="text-xs flex items-center gap-2" style={ { color: "#6B7280" } }>
+          <span>{cerrado ? "Período cerrado" : "Día " + hoy + " · últimas ventas que cuentan: día " + lim}</span>
+          <button type="button" onClick={() => setEditMetas(!editMetas)} className="underline underline-offset-2" style={ { color: "#6B7280" } }>✎ Metas</button>
+        </div>
+      </div>
+
+      {editMetas && (
+        <div className="mt-3 rounded-lg p-3" style={ { background: "#F4F6FA", border: "1px solid #E5E7EB" } }>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="text-[11px] mb-1" style={ { color: "#6B7280" } }>Meta clientes hogar</div>
+              <MetaInput valor={metaClientesHogar} onConfirmar={(v) => onActualizarMeta(periodoKey, "clientesHogar", v)} width="w-20" />
+            </div>
+            <div>
+              <div className="text-[11px] mb-1" style={ { color: "#6B7280" } }>Meta clientes móvil</div>
+              <MetaInput valor={metaClientesMovil} onConfirmar={(v) => onActualizarMeta(periodoKey, "clientesMovil", v)} width="w-20" />
+            </div>
+            <div>
+              <div className="text-[11px] mb-1" style={ { color: "#6B7280" } }>Meta ingresos ($)</div>
+              <MetaInput valor={metaDinero} onConfirmar={(v) => onActualizarMeta(periodoKey, "dinero", v)} width="w-24" step="0.01" />
+            </div>
+          </div>
+          <p className="text-[11px] mt-2" style={ { color: "#6B7280" } }>La meta de ingresos define el acelerador (±10%).</p>
+        </div>
+      )}
+
+      {barras.map((b) => {
+        const p = b.meta ? (b.actual / b.meta) * 100 : 0;
+        const dif = p - esp;
+        const est = !b.meta ? ["Sin meta", "#374151", "#F4F6FA"] : cerrado ? (p >= 100 ? ["✓ Cumplida", "#001E62", "#EEF3FB"] : ["▼ No llegó", "#B45309", "#FFF6E3"]) : dif >= 5 ? ["▲ Adelantado", "#001E62", "#EEF3FB"] : dif <= -5 ? ["▼ Atrasado", "#B45309", "#FFF6E3"] : ["● En ritmo", "#374151", "#F4F6FA"];
+        const falta = b.meta ? Math.max(0, b.meta - b.actual) : 0;
+        return (
+          <div key={b.nom} className="mt-4">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              {b.enlace ? (
+                <button type="button" onClick={b.enlace} className="text-sm font-semibold hover:underline underline-offset-2" style={ { color: "#111827" } } title="Ver clientes de este período">{b.nom} →</button>
+              ) : (
+                <span className="text-sm font-semibold" style={ { color: "#111827" } }>{b.nom}</span>
+              )}
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={ { color: est[1], background: est[2] } }>{est[0]}</span>
+            </div>
+            <div className="relative h-3.5 rounded-full" style={ { background: "#F4F6FA", border: "1px solid #E5E7EB" } }>
+              <div className="absolute left-0 top-0 bottom-0 rounded-full" style={ { width: Math.min(100, p) + "%", background: "#001E62" } } />
+              {b.meta && !cerrado ? (
+                <div className="absolute" style={ { left: esp + "%", top: "-5px", bottom: "-5px", borderLeft: "2px dashed #B45309" } } />
+              ) : null}
+            </div>
+            <div className="flex items-center justify-between flex-wrap gap-x-3 mt-1 text-xs" style={ { color: "#6B7280" } }>
+              <span><span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.actual)}</span>{b.meta ? <> de <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.meta)}</span> · {Math.round(p)}%</> : null}</span>
+              <span>{!b.meta ? "Pon la meta con ✎ Metas" : falta > 0 ? <>Te faltan <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(falta)}</span></> : "✓ Meta cumplida"}</span>
+            </div>
+            {b.extra ? <div className="text-[11px] mt-0.5" style={ { color: "#6B7280" } }>{b.extra}</div> : null}
+          </div>
+        );
+      })}
+      {!cerrado && (
+        <div className="flex items-center gap-1.5 text-[11px] mt-3" style={ { color: "#B45309" } }>
+          <span style={ { display: "inline-block", height: "12px", borderLeft: "2px dashed #B45309" } } />
+          Marca punteada = dónde deberías ir hoy para llegar a la meta con la última venta que cuenta (2 días de margen y sin instalar en domingo)
+        </div>
+      )}
+
+      <hr className="my-5" style={ { borderColor: "#E5E7EB" } } />
+      <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Lo que ingresas cada día</h2>
+      <div className="flex gap-2 mt-2 flex-wrap">
+        {[["clientes", "Clientes"], ["ingresos", "Ingresos"]].map((o) => (
+          <button
+            key={o[0]}
+            type="button"
+            onClick={() => { setVista(o[0]); setDiaSel(null); } }
+            className="text-xs font-semibold px-3.5 py-1.5 rounded-full border"
+            style={ vista === o[0] ? { background: "#001E62", borderColor: "#001E62", color: "#fff" } : { background: "#fff", borderColor: "#D1D5DB", color: "#374151" } }
+          >
+            {o[1]}
+          </button>
+        ))}
+      </div>
+
+      <div className="mt-3 text-[13px] leading-relaxed" style={ { color: "#111827" } }>
+        {[
+          { sq: "#001E62", nom: "Hogar", v: totA, meta: esDinero ? null : metaClientesHogar },
+          { sq: "dot", nom: esDinero ? "Planes móviles" : "Móvil", v: totB, meta: esDinero ? null : metaClientesMovil },
+        ].map((l) => (
+          <div key={l.nom} className="flex items-center gap-2 flex-wrap">
+            <span style={ l.sq === "dot" ? { width: "12px", height: "10px", borderRadius: "2px", border: "1px solid #B45309", background: "radial-gradient(#B45309 1.4px, #fff 1.5px) 0 0 / 5px 5px", display: "inline-block" } : { width: "12px", height: "10px", borderRadius: "2px", background: l.sq, display: "inline-block" } } />
+            <span>{l.nom}:</span>
+            <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fx(l.v)}</span>
+            {cerrado ? null : <span>en {hoy} días · <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{promedio(l.v)}</span> por día</span>}
+            {l.meta ? <span className="text-xs" style={ { color: "#B45309" } }>{textoEstado(l.meta, l.v)}</span> : null}
+          </div>
+        ))}
+        <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>
+          Total: <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fx(totAll)}</span>{esDinero ? (cerrado ? "" : " · " + promedio(totAll) + " por día") : " clientes"}
+          {esDinero && metaDinero ? <span style={ { color: "#B45309" } }> · {textoEstado(metaDinero, totAll)}</span> : null}
+        </div>
+      </div>
+
+      <svg viewBox={ "0 0 " + W + " " + H } className="w-full mt-2" role="img" aria-label="Lo que ingresas por día" style={ { display: "block" } }>
+        <defs>
+          <pattern id={uid + "pt"} width="5" height="5" patternUnits="userSpaceOnUse"><rect width="5" height="5" fill="#fff" /><circle cx="2.5" cy="2.5" r="1.7" fill="#B45309" /></pattern>
+          <pattern id={uid + "pn"} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><line x1="0" y1="0" x2="0" y2="4" stroke="#9CA3AF" strokeWidth="1.5" /></pattern>
+        </defs>
+        <line x1={PL} x2={W - PR} y1={y(0)} y2={y(0)} stroke="#E5E7EB" />
+        <text x={PL - 5} y={y(0) + 4} textAnchor="end" fontSize="10" fill="#6B7280">0</text>
+        <text x={PL - 5} y={y(mx / 1.2) + 4} textAnchor="end" fontSize="10" fill="#6B7280">{fx0(mx / 1.2)}</text>
+        {dias.map((d, i) => {
+          const x = PL + i * dw + 1.5;
+          if (i + 1 > lim) return <rect key={d} x={x} y={y(0) - 6} width={bw} height="6" fill={ "url(#" + uid + "pn)" } opacity="0.55" />;
+          if (!cerrado && i >= hoy) return <rect key={d} x={x} y={y(0) - 1.5} width={bw} height="1.5" fill="#E5E7EB" />;
+          const a = serieA[i], b = serieB[i];
+          const resalta = sel === i;
+          if (a + b === 0) return <rect key={d} x={x} y={y(0) - 2} width={bw} height="2" fill="#C7D2E8" style={ { cursor: "pointer" } } onClick={() => setDiaSel(i)} />;
+          return (
+            <g key={d} style={ { cursor: "pointer" } } onClick={() => setDiaSel(i)} opacity={sel !== null && !resalta ? 0.55 : 1}>
+              <rect x={x} y={y(a)} width={bw} height={Math.max(0, y(0) - y(a))} fill="#001E62" rx={b ? 0 : 2.5} />
+              {b ? <rect x={x} y={y(a + b)} width={bw} height={Math.max(0, y(a) - y(a + b))} fill={ "url(#" + uid + "pt)" } stroke="#B45309" strokeWidth="1" rx="2" /> : null}
+            </g>
+          );
+        })}
+        {totDia[mejor] > 0 && (cerrado || mejor < hoy) ? (
+          <text x={PL + mejor * dw + dw / 2} y={y(totDia[mejor]) - 5} textAnchor="middle" fontSize="10" fontWeight="700" fill="#001E62">{fx0(totDia[mejor])}</text>
+        ) : null}
+        {ritmo > 0 ? (
+          <>
+            <line x1={PL} x2={W - PR} y1={y(ritmo)} y2={y(ritmo)} stroke="#B45309" strokeWidth="1.5" strokeDasharray="5 4" />
+            <text x={W - PR} y={y(ritmo) - 4} textAnchor="end" fontSize="10" fill="#B45309">{"Ritmo: " + (esDinero ? fx0(ritmo) : ritmo.toFixed(1)) + " por día"}</text>
+          </>
+        ) : null}
+        {marcasX.map((d) => (
+          <text key={d} x={PL + (d - 1) * dw + dw / 2} y={H - 6} textAnchor="middle" fontSize="10" fill={!cerrado && d === hoy ? "#001E62" : "#6B7280"} fontWeight={!cerrado && d === hoy ? "700" : "400"}>{d}</text>
+        ))}
+      </svg>
+      <div className="flex gap-x-4 gap-y-1 flex-wrap text-[11px] mt-1.5" style={ { color: "#6B7280" } }>
+        <span>■ {esDinero ? "Ingresos de hogar" : "Clientes hogar"}</span>
+        <span>▨ {esDinero ? "Planes móviles" : "Clientes móvil"}</span>
+        {ritmo > 0 ? <span style={ { color: "#B45309" } }>╌ Ritmo diario para llegar a la meta</span> : null}
+        <span>▨ gris = días que ya no cuentan (la instalación caería en el mes siguiente)</span>
+      </div>
+
+      <div className="mt-3 rounded-lg p-3 text-xs leading-relaxed" style={ { background: "#F4F6FA", color: "#111827", minHeight: "46px" } }>
+        {sel === null ? (
+          "Toca una barra para ver qué entró ese día."
+        ) : (
+          <>
+            <div className="font-semibold">Día {sel + 1} · {dias[sel].split("-").reverse().join("/")}</div>
+            {A[sel].length + B[sel].length === 0 ? <div>No entró nada ese día.</div> : null}
+            {A[sel].length > 0 && (
+              <div>Hogar ({A[sel].length}){esDinero ? ": " + fmtMonto(A[sel].reduce((a, e) => a + e.v, 0)) : ""} — {A[sel].map((e) => e.nombre + (esDinero ? " " + fmtMonto(e.v) : "")).join(", ")}</div>
+            )}
+            {B[sel].length > 0 && (
+              <div>Móvil ({B[sel].length}){esDinero ? ": " + fmtMonto(B[sel].reduce((a, e) => a + e.v, 0)) : ""} — {B[sel].map((e) => e.nombre + (esDinero ? " " + fmtMonto(e.v) : "")).join(", ")}</div>
+            )}
+            <div style={ { color: "#6B7280" } }>Total del día: <b>{fx(totDia[sel])}</b> · Acumulado: <b>{fx(acumHasta(sel))}</b>{metaGrafica ? " de " + fx(metaGrafica) : ""}</div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
