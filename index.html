@@ -2597,6 +2597,7 @@ function App() {
         <React.Fragment>
         {tab === "dashboard" && (
           <Dashboard
+            umbralProrrateo={umbralProrrateo}
             stats={stats}
             clientes={clientesActivos}
             metas={metas}
@@ -2680,6 +2681,7 @@ function App() {
         {tab === "alertas" && (
           <React.Fragment>
           <Dashboard
+            umbralProrrateo={umbralProrrateo}
             vista="cobros"
             stats={stats}
             clientes={clientesActivos}
@@ -3314,7 +3316,7 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
   );
 }
 
-function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
+function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   memoriaDashboard.periodo = periodoVisto;
@@ -3659,10 +3661,25 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     [clientesDelPeriodoHoy, periodoRescateActivo]
   );
   const rescateCandidatos = useMemo(() => [...rescateVencidos, ...rescateEnPlazo], [rescateVencidos, rescateEnPlazo]);
-  function montoFaltanteCliente(c) {
+  // Mitad de la mensualidad con impuesto: lo que el cliente paga por adelantado al contratar.
+  function montoMitadCliente(c) {
     const monto = Number(c.montoMensual) || 0;
     const factorImpuesto = c.planTipo === "DOBLE" ? 1.07 : 1.01;
     return (monto * factorImpuesto) / 2;
+  }
+  // Lo que le falta para completar su 1ra factura: la mitad restante + el prorrateo, con impuesto.
+  function montoFaltanteCliente(c) {
+    const mitad = montoMitadCliente(c);
+    const factorImpuesto = c.planTipo === "DOBLE" ? 1.07 : 1.01;
+    const factura = (Number(c.monto1raFactura) || 0) * factorImpuesto;
+    return Math.max(mitad, factura - mitad);
+  }
+  function clienteProrrateoAlto(c) {
+    return esProrrateoAlto(c, umbralProrrateo);
+  }
+  // Mínimo para que cuente: en prorrateo alto basta repetir el 50%; en bajo debe pagar todo.
+  function montoMinimoCliente(c) {
+    return clienteProrrateoAlto(c) ? montoMitadCliente(c) : montoFaltanteCliente(c);
   }
   const rescateSeleccionados = useMemo(
     () => rescateCandidatos.filter((c) => rescateSeleccion[c.id]),
@@ -3671,6 +3688,10 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   const rescatePones = useMemo(
     () => rescateSeleccionados.reduce((acc, c) => acc + montoFaltanteCliente(c), 0),
     [rescateSeleccionados]
+  );
+  const rescateMinimo = useMemo(
+    () => rescateSeleccionados.reduce((acc, c) => acc + montoMinimoCliente(c), 0),
+    [rescateSeleccionados, umbralProrrateo]
   );
   // La comparación siempre parte de tu comisión CONFIRMADA (solo lo ya pagado) — es la
   // única cifra de la que te puedes fiar hoy.
@@ -3719,7 +3740,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
     for (let mask = 1; mask < 1 << n; mask++) {
       const subset = rescateCandidatos.filter((_, i) => mask & (1 << i));
       if (calcularComisionConSubconjuntoHoy(subset).total < totalMaximo) continue;
-      const costo = subset.reduce((acc, c) => acc + montoFaltanteCliente(c), 0);
+      const costo = subset.reduce((acc, c) => acc + montoMinimoCliente(c), 0);
       if (!mejor || subset.length < mejor.subset.length || (subset.length === mejor.subset.length && costo < mejor.costo)) {
         mejor = { subset, costo };
       }
@@ -3902,8 +3923,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
   }, [clientes, periodoRescateActivo]);
 
   const sumaPorCobrar = useMemo(
-    () => enRiesgoHoy.reduce((acc, x) => acc + (Number(x.cliente.monto1raFactura) || 0), 0),
-    [enRiesgoHoy]
+    () => enRiesgoHoy.reduce((acc, x) => acc + montoFaltanteCliente(x.cliente), 0),
+    [enRiesgoHoy, umbralProrrateo]
   );
   // Clientes que saltaste "por ahora" en el uno-por-uno: no quedan marcados como
   // revisados (mañana vuelven a aparecer igual si siguen sin resolver), pero se van
@@ -4088,8 +4109,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
         </div>
       )}
 
-      {/* Sección 1: lo que hay que cobrar sí o sí para que cuente en la comisión */}
-      <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>1 · Cobrar sí o sí</h2>
+      {/* Sección 1: facturas pendientes que hay que cobrar para que cuenten en la comisión */}
+      <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>1 · Facturas pendientes</h2>
       <div className="rounded-xl overflow-hidden border mb-8 bg-white" style={ { borderColor: "#DFE5EF" } }>
       <div className="px-4 py-3">
         {enRiesgoHoy.length > 0 ? (
@@ -4189,7 +4210,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           {rescateAbierto && (
             <div className="bg-white border-t border-gray-200 p-4">
               <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
-                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca los clientes a regularizar y mira cuánto sube.
+                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca los clientes pendientes y mira cuánto sube.
               </p>
               {rescateCandidatos.length === 0 ? (
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
@@ -4218,23 +4239,31 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     {rescateVencidosOrdenados.map((c) => (
                       <label
                         key={c.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                        className="block px-3 py-2 rounded-md border cursor-pointer"
                         style={ {
                           borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#DFE5EF",
                           background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
                         } }
                       >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={!!rescateSeleccion[c.id]}
-                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                          />
-                          <span className="text-sm truncate">{c.nombre}</span>
-                        </span>
-                        <span className="text-xs font-mono shrink-0" style={ { color: "#5A6680" } }>
-                          le faltan {fmtMonto(montoFaltanteCliente(c))}
-                        </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={!!rescateSeleccion[c.id]}
+                              onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                            />
+                            <span className="text-sm truncate">{c.nombre}</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
+                            le faltan {fmtMonto(montoFaltanteCliente(c))}
+                          </span>
+                        </div>
+                        {clienteProrrateoAlto(c) && (
+                          <div className="mt-2 flex items-start gap-2 rounded-md px-2.5 py-2 text-xs font-bold" style={ { background: "#FFF3DC", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", color: "#B45309", lineHeight: 1.35 } }>
+                            <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
+                            <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
+                          </div>
+                        )}
                       </label>
                     ))}
                   </div>
@@ -4248,23 +4277,31 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                     {rescateEnPlazoOrdenados.map((c) => (
                       <label
                         key={c.id}
-                        className="flex items-center justify-between gap-2 px-3 py-2 rounded-md border cursor-pointer"
+                        className="block px-3 py-2 rounded-md border cursor-pointer"
                         style={ {
                           borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#DFE5EF",
                           background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
                         } }
                       >
-                        <span className="flex items-center gap-2 min-w-0">
-                          <input
-                            type="checkbox"
-                            checked={!!rescateSeleccion[c.id]}
-                            onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                          />
-                          <span className="text-sm truncate">{c.nombre}</span>
-                        </span>
-                        <span className="text-xs font-mono shrink-0" style={ { color: "#5A6680" } }>
-                          le faltan {fmtMonto(montoFaltanteCliente(c))}
-                        </span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-2 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={!!rescateSeleccion[c.id]}
+                              onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
+                            />
+                            <span className="text-sm truncate">{c.nombre}</span>
+                          </span>
+                          <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
+                            le faltan {fmtMonto(montoFaltanteCliente(c))}
+                          </span>
+                        </div>
+                        {clienteProrrateoAlto(c) && (
+                          <div className="mt-2 flex items-start gap-2 rounded-md px-2.5 py-2 text-xs font-bold" style={ { background: "#FFF3DC", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", color: "#B45309", lineHeight: 1.35 } }>
+                            <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
+                            <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
+                          </div>
+                        )}
                       </label>
                     ))}
                   </div>
@@ -4273,8 +4310,12 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 
               <div className="rounded-md p-3" style={ { background: "#F3F6FB" } }>
                 <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#5A6680" } }>Pendiente por regularizar:</span>
+                  <span style={ { color: "#5A6680" } }>Total a cobrar:</span>
                   <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs mb-2">
+                  <span style={ { color: "#001E62" } }>Mínimo para que cuenten:</span>
+                  <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fmtMonto(rescateMinimo)}</span>
                 </div>
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span style={ { color: "#5A6680" } }>Tu comisión confirmada pasa de:</span>
@@ -4286,7 +4327,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
                   <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>Impacto en comisión:</span>
                   <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>
                     {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
-                    {rescatePones > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescatePones).toFixed(1)}x)` : ""}
+                    {rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}
                   </span>
                 </div>
                 {(rescateCruceTramo || rescateCruceAcelerador) && (
