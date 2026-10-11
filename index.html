@@ -1383,7 +1383,7 @@ function App() {
   const [historialCambiosLoaded, setHistorialCambiosLoaded] = useState(false);
   const [umbralProrrateo, setUmbralProrrateo] = useState(25);
   const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
-  const [ordenDashboard, setOrdenDashboard] = useState({ orden: ORDEN_DASHBOARD_BASE.slice(), ocultos: [] });
+  const [ordenDashboard, setOrdenDashboard] = useState({ orden: ORDEN_DASHBOARD_BASE.slice(), ocultos: [], mejorDia: "ing" });
   const [ordenDashboardLoaded, setOrdenDashboardLoaded] = useState(false);
   const [columnasClientes, setColumnasClientes] = useState({
     orden: COLUMNAS_CLIENTES_KEYS,
@@ -1544,7 +1544,7 @@ function App() {
         const res = await storage.get("dashboard-orden");
         if (res && res.value) {
           const v = JSON.parse(res.value);
-          setOrdenDashboard({ orden: ordenDashboardNormal(v), ocultos: ocultosDashboardNormal(v) });
+          setOrdenDashboard({ orden: ordenDashboardNormal(v), ocultos: ocultosDashboardNormal(v), mejorDia: v && v.mejorDia === "ins" ? "ins" : "ing" });
         }
       } catch (e) {}
       setOrdenDashboardLoaded(true);
@@ -2648,6 +2648,7 @@ function App() {
         {tab === "clientes" && (
           <ClientesTab
             clientes={filteredClientes}
+            clientesTodos={clientesActivos}
             search={search}
             setSearch={setSearch}
             onEdit={startEdit}
@@ -3340,10 +3341,17 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
 }
 
 // Tarjetas del Dashboard que se pueden ordenar. La de comisión nunca se esconde.
-const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "planes", "dia", "historial"];
+const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "instalaciones", "planes", "dia", "historial"];
 function ordenDashboardNormal(cfg) {
   const o = cfg && Array.isArray(cfg.orden) ? cfg.orden.filter((id, i, a) => ORDEN_DASHBOARD_BASE.includes(id) && a.indexOf(id) === i) : [];
-  ORDEN_DASHBOARD_BASE.forEach((id) => { if (!o.includes(id)) o.push(id); });
+  // Una tarjeta que todavía no estaba guardada se coloca justo después de la que le
+  // precede en el orden de fábrica (así "Instalaciones por día" queda bajo "Avance").
+  ORDEN_DASHBOARD_BASE.forEach((id, k) => {
+    if (o.includes(id)) return;
+    const previo = k > 0 ? o.indexOf(ORDEN_DASHBOARD_BASE[k - 1]) : -1;
+    if (previo >= 0) o.splice(previo + 1, 0, id);
+    else o.push(id);
+  });
   return o;
 }
 function ocultosDashboardNormal(cfg) {
@@ -3462,14 +3470,27 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
       .map((p) => (p === "tv" ? "TV" : p.charAt(0).toUpperCase() + p.slice(1)))
       .join(" ");
   }
+  const modoMejorDia = ordenDashboard && ordenDashboard.mejorDia === "ins" ? "ins" : "ing";
+  function cambiarModoMejorDia(k) {
+    if (onOrdenDashboard) onOrdenDashboard({ orden: ordenDashboardNormal(ordenDashboard), ocultos: ocultosDashboardNormal(ordenDashboard), mejorDia: k });
+  }
   const diasSemana = useMemo(() => {
     const periodos = [periodoVisto, sumarMesClave(periodoVisto, -1), sumarMesClave(periodoVisto, -2)];
     const cuenta = [0, 0, 0, 0, 0, 0, 0];
     clientes.forEach((c) => {
-      if (!c.fechaInstalacion) return;
-      if (!periodos.includes(periodoDelCliente(c))) return;
-      if (!clienteCuentaParaComision(c)) return;
-      const d = new Date(c.fechaInstalacion + "T00:00:00").getDay();
+      let d;
+      if (modoMejorDia === "ing") {
+        // Por fecha de ingreso: el día en que registraste al cliente en la app.
+        if (!c.creadoEn) return;
+        const fIng = fechaLocalISO(c.creadoEn);
+        if (!periodos.includes(periodoComision(fIng))) return;
+        d = new Date(fIng + "T00:00:00").getDay();
+      } else {
+        if (!c.fechaInstalacion) return;
+        if (!periodos.includes(periodoDelCliente(c))) return;
+        if (!clienteCuentaParaComision(c)) return;
+        d = new Date(c.fechaInstalacion + "T00:00:00").getDay();
+      }
       if (!Number.isNaN(d)) cuenta[d] += 1;
     });
     const base = [
@@ -3483,7 +3504,7 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
     ].map((d) => ({ ...d, n: cuenta[d.k] }));
     const max = base.reduce((acc, d) => Math.max(acc, d.n), 0);
     return base.map((d) => ({ ...d, mejor: max > 0 && d.n === max }));
-  }, [clientes, periodoVisto]);
+  }, [clientes, periodoVisto, modoMejorDia]);
   const maxPorDia = diasSemana.reduce((acc, d) => Math.max(acc, d.n), 0);
   const totalPorDia = diasSemana.reduce((acc, d) => acc + d.n, 0);
 
@@ -3492,7 +3513,7 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
   const ordenActual = ordenDashboardNormal(ordenDashboard);
   const ocultosActual = ocultosDashboardNormal(ordenDashboard);
   function guardarOrden(orden, ocultos) {
-    if (onOrdenDashboard) onOrdenDashboard({ orden, ocultos });
+    if (onOrdenDashboard) onOrdenDashboard({ orden, ocultos, mejorDia: modoMejorDia });
   }
   function moverBloque(id, dir) {
     const vis = ordenActual.filter((x) => !ocultosActual.includes(x));
@@ -3518,6 +3539,7 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
   // sus controles (subir, bajar, esconder). Es una función, no un componente, para
   // que las tarjetas no se vuelvan a montar cada vez que algo cambia.
   function bloqueOrd(id, titulo, contenido) {
+    if (contenido == null || contenido === false) return null;
     const oculto = ocultosActual.includes(id);
     if (oculto && !modoOrden) return null;
     const vis = ordenActual.filter((x) => !ocultosActual.includes(x));
@@ -4003,7 +4025,6 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
     return { alcanzado: false, single: paraTipo(precioPromedioPlan.SINGLE), doble: paraTipo(precioPromedioPlan.DOBLE) };
   }, [esActual, metaArpu, clientesDelPeriodo.length, dineroDelPeriodo, precioPromedioPlan]);
 
-  const [copiadoReporte, setCopiadoReporte] = useState(false);
 
   // ---- Modo revisión diaria (foco en clientes que necesitan atención HOY) ----
   // Los clientes que sí marcaste como pagados dejan de aparecer solos (cambia su
@@ -4155,49 +4176,6 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
     };
   }, [clientes, convergencias, metas, periodoActual]);
   const [mostrarSimuladorArpu, setMostrarSimuladorArpu] = useState(false);
-
-  function generarReporteDiario() {
-    const ahora = new Date();
-    const hoy = fechaLocalISO(ahora);
-    const hora = ahora.getHours();
-    const saludo = hora < 12 ? "Buenos días" : hora < 18 ? "Buenas tardes" : "Buenas noches";
-    const ingresadosHoy = clientes.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
-    const doblesHoy = ingresadosHoy.filter((c) => c.planTipo === "DOBLE");
-    const singlesHoy = ingresadosHoy.filter((c) => c.planTipo === "SINGLE");
-    const converHoy = convergencias.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
-
-    // Una línea por plan: "300 Megas + COMBO PACK: 111, 222". Cada plan se escribe una sola vez.
-    const textoPlan = (c) => {
-      const partes = [(c.velocidad || "").trim(), c.planTipo === "DOBLE" && c.planTV ? "+ " + String(c.planTV).trim() : ""].filter(Boolean);
-      return partes.length ? partes.join(" ") : "Sin plan";
-    };
-    const bloque = (titulo, lista) => {
-      if (!lista.length) return "";
-      const porPlan = new Map();
-      lista.forEach((c) => {
-        const p = textoPlan(c);
-        if (!porPlan.has(p)) porPlan.set(p, []);
-        porPlan.get(p).push((c.numeroSuscriptor || "").trim() || "sin suscriptor");
-      });
-      const lineas = [...porPlan.entries()].map(([plan, susc]) => `${plan}: ${susc.join(", ")}`);
-      return `*${titulo}: ${lista.length}*\n${lineas.join("\n")}`;
-    };
-
-    // Convergencias: solo el total del día, sin nombres ni tipo.
-    const bloqueConver = converHoy.length ? `*Convergencias: ${converHoy.length}*` : "";
-
-    const bloques = [bloque("Dobles", doblesHoy), bloque("Singles", singlesHoy), bloqueConver].filter(Boolean);
-    const cuerpo = bloques.length ? bloques.join("\n\n") : "Sin resultados, solo prospectos.";
-    const texto = `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
-
-    navigator.clipboard
-      ?.writeText(texto)
-      .then(() => {
-        setCopiadoReporte(true);
-        setTimeout(() => setCopiadoReporte(false), 2000);
-      })
-      .catch(() => {});
-  }
 
   // Ganancia estimada de rescatar UN cliente puntual (usada en el modo uno-por-uno).
   // Se calcula sola, sin depender de qué período estés viendo en el Dashboard, usando
@@ -4552,19 +4530,6 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
             style={ { width: 36, height: 36, color: modoOrden ? "#001E62" : "#9AA6BD", background: modoOrden ? "#E3EDFA" : "transparent", border: 0 } }
           >
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 4v16M8 4L4 8M8 4l4 4M16 20V4M16 20l-4-4M16 20l4-4" /></svg>
-          </button>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <button
-            onClick={generarReporteDiario}
-            className="text-sm font-semibold px-4 py-2.5 rounded-lg border-2"
-            style={ { borderColor: "#001E62", color: "#001E62", background: "white" } }
-            title="Copia el reporte de la gestión de hoy"
-          >
-            {copiadoReporte ? "Copiado ✓" : "📋 REPORTE DIARIO"}
-          </button>
-          <button onClick={onNuevo} className="text-sm font-semibold px-4 py-2.5 rounded-lg text-white border-2" style={ { background: "#001E62", borderColor: "#001E62" } }>
-            + Nuevo cliente
           </button>
         </div>
       </div>
@@ -4925,6 +4890,9 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
 
       {bloqueOrd("metas", "Avance del período", esNuevo ? (
         <AvanceMetasCard
+          parte="metas"
+          clientesIng={clientes}
+          convergIng={convergencias}
           periodoKey={periodoVisto}
           esActual={esActual}
           hogar={clientesDelPeriodo}
@@ -5099,6 +5067,27 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
       </div>
       ))}
 
+      {bloqueOrd("instalaciones", "Instalaciones por día", esNuevo ? (
+        <AvanceMetasCard
+          parte="dias"
+          clientesIng={clientes}
+          convergIng={convergencias}
+          periodoKey={periodoVisto}
+          esActual={esActual}
+          hogar={clientesDelPeriodo}
+          moviles={convergenciasDelPeriodo.filter(movilCuentaParaComision)}
+          dineroHogar={dineroDelPeriodo}
+          dineroMovil={costoPlanesMovilesPeriodo}
+          metaClientesHogar={metaClientesHogar}
+          metaClientesMovil={metaClientesMovil}
+          metaDinero={metaDinero}
+          onActualizarMeta={onActualizarMeta}
+          onVerClientes={onVerClientes}
+          onVerCliente={onVerCliente}
+          porInstalar={clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado)}
+        />
+      ) : null)}
+
       {bloqueOrd("planes", "Planes del período", (
         <div className="bg-white rounded-xl border p-4 mb-6" style={ { borderColor: "#DFE5EF" } }>
           <h2 className="font-semibold text-sm mb-2" style={ { color: "#001E62" } }>Planes del período</h2>
@@ -5135,8 +5124,13 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
 
       {bloqueOrd("dia", "Mejor día de la semana", (
         <div className="bg-white rounded-xl border p-4 mb-6" style={ { borderColor: "#DFE5EF" } }>
-          <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Mejor día de la semana</h2>
-          <p className="text-xs mb-3" style={ { color: "#5A6680" } }>Según la fecha de instalación · últimos 3 ciclos</p>
+          <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{modoMejorDia === "ing" ? "Mejor día para vender" : "Mejor día de instalación"}</h2>
+          <p className="text-xs" style={ { color: "#5A6680" } }>{modoMejorDia === "ing" ? "Por fecha de ingreso" : "Por fecha de instalación"} · últimos 3 ciclos</p>
+          <div className="flex rounded-xl p-[3px] mt-2.5 mb-3" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
+            {[["ing", "Ingreso"], ["ins", "Instalación"]].map(([k, n]) => (
+              <button key={k} type="button" onClick={() => cambiarModoMejorDia(k)} className="flex-1 rounded-[9px] text-sm font-bold" style={ { height: 44, background: modoMejorDia === k ? "#001E62" : "transparent", color: modoMejorDia === k ? "white" : "#5A6680" } }>{n}</button>
+            ))}
+          </div>
           {totalPorDia === 0 ? (
             <p className="text-sm" style={ { color: "#5A6680" } }>Todavía no hay instalaciones para comparar.</p>
           ) : (
@@ -5151,7 +5145,7 @@ function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, sta
                 ))}
               </div>
               <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-                Tu mejor día: <span className="font-semibold" style={ { color: "#001E62" } }>{diasSemana.filter((d) => d.mejor).map((d) => d.nombre).join(" y ")}</span> ({maxPorDia} instalaciones)
+                Tu mejor día: <span className="font-semibold" style={ { color: "#001E62" } }>{diasSemana.filter((d) => d.mejor).map((d) => d.nombre).join(" y ")}</span> ({maxPorDia} {modoMejorDia === "ing" ? "ingresos" : "instalaciones"})
               </div>
             </>
           )}
@@ -5249,9 +5243,10 @@ function leerVistaDiaria() {
     return {
       c: COLORES_MOVIL.some((x) => x.k === g.c) ? g.c : "gris",
       d: OPCIONES_DIAS.some((x) => x.k === g.d) ? g.d : "10",
+      m: g.m === "ing" ? "ing" : "ins",
     };
   } catch (e) {
-    return { c: "gris", d: "10" };
+    return { c: "gris", d: "10", m: "ins" };
   }
 }
 function guardarVistaDiaria(v) {
@@ -5280,7 +5275,7 @@ function ScrollAlFinal({ contenedor, clave, destino, activo }) {
   return null;
 }
 
-function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [], dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes, onVerCliente }) {
+function AvanceMetasCard({ parte = "metas", clientesIng = [], convergIng = [], periodoKey, esActual, hogar, moviles, porInstalar = [], dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes, onVerCliente }) {
   const [editMetas, setEditMetas] = useState(false);
   const [diaSel, setDiaSel] = useState(memoriaDashboard.retorno && memoriaDashboard.diaPeriodo === periodoKey ? memoriaDashboard.dia : null);
   const [vistaDiaria, setVistaDiaria] = useState(leerVistaDiaria);
@@ -5346,10 +5341,25 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
     };
     colocar(hogar, A, (c) => c.fechaInstalacion, (c) => Number(c.montoMensual) || 0);
     colocar(moviles, B, (c) => fechaActivacionMovil(c), (c) => Number(c.montoPlan) || 0);
-    return { dias, tot, lim, hoy, A, B };
-  }, [periodoKey, esActual, hogar, moviles]);
+    // Lo mismo pero por fecha de ingreso (cuando registraste al cliente en la app).
+    const A2 = dias.map(() => []);
+    const B2 = dias.map(() => []);
+    const colocarIng = (lista, arr, valorDe) => {
+      lista.forEach((c) => {
+        if (!c.creadoEn) return;
+        const i = dias.indexOf(fechaLocalISO(c.creadoEn));
+        if (i >= 0) arr[i].push({ nombre: c.nombre || "Sin nombre", v: valorDe(c), cliente: c });
+      });
+    };
+    colocarIng(clientesIng, A2, (c) => Number(c.montoMensual) || 0);
+    colocarIng(convergIng, B2, (c) => Number(c.montoPlan) || 0);
+    return { dias, tot, lim, hoy, A, B, A2, B2 };
+  }, [periodoKey, esActual, hogar, moviles, clientesIng, convergIng]);
 
-  const { dias, tot, lim, hoy, A, B } = info;
+  const { dias, tot, lim, hoy } = info;
+  const modoDias = vistaDiaria.m === "ing" ? "ing" : "ins";
+  const A = modoDias === "ing" ? info.A2 : info.A;
+  const B = modoDias === "ing" ? info.B2 : info.B;
   const cerrado = !esActual;
   const esp = cerrado ? 100 : lim ? Math.min(100, (hoy / lim) * 100) : 100;
   const fx = (v) => String(Math.round(v));
@@ -5361,7 +5371,7 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
   const totDia = serieA.map((v, i) => v + serieB[i]);
   const totAll = totA + totB;
   const metaGrafica = (metaClientesHogar || 0) + (metaClientesMovil || 0);
-  const ritmo = metaGrafica && lim ? metaGrafica / lim : 0;
+  const ritmo = modoDias === "ins" && metaGrafica && lim ? metaGrafica / lim : 0;
 
   // texto de estado de cada línea: cumplida / proyección / lo que falta
   const fx0 = fx;
@@ -5380,8 +5390,8 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
 
   const proyeccion = (v) => (!cerrado && hoy >= 4 && lim ? Math.floor((v / hoy) * lim) : 0);
   const barras = [
-    { nom: "Clientes hogar", proy: proyeccion(totA), actual: hogar.length, meta: metaClientesHogar, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey }) },
-    { nom: "Clientes móvil", proy: proyeccion(totB), actual: moviles.length, meta: metaClientesMovil, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey, subVista: "movil" }) },
+    { nom: "Clientes hogar", proy: proyeccion(info.A.reduce((acc, x) => acc + x.length, 0)), actual: hogar.length, meta: metaClientesHogar, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey }) },
+    { nom: "Clientes móvil", proy: proyeccion(info.B.reduce((acc, x) => acc + x.length, 0)), actual: moviles.length, meta: metaClientesMovil, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey, subVista: "movil" }) },
     { nom: "Ingresos", actual: dineroHogar + dineroMovil, meta: metaDinero, fmt: (v) => fmtMonto(v), extra: "Hogar " + fmtMonto(dineroHogar) + " + planes móviles " + fmtMonto(dineroMovil) },
   ];
 
@@ -5398,108 +5408,47 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
   const acumDineroHasta = (i) => { let t = 0; for (let k = 0; k <= i; k++) t += dineroDe(A[k]) + dineroDe(B[k]); return t; };
   const uid = "avm" + periodoKey.replace("-", "");
 
-  return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6">
+  const tarjetaCls = "bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-6";
+  if (parte === "dias") {
+    return (
+      <div className={tarjetaCls}>
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{cerrado ? "Cómo cerró el período" : "Avance del período"}</h2>
-        <div className="text-xs flex items-center gap-2" style={ { color: "#5A6680" } }>
-          <span>{cerrado ? "Período cerrado" : "Día " + hoy + " · últimas ventas que cuentan: día " + lim}</span>
-          <button type="button" onClick={() => setEditMetas(!editMetas)} className="underline underline-offset-2" style={ { color: "#5A6680" } }>✎ Metas</button>
-        </div>
+        <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{modoDias === "ing" ? "Ingresos por día" : "Instalaciones por día"}</h2>
+        <span className="text-xs" style={ { color: "#5A6680" } }>
+          {modoDias === "ing" ? "Por fecha de ingreso" + (cerrado ? "" : " · día " + hoy) : cerrado ? "Período cerrado" : "Día " + hoy + " · últimas ventas que cuentan: día " + lim}
+        </span>
       </div>
-
-      {editMetas && (
-        <div className="mt-3 rounded-lg p-3" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <div>
-              <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Meta clientes hogar</div>
-              <MetaInput valor={metaClientesHogar} onConfirmar={(v) => onActualizarMeta(periodoKey, "clientesHogar", v)} width="w-20" />
-            </div>
-            <div>
-              <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Meta clientes móvil</div>
-              <MetaInput valor={metaClientesMovil} onConfirmar={(v) => onActualizarMeta(periodoKey, "clientesMovil", v)} width="w-20" />
-            </div>
-            <div>
-              <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Meta ingresos ($)</div>
-              <MetaInput valor={metaDinero} onConfirmar={(v) => onActualizarMeta(periodoKey, "dinero", v)} width="w-24" step="0.01" />
-            </div>
-          </div>
-          <p className="text-[11px] mt-2" style={ { color: "#5A6680" } }>La meta de ingresos define el acelerador (±10%).</p>
-        </div>
-      )}
-
-      {barras.map((b) => {
-        const p = b.meta ? (b.actual / b.meta) * 100 : 0;
-        const dif = p - esp;
-        const est = !b.meta ? ["Sin meta", "#374151", "#F3F6FB"] : cerrado ? (p >= 100 ? ["✓ Cumplida", "#001E62", "#EEF3FB"] : ["▼ No llegó", "#B45309", "#FFF6E3"]) : dif >= 5 ? ["▲ Adelantado", "#001E62", "#EEF3FB"] : dif <= -5 ? ["▼ Atrasado", "#B45309", "#FFF6E3"] : ["● En ritmo", "#374151", "#F3F6FB"];
-        const falta = b.meta ? Math.max(0, b.meta - b.actual) : 0;
-        return (
-          <div key={b.nom} className="mt-4">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              {b.enlace ? (
-                <button type="button" onClick={b.enlace} className="text-sm font-semibold hover:underline underline-offset-2" style={ { color: "#111827" } } title="Ver clientes de este período">{b.nom} →</button>
-              ) : (
-                <span className="text-sm font-semibold" style={ { color: "#111827" } }>{b.nom}</span>
-              )}
-              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={ { color: est[1], background: est[2] } }>{est[0]}</span>
-            </div>
-            <div className="relative h-3.5 rounded-full" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
-              <div className="absolute left-0 top-0 bottom-0 rounded-full" style={ { width: Math.min(100, p) + "%", background: "#001E62" } } />
-              {b.meta && !cerrado ? (
-                <div className="absolute" style={ { left: esp + "%", top: "-5px", bottom: "-5px", borderLeft: "2px dashed #B45309" } } />
-              ) : null}
-            </div>
-            <div className="flex items-center justify-between flex-wrap gap-x-3 mt-1 text-xs" style={ { color: "#5A6680" } }>
-              <span><span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.actual)}</span>{b.meta ? <> de <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.meta)}</span> · {Math.round(p)}%</> : null}</span>
-              <span>{!b.meta ? "Pon la meta con ✎ Metas" : falta > 0 ? <>Te faltan <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(falta)}</span></> : "✓ Meta cumplida"}{b.proy > 0 ? <span style={ { color: "#8B93A3" } }> · Proyección: ~{b.proy}</span> : null}{!cerrado && b.meta && falta > 0 && lim - hoy + 1 <= 0 ? <span style={ { color: "#8B93A3" } }> · ya no entran más ventas</span> : null}</span>
-            </div>
-            {b.extra ? <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>{b.extra}</div> : null}
-          </div>
-        );
-      })}
-
-      <hr className="my-5" style={ { borderColor: "#DFE5EF" } } />
-      <div className="flex items-center justify-between">
-        <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Instalaciones por día</h2>
-        <button type="button" onClick={() => setLeyendaAbierta(!leyendaAbierta)} aria-label="Qué significa cada cosa" className="text-[13px] font-bold rounded-full border-2" style={ { width: "30px", height: "30px", borderColor: "#CBD5E1", color: "#374151", background: "#fff" } }>i</button>
+      <div className="flex rounded-xl p-[3px] mt-3" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
+        {[["ing", "Ingreso"], ["ins", "Instalación"]].map(([k, n]) => (
+          <button key={k} type="button" onClick={() => { cambiarVista({ m: k }); setDiaSel(null); } } className="flex-1 rounded-[9px] text-sm font-bold" style={ { height: 44, background: modoDias === k ? "#001E62" : "transparent", color: modoDias === k ? "white" : "#5A6680" } }>{n}</button>
+        ))}
       </div>
-      {leyendaAbierta ? (
-        <div className="mt-2 rounded-lg p-2.5 text-xs leading-relaxed" style={ { background: "#F3F6FB", color: "#374151" } }>
-          <div className="flex items-center gap-2"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "#001E62", display: "inline-block" } } /> Hogar</div>
-          <div className="flex items-center gap-2"><span style={ { width: "12px", height: "10px", borderRadius: "2px", border: "1.5px solid " + colorMovil.b, background: colorMovil.f, display: "inline-block" } } /> Móvil</div>
-          <div className="flex items-center gap-2"><span style={ { display: "inline-block", height: "12px", borderLeft: "2px dashed #B45309" } } /> Dónde deberías ir hoy</div>
-          <div className="flex items-center gap-2"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "repeating-linear-gradient(45deg, #fff 0 2px, #9CA3AF 2px 3px)", display: "inline-block" } } /> Días que ya no cuentan (la instalación caería en el mes siguiente)</div>
+      <div className="flex items-center gap-2 mt-2 relative">
+        <div className="flex flex-1 rounded-xl p-[3px]" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
+          {OPCIONES_DIAS.map((o) => (
+            <button key={o.k} type="button" onClick={() => cambiarVista({ d: o.k })} className="flex-1 rounded-[9px] text-sm font-bold" style={ { height: 44, background: o.k === vistaDiaria.d ? "#001E62" : "transparent", color: o.k === vistaDiaria.d ? "white" : "#5A6680" } }>{o.k === "mes" ? "Mes" : o.n}</button>
+          ))}
         </div>
-      ) : null}
-
-      <div className="flex items-center justify-between mt-3 mb-2">
-        <div className="relative">
-          <button type="button" onClick={() => setMenuAbierto(menuAbierto === "dias" ? null : "dias")} className="text-[13px] font-semibold px-3 py-2 rounded-full border-2" style={ { borderColor: "#CBD5E1", color: "#374151", background: "#fff" } }>
-            {(OPCIONES_DIAS.find((o) => o.k === vistaDiaria.d) || OPCIONES_DIAS[1]).n} ▾
-          </button>
-          {menuAbierto === "dias" && (
-            <div className="absolute z-20 left-0 mt-1.5 bg-white rounded-xl p-1.5" style={ { border: "1px solid #CBD5E1", boxShadow: "0 8px 24px rgba(0,30,98,.15)", minWidth: "170px" } }>
-              <div className="text-[11px] font-bold uppercase px-2 pt-1.5 pb-1" style={ { color: "#5A6680" } }>Días a ver</div>
-              {OPCIONES_DIAS.map((o) => (
-                <button key={o.k} type="button" onClick={() => cambiarVista({ d: o.k })} className="w-full text-left text-sm px-2.5 py-2.5 rounded-lg" style={ o.k === vistaDiaria.d ? { background: "#EEF3FB", color: "#001E62", fontWeight: 700 } : { color: "#111827" } }>{o.n}</button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="relative">
-          <button type="button" aria-label="Opciones de color" onClick={() => setMenuAbierto(menuAbierto === "color" ? null : "color")} className="text-base px-3 py-1.5 rounded-full border-2" style={ { borderColor: "#CBD5E1", color: "#374151", background: "#fff" } }>⚙</button>
-          {menuAbierto === "color" && (
-            <div className="absolute z-20 right-0 mt-1.5 bg-white rounded-xl p-1.5" style={ { border: "1px solid #CBD5E1", boxShadow: "0 8px 24px rgba(0,30,98,.15)", minWidth: "190px" } }>
-              <div className="text-[11px] font-bold uppercase px-2 pt-1.5 pb-1" style={ { color: "#5A6680" } }>Color del móvil</div>
-              {COLORES_MOVIL.map((o) => (
-                <button key={o.k} type="button" onClick={() => cambiarVista({ c: o.k })} className="w-full text-left text-sm px-2.5 py-2.5 rounded-lg flex items-center gap-2" style={ o.k === vistaDiaria.c ? { background: "#EEF3FB", color: "#001E62", fontWeight: 700 } : { color: "#111827" } }>
-                  <span style={ { width: "14px", height: "14px", borderRadius: "4px", background: o.f, border: "1.5px solid " + o.b, display: "inline-block" } } />
-                  {o.n}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <button type="button" aria-label="Color del móvil" title="Color del móvil" onClick={() => setMenuAbierto(menuAbierto === "color" ? null : "color")} className="flex items-center justify-center rounded-xl shrink-0" style={ { width: 50, height: 50, background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
+          <span style={ { width: 20, height: 20, borderRadius: 6, background: colorMovil.f, border: "2px solid " + colorMovil.b, display: "inline-block" } } />
+        </button>
+        {menuAbierto === "color" && (
+          <div className="absolute z-20 right-0 top-full mt-1.5 bg-white rounded-xl p-1.5" style={ { border: "1px solid #CBD5E1", boxShadow: "0 8px 24px rgba(0,30,98,.15)", minWidth: "200px" } }>
+            <div className="text-[11px] font-bold uppercase px-2 pt-1.5 pb-1" style={ { color: "#5A6680" } }>Color del móvil</div>
+            {COLORES_MOVIL.map((o) => (
+              <button key={o.k} type="button" onClick={() => cambiarVista({ c: o.k })} className="w-full text-left text-sm px-2.5 rounded-lg flex items-center gap-2" style={ Object.assign({ height: 44 }, o.k === vistaDiaria.c ? { background: "#EEF3FB", color: "#001E62", fontWeight: 700 } : { color: "#111827" }) }>
+                <span style={ { width: "14px", height: "14px", borderRadius: "4px", background: o.f, border: "1.5px solid " + o.b, display: "inline-block" } } />
+                {o.n}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-3 mb-2 text-xs" style={ { color: "#374151" } }>
+        <span className="inline-flex items-center gap-1.5"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "#001E62", display: "inline-block" } } /> Hogar</span>
+        <span className="inline-flex items-center gap-1.5"><span style={ { width: "12px", height: "10px", borderRadius: "2px", border: "1.5px solid " + colorMovil.b, background: colorMovil.f, display: "inline-block" } } /> Móvil</span>
+        {modoDias === "ins" && ritmo > 0 ? <span className="inline-flex items-center gap-1.5"><span style={ { display: "inline-block", height: "12px", borderLeft: "2px dashed #B45309" } } /> Ritmo ideal</span> : null}
+        {modoDias === "ins" ? <span className="inline-flex items-center gap-1.5"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "repeating-linear-gradient(45deg, #fff 0 2px, #9CA3AF 2px 3px)", display: "inline-block" } } /> Ya no cuentan</span> : null}
       </div>
 
       {(() => {
@@ -5514,7 +5463,7 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
         return (
           <>
             <div ref={scrollRef} className="overflow-x-auto" style={ { WebkitOverflowScrolling: "touch", borderBottom: "1px solid #DFE5EF" } }>
-              <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label="Instalaciones por día" style={ { display: "block" } }>
+              <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label={modoDias === "ing" ? "Ingresos por día" : "Instalaciones por día"} style={ { display: "block" } }>
                 <defs>
                   <pattern id={uid + "pn"} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><line x1="0" y1="0" x2="0" y2="4" stroke="#9CA3AF" strokeWidth="1.5" /></pattern>
                 </defs>
@@ -5525,7 +5474,7 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
                   const etiqueta = (!mesCompleto || (i + 1) % 5 === 0 || i === 0) ? (
                     <text x={x + bwP / 2} y={hP - 8} textAnchor="middle" fontSize="11" fill={resalta || (!cerrado && i + 1 === hoy) ? "#001E62" : "#5A6680"} fontWeight={resalta || (!cerrado && i + 1 === hoy) ? 800 : 400}>{i + 1}</text>
                   ) : null;
-                  if (i + 1 > lim) return <g key={d}><rect x={x} y={base - 6} width={bwP} height="6" fill={ "url(#" + uid + "pn)" } opacity="0.55" />{etiqueta}</g>;
+                  if (modoDias === "ins" && i + 1 > lim) return <g key={d}><rect x={x} y={base - 6} width={bwP} height="6" fill={ "url(#" + uid + "pn)" } opacity="0.55" />{etiqueta}</g>;
                   if (!cerrado && i >= hoy) return <g key={d}><rect x={x} y={base - 1.5} width={bwP} height="1.5" fill="#DFE5EF" />{etiqueta}</g>;
                   const a = serieA[i], b = serieB[i];
                   const hA = (a / mxP) * alto, hB = (b / mxP) * alto;
@@ -5557,33 +5506,6 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
         );
       })()}
 
-      {esActual && porInstalar.length > 0 ? (
-        <button type="button" onClick={() => setVerPorInstalar(true)} className="mt-3 text-[13px] font-bold px-3.5 py-2 rounded-full border-2" style={ { color: "#001E62", background: "#EEF3FB", borderColor: "#001E62" } }>
-          ⏳ {porInstalar.length} por instalar ›
-        </button>
-      ) : null}
-      {verPorInstalar ? (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={ { background: "rgba(0,0,0,.4)" } } onClick={(e) => { if (e.target === e.currentTarget) setVerPorInstalar(false); } }>
-          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-4" style={ { maxHeight: "80vh", overflowY: "auto" } }>
-            <h3 className="font-semibold text-base" style={ { color: "#001E62" } }>⏳ Por instalar · {porInstalar.length}</h3>
-            <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Registrados que todavía no tienen fecha de instalación. Toca uno para abrir su ficha.</p>
-            {porInstalar.map((c) => {
-              const dias = c.creadoEn ? Math.max(0, Math.round((new Date(fechaLocalISO(new Date()) + "T00:00:00") - new Date(fechaLocalISO(new Date(c.creadoEn)) + "T00:00:00")) / 86400000)) : null;
-              const cuando = dias === null ? "" : dias === 0 ? "registrado hoy" : dias === 1 ? "registrado ayer" : "registrado hace " + dias + " días";
-              return (
-                <button key={c.id} type="button" onClick={() => { setVerPorInstalar(false); onVerCliente(c); } } className="w-full flex items-center justify-between text-left py-3 px-1" style={ { borderBottom: "1px solid #DFE5EF" } }>
-                  <span>
-                    <span className="text-sm" style={ { color: "#0072CE" } }>{nombreBonito(c.nombre)}</span>
-                    {cuando ? <span className="block text-xs" style={ { color: "#5A6680" } }>{cuando}</span> : null}
-                  </span>
-                  <span style={ { color: "#5A6680" } }>›</span>
-                </button>
-              );
-            })}
-            <button type="button" onClick={() => setVerPorInstalar(false)} className="w-full mt-3 text-sm font-semibold py-3 rounded-lg border-2" style={ { color: "#001E62", borderColor: "#001E62" } }>Cerrar</button>
-          </div>
-        </div>
-      ) : null}
 
       <div className="mt-3 rounded-lg p-3.5 text-[13px]" style={ { background: "#F3F6FB", color: "#111827", minHeight: "46px" } }>
         {sel === null ? (
@@ -5630,6 +5552,106 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [
           </>
         )}
       </div>
+      </div>
+    );
+  }
+  return (
+    <div className={tarjetaCls}>
+      <div className="flex items-baseline justify-between flex-wrap gap-2">
+        <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{cerrado ? "Cómo cerró el período" : "Avance del período"}</h2>
+        <div className="text-xs flex items-center gap-2" style={ { color: "#5A6680" } }>
+          <span>{cerrado ? "Período cerrado" : "Día " + hoy + " · últimas ventas que cuentan: día " + lim}</span>
+          <button type="button" onClick={() => setEditMetas(!editMetas)} className="underline underline-offset-2" style={ { color: "#5A6680" } }>✎ Metas</button>
+        </div>
+      </div>
+
+      {editMetas && (
+        <div className="mt-3 rounded-lg p-3" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Meta clientes hogar</div>
+              <MetaInput valor={metaClientesHogar} onConfirmar={(v) => onActualizarMeta(periodoKey, "clientesHogar", v)} width="w-20" />
+            </div>
+            <div>
+              <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Meta clientes móvil</div>
+              <MetaInput valor={metaClientesMovil} onConfirmar={(v) => onActualizarMeta(periodoKey, "clientesMovil", v)} width="w-20" />
+            </div>
+            <div>
+              <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Meta ingresos ($)</div>
+              <MetaInput valor={metaDinero} onConfirmar={(v) => onActualizarMeta(periodoKey, "dinero", v)} width="w-24" step="0.01" />
+            </div>
+          </div>
+          <p className="text-[11px] mt-2" style={ { color: "#5A6680" } }>La meta de ingresos define el acelerador (±10%).</p>
+        </div>
+      )}
+
+      {barras.map((b) => {
+        const p = b.meta ? (b.actual / b.meta) * 100 : 0;
+        const dif = p - esp;
+        const est = !b.meta ? ["Sin meta", "#374151", "#F3F6FB"] : cerrado ? (p >= 100 ? ["✓ Cumplida", "#001E62", "#EEF3FB"] : ["▼ No llegó", "#B45309", "#FFF6E3"]) : dif >= 5 ? ["▲ Adelantado", "#001E62", "#EEF3FB"] : dif <= -5 ? ["▼ Atrasado", "#B45309", "#FFF6E3"] : ["● En ritmo", "#374151", "#F3F6FB"];
+        const falta = b.meta ? Math.max(0, b.meta - b.actual) : 0;
+        return (
+          <div key={b.nom} className="mt-4">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              {b.enlace ? (
+                <button type="button" onClick={b.enlace} className="text-sm font-semibold hover:underline underline-offset-2" style={ { color: "#111827" } } title="Ver clientes de este período">{b.nom} →</button>
+              ) : (
+                <span className="text-sm font-semibold" style={ { color: "#111827" } }>{b.nom}</span>
+              )}
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full whitespace-nowrap" style={ { color: est[1], background: est[2] } }>{est[0]}</span>
+            </div>
+            <div className="relative h-3.5 rounded-full" style={ { background: "#F3F6FB", border: "1px solid #DFE5EF" } }>
+              <div className="absolute left-0 top-0 bottom-0 rounded-full" style={ { width: Math.min(100, p) + "%", background: "#001E62" } } />
+              {b.nom === "Clientes hogar" && b.meta && esActual && porInstalar.length > 0 ? (
+                <div className="absolute top-0 bottom-0" style={ { left: Math.min(100, p) + "%", width: Math.min(100 - Math.min(100, p), (porInstalar.length / b.meta) * 100) + "%", background: "repeating-linear-gradient(45deg,#fff 0 3px,#9FB4D8 3px 5px)", borderRadius: "0 9999px 9999px 0" } } />
+              ) : null}
+              {b.meta && !cerrado ? (
+                <div className="absolute" style={ { left: esp + "%", top: "-5px", bottom: "-5px", borderLeft: "2px dashed #B45309" } } />
+              ) : null}
+            </div>
+            <div className="flex items-center justify-between flex-wrap gap-x-3 mt-1 text-xs" style={ { color: "#5A6680" } }>
+              <span><span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.actual)}</span>{b.meta ? <> de <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.meta)}</span> · {Math.round(p)}%</> : null}</span>
+              <span>{!b.meta ? "Pon la meta con ✎ Metas" : falta > 0 ? <>Te faltan <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(falta)}</span></> : "✓ Meta cumplida"}{b.proy > 0 ? <span style={ { color: "#8B93A3" } }> · Proyección: ~{b.proy}</span> : null}{!cerrado && b.meta && falta > 0 && lim - hoy + 1 <= 0 ? <span style={ { color: "#8B93A3" } }> · ya no entran más ventas</span> : null}</span>
+              {b.nom === "Clientes hogar" && esActual && porInstalar.length > 0 ? (
+                <button type="button" onClick={() => setVerPorInstalar(true)} className="text-[13px] font-bold px-3.5 rounded-full border-2" style={ { height: 40, color: "#001E62", background: "#EEF3FB", borderColor: "#001E62" } }>
+                  ⏳ +{porInstalar.length} por instalar ›
+                </button>
+              ) : null}
+            </div>
+            {b.extra ? <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>{b.extra}</div> : null}
+          </div>
+        );
+      })}
+
+
+      {esActual && porInstalar.length > 0 ? (
+        <button type="button" onClick={() => setVerPorInstalar(true)} className="mt-3 text-[13px] font-bold px-3.5 py-2 rounded-full border-2" style={ { color: "#001E62", background: "#EEF3FB", borderColor: "#001E62" } }>
+          ⏳ {porInstalar.length} por instalar ›
+        </button>
+      ) : null}
+      {verPorInstalar ? (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={ { background: "rgba(0,0,0,.4)" } } onClick={(e) => { if (e.target === e.currentTarget) setVerPorInstalar(false); } }>
+          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-4" style={ { maxHeight: "80vh", overflowY: "auto" } }>
+            <h3 className="font-semibold text-base" style={ { color: "#001E62" } }>⏳ Por instalar · {porInstalar.length}</h3>
+            <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Registrados que todavía no tienen fecha de instalación. Toca uno para abrir su ficha.</p>
+            {porInstalar.map((c) => {
+              const dias = c.creadoEn ? Math.max(0, Math.round((new Date(fechaLocalISO(new Date()) + "T00:00:00") - new Date(fechaLocalISO(new Date(c.creadoEn)) + "T00:00:00")) / 86400000)) : null;
+              const cuando = dias === null ? "" : dias === 0 ? "registrado hoy" : dias === 1 ? "registrado ayer" : "registrado hace " + dias + " días";
+              return (
+                <button key={c.id} type="button" onClick={() => { setVerPorInstalar(false); onVerCliente(c); } } className="w-full flex items-center justify-between text-left py-3 px-1" style={ { borderBottom: "1px solid #DFE5EF" } }>
+                  <span>
+                    <span className="text-sm" style={ { color: "#0072CE" } }>{nombreBonito(c.nombre)}</span>
+                    {cuando ? <span className="block text-xs" style={ { color: "#5A6680" } }>{cuando}</span> : null}
+                  </span>
+                  <span style={ { color: "#5A6680" } }>›</span>
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setVerPorInstalar(false)} className="w-full mt-3 text-sm font-semibold py-3 rounded-lg border-2" style={ { color: "#001E62", borderColor: "#001E62" } }>Cerrar</button>
+          </div>
+        </div>
+      ) : null}
+
     </div>
   );
 }
@@ -6156,7 +6178,40 @@ function pasaFiltroFactura(c, f) {
   return true;
 }
 
-function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas }) {
+// Texto del reporte diario para el grupo de WhatsApp: lo que se registró hoy.
+function textoReporteDiario(clientes, convergencias) {
+  const ahora = new Date();
+  const hoy = fechaLocalISO(ahora);
+  const hora = ahora.getHours();
+  const saludo = hora < 12 ? "Buenos días" : hora < 18 ? "Buenas tardes" : "Buenas noches";
+  const ingresadosHoy = clientes.filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
+  const doblesHoy = ingresadosHoy.filter((c) => c.planTipo === "DOBLE");
+  const singlesHoy = ingresadosHoy.filter((c) => c.planTipo === "SINGLE");
+  const converHoy = (convergencias || []).filter((c) => c.creadoEn && fechaLocalISO(c.creadoEn) === hoy);
+  // Una línea por plan: "300 Megas + COMBO PACK: 111, 222". Cada plan se escribe una sola vez.
+  const textoPlan = (c) => {
+    const partes = [(c.velocidad || "").trim(), c.planTipo === "DOBLE" && c.planTV ? "+ " + String(c.planTV).trim() : ""].filter(Boolean);
+    return partes.length ? partes.join(" ") : "Sin plan";
+  };
+  const bloque = (titulo, lista) => {
+    if (!lista.length) return "";
+    const porPlan = new Map();
+    lista.forEach((c) => {
+      const p = textoPlan(c);
+      if (!porPlan.has(p)) porPlan.set(p, []);
+      porPlan.get(p).push((c.numeroSuscriptor || "").trim() || "sin suscriptor");
+    });
+    const lineas = [...porPlan.entries()].map(([plan, susc]) => `${plan}: ${susc.join(", ")}`);
+    return `*${titulo}: ${lista.length}*\n${lineas.join("\n")}`;
+  };
+  // Convergencias: solo el total del día, sin nombres ni tipo.
+  const bloqueConver = converHoy.length ? `*Convergencias: ${converHoy.length}*` : "";
+  const bloques = [bloque("Dobles", doblesHoy), bloque("Singles", singlesHoy), bloqueConver].filter(Boolean);
+  const cuerpo = bloques.length ? bloques.join("\n\n") : "Sin resultados, solo prospectos.";
+  return `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
+}
+
+function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -6422,6 +6477,17 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
 
   const [exportarAbierto, setExportarAbierto] = useState(false);
   const [menuMasAbierto, setMenuMasAbierto] = useState(false);
+  const [copiadoReporte, setCopiadoReporte] = useState(false);
+  function copiarReporteDiario() {
+    const texto = textoReporteDiario(clientesTodos || clientes, clientesMovil);
+    navigator.clipboard
+      ?.writeText(texto)
+      .then(() => {
+        setCopiadoReporte(true);
+        setTimeout(() => setCopiadoReporte(false), 2000);
+      })
+      .catch(() => {});
+  }
   // Cuántos Cliente Móvil hay en el mismo período que se está viendo en Clientes.
   const clientesMovilDelMes = useMemo(
     () => (clientesMovil || []).filter((c) => periodoComision(fechaActivacionMovil(c)) === mesActivoEfectivo).length,
@@ -6433,8 +6499,14 @@ function ClientesTab({ clientes, search, setSearch, onEdit, onDelete, onMarcarPa
       <div className="flex items-center justify-between mb-1 flex-wrap gap-2">
         <h1 className="text-2xl font-semibold">Clientes</h1>
         <div className="flex items-center gap-2 relative">
-          <button onClick={onNuevo} className="text-sm font-medium px-4 py-2 rounded-md text-white" style={ { background: "#001E62" } }>
-            + Nuevo cliente
+          <button
+            type="button"
+            onClick={copiarReporteDiario}
+            className="text-sm font-semibold px-4 rounded-lg border-2"
+            style={ { borderColor: "#001E62", color: "#001E62", background: "white", minHeight: 44 } }
+            title="Copia el reporte de lo que registraste hoy"
+          >
+            {copiadoReporte ? "Copiado ✓" : "📋 Reporte del día"}
           </button>
           <button
             onClick={() => setMenuMasAbierto((v) => !v)}
