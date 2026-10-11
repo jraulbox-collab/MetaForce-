@@ -1666,25 +1666,22 @@ function App() {
     setMostrarMasMenu(false);
   }, [tab]);
 
-  // Oculta las barras del celular (arriba y abajo) al bajar, y las vuelve a mostrar al subir
-  // o al llegar arriba del todo — para aprovechar más pantalla mientras lees.
-  // Con tolerancia: hay que bajar/subir unos 30 px seguidos (no basta un saltito), se ignoran
-  // los rebotes de iOS y los saltos que ocurren al girar la pantalla. En horizontal y en
-  // pantallas anchas (iPhone grande girado, computadora) las barras no se esconden nunca.
+  // Barra de arriba (nombre de la app): solo se ve cuando estás en la parte superior de la pantalla.
+  // Barra de abajo (Inicio, Clientes, Cobros, Más): se esconde al bajar y reaparece en cuanto subes un poco.
+  // En horizontal y en pantallas anchas (iPhone grande girado, computadora) las barras no se esconden nunca.
   const [mostrarBarraSuperior, setMostrarBarraSuperior] = useState(true);
+  const [mostrarBarraInferior, setMostrarBarraInferior] = useState(true);
   const ultimoScrollRef = useRef(0);
   useEffect(() => {
     const anchaMq = window.matchMedia("(min-width: 768px)");
     let ignorarHasta = 0;
-    let acumulado = 0;
     function sinOcultar() {
       return anchaMq.matches || window.innerWidth > window.innerHeight;
     }
     function onResize() {
       ignorarHasta = Date.now() + 700;
-      acumulado = 0;
       ultimoScrollRef.current = window.scrollY;
-      if (sinOcultar()) setMostrarBarraSuperior(true);
+      if (sinOcultar()) { setMostrarBarraSuperior(true); setMostrarBarraInferior(true); }
     }
     function onScroll() {
       const y = window.scrollY;
@@ -1692,19 +1689,15 @@ function App() {
       if (Date.now() < ignorarHasta) { ultimoScrollRef.current = y; return; }
       const max = document.documentElement.scrollHeight - window.innerHeight;
       if (y < 0 || y > max) return; // rebote de iOS arriba o abajo
+      setMostrarBarraSuperior(y < 10);
       if (y < 10) {
-        acumulado = 0;
-        ultimoScrollRef.current = y;
-        setMostrarBarraSuperior(true);
-        return;
+        setMostrarBarraInferior(true);
+      } else if (y > ultimoScrollRef.current + 4) {
+        setMostrarBarraInferior(false);
+      } else if (y < ultimoScrollRef.current - 4) {
+        setMostrarBarraInferior(true);
       }
-      const d = y - ultimoScrollRef.current;
       ultimoScrollRef.current = y;
-      if (d === 0) return;
-      if ((d > 0) !== (acumulado > 0)) acumulado = 0;
-      acumulado += d;
-      if (acumulado > 30) { acumulado = 0; setMostrarBarraSuperior(false); }
-      else if (acumulado < -30) { acumulado = 0; setMostrarBarraSuperior(true); }
     }
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("resize", onResize);
@@ -2378,8 +2371,8 @@ function App() {
     { key: "historial", label: "Historial", icon: "clock" },
   ];
 
-  // Barra inferior del celular: se esconde al bajar (igual que la barra de arriba) y en el formulario de cliente.
-  const barraOculta = !mostrarBarraSuperior || tab === "nuevo";
+  // Barra inferior del celular: se esconde al bajar, reaparece al subir un poco, y se oculta en el formulario de cliente.
+  const barraOculta = !mostrarBarraInferior || tab === "nuevo";
   const avisoGuardado = !enLinea
     ? "Sin conexión — se guardará al reconectar"
     : estadoGuardado === "error"
