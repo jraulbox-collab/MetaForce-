@@ -1383,6 +1383,8 @@ function App() {
   const [historialCambiosLoaded, setHistorialCambiosLoaded] = useState(false);
   const [umbralProrrateo, setUmbralProrrateo] = useState(25);
   const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
+  const [ordenDashboard, setOrdenDashboard] = useState({ orden: ORDEN_DASHBOARD_BASE.slice(), ocultos: [] });
+  const [ordenDashboardLoaded, setOrdenDashboardLoaded] = useState(false);
   const [columnasClientes, setColumnasClientes] = useState({
     orden: COLUMNAS_CLIENTES_KEYS,
     visibles: Object.fromEntries(COLUMNAS_CLIENTES_KEYS.map((k) => [k, true])),
@@ -1535,6 +1537,25 @@ function App() {
       setUmbralProrrateoLoaded(true);
     })();
   }, []);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await storage.get("dashboard-orden");
+        if (res && res.value) {
+          const v = JSON.parse(res.value);
+          setOrdenDashboard({ orden: ordenDashboardNormal(v), ocultos: ocultosDashboardNormal(v) });
+        }
+      } catch (e) {}
+      setOrdenDashboardLoaded(true);
+    })();
+  }, []);
+
+  const persistirOrdenDashboard = useGuardadoSerie("dashboard-orden");
+  useEffect(() => {
+    if (!ordenDashboardLoaded) return;
+    persistirOrdenDashboard(JSON.stringify(ordenDashboard));
+  }, [ordenDashboard, ordenDashboardLoaded]);
 
   const persistirUmbral = useGuardadoSerie("umbral-prorrateo");
   useEffect(() => {
@@ -2597,6 +2618,8 @@ function App() {
         <React.Fragment>
         {tab === "dashboard" && (
           <Dashboard
+            ordenDashboard={ordenDashboard}
+            onOrdenDashboard={setOrdenDashboard}
             umbralProrrateo={umbralProrrateo}
             stats={stats}
             clientes={clientesActivos}
@@ -3316,7 +3339,18 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
   );
 }
 
-function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
+// Tarjetas del Dashboard que se pueden ordenar. La de comisión nunca se esconde.
+const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "planes", "dia", "historial"];
+function ordenDashboardNormal(cfg) {
+  const o = cfg && Array.isArray(cfg.orden) ? cfg.orden.filter((id, i, a) => ORDEN_DASHBOARD_BASE.includes(id) && a.indexOf(id) === i) : [];
+  ORDEN_DASHBOARD_BASE.forEach((id) => { if (!o.includes(id)) o.push(id); });
+  return o;
+}
+function ocultosDashboardNormal(cfg) {
+  return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
+}
+
+function Dashboard({ ordenDashboard, onOrdenDashboard, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoVisto, setPeriodoVisto] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   memoriaDashboard.periodo = periodoVisto;
@@ -3402,6 +3436,118 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
       ).length,
     [clientes, periodoVisto]
   );
+
+  // ---- Tarjetas nuevas: planes del período y mejor día de la semana ----
+  const planesDelPeriodo = useMemo(() => {
+    const m = {};
+    clientesDelPeriodo.forEach((c) => {
+      if (!c.planTipo) return;
+      const k = c.planTipo + " " + (c.velocidad || "") + (c.planTipo === "DOBLE" && c.planTV ? " + " + c.planTV : "");
+      if (!m[k]) m[k] = { k: k.trim(), tipo: c.planTipo, n: 0, dinero: 0 };
+      m[k].n += 1;
+      m[k].dinero += Number(c.montoMensual) || 0;
+    });
+    return Object.values(m).sort((a, b) => b.n - a.n || b.dinero - a.dinero);
+  }, [clientesDelPeriodo]);
+  const maxPlanN = planesDelPeriodo.reduce((acc, p) => Math.max(acc, p.n), 1);
+  const planMasDinero = useMemo(() => {
+    if (planesDelPeriodo.length < 2) return null;
+    return planesDelPeriodo.reduce((mejor, p) => (!mejor || p.dinero / p.n > mejor.dinero / mejor.n ? p : mejor), null);
+  }, [planesDelPeriodo]);
+  function formatoPlan(k) {
+    return String(k || "")
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((p) => (p === "tv" ? "TV" : p.charAt(0).toUpperCase() + p.slice(1)))
+      .join(" ");
+  }
+  const diasSemana = useMemo(() => {
+    const periodos = [periodoVisto, sumarMesClave(periodoVisto, -1), sumarMesClave(periodoVisto, -2)];
+    const cuenta = [0, 0, 0, 0, 0, 0, 0];
+    clientes.forEach((c) => {
+      if (!c.fechaInstalacion) return;
+      if (!periodos.includes(periodoDelCliente(c))) return;
+      if (!clienteCuentaParaComision(c)) return;
+      const d = new Date(c.fechaInstalacion + "T00:00:00").getDay();
+      if (!Number.isNaN(d)) cuenta[d] += 1;
+    });
+    const base = [
+      { k: 1, l: "L", nombre: "lunes" },
+      { k: 2, l: "M", nombre: "martes" },
+      { k: 3, l: "M", nombre: "miércoles" },
+      { k: 4, l: "J", nombre: "jueves" },
+      { k: 5, l: "V", nombre: "viernes" },
+      { k: 6, l: "S", nombre: "sábado" },
+      { k: 0, l: "D", nombre: "domingo" },
+    ].map((d) => ({ ...d, n: cuenta[d.k] }));
+    const max = base.reduce((acc, d) => Math.max(acc, d.n), 0);
+    return base.map((d) => ({ ...d, mejor: max > 0 && d.n === max }));
+  }, [clientes, periodoVisto]);
+  const maxPorDia = diasSemana.reduce((acc, d) => Math.max(acc, d.n), 0);
+  const totalPorDia = diasSemana.reduce((acc, d) => acc + d.n, 0);
+
+  // ---- Orden de las tarjetas (se guarda en la base de datos) ----
+  const [modoOrden, setModoOrden] = useState(false);
+  const ordenActual = ordenDashboardNormal(ordenDashboard);
+  const ocultosActual = ocultosDashboardNormal(ordenDashboard);
+  function guardarOrden(orden, ocultos) {
+    if (onOrdenDashboard) onOrdenDashboard({ orden, ocultos });
+  }
+  function moverBloque(id, dir) {
+    const vis = ordenActual.filter((x) => !ocultosActual.includes(x));
+    const p = vis.indexOf(id);
+    const otro = vis[p + dir];
+    if (p < 0 || !otro) return;
+    const orden = ordenActual.slice();
+    const i = orden.indexOf(id);
+    const j = orden.indexOf(otro);
+    orden[i] = otro;
+    orden[j] = id;
+    guardarOrden(orden, ocultosActual);
+  }
+  function alternarOculto(id) {
+    if (id === "comision") return;
+    const ocultos = ocultosActual.includes(id) ? ocultosActual.filter((x) => x !== id) : [...ocultosActual, id];
+    guardarOrden(ordenActual, ocultos);
+  }
+  function restablecerOrden() {
+    guardarOrden(ORDEN_DASHBOARD_BASE.slice(), []);
+  }
+  // Envuelve cada tarjeta: fija su posición con "order" y, en modo ordenar, muestra
+  // sus controles (subir, bajar, esconder). Es una función, no un componente, para
+  // que las tarjetas no se vuelvan a montar cada vez que algo cambia.
+  function bloqueOrd(id, titulo, contenido) {
+    const oculto = ocultosActual.includes(id);
+    if (oculto && !modoOrden) return null;
+    const vis = ordenActual.filter((x) => !ocultosActual.includes(x));
+    const pos = vis.indexOf(id);
+    const orden = oculto ? 1000 + ordenActual.indexOf(id) : ordenActual.indexOf(id);
+    const btn = { height: 44, minWidth: 48, borderRadius: 10, border: "1.5px solid #001E62", background: "white", color: "#001E62", fontWeight: 700, fontSize: 13, padding: "0 12px" };
+    return (
+      <div key={id} style={ { order: orden, opacity: oculto ? 0.6 : 1 } }>
+        {modoOrden && (
+          <div className="flex items-center gap-2 flex-wrap mb-2">
+            <span className="text-xs font-bold mr-auto" style={ { color: "#5A6680" } }>
+              {titulo}{oculto ? " · escondida" : ""}
+            </span>
+            {!oculto && (
+              <>
+                <button type="button" onClick={() => moverBloque(id, -1)} disabled={pos <= 0} style={ { ...btn, opacity: pos <= 0 ? 0.3 : 1 } }>▲ Subir</button>
+                <button type="button" onClick={() => moverBloque(id, 1)} disabled={pos === vis.length - 1} style={ { ...btn, opacity: pos === vis.length - 1 ? 0.3 : 1 } }>▼ Bajar</button>
+              </>
+            )}
+            {id === "comision" ? (
+              <span className="text-xs" style={ { color: "#5A6680" } }>Siempre visible</span>
+            ) : (
+              <button type="button" onClick={() => alternarOculto(id)} style={ btn }>{oculto ? "Mostrar" : "Esconder"}</button>
+            )}
+          </div>
+        )}
+        <div style={ modoOrden ? { outline: "2px solid #AFC0DC", outlineOffset: 3, borderRadius: 16, marginBottom: 14 } : undefined }>{contenido}</div>
+      </div>
+    );
+  }
 
   const convergenciasDelPeriodo = useMemo(
     () => convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === periodoVisto),
@@ -4395,7 +4541,19 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-2xl font-semibold mb-3">Dashboard</h1>
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <h1 className="text-2xl font-semibold">Dashboard</h1>
+          <button
+            type="button"
+            onClick={() => setModoOrden((v) => !v)}
+            aria-label="Ordenar tarjetas"
+            title="Ordenar tarjetas"
+            className="flex items-center justify-center rounded-full"
+            style={ { width: 36, height: 36, color: modoOrden ? "#001E62" : "#9AA6BD", background: modoOrden ? "#E3EDFA" : "transparent", border: 0 } }
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M8 4v16M8 4L4 8M8 4l4 4M16 20V4M16 20l-4-4M16 20l4-4" /></svg>
+          </button>
+        </div>
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={generarReporteDiario}
@@ -4431,7 +4589,29 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
         );
       })()}
 
-      {(() => {
+      {noCuentanComision > 0 && (
+        <button
+          type="button"
+          onClick={() => onVerClientes({ filtroEstado: "nocuenta", todosLosMeses: true })}
+          className="block w-full text-left text-sm mb-4 px-3 py-2 rounded-lg font-semibold"
+          style={ { background: "#FFF3DC", color: "#B45309", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309" } }
+        >
+          ! {noCuentanComision} {noCuentanComision === 1 ? "cliente no cuenta" : "clientes no cuentan"} para comisión ›
+        </button>
+      )}
+
+      <div className="flex flex-col">
+      {modoOrden && (
+        <div className="sticky top-2 z-30 flex items-center justify-between gap-3 rounded-xl px-3 py-2.5 mb-4 text-sm" style={ { order: -2, background: "#001E62", color: "white", boxShadow: "0 6px 18px rgba(0,30,98,.25)" } }>
+          <span><b>Modo ordenar</b><br /><span className="text-xs opacity-90">Mueve o esconde las tarjetas</span></span>
+          <span className="flex items-center gap-2">
+            <button type="button" onClick={restablecerOrden} className="text-xs font-semibold px-2.5 rounded-lg border" style={ { height: 38, borderColor: "rgba(255,255,255,.5)", color: "white", background: "transparent" } }>Restablecer</button>
+            <button type="button" onClick={() => setModoOrden(false)} className="text-sm font-bold px-4 rounded-lg" style={ { height: 38, background: "white", color: "#001E62" } }>Listo</button>
+          </span>
+        </div>
+      )}
+
+      {bloqueOrd("dinero", "Tu dinero", (() => {
         const nombreMes = (k) => (MESES[parseInt(k.split("-")[1], 10) - 1] || "");
         const nombreMesCap = (k) => {
           const n = nombreMes(k);
@@ -4582,10 +4762,10 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
             </div>
           </div>
         );
-      })()}
+      })())}
 
 
-      <div className="flex items-center gap-1.5 mb-6 flex-wrap">
+      <div className="flex items-center gap-1.5 mb-6 flex-wrap" style={ { order: -1 } }>
         <button
           onClick={() => setPeriodoVisto((p) => sumarMesClave(p, -1))}
           className="text-sm px-2 py-1.5 rounded-md border"
@@ -4626,6 +4806,7 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
         )}
       </div>
 
+      {bloqueOrd("comision", "Comisión del ciclo", (
       <div className="rounded-xl p-5 mb-6 text-white" style={ { background: "#001E62" } }>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <h2 className="font-semibold text-sm opacity-90 flex items-center gap-1.5">
@@ -4740,8 +4921,9 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
           </p>
         )}
       </div>
+      ))}
 
-      {esNuevo ? (
+      {bloqueOrd("metas", "Avance del período", esNuevo ? (
         <AvanceMetasCard
           periodoKey={periodoVisto}
           esActual={esActual}
@@ -4915,41 +5097,68 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
           )}
         </div>
       </div>
-      )}
+      ))}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-6">
-        <MiniStat
-          valor={singlesInstalados}
-          label="Singles del período"
-          color="#001E62"
-          onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })}
-        />
-        <MiniStat
-          valor={doblesInstalados}
-          label="Dobles del período"
-          color="#001E62"
-          onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })}
-        />
-        <MiniStat
-          valor={pendientesAhora}
-          label="Pendientes de instalación"
-          color="#B45309"
-          onClick={() => onVerClientes({ filtroInstalacion: "pendientes", todosLosMeses: true })}
-        />
-        <MiniStat
-          valor={noCuentanComision}
-          label="No cuentan para comisión"
-          color="#B45309"
-          onClick={() => onVerClientes({ filtroEstado: "nocuenta", todosLosMeses: true })}
-        />
-        <MiniStat
-          valor={convergenciasPeriodo}
-          label="Clientes Móvil del período"
-          color="#0072CE"
-          onClick={() => onVerClientes({ periodo: periodoVisto, subVista: "movil" })}
-        />
-      </div>
+      {bloqueOrd("planes", "Planes del período", (
+        <div className="bg-white rounded-xl border p-4 mb-6" style={ { borderColor: "#DFE5EF" } }>
+          <h2 className="font-semibold text-sm mb-2" style={ { color: "#001E62" } }>Planes del período</h2>
+          {planesDelPeriodo.length === 0 ? (
+            <p className="text-sm" style={ { color: "#5A6680" } }>Todavía no hay clientes en este período.</p>
+          ) : (
+            planesDelPeriodo.map((p) => (
+              <button
+                key={p.k}
+                type="button"
+                onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: p.tipo })}
+                className="w-full grid items-center gap-2 py-1.5 text-left"
+                style={ { gridTemplateColumns: "minmax(96px,40%) 1fr 28px" } }
+              >
+                <span className="text-xs font-semibold truncate" style={ { color: "#001E62" } }>{formatoPlan(p.k)}</span>
+                <span className="block h-3 rounded-full overflow-hidden" style={ { background: "#E3EDFA", border: "1px solid #C9D9F0" } }>
+                  <span className="block h-full" style={ { width: Math.max(6, (p.n / maxPlanN) * 100) + "%", background: "#001E62" } } />
+                </span>
+                <span className="text-xs font-mono font-bold text-right" style={ { color: "#001E62" } }>{p.n}</span>
+              </button>
+            ))
+          )}
+          <div className="flex items-center gap-2 flex-wrap mt-2">
+            <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{singlesInstalados} Singles ›</button>
+            <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{doblesInstalados} Dobles ›</button>
+          </div>
+          {planMasDinero && (
+            <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
+              Más dinero por cliente: <span className="font-semibold" style={ { color: "#001E62" } }>{formatoPlan(planMasDinero.k)}</span> ({fmtMonto(planMasDinero.dinero / planMasDinero.n)} en promedio)
+            </div>
+          )}
+        </div>
+      ))}
 
+      {bloqueOrd("dia", "Mejor día de la semana", (
+        <div className="bg-white rounded-xl border p-4 mb-6" style={ { borderColor: "#DFE5EF" } }>
+          <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Mejor día de la semana</h2>
+          <p className="text-xs mb-3" style={ { color: "#5A6680" } }>Según la fecha de instalación · últimos 3 ciclos</p>
+          {totalPorDia === 0 ? (
+            <p className="text-sm" style={ { color: "#5A6680" } }>Todavía no hay instalaciones para comparar.</p>
+          ) : (
+            <>
+              <div className="grid gap-1.5 items-end" style={ { gridTemplateColumns: "repeat(7, 1fr)", height: 104 } }>
+                {diasSemana.map((d) => (
+                  <div key={d.k} className="flex flex-col items-center justify-end h-full gap-1 text-[11px]">
+                    <span className="font-bold font-mono" style={ { color: d.mejor ? "#B45309" : "#001E62" } }>{d.n}{d.mejor ? " ★" : ""}</span>
+                    <span className="block w-full rounded-t-md" style={ { height: Math.max(4, (d.n / maxPorDia) * 70) + "%", background: d.mejor ? "#B45309" : "#001E62" } } />
+                    <span style={ { color: "#5A6680" } }>{d.l}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
+                Tu mejor día: <span className="font-semibold" style={ { color: "#001E62" } }>{diasSemana.filter((d) => d.mejor).map((d) => d.nombre).join(" y ")}</span> ({maxPorDia} instalaciones)
+              </div>
+            </>
+          )}
+        </div>
+      ))}
+
+      {bloqueOrd("historial", "Historial de comisión", (
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
         <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
         <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>Toca o pasa el mouse sobre una barra para ver el detalle y la comparación.</p>
@@ -4996,6 +5205,8 @@ function Dashboard({ umbralProrrateo = 25, stats, clientes, metas, onActualizarM
             )}
           </div>
         )}
+      </div>
+      ))}
       </div>
       {mostrarSimuladorArpu && (
         <SimuladorArpuModal
