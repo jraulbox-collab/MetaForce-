@@ -32,6 +32,26 @@
   input.text-xs.rounded-md, select.text-xs.rounded-md { padding-top: 8px; padding-bottom: 8px; border-width: 2px; }
   .h-2\.5.rounded-full:not(.w-2\.5) { height: 12px; }
   .acciones-orden > * { flex: 1 1 auto; min-height: 42px; font-size: 13px !important; font-weight: 600; padding: 0 14px !important; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
+  /* ===== Barra de opciones (celular y computadora) ===== */
+  .mf-nav { background: #001E62; border-radius: 22px 22px 0 0; box-shadow: 0 -4px 16px rgba(0,30,98,0.2); padding: 6px 6px calc(16px + env(safe-area-inset-bottom)); transition: transform .25s; }
+  .mf-nav.oculta { transform: translateY(110%); }
+  .mf-tab { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 2px; color: #A9B8D6; font-weight: 500; background: none; border: 0; -webkit-tap-highlight-color: transparent; }
+  .mf-tab.on { color: #FFFFFF; font-weight: 700; }
+  .mf-tab-ico { position: relative; width: 60px; height: 32px; border-radius: 16px; display: flex; align-items: center; justify-content: center; transition: background .2s; }
+  .mf-tab.on .mf-tab-ico { background: rgba(255,255,255,0.16); }
+  .mf-tab:active .mf-tab-ico { background: rgba(255,255,255,0.1); }
+  .mf-tab-lbl { font-size: 12px; }
+  .mf-badge { position: absolute; top: -5px; right: 5px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 10px; background: #B45309; color: #fff; border: 2px solid #FFF3DC; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .mf-fab { transition: bottom .25s, opacity .2s, transform .12s; }
+  .mf-fab:active { transform: scale(0.94); }
+  .mf-aviso { transition: bottom .25s; background: #FFF3DC; color: #B45309; border: 1px solid #F0D9AE; border-radius: 12px; padding: 9px 12px; font-size: 13px; font-weight: 600; }
+  .mf-fila { display: flex; align-items: center; gap: 12px; width: 100%; border: 0; background: none; font-size: 15px; color: #A9B8D6; font-weight: 500; padding: 0 12px; height: 52px; border-radius: 14px; text-align: left; }
+  .mf-fila.on { background: rgba(255,255,255,0.14); color: #fff; font-weight: 700; }
+  .mf-fila:active { background: rgba(255,255,255,0.1); }
+  .mf-side-it { display: flex; align-items: center; justify-content: space-between; width: 100%; border: 0; background: none; font-size: 14px; color: #A9B8D6; font-weight: 500; height: 42px; padding: 0 12px; border-radius: 12px; text-align: left; transition: background .2s; }
+  .mf-side-it.on { background: rgba(255,255,255,0.14); color: #fff; font-weight: 700; }
+  .mf-side-it:hover { background: rgba(255,255,255,0.08); }
+  .mf-side-it.on:hover { background: rgba(255,255,255,0.14); }
 </style>
 </head>
 <body>
@@ -1220,6 +1240,26 @@ function leerVistaClientesDelDia() {
   return null;
 }
 
+// Íconos de línea para la barra de opciones (sustituyen a los emojis).
+function IconoBarra({ name, size = 24 }) {
+  const trazos = {
+    home: <React.Fragment><path d="M3.5 11 12 3.8 20.5 11" /><path d="M5.5 9.8V20h13V9.8" /><path d="M10 20v-5.5h4V20" /></React.Fragment>,
+    users: <React.Fragment><circle cx="9" cy="8" r="3.4" /><path d="M2.8 20c.4-3.6 3-5.6 6.2-5.6s5.8 2 6.2 5.6" /><path d="M15.6 4.9a3.3 3.3 0 0 1 0 6.2" /><path d="M18 14.7c1.7.7 2.9 2.4 3.2 5.3" /></React.Fragment>,
+    cash: <React.Fragment><rect x="2.5" y="6" width="19" height="12" rx="2.5" /><circle cx="12" cy="12" r="2.6" /><path d="M6 9.5v.1M18 14.4v.1" /></React.Fragment>,
+    menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+    plus: <path d="M12 5v14M5 12h14" />,
+    receipt: <React.Fragment><path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" /><path d="M9 8h6M9 12h6" /></React.Fragment>,
+    clock: <React.Fragment><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></React.Fragment>,
+    gear: <React.Fragment><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></React.Fragment>,
+    chart: <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />,
+  };
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === "plus" ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { display: "block" } }>
+      {trazos[name]}
+    </svg>
+  );
+}
+
 function App() {
   const [autenticado, setAutenticado] = useState(() => {
     try {
@@ -2300,12 +2340,28 @@ function App() {
   }
 
   const navItems = [
-    { key: "dashboard", label: "Dashboard", icon: "📊" },
-    { key: "clientes", label: "Clientes", icon: "👥" },
-    { key: "alertas", label: "Cobros", icon: "💵", badge: stats.alHoy },
-    { key: "precierre", label: "Precierre", icon: "🧾" },
-    { key: "historial", label: "Historial", icon: "📜" },
+    { key: "dashboard", label: "Dashboard", icon: "chart" },
+    { key: "clientes", label: "Clientes", icon: "users" },
+    { key: "alertas", label: "Cobros", icon: "cash", badge: stats.alHoy },
+    { key: "precierre", label: "Precierre", icon: "receipt" },
+    { key: "historial", label: "Historial", icon: "clock" },
   ];
+
+  // Barra inferior del celular: se esconde al bajar (igual que la barra de arriba) y en el formulario de cliente.
+  const barraOculta = !mostrarBarraSuperior || tab === "nuevo";
+  const avisoGuardado = !enLinea
+    ? "Sin conexión — se guardará al reconectar"
+    : estadoGuardado === "error"
+    ? "Error al guardar — revisa tu conexión"
+    : "";
+  const bottomFab = barraOculta ? (avisoGuardado ? 72 : 24) : (avisoGuardado ? 164 : 100);
+  function tocarPestana(key) {
+    if (tab === key) {
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    setTab(key);
+  }
 
   if (!autenticado) {
     return (
@@ -2357,19 +2413,14 @@ function App() {
                   if (item.key === "nuevo" && !editingId) resetForm();
                   setTab(item.key);
                 } }
-                className="text-left px-3 py-2.5 rounded-md text-sm flex items-center justify-between transition-colors"
-                style={ {
-                  background: tab === item.key ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: tab === item.key ? "#FFFFFF" : "#8593B8",
-                  fontWeight: tab === item.key ? 600 : 500,
-                } }
+                className={"mf-side-it" + (tab === item.key ? " on" : "")}
               >
-                <span className="flex items-center gap-2">
-                  <span aria-hidden="true">{item.icon}</span>
+                <span className="flex items-center gap-2.5">
+                  <IconoBarra name={item.icon} size={20} />
                   {item.label}
                 </span>
                 {!!item.badge && (
-                  <span className="text-[11px] font-mono px-1.5 py-0.5 rounded animate-pulse" style={ { background: "#B45309", color: "white" } }>
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 animate-pulse" style={ { background: "#B45309", color: "white", borderRadius: 8 } }>
                     {item.badge}
                   </span>
                 )}
@@ -2377,8 +2428,8 @@ function App() {
             ))}
             <button
               onClick={() => setMostrarSelectorNuevo(true)}
-              className="text-left px-3 py-2.5 rounded-md text-sm font-medium mt-1"
-              style={ { background: "#001E62", color: "white" } }
+              className="text-center px-3 text-sm font-semibold mt-1"
+              style={ { background: "transparent", color: "white", border: "2px solid #0072CE", borderRadius: 12, height: 42 } }
             >
               + Nuevo cliente
             </button>
@@ -2399,7 +2450,7 @@ function App() {
             className="text-xs font-medium text-left px-2 py-1.5 rounded-md flex items-center gap-2"
             style={ { color: "#8593B8", border: "1px solid #3A4258" } }
           >
-            ⚙️ Configuración
+            <IconoBarra name="gear" size={16} /> Configuración
           </button>
           <div className="text-[10px] text-center pt-1" style={ { color: "#3A4258" } }>JRS~</div>
         </div>
@@ -2407,51 +2458,58 @@ function App() {
 
       {/* ---- Navegación móvil: barra fija abajo + botón flotante de agregar ---- */}
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch"
-        style={ { background: "#001E62", borderTop: "1px solid #1E3A7A" } }
+        className={"md:hidden fixed bottom-0 left-0 right-0 z-40 flex items-stretch mf-nav" + (barraOculta ? " oculta" : "")}
       >
         {[
-          { key: "dashboard", label: "Inicio", icon: "🏠" },
-          { key: "clientes", label: "Clientes", icon: "👥" },
-          { key: "alertas", label: "Cobros", icon: "💵", badge: stats.alHoy },
+          { key: "dashboard", label: "Inicio", icon: "home" },
+          { key: "clientes", label: "Clientes", icon: "users" },
+          { key: "alertas", label: "Cobros", icon: "cash", badge: stats.alHoy },
         ].map((item) => (
           <button
             key={item.key}
-            onClick={() => setTab(item.key)}
-            className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 relative"
-            style={ { color: tab === item.key ? "#FFFFFF" : "#8593B8" } }
+            onClick={() => tocarPestana(item.key)}
+            className={"mf-tab" + (tab === item.key ? " on" : "")}
           >
-            <span className="text-xl leading-none relative" aria-hidden="true">
-              {item.icon}
+            <span className="mf-tab-ico">
+              <IconoBarra name={item.icon} />
               {!!item.badge && (
-                <span
-                  className="absolute -top-1 -right-1.5 w-2 h-2 rounded-full"
-                  style={ { background: "#D97706" } }
-                  aria-label={`${item.badge} cobros pendientes`}
-                />
+                <span className="mf-badge" aria-label={`${item.badge} cobros pendientes`}>
+                  {item.badge > 9 ? "9+" : item.badge}
+                </span>
               )}
             </span>
-            <span className="text-[11px]" style={ { fontWeight: tab === item.key ? 600 : 500 } }>{item.label}</span>
+            <span className="mf-tab-lbl">{item.label}</span>
           </button>
         ))}
         <button
           onClick={() => setMostrarMasMenu(true)}
-          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2"
-          style={ { color: "#8593B8" } }
+          className="mf-tab"
         >
-          <span className="text-xl leading-none" aria-hidden="true">☰</span>
-          <span className="text-[11px]">Más</span>
+          <span className="mf-tab-ico"><IconoBarra name="menu" /></span>
+          <span className="mf-tab-lbl">Más</span>
         </button>
       </nav>
 
-      <button
-        onClick={() => setMostrarSelectorNuevo(true)}
-        className="md:hidden fixed z-40 w-14 h-14 rounded-full text-white text-3xl leading-none flex items-center justify-center"
-        style={ { background: "#001E62", right: "16px", bottom: "76px", boxShadow: "0 4px 12px rgba(0,0,0,0.25)" } }
-        aria-label="Agregar cliente"
-      >
-        +
-      </button>
+      {!!avisoGuardado && tab !== "nuevo" && (
+        <div
+          className="md:hidden fixed z-40 mf-aviso"
+          style={ { left: 12, right: 12, bottom: barraOculta ? 12 : 96 } }
+          role="status"
+        >
+          {avisoGuardado}
+        </div>
+      )}
+
+      {tab !== "nuevo" && (
+        <button
+          onClick={() => setMostrarSelectorNuevo(true)}
+          className="md:hidden fixed z-40 flex items-center justify-center text-white mf-fab"
+          style={ { background: "#001E62", right: "16px", bottom: bottomFab + "px", width: 54, height: 54, borderRadius: 16, boxShadow: "0 4px 14px rgba(0,30,98,0.3)", border: 0 } }
+          aria-label="Agregar cliente"
+        >
+          <IconoBarra name="plus" size={28} />
+        </button>
+      )}
 
       {mostrarMasMenu && (
         <div
@@ -2460,43 +2518,42 @@ function App() {
           onClick={() => setMostrarMasMenu(false)}
         >
           <div
-            className="w-full rounded-t-lg p-4 pb-6"
-            style={ { background: "#001E62" } }
+            className="w-full p-4"
+            style={ { background: "#001E62", borderRadius: "22px 22px 0 0", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" } }
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-white font-semibold text-sm">Más opciones</span>
-              <button onClick={() => setMostrarMasMenu(false)} className="text-white text-xl leading-none px-2">✕</button>
+            <div className="flex items-center justify-between mb-3 px-1">
+              <span className="text-white font-bold" style={ { fontSize: 15 } }>Más opciones</span>
+              <button
+                onClick={() => setMostrarMasMenu(false)}
+                className="text-white leading-none"
+                style={ { background: "rgba(255,255,255,0.12)", width: 34, height: 34, borderRadius: 10, fontSize: 16, border: 0 } }
+                aria-label="Cerrar"
+              >✕</button>
             </div>
             <div className="flex flex-col gap-1">
               {[
-                { key: "precierre", label: "Precierre", icon: "🧾" },
-                { key: "historial", label: "Historial", icon: "📜" },
+                { key: "precierre", label: "Precierre", icon: "receipt" },
+                { key: "historial", label: "Historial", icon: "clock" },
               ].map((item) => (
                 <button
                   key={item.key}
                   onClick={() => { setTab(item.key); setMostrarMasMenu(false); } }
-                  className="text-left px-3 py-2.5 rounded-md text-sm flex items-center gap-2"
-                  style={ {
-                    background: tab === item.key ? "rgba(255,255,255,0.08)" : "transparent",
-                    color: tab === item.key ? "#FFFFFF" : "#8593B8",
-                    fontWeight: tab === item.key ? 600 : 500,
-                  } }
+                  className={"mf-fila" + (tab === item.key ? " on" : "")}
                 >
-                  <span aria-hidden="true">{item.icon}</span>
+                  <IconoBarra name={item.icon} size={22} />
                   {item.label}
                 </button>
               ))}
               <button
                 onClick={() => { setMostrarConfig(true); setMostrarMasMenu(false); } }
-                className="text-left px-3 py-2.5 rounded-md text-sm flex items-center gap-2"
-                style={ { color: "#8593B8", fontWeight: 500 } }
+                className="mf-fila"
               >
-                <span aria-hidden="true">⚙️</span>
+                <IconoBarra name="gear" size={22} />
                 Configuración
               </button>
             </div>
-            <div className="text-[11px] flex items-center gap-1.5 mt-3 pt-3 border-t" style={ { color: "#5C6480", borderColor: "#1E3A7A" } }>
+            <div className="text-[11px] flex items-center gap-1.5 mt-3 pt-3 border-t px-1" style={ { color: "#8593B8", borderColor: "#1E3A7A" } }>
               {!enLinea
                 ? "📴 Sin conexión — se guardará al reconectar"
                 : estadoGuardado === "guardando"
