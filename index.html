@@ -1627,6 +1627,69 @@ function App() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Navegación con memoria: al ir a una pantalla "de segundo nivel" (ficha, formulario...)
+  // se guarda hasta dónde habías bajado, y al volver se restaura exactamente ahí.
+  const scrollPorTab = useRef({});
+  const restaurarRef = useRef(null);
+  function navegarA(destino) {
+    scrollPorTab.current[tab] = window.scrollY;
+    setTab(destino);
+  }
+  function volverA(destino) {
+    restaurarRef.current = scrollPorTab.current[destino] || 0;
+    if (destino === "alertas") memoriaCobros.retorno = true;
+    setTab(destino);
+  }
+  // Botón "atrás" del navegador (y gesto de deslizar en el iPhone): cada cambio de pantalla
+  // queda en el historial, así atrás/adelante te mueven entre las pantallas de la app.
+  const navPop = useRef(false);
+  const primeraVez = useRef(true);
+  const tabRef = useRef(tab);
+  const formInicialRef = useRef("");
+  const formRefActual = useRef(form);
+  tabRef.current = tab;
+  formRefActual.current = form;
+  useEffect(() => {
+    if (tab === "nuevo") formInicialRef.current = JSON.stringify(formRefActual.current);
+  }, [tab]);
+  useEffect(() => {
+    try { window.history.replaceState({ mf: true, tab: tabRef.current, clienteDetalleId: null, origenDetalle: "clientes" }, ""); } catch (e) {}
+    function onPop(e) {
+      const st = e.state;
+      if (!st || !st.mf || !st.tab) return;
+      if (st.tab === tabRef.current) return;
+      if (tabRef.current === "nuevo" && JSON.stringify(formRefActual.current) !== formInicialRef.current) {
+        if (!window.confirm("Tienes cambios sin guardar. ¿Salir de todos modos?")) {
+          try { window.history.pushState({ mf: true, tab: "nuevo", clienteDetalleId: null, origenDetalle: "clientes" }, ""); } catch (er) {}
+          return;
+        }
+      }
+      navPop.current = true;
+      restaurarRef.current = scrollPorTab.current[st.tab] || 0;
+      if (st.tab === "alertas") memoriaCobros.retorno = true;
+      if (st.tab === "dashboard") memoriaDashboard.retorno = true;
+      if (st.clienteDetalleId) setClienteDetalleId(st.clienteDetalleId);
+      if (st.origenDetalle) setOrigenDetalle(st.origenDetalle);
+      setTab(st.tab);
+    }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  useEffect(() => {
+    if (primeraVez.current) { primeraVez.current = false; return; }
+    if (navPop.current) { navPop.current = false; return; }
+    try { window.history.pushState({ mf: true, tab, clienteDetalleId, origenDetalle }, ""); } catch (e) {}
+  }, [tab]);
+  useEffect(() => {
+    const y = restaurarRef.current;
+    restaurarRef.current = null;
+    if (y === null) {
+      window.scrollTo(0, 0);
+    } else {
+      requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+    }
+  }, [tab]);
+
   function resetForm() {
     setForm(emptyForm());
     setEditingId(null);
@@ -1636,7 +1699,7 @@ function App() {
     setForm({ ...emptyForm(), numeroSuscriptor: numero });
     setEditingId(null);
     setOrigenFormulario("precierre");
-    setTab("nuevo");
+    navegarA("nuevo");
   }
 
   function abrirClienteDesdePrecierre(c) {
@@ -1651,7 +1714,7 @@ function App() {
     setForm({ ...emptyForm(), nombre: nombre || "", fechaInstalacion: fechaInstalacionISO || "" });
     setEditingId(null);
     setOrigenFormulario("precierre");
-    setTab("nuevo");
+    navegarA("nuevo");
   }
 
   // Desde "Verificar órdenes": cambia solo la fecha de instalación de un cliente.
@@ -1672,7 +1735,7 @@ function App() {
   // Desde "Verificar órdenes" (móviles): abre Clientes Móvil con el formulario de nuevo
   // cliente ya con el nombre y la fecha de activación de Tigo. Al guardar vuelve al Precierre.
   function irANuevoMovilDesdeOrden(nombre, fechaISO) {
-    setTab("clientes");
+    navegarA("clientes");
     setSaltarAMes({
       subVista: "movil",
       abrirForm: true,
@@ -1684,7 +1747,7 @@ function App() {
   // Desde "Verificar órdenes" (móviles): abre ese cliente móvil ya en edición. Al guardar vuelve al Precierre.
   function abrirMovilDesdeOrden(id) {
     if (!id) return;
-    setTab("clientes");
+    navegarA("clientes");
     setSaltarAMes({ subVista: "movil", abrirForm: true, prefill: { editarId: id }, token: Date.now() });
   }
 
@@ -1970,7 +2033,7 @@ function App() {
       registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
     resetForm();
-    setTab(origenFormulario === "precierre" ? "precierre" : "clientes");
+    volverA(origenFormulario === "precierre" || origenFormulario === "detalle" ? origenFormulario : "clientes");
   }
 
   function startEdit(c) {
@@ -1994,7 +2057,8 @@ function App() {
       observaciones: c.observaciones,
     });
     setEditingId(c.id);
-    setTab("nuevo");
+    setOrigenFormulario(tab === "detalle" ? "detalle" : tab === "precierre" ? "precierre" : "clientes");
+    navegarA("nuevo");
   }
 
   function toggleMilestone(clienteId, key) {
@@ -2448,13 +2512,13 @@ function App() {
             onIrACobros={() => setTab("alertas")}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
-              setTab("clientes");
+              navegarA("clientes");
             } }
             onVerCliente={(c) => {
               memoriaDashboard.retorno = true;
               setOrigenDetalle("dashboard");
               setClienteDetalleId(c.id);
-              setTab("detalle");
+              navegarA("detalle");
             } }
           />
         )}
@@ -2470,7 +2534,7 @@ function App() {
             onVerDetalle={(c) => {
               setOrigenDetalle("clientes");
               setClienteDetalleId(c.id);
-              setTab("detalle");
+              navegarA("detalle");
             } }
             onNuevo={() => setMostrarSelectorNuevo(true)}
             eliminados={eliminados}
@@ -2490,13 +2554,13 @@ function App() {
             onAgregarMovil={agregarConvergencia}
             onEditarMovil={editarConvergencia}
             onEliminarMovil={eliminarConvergencia}
-            onVolverAPrecierre={() => setTab("precierre")}
+            onVolverAPrecierre={() => volverA("precierre")}
           />
         )}
         {tab === "detalle" && (
           <ClienteDetalle
             cliente={clienteDetalle}
-            onVolver={() => setTab(origenDetalle)}
+            onVolver={() => volverA(origenDetalle)}
             volverLabel={origenDetalle === "alertas" ? "← Volver a Cobros" : origenDetalle === "dashboard" ? "← Volver al Dashboard" : "← Volver a Clientes"}
             onEditar={startEdit}
             onMarcarPagada={pedirMarcarPagada}
@@ -2530,7 +2594,7 @@ function App() {
             onConfirmarRescate={confirmarRescate}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
-              setTab("clientes");
+              navegarA("clientes");
             } }
           />
           <AlertasTab
@@ -2543,7 +2607,7 @@ function App() {
             onVerDetalle={(c) => {
               setOrigenDetalle("alertas");
               setClienteDetalleId(c.id);
-              setTab("detalle");
+              navegarA("detalle");
             } }
             setSearch={setSearchAlertas}
             search={searchAlertas}
@@ -2582,7 +2646,7 @@ function App() {
             clientes={clientesCalc}
             onCancel={() => {
               resetForm();
-              setTab(origenFormulario === "precierre" ? "precierre" : "clientes");
+              volverA(origenFormulario === "precierre" || origenFormulario === "detalle" ? origenFormulario : "clientes");
             } }
           />
         )}
@@ -2610,11 +2674,12 @@ function App() {
           onClose={() => setMostrarSelectorNuevo(false)}
           onHogar={() => {
             resetForm();
-            setTab("nuevo");
+            setOrigenFormulario("clientes");
+            navegarA("nuevo");
             setMostrarSelectorNuevo(false);
           } }
           onConvergencia={() => {
-            setTab("clientes");
+            navegarA("clientes");
             setSaltarAMes({ subVista: "movil", abrirForm: true, token: Date.now() });
             setMostrarSelectorNuevo(false);
           } }
@@ -3158,8 +3223,10 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
       .sort((a, b) => a.limite - b.limite)[0];
     return candidato ? candidato.p : null;
   }, [periodoActual]);
-  const [rescateAbierto, setRescateAbierto] = useState(false);
-  const [rescateSeleccion, setRescateSeleccion] = useState({});
+  const [rescateAbierto, setRescateAbierto] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.rescateAbierto : false));
+  const [rescateSeleccion, setRescateSeleccion] = useState(() => (memoriaCobros.retorno ? { ...memoriaCobros.rescateSeleccion } : {}));
+  memoriaCobros.rescateAbierto = rescateAbierto;
+  memoriaCobros.rescateSeleccion = rescateSeleccion;
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
   useEffect(() => {
     setRescateSeleccion({});
@@ -4526,6 +4593,7 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
           onActualizarMeta={onActualizarMeta}
           onVerClientes={onVerClientes}
           onVerCliente={onVerCliente}
+          porInstalar={clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado)}
         />
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -4786,6 +4854,8 @@ function Dashboard({ stats, clientes, metas, onActualizarMeta, convergencias, on
 // Estado de navegación del Dashboard para volver desde la ficha de un cliente
 // sin perder el período ni el día que estabas viendo.
 const memoriaDashboard = { retorno: false, periodo: null, dia: null, diaPeriodo: null };
+// Lo mismo para Cobros: paneles abiertos y clientes marcados, para dejarlos igual al volver de una ficha.
+const memoriaCobros = { retorno: false, rescateAbierto: false, rescateSeleccion: {}, listaAbierta: false, expandidos: [], extrasAbiertos: [] };
 
 // Colores elegibles para los clientes móvil en la gráfica diaria (sin rojo ni verde).
 const COLORES_MOVIL = [
@@ -4837,11 +4907,13 @@ function ScrollAlFinal({ contenedor, clave, destino, activo }) {
   return null;
 }
 
-function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes, onVerCliente }) {
+function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, porInstalar = [], dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes, onVerCliente }) {
   const [editMetas, setEditMetas] = useState(false);
   const [diaSel, setDiaSel] = useState(memoriaDashboard.retorno && memoriaDashboard.diaPeriodo === periodoKey ? memoriaDashboard.dia : null);
   const [vistaDiaria, setVistaDiaria] = useState(leerVistaDiaria);
   const [menuAbierto, setMenuAbierto] = useState(null);
+  const [verPorInstalar, setVerPorInstalar] = useState(false);
+  const [leyendaAbierta, setLeyendaAbierta] = useState(false);
   const [anchoGraf, setAnchoGraf] = useState(320);
   const scrollRef = useRef(null);
   const colorMovil = COLORES_MOVIL.find((x) => x.k === vistaDiaria.c) || COLORES_MOVIL[0];
@@ -4933,9 +5005,10 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, dineroHogar, di
   };
   const promedio = (v) => (hoy > 0 ? (v / hoy).toFixed(1) : "—");
 
+  const proyeccion = (v) => (!cerrado && hoy >= 4 && lim ? Math.floor((v / hoy) * lim) : 0);
   const barras = [
-    { nom: "Clientes hogar", actual: hogar.length, meta: metaClientesHogar, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey }) },
-    { nom: "Clientes móvil", actual: moviles.length, meta: metaClientesMovil, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey, subVista: "movil" }) },
+    { nom: "Clientes hogar", proy: proyeccion(totA), actual: hogar.length, meta: metaClientesHogar, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey }) },
+    { nom: "Clientes móvil", proy: proyeccion(totB), actual: moviles.length, meta: metaClientesMovil, fmt: (v) => String(v), enlace: () => onVerClientes({ periodo: periodoKey, subVista: "movil" }) },
     { nom: "Ingresos", actual: dineroHogar + dineroMovil, meta: metaDinero, fmt: (v) => fmtMonto(v), extra: "Hogar " + fmtMonto(dineroHogar) + " + planes móviles " + fmtMonto(dineroMovil) },
   ];
 
@@ -5005,41 +5078,27 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, dineroHogar, di
             </div>
             <div className="flex items-center justify-between flex-wrap gap-x-3 mt-1 text-xs" style={ { color: "#6B7280" } }>
               <span><span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.actual)}</span>{b.meta ? <> de <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(b.meta)}</span> · {Math.round(p)}%</> : null}</span>
-              <span>{!b.meta ? "Pon la meta con ✎ Metas" : falta > 0 ? <>Te faltan <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(falta)}</span></> : "✓ Meta cumplida"}</span>
+              <span>{!b.meta ? "Pon la meta con ✎ Metas" : falta > 0 ? <>Te faltan <span className="font-mono font-semibold" style={ { color: "#111827" } }>{b.fmt(falta)}</span></> : "✓ Meta cumplida"}{b.proy > 0 ? <span style={ { color: "#8B93A3" } }> · Proyección: ~{b.proy}</span> : null}{!cerrado && b.meta && falta > 0 && lim - hoy + 1 <= 0 ? <span style={ { color: "#8B93A3" } }> · ya no entran más ventas</span> : null}</span>
             </div>
             {b.extra ? <div className="text-[11px] mt-0.5" style={ { color: "#6B7280" } }>{b.extra}</div> : null}
           </div>
         );
       })}
-      {!cerrado && (
-        <div className="flex items-center gap-1.5 text-[11px] mt-3" style={ { color: "#B45309" } }>
-          <span style={ { display: "inline-block", height: "12px", borderLeft: "2px dashed #B45309" } } />
-          Marca punteada = dónde deberías ir hoy para llegar a la meta con la última venta que cuenta (2 días de margen y sin instalar en domingo)
-        </div>
-      )}
 
       <hr className="my-5" style={ { borderColor: "#E5E7EB" } } />
-      <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Lo que ingresas cada día</h2>
-
-      <div className="mt-3 text-[13px] leading-relaxed" style={ { color: "#111827" } }>
-        {[
-          { sq: "#001E62", nom: "Hogar", v: totA, meta: metaClientesHogar },
-          { sq: "dot", nom: "Móvil", v: totB, meta: metaClientesMovil },
-        ].map((l) => (
-          <div key={l.nom} className="flex items-center gap-2 flex-wrap">
-            <span style={ l.sq === "dot" ? { width: "12px", height: "10px", borderRadius: "2px", border: "1.5px solid " + colorMovil.b, background: colorMovil.f, display: "inline-block" } : { width: "12px", height: "10px", borderRadius: "2px", background: l.sq, display: "inline-block" } } />
-            <span>{l.nom}:</span>
-            <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fx(l.v)}</span>
-            {cerrado ? null : <span>en {hoy} días · <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{promedio(l.v)}</span> por día</span>}
-            {l.meta ? <span className="text-xs" style={ { color: "#B45309" } }>{textoEstado(l.meta, l.v)}</span> : null}
-          </div>
-        ))}
-        <div className="text-xs mt-0.5" style={ { color: "#6B7280" } }>
-          Total: <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fx(totAll)}</span> clientes
-        </div>
+      <div className="flex items-center justify-between">
+        <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Instalaciones por día</h2>
+        <button type="button" onClick={() => setLeyendaAbierta(!leyendaAbierta)} aria-label="Qué significa cada cosa" className="text-[13px] font-bold rounded-full border-2" style={ { width: "30px", height: "30px", borderColor: "#CBD5E1", color: "#374151", background: "#fff" } }>i</button>
       </div>
+      {leyendaAbierta ? (
+        <div className="mt-2 rounded-lg p-2.5 text-xs leading-relaxed" style={ { background: "#F4F6FA", color: "#374151" } }>
+          <div className="flex items-center gap-2"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "#001E62", display: "inline-block" } } /> Hogar</div>
+          <div className="flex items-center gap-2"><span style={ { width: "12px", height: "10px", borderRadius: "2px", border: "1.5px solid " + colorMovil.b, background: colorMovil.f, display: "inline-block" } } /> Móvil</div>
+          <div className="flex items-center gap-2"><span style={ { display: "inline-block", height: "12px", borderLeft: "2px dashed #B45309" } } /> Dónde deberías ir hoy</div>
+          <div className="flex items-center gap-2"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "repeating-linear-gradient(45deg, #fff 0 2px, #9CA3AF 2px 3px)", display: "inline-block" } } /> Días que ya no cuentan (la instalación caería en el mes siguiente)</div>
+        </div>
+      ) : null}
 
-      {menuAbierto ? <div className="fixed inset-0 z-10" onClick={() => setMenuAbierto(null)} /> : null}
       <div className="flex items-center justify-between mt-3 mb-2">
         <div className="relative">
           <button type="button" onClick={() => setMenuAbierto(menuAbierto === "dias" ? null : "dias")} className="text-[13px] font-semibold px-3 py-2 rounded-full border-2" style={ { borderColor: "#CBD5E1", color: "#374151", background: "#fff" } }>
@@ -5082,7 +5141,7 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, dineroHogar, di
         return (
           <>
             <div ref={scrollRef} className="overflow-x-auto" style={ { WebkitOverflowScrolling: "touch", borderBottom: "1px solid #E5E7EB" } }>
-              <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label="Lo que ingresas por día" style={ { display: "block" } }>
+              <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label="Instalaciones por día" style={ { display: "block" } }>
                 <defs>
                   <pattern id={uid + "pn"} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><line x1="0" y1="0" x2="0" y2="4" stroke="#9CA3AF" strokeWidth="1.5" /></pattern>
                 </defs>
@@ -5124,12 +5183,34 @@ function AvanceMetasCard({ periodoKey, esActual, hogar, moviles, dineroHogar, di
           </>
         );
       })()}
-      <div className="flex gap-x-4 gap-y-1 flex-wrap text-[11px] mt-1.5" style={ { color: "#6B7280" } }>
-        <span className="inline-flex items-center gap-1"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "#001E62", display: "inline-block" } } /> Clientes hogar</span>
-        <span className="inline-flex items-center gap-1"><span style={ { width: "12px", height: "10px", borderRadius: "2px", border: "1.5px solid " + colorMovil.b, background: colorMovil.f, display: "inline-block" } } /> Clientes móvil</span>
-        {ritmo > 0 ? <span style={ { color: "#B45309" } }>╌ Ritmo diario para llegar a la meta</span> : null}
-        <span>▨ gris = días que ya no cuentan (la instalación caería en el mes siguiente)</span>
-      </div>
+
+      {esActual && porInstalar.length > 0 ? (
+        <button type="button" onClick={() => setVerPorInstalar(true)} className="mt-3 text-[13px] font-bold px-3.5 py-2 rounded-full border-2" style={ { color: "#001E62", background: "#EEF3FB", borderColor: "#001E62" } }>
+          ⏳ {porInstalar.length} por instalar ›
+        </button>
+      ) : null}
+      {verPorInstalar ? (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={ { background: "rgba(0,0,0,.4)" } } onClick={(e) => { if (e.target === e.currentTarget) setVerPorInstalar(false); } }>
+          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-4" style={ { maxHeight: "80vh", overflowY: "auto" } }>
+            <h3 className="font-semibold text-base" style={ { color: "#001E62" } }>⏳ Por instalar · {porInstalar.length}</h3>
+            <p className="text-xs mb-2" style={ { color: "#6B7280" } }>Registrados que todavía no tienen fecha de instalación. Toca uno para abrir su ficha.</p>
+            {porInstalar.map((c) => {
+              const dias = c.creadoEn ? Math.max(0, Math.round((new Date(fechaLocalISO(new Date()) + "T00:00:00") - new Date(fechaLocalISO(new Date(c.creadoEn)) + "T00:00:00")) / 86400000)) : null;
+              const cuando = dias === null ? "" : dias === 0 ? "registrado hoy" : dias === 1 ? "registrado ayer" : "registrado hace " + dias + " días";
+              return (
+                <button key={c.id} type="button" onClick={() => { setVerPorInstalar(false); onVerCliente(c); } } className="w-full flex items-center justify-between text-left py-3 px-1" style={ { borderBottom: "1px solid #E5E7EB" } }>
+                  <span>
+                    <span className="text-sm" style={ { color: "#0072CE" } }>{nombreBonito(c.nombre)}</span>
+                    {cuando ? <span className="block text-xs" style={ { color: "#6B7280" } }>{cuando}</span> : null}
+                  </span>
+                  <span style={ { color: "#6B7280" } }>›</span>
+                </button>
+              );
+            })}
+            <button type="button" onClick={() => setVerPorInstalar(false)} className="w-full mt-3 text-sm font-semibold py-3 rounded-lg border-2" style={ { color: "#001E62", borderColor: "#001E62" } }>Cerrar</button>
+          </div>
+        </div>
+      ) : null}
 
       <div className="mt-3 rounded-lg p-3.5 text-[13px]" style={ { background: "#F4F6FA", color: "#111827", minHeight: "46px" } }>
         {sel === null ? (
@@ -5217,9 +5298,13 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
 }
 
 function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
-  const [expandidos, setExpandidos] = useState(new Set());
-  const [extrasAbiertos, setExtrasAbiertos] = useState(new Set());
-  const [listaAbierta, setListaAbierta] = useState(false);
+  const [expandidos, setExpandidos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.expandidos : []));
+  const [extrasAbiertos, setExtrasAbiertos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.extrasAbiertos : []));
+  const [listaAbierta, setListaAbierta] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.listaAbierta : false));
+  memoriaCobros.expandidos = Array.from(expandidos);
+  memoriaCobros.extrasAbiertos = Array.from(extrasAbiertos);
+  memoriaCobros.listaAbierta = listaAbierta;
+  useEffect(() => { memoriaCobros.retorno = false; }, []);
 
   // ---- Envío en cadena por WhatsApp ----
   // Cola de alertas pendientes de recorrer una por una: abre WhatsApp con el
