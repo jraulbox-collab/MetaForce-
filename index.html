@@ -406,6 +406,7 @@ function leerMeta(metas, mes, campo) {
   return m[campo];
 }
 const fmtMonto = (n) => `$${Number(n || 0).toFixed(2)}`;
+const fmtMiles = (n, dec = 2) => "$" + Number(n || 0).toLocaleString("en-US", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const ORDINAL = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta" };
 // Una factura solo tiene dos estados: pagada o no pagada. "No pagada" se guarda como
 // "" (y cualquier valor viejo distinto de "pagada", como "pendiente", se trata igual).
@@ -4772,8 +4773,107 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
         </div>
         {comision.completo ? (
           <>
-            <div className="text-4xl font-mono font-bold mb-2">{fmtMonto(comision.total)}{esNuevo && esActual && <span className="text-sm font-normal font-sans opacity-80 ml-2">si todos pagan</span>}</div>
-            {esNuevo ? (
+            <div className={"text-4xl font-bold mb-2 " + (esNuevo && esActual ? "tabular-nums" : "font-mono")}>{esNuevo && esActual ? fmtMiles(comision.total) : fmtMonto(comision.total)}{esNuevo && esActual && <span className="text-sm font-normal font-sans opacity-80 ml-2">estimada</span>}</div>
+            {esNuevo && esActual ? (
+              (() => {
+                const pc = comision.pctClientesPonderado;
+                const base = comision.montoBase;
+                const tramoActual = TABLA_POSICION_NUEVA.filter((t) => pc >= t.min).slice(-1)[0] || null;
+                const tramoSig = TABLA_POSICION_NUEVA.find((t) => t.min > pc) || null;
+                const rangoTxt = tramoActual ? (tramoActual.max === Infinity ? tramoActual.min + "%+" : tramoActual.min + "–" + (tramoActual.min + 9) + "%") : "";
+                const abrevMonto = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
+                const ingresosTotal = dineroDelPeriodo + costoPlanesMovilesPeriodo;
+                const hogarN = clientesDelPeriodo.length;
+                const movilN = convergenciasPeriodo;
+                let accion = null;
+                if (!metaClientesHogar || !metaClientesMovil) accion = null;
+                else if (!tramoSig) accion = <>★ <b>Tramo máximo</b> alcanzado ({fmtMiles(base, 0)} de base). Cada ingreso extra sube el acelerador.</>;
+                else {
+                  const pts = tramoSig.min - pc;
+                  const nH = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_HOGAR * 100 / metaClientesHogar) - 1e-9));
+                  const nM = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_MOVIL * 100 / metaClientesMovil) - 1e-9));
+                  accion = <>Para subir a <b>{fmtMiles(tramoSig.monto, 0)}</b> de base ({"+" + fmtMiles(tramoSig.monto - base, 0)}) te faltan <b>{nH} {nH === 1 ? "cliente hogar" : "clientes hogar"}</b> o <b>{nM} móvil</b></>;
+                }
+                const fila = { display: "flex", justifyContent: "space-between", gap: 10, padding: "5px 0", alignItems: "baseline" };
+                const peq = { opacity: 0.75, fontSize: 11, marginLeft: 6 };
+                const num = { fontVariantNumeric: "tabular-nums", fontWeight: 700, whiteSpace: "nowrap" };
+                const sep = { borderTop: "1px solid rgba(255,255,255,0.22)", margin: "6px 0" };
+                const tit = { fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", opacity: 0.7, margin: "8px 0 2px", fontWeight: 700 };
+                return (
+                  <React.Fragment>
+                    {base === 0 ? (
+                      <div className="mt-2 text-sm rounded-lg px-3 py-2.5 leading-snug" style={ { background: "rgba(255,209,102,0.24)" } }>
+                        ⚠ <b>Aún no llegas al mínimo</b> ({MINIMO_COBRO}% de clientes). Tu base es $0; por ahora solo cuenta el bono.
+                      </div>
+                    ) : (
+                      <div className="mt-2 text-sm rounded-lg px-3 py-2.5" style={ { background: "rgba(255,255,255,0.14)" } }>
+                        ✓ Estás en el tramo <b>{rangoTxt}</b>
+                      </div>
+                    )}
+                    <div className="grid gap-[3px] mt-3" style={ { gridTemplateColumns: "repeat(8, 1fr)" } } role="img" aria-label={"Tramos de comisión por porcentaje de clientes" + (tramoActual ? ", estás en el tramo " + rangoTxt : ", aún no llegas al primer tramo")}>
+                      {TABLA_POSICION_NUEVA.map((t) => {
+                        const esActualT = tramoActual && t.min === tramoActual.min;
+                        const superado = tramoActual && t.min < tramoActual.min;
+                        const esSig = tramoSig && t.min === tramoSig.min;
+                        const marca = superado ? "✓" : esActualT ? "●" : esSig ? "→" : "\u00A0";
+                        return (
+                          <div
+                            key={t.min}
+                            className="text-center rounded-[7px]"
+                            style={ {
+                              padding: "5px 0 4px",
+                              fontSize: 10,
+                              lineHeight: 1.2,
+                              border: esSig ? "1.5px dashed #fff" : "1.5px solid " + (esActualT ? "#fff" : "rgba(255,255,255,0.35)"),
+                              background: esActualT ? "#fff" : superado ? "rgba(255,255,255,0.18)" : "transparent",
+                              color: esActualT ? "#001E62" : "#fff",
+                            } }
+                          >
+                            <b style={ { display: "block", fontSize: 11 } }>{abrevMonto(t.monto)}</b>
+                            {t.max === Infinity ? t.min + "%+" : t.min}
+                            <br />
+                            {marca}
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {accion && <div className="mt-2 text-sm leading-snug">{accion}</div>}
+                    {aunEsTemprano ? (
+                      <div className="mt-3 text-xs opacity-90">Aún es temprano para proyectar tu cierre</div>
+                    ) : proyeccion ? (
+                      <div className="mt-3 flex justify-between gap-2 text-xs opacity-95">
+                        <span>Proyección al cierre{proyeccion.montoBase === 0 ? " (sin llegar al mínimo)" : ""}</span>
+                        <b>~{fmtMiles(proyeccion.comision, 0)}</b>
+                      </div>
+                    ) : null}
+                    <details className="mt-3 text-xs" style={ { borderTop: "1px solid rgba(255,255,255,0.22)", paddingTop: 10 } }>
+                      <summary className="cursor-pointer opacity-90" style={ { listStyle: "none" } }>Ver detalle ▾</summary>
+                      <div style={ { fontSize: 12.5 } }>
+                        <div style={tit}>Clientes</div>
+                        <div style={fila}><span>Hogar<span style={peq}>{hogarN} de {metaClientesHogar || "—"} · {comision.pctHogar.toFixed(0)}%</span></span><span style={num}>× {PESO_CLIENTES_HOGAR * 100}%</span></div>
+                        <div style={fila}><span>Móvil<span style={peq}>{movilN} de {metaClientesMovil || "—"} · {comision.pctMovil.toFixed(0)}%</span></span><span style={num}>× {PESO_CLIENTES_MOVIL * 100}%</span></div>
+                        <div style={ { ...fila, opacity: 0.95 } }><span>Total de clientes</span><span style={num}>{pc.toFixed(1)}%</span></div>
+                        <div style={ { ...fila, fontWeight: 800, fontSize: 14 } }>
+                          <span>{base === 0 ? "Base (bajo el mínimo de " + MINIMO_COBRO + "%)" : "Base del tramo"}</span>
+                          <span style={num}>{fmtMiles(base)}</span>
+                        </div>
+                        <div style={sep} />
+                        <div style={tit}>Ingresos</div>
+                        <div style={fila}>
+                          <span>Ingresos<span style={peq}>{fmtMiles(ingresosTotal, 0)} de {fmtMiles(metaDinero, 0)} · {comision.pctIngreso.toFixed(base === 0 ? 1 : 0)}%{comision.ajusteIngreso === "acelerador" && base > 0 ? " + 10 pts" : ""}</span></span>
+                          <span style={ { ...num, opacity: base === 0 ? 0.8 : 1 } }>{base === 0 ? "aún no afecta" : "× " + (comision.factorAcelerador * 100).toFixed(0) + "%"}</span>
+                        </div>
+                        {base > 0 && <div style={ { ...fila, opacity: 0.95 } }><span>Base × ingresos</span><span style={num}>{fmtMiles(comision.comisionSinBono)}</span></div>}
+                        <div style={sep} />
+                        <div style={fila}><span>Bono portabilidad<span style={peq}>{comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA}</span></span><span style={num}>+ {fmtMiles(comision.bonoConvergencias)}</span></div>
+                        <div style={sep} />
+                        <div style={ { ...fila, fontWeight: 800, fontSize: 14 } }><span>Total estimado</span><span style={num}>{fmtMiles(comision.total)}</span></div>
+                      </div>
+                    </details>
+                  </React.Fragment>
+                );
+              })()
+            ) : esNuevo ? (
               <React.Fragment>
                 {esActual && aunEsTemprano && (
                   <div className="mt-3 text-sm rounded-lg px-3 py-2.5" style={ { background: "rgba(255,255,255,0.14)" } }>
