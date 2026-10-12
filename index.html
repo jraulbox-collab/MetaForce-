@@ -2618,6 +2618,7 @@ function App() {
         <React.Fragment>
         {tab === "dashboard" && (
           <Dashboard
+            onMarcarInstalado={cambiarFechaInstalacionDesdeOrden}
             periodoDash={periodoDash}
             onPeriodoDash={setPeriodoDash}
             ordenDashboard={ordenDashboard}
@@ -3362,7 +3363,7 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-function Dashboard({ periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
+function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -4891,6 +4892,7 @@ function Dashboard({ periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard
           onVerClientes={onVerClientes}
           onVerCliente={onVerCliente}
           porInstalar={clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado)}
+          onMarcarInstalado={onMarcarInstalado}
         />
       ) : (
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -5070,6 +5072,7 @@ function Dashboard({ periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard
           onVerClientes={onVerClientes}
           onVerCliente={onVerCliente}
           porInstalar={clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado)}
+          onMarcarInstalado={onMarcarInstalado}
         />
       ) : null)}
 
@@ -5099,11 +5102,6 @@ function Dashboard({ periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard
             <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{singlesInstalados} Singles ›</button>
             <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{doblesInstalados} Dobles ›</button>
           </div>
-          {planMasDinero && (
-            <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-              Más dinero por cliente: <span className="font-semibold" style={ { color: "#001E62" } }>{formatoPlan(planMasDinero.k)}</span> ({fmtMonto(planMasDinero.dinero / planMasDinero.n)} en promedio)
-            </div>
-          )}
         </div>
       ))}
 
@@ -5128,9 +5126,6 @@ function Dashboard({ periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard
                     <span style={ { color: "#5A6680" } }>{d.l}</span>
                   </div>
                 ))}
-              </div>
-              <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-                Tu mejor día: <span className="font-semibold" style={ { color: "#001E62" } }>{diasSemana.filter((d) => d.mejor).map((d) => d.nombre).join(" y ")}</span> ({maxPorDia} {modoMejorDia === "ing" ? "ingresos" : "instalaciones"})
               </div>
             </>
           )}
@@ -5260,12 +5255,14 @@ function ScrollAlFinal({ contenedor, clave, destino, activo }) {
   return null;
 }
 
-function AvanceMetasCard({ parte = "metas", clientesIng = [], convergIng = [], periodoKey, esActual, hogar, moviles, porInstalar = [], dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes, onVerCliente }) {
+function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [], convergIng = [], periodoKey, esActual, hogar, moviles, porInstalar = [], dineroHogar, dineroMovil, metaClientesHogar, metaClientesMovil, metaDinero, onActualizarMeta, onVerClientes, onVerCliente }) {
   const [editMetas, setEditMetas] = useState(false);
   const [diaSel, setDiaSel] = useState(memoriaDashboard.retorno && memoriaDashboard.diaPeriodo === periodoKey ? memoriaDashboard.dia : null);
   const [vistaDiaria, setVistaDiaria] = useState(leerVistaDiaria);
   const [menuAbierto, setMenuAbierto] = useState(null);
-  const [verPorInstalar, setVerPorInstalar] = useState(false);
+  const [panelPend, setPanelPend] = useState(true);
+  const [confirmInst, setConfirmInst] = useState(null);
+  const [detalleOculto, setDetalleOculto] = useState(false);
   const [leyendaAbierta, setLeyendaAbierta] = useState(false);
   const [anchoGraf, setAnchoGraf] = useState(320);
   const scrollRef = useRef(null);
@@ -5288,6 +5285,7 @@ function AvanceMetasCard({ parte = "metas", clientesIng = [], convergIng = [], p
     memoriaDashboard.dia = i;
     memoriaDashboard.diaPeriodo = periodoKey;
     setDiaSel(i);
+    setDetalleOculto(false);
   }
 
   const info = useMemo(() => {
@@ -5513,10 +5511,11 @@ function AvanceMetasCard({ parte = "metas", clientesIng = [], convergIng = [], p
           <span className="text-xs">Toca una barra para ver qué entró ese día.</span>
         ) : (
           <>
-            <div className="flex items-baseline justify-between gap-2 pb-2" style={ { borderBottom: "1px solid #DFE5EF" } }>
-              <span className="font-semibold">Día {sel + 1} · {nombreDia(dias[sel])}</span>
-              <span className="font-mono font-bold text-[15px]" style={ { color: "#001E62" } }>{fmtMonto(dineroDe(A[sel]) + dineroDe(B[sel]))}</span>
+            <div className="flex items-center justify-between gap-2" style={ detalleOculto ? undefined : { borderBottom: "1px solid #DFE5EF", paddingBottom: 8 } }>
+              <span className="font-semibold">Día {sel + 1} · {nombreDia(dias[sel])}<span className="block font-mono font-bold text-[15px]" style={ { color: "#001E62" } }>{fmtMonto(dineroDe(A[sel]) + dineroDe(B[sel]))}</span></span>
+              <button type="button" onClick={() => setDetalleOculto((v) => !v)} aria-expanded={!detalleOculto} className="shrink-0 rounded-[10px] text-xs font-bold px-3" style={ { height: 38, background: "#E3EDFA", color: "#001E62", border: "1px solid #C9D9F0" } }>{detalleOculto ? "Mostrar ▾" : "Ocultar ▴"}</button>
             </div>
+            {detalleOculto ? null : <>
             {A[sel].length + B[sel].length === 0 ? <div className="mt-2 text-xs" style={ { color: "#5A6680" } }>No entró nada ese día.</div> : null}
             {[
               { nom: "Hogar", lista: A[sel], hogar: true },
@@ -5550,6 +5549,7 @@ function AvanceMetasCard({ parte = "metas", clientesIng = [], convergIng = [], p
               Acumulado: <b className="font-mono" style={ { color: "#111827" } }>{fmtMonto(acumDineroHasta(sel))}</b>
               {metaDinero ? <> de <b className="font-mono" style={ { color: "#111827" } }>{fmtMonto(metaDinero)}</b> ({Math.round((acumDineroHasta(sel) / metaDinero) * 100)}%)</> : null}
             </div>
+            </>}
           </>
         )}
       </div>
@@ -5615,33 +5615,51 @@ function AvanceMetasCard({ parte = "metas", clientesIng = [], convergIng = [], p
         })}
       </div>
       {esActual && porInstalar.length > 0 ? (
-        <div className="flex justify-end mt-2">
-          <button type="button" onClick={() => setVerPorInstalar(true)} className="text-[13px] font-bold px-3.5 rounded-full border-2" style={ { height: 40, color: "#001E62", background: "#EEF3FB", borderColor: "#001E62" } }>
-            {"⏳ " + porInstalar.length + " por instalar ›"}
+        <div className="mt-3 rounded-[10px] overflow-hidden" style={ { border: "1px solid #DCE2EE" } }>
+          <button
+            type="button"
+            onClick={() => setPanelPend((v) => !v)}
+            aria-expanded={panelPend}
+            className="w-full flex items-center justify-between px-3 text-xs font-bold text-left"
+            style={ { background: "#F3F6FB", color: "#001E62", minHeight: 40 } }
+          >
+            <span className="flex items-center gap-1.5">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
+              Por instalar · {porInstalar.length}
+            </span>
+            <span style={ { color: "#5A6680" } }>{panelPend ? "Ocultar ▴" : "Mostrar ▾"}</span>
           </button>
-        </div>
-      ) : null}
-
-      {verPorInstalar ? (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" style={ { background: "rgba(0,0,0,.4)" } } onClick={(e) => { if (e.target === e.currentTarget) setVerPorInstalar(false); } }>
-          <div className="bg-white w-full max-w-md rounded-t-2xl sm:rounded-2xl p-4" style={ { maxHeight: "80vh", overflowY: "auto" } }>
-            <h3 className="font-semibold text-base" style={ { color: "#001E62" } }>⏳ Por instalar · {porInstalar.length}</h3>
-            <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Registrados que todavía no tienen fecha de instalación. Toca uno para abrir su ficha.</p>
-            {porInstalar.map((c) => {
-              const dias = c.creadoEn ? Math.max(0, Math.round((new Date(fechaLocalISO(new Date()) + "T00:00:00") - new Date(fechaLocalISO(new Date(c.creadoEn)) + "T00:00:00")) / 86400000)) : null;
-              const cuando = dias === null ? "" : dias === 0 ? "registrado hoy" : dias === 1 ? "registrado ayer" : "registrado hace " + dias + " días";
-              return (
-                <button key={c.id} type="button" onClick={() => { setVerPorInstalar(false); onVerCliente(c); } } className="w-full flex items-center justify-between text-left py-3 px-1" style={ { borderBottom: "1px solid #DFE5EF" } }>
-                  <span>
-                    <span className="text-sm" style={ { color: "#0072CE" } }>{nombreBonito(c.nombre)}</span>
-                    {cuando ? <span className="block text-xs" style={ { color: "#5A6680" } }>{cuando}</span> : null}
-                  </span>
-                  <span style={ { color: "#5A6680" } }>›</span>
-                </button>
-              );
-            })}
-            <button type="button" onClick={() => setVerPorInstalar(false)} className="w-full mt-3 text-sm font-semibold py-3 rounded-lg border-2" style={ { color: "#001E62", borderColor: "#001E62" } }>Cerrar</button>
-          </div>
+          {panelPend ? porInstalar.map((c) => {
+            const dias = c.creadoEn ? Math.max(0, Math.round((new Date(fechaLocalISO(new Date()) + "T00:00:00") - new Date(fechaLocalISO(new Date(c.creadoEn)) + "T00:00:00")) / 86400000)) : null;
+            const cuando = dias === null ? "" : dias === 0 ? "registrado hoy" : dias === 1 ? "registrado ayer" : "registrado hace " + dias + " días";
+            const plan = [c.planTipo, c.velocidad].filter(Boolean).join(" ");
+            const monto = Number(c.montoMensual) ? fmtMonto(c.montoMensual) + "/mes" : "";
+            const detalle = [plan, monto, cuando].filter(Boolean).join(" · ");
+            const confirmandoEste = confirmInst && confirmInst.id === c.id;
+            return (
+              <div key={c.id} className="px-3 py-2.5" style={ { borderTop: "1px solid #DFE5EF" } }>
+                <div className="flex items-center gap-2.5">
+                  <button type="button" onClick={() => onVerCliente(c)} className="flex-1 min-w-0 text-left" title="Abrir ficha">
+                    <span className="block text-[13px] font-bold underline underline-offset-2" style={ { color: "#0072CE", overflowWrap: "anywhere" } }>{nombreBonito(c.nombre)}</span>
+                    {detalle ? <span className="block text-[11px]" style={ { color: "#5A6680" } }>{detalle}</span> : null}
+                  </button>
+                  {onMarcarInstalado && !confirmandoEste ? (
+                    <button type="button" onClick={() => setConfirmInst({ id: c.id, fecha: fechaLocalISO(new Date()) })} className="shrink-0 rounded-[10px] text-xs font-bold px-2.5" style={ { height: 40, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }>✓ Ya instalado</button>
+                  ) : null}
+                </div>
+                {confirmandoEste ? (
+                  <div className="mt-2 rounded-lg p-2.5" style={ { background: "#F3F6FB" } }>
+                    <label className="block text-xs font-semibold mb-1" style={ { color: "#001E62" } }>¿Qué día se instaló?</label>
+                    <input type="date" value={confirmInst.fecha} max={fechaLocalISO(new Date())} onChange={(e) => setConfirmInst({ id: c.id, fecha: e.target.value })} className="w-full rounded-md px-2 text-sm" style={ { height: 40, border: "1px solid #C9D3E6", background: "white" } } />
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" disabled={!confirmInst.fecha} onClick={() => { onMarcarInstalado(c.id, confirmInst.fecha); setConfirmInst(null); }} className="flex-1 rounded-lg text-sm font-bold text-white" style={ { height: 44, background: "#001E62", opacity: confirmInst.fecha ? 1 : 0.5 } }>Sí, marcar instalado</button>
+                      <button type="button" onClick={() => setConfirmInst(null)} className="rounded-lg text-sm font-semibold px-3" style={ { height: 44, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }>Cancelar</button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          }) : null}
         </div>
       ) : null}
 
