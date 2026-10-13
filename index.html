@@ -8610,7 +8610,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
 
       {/* Grupos tocables */}
       <div className="flex flex-wrap gap-2">
-        {GRUPOS_PRECIERRE.map((x) => {
+        {GRUPOS_PRECIERRE.filter((x) => conteos[x.key] > 0 || grupo === x.key).map((x) => {
           const activo = grupo === x.key;
           return (
             <button
