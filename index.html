@@ -8359,18 +8359,22 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
 
   const modoOrdenes = verif && verif.modo === "ordenes";
   const botonModo = (activo) => ({
-    background: activo ? "#001E62" : "#FFFFFF",
-    color: activo ? "#FFFFFF" : "#374151",
-    border: "1px solid " + (activo ? "#001E62" : "#DFE5EF"),
+    flex: 1,
+    height: 44,
+    border: 0,
+    borderRadius: 11,
+    fontWeight: 700,
+    fontSize: 14,
+    background: activo ? "#001E62" : "transparent",
+    color: activo ? "#FFFFFF" : "#5A6680",
   });
 
   return (
     <div className="max-w-3xl">
-      <div className="flex gap-2 mb-4">
+      <div className="flex mb-4" style={ { padding: 3, background: "#E8EDF6", border: "1px solid #DFE5EF", borderRadius: 14 } }>
         <button
           onClick={() => setVerif((v) => ({ ...v, modo: "precierre" }))}
           aria-pressed={!modoOrdenes}
-          className="text-sm font-medium px-3 py-1.5 rounded-md"
           style={botonModo(!modoOrdenes)}
         >
           Precierre
@@ -8378,7 +8382,6 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
         <button
           onClick={() => setVerif((v) => ({ ...v, modo: "ordenes" }))}
           aria-pressed={modoOrdenes}
-          className="text-sm font-medium px-3 py-1.5 rounded-md"
           style={botonModo(modoOrdenes)}
         >
           Verificar órdenes
@@ -8407,39 +8410,41 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
 
       {editando ? (
         <div className="mb-4">
-          <label className="text-xs font-medium block mb-1" style={ { color: "#5A6680" } }>
+          <div className="bg-white rounded-xl border p-4 flex flex-col gap-3 mb-3" style={ { borderColor: "#DFE5EF" } }>
+          <label className="text-xs font-semibold block" style={ { color: "#5A6680" } }>
             Rango de instalación del precierre
           </label>
-          <div className="mb-3">
+          <div>
             <RangoFechasInput
               desde={estado.desde}
               hasta={estado.hasta}
               onChange={(d, h) => setEstado((e) => ({ ...e, desde: d, hasta: h })) }
-              className="px-3 py-2 rounded-md border text-sm outline-none cursor-pointer"
-              style={ { borderColor: "#DFE5EF", minWidth: "220px" } }
+              className="px-3 rounded-md border-2 outline-none cursor-pointer w-full"
+              style={ { borderColor: "#DFE5EF", minWidth: "220px", height: 48, fontSize: 16, color: "#001E62", background: "#FFFFFF", boxSizing: "border-box" } }
             />
             <div className="flex gap-2 mt-2">
               <button
                 type="button"
                 onClick={() => { const r = rangoMesCalendario(0); setEstado((e) => ({ ...e, desde: r.desde, hasta: r.hasta })); } }
-                className="text-xs font-semibold px-3 py-1.5 rounded-full border"
-                style={ { borderColor: "#DFE5EF", color: "#001E62", background: "#F3F6FB" } }
+                className="font-bold px-4 rounded-full border"
+                style={ { borderColor: "#DFE5EF", color: "#001E62", background: "#F3F6FB", height: 44, fontSize: 13 } }
               >
                 Este mes
               </button>
               <button
                 type="button"
                 onClick={() => { const r = rangoMesCalendario(-1); setEstado((e) => ({ ...e, desde: r.desde, hasta: r.hasta })); } }
-                className="text-xs font-semibold px-3 py-1.5 rounded-full border"
-                style={ { borderColor: "#DFE5EF", color: "#001E62", background: "#F3F6FB" } }
+                className="font-bold px-4 rounded-full border"
+                style={ { borderColor: "#DFE5EF", color: "#001E62", background: "#F3F6FB", height: 44, fontSize: 13 } }
               >
                 Mes anterior
               </button>
             </div>
             {avisoRangoPrecierre(estado.desde, estado.hasta) && (
-              <p className="text-xs mt-2 rounded-lg p-2" style={ { background: "#FFF3DC", color: "#B45309" } }>
-                ⚠️ {avisoRangoPrecierre(estado.desde, estado.hasta)}
-              </p>
+              <div className="flex items-start gap-2.5 mt-3 font-bold" style={ { background: "#FFF3DC", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", borderRadius: 12, padding: "10px 12px", color: "#B45309", fontSize: 13, lineHeight: 1.35 } }>
+                <span className="shrink-0 flex items-center justify-center text-white" style={ { width: 18, height: 18, borderRadius: 9, background: "#B45309", fontSize: 12 } } aria-hidden="true">!</span>
+                <span>{avisoRangoPrecierre(estado.desde, estado.hasta)}</span>
+              </div>
             )}
           </div>
           <textarea
@@ -8447,26 +8452,27 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
             onChange={(e) => { const v = e.target.value; setEstado((s) => ({ ...s, texto: v })); } }
             rows={8}
             placeholder="Pega aquí la lista de suscriptores del precierre…"
-            className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-1 font-mono"
-            style={ { borderColor: "#DFE5EF" } }
+            className="w-full px-3 py-2 rounded-md border-2 outline-none font-mono"
+            style={ { borderColor: "#DFE5EF", fontSize: 16, color: "#001E62" } }
           />
-          <p className="text-xs mb-3" style={ { color: "#5A6680" } }>
+          <p className="text-xs" style={ { color: "#5A6680" } }>
             {estado.texto.split("\n").filter((l) => l.trim()).length} filas detectadas
           </p>
-          <div className="flex items-center gap-2">
+          </div>
+          <div className="flex flex-col gap-2">
             <button
               onClick={validar}
               disabled={!estado.texto.trim()}
-              className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
-              style={ { background: "#001E62" } }
+              className="w-full font-bold text-white disabled:opacity-40"
+              style={ { background: "#001E62", height: 52, borderRadius: 14, fontSize: 16 } }
             >
               Validar precierre
             </button>
             {estado.aplicado && (
               <button
                 onClick={() => setEditando(false)}
-                className="text-sm font-medium px-3 py-2 rounded-md"
-                style={ { color: "#5A6680", border: "1px solid #DFE5EF" } }
+                className="w-full font-bold"
+                style={ { color: "#5A6680", border: "1px solid #DFE5EF", height: 44, borderRadius: 12, background: "#FFFFFF", fontSize: 14 } }
               >
                 Cancelar
               </button>
@@ -8474,22 +8480,22 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 mb-4">
-          <span className="text-xs min-w-0 truncate" style={ { color: "#5A6680" } }>
+        <div className="flex items-center justify-between gap-2 bg-white border mb-4" style={ { borderColor: "#DFE5EF", borderRadius: 18, padding: "6px 6px 6px 14px" } }>
+          <span className="min-w-0 truncate" style={ { color: "#5A6680", fontSize: 13 } }>
             {resultado ? resultado.lineas : 0} filas · {fmtFecha(estado.aplicado.desde)} al {fmtFecha(estado.aplicado.hasta)}
           </span>
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => setEditando(true)}
-              className="text-xs font-medium px-2.5 py-1 rounded-md"
-              style={ { color: "#001E62", border: "1px solid #DFE5EF" } }
+              className="font-bold px-4"
+              style={ { color: "#001E62", border: "1px solid #DFE5EF", height: 44, borderRadius: 12, background: "#FFFFFF", fontSize: 13 } }
             >
               Editar
             </button>
             <button
               onClick={limpiar}
-              className="text-xs font-medium px-2.5 py-1 rounded-md"
-              style={ { color: "#B45309", border: "1px solid #DFE5EF" } }
+              className="font-bold px-4"
+              style={ { color: "#B45309", border: "1px solid #DFE5EF", height: 44, borderRadius: 12, background: "#FFFFFF", fontSize: 13 } }
             >
               Limpiar
             </button>
@@ -8521,19 +8527,24 @@ function FilaPrecierre({ color, numero, nombre, sub, derecha, onClick, children 
       tabIndex={clicable ? 0 : undefined}
       onClick={clicable ? onClick : undefined}
       onKeyDown={clicable ? (e) => { if (e.key === "Enter") onClick(); } : undefined}
-      className={`flex items-center gap-2.5 py-3.5 border-b border-gray-100 last:border-0 ${clicable ? "cursor-pointer active:bg-gray-50" : ""}`}
+      className={`flex items-center gap-3 py-2.5 border-t ${clicable ? "cursor-pointer active:bg-gray-50" : ""}`}
+      style={ { borderColor: "#DFE5EF", minHeight: 60 } }
     >
-      <span className="shrink-0 rounded-full" style={ { width: 8, height: 8, background: color } } />
+      <span className="shrink-0 rounded-full flex items-center justify-center" style={ { width: 32, height: 32, background: color + "1F" } }>
+        <span className="rounded-full" style={ { width: 10, height: 10, background: color } } />
+      </span>
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-sm font-medium">{numero}</span>
+          <span className="font-bold" style={ { fontSize: 16, fontVariantNumeric: "tabular-nums" } }>{numero}</span>
           {nombre && <span className="text-xs truncate" style={ { color: "#5A6680" } }>{nombre}</span>}
         </div>
         {sub && <div className="text-xs" style={ { color: "#5A6680" } }>{sub}</div>}
       </div>
       {derecha}
       {children}
-      {clicable && <span className="text-gray-300 text-lg leading-none" aria-hidden="true">›</span>}
+      {clicable && (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#5A6680" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M9 6l6 6-6 6" /></svg>
+      )}
     </div>
   );
 }
@@ -8563,7 +8574,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
 
   if (resultado.total === 0) {
     return (
-      <p className="text-sm rounded-lg border p-4" style={ { borderColor: "#F3E3C3", background: "#FFFBF2", color: "#7A4E0E" } }>
+      <p className="text-sm font-bold rounded-xl p-4" style={ { border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", background: "#FFF3DC", color: "#B45309" } }>
         No encontré números de suscriptor en lo que pegaste. Revisa que cada fila lo incluya.
       </p>
     );
@@ -8574,7 +8585,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
   return (
     <div className="flex flex-col gap-3">
       {/* Resumen: barra de proporciones */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+      <div className="bg-white rounded-xl border p-4" style={ { borderColor: "#DFE5EF" } }>
         <div className="flex items-baseline justify-between gap-2 mb-2">
           <span className="text-sm font-semibold" style={ { color: pendientes === 0 ? "#001E62" : "#374151" } }>
             {pendientes === 0
@@ -8598,7 +8609,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
       </div>
 
       {/* Grupos tocables */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+      <div className="flex flex-wrap gap-2">
         {GRUPOS_PRECIERRE.map((x) => {
           const activo = grupo === x.key;
           return (
@@ -8606,32 +8617,37 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
               key={x.key}
               onClick={() => { setGrupo(x.key); setVerTodas(false); } }
               aria-pressed={activo}
-              className="text-left rounded-lg px-3 py-2.5"
+              className="flex items-center gap-2 font-bold"
               style={ {
-                background: x.bg,
-                border: activo ? `2px solid ${x.color}` : `1px solid ${x.borde}`,
-                padding: activo ? "9.5px 11.5px" : undefined,
+                height: 44,
+                padding: "0 14px",
+                borderRadius: 12,
+                fontSize: 13,
+                color: "#001E62",
+                background: activo ? x.bg : "#FFFFFF",
+                border: `2px solid ${activo ? x.color : "#DFE5EF"}`,
               } }
             >
-              <div className="text-2xl font-mono font-semibold leading-tight" style={ { color: x.color } }>{conteos[x.key]}</div>
-              <div className="text-xs" style={ { color: x.color } }>{x.label}</div>
+              <span className="rounded-full" style={ { width: 8, height: 8, background: x.color } } />
+              {x.label}
+              <span className="font-extrabold" style={ { fontVariantNumeric: "tabular-nums" } }>{conteos[x.key]}</span>
             </button>
           );
         })}
       </div>
 
       {/* Lista del grupo elegido */}
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 pt-3 pb-1">
-        <div className="flex items-start justify-between gap-2 mb-1">
+      <div className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
+        <div className="flex items-start justify-between gap-2 px-4 pt-3.5 pb-3">
           <div>
-            <div className="text-sm font-semibold" style={ { color: g.color } }>{g.label} ({conteos[g.key]})</div>
+            <div className="font-extrabold" style={ { color: "#001E62", fontSize: 15 } }>{g.label} ({conteos[g.key]})</div>
             <div className="text-xs" style={ { color: "#5A6680" } }>{g.pista}</div>
           </div>
           {g.key === "reclamar" && reclamar.length > 0 && (
             <button
               onClick={copiarReclamo}
-              className="text-sm font-semibold px-3 py-2 rounded-md shrink-0"
-              style={ { color: "#001E62", border: "2px solid #001E62", background: "white" } }
+              className="font-bold px-4 shrink-0"
+              style={ { color: "#001E62", border: "1px solid #DFE5EF", background: "white", height: 44, borderRadius: 12, fontSize: 13 } }
             >
               {copiado ? "✓ Copiado" : "Copiar lista"}
             </button>
@@ -8639,7 +8655,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
         </div>
 
         {conteos[g.key] === 0 && (
-          <p className="text-sm py-3" style={ { color: "#001E62" } }>✅ Ninguno.</p>
+          <p className="text-sm px-4 py-3 border-t" style={ { color: "#001E62", borderColor: "#DFE5EF" } }>✅ Ninguno.</p>
         )}
 
         {g.key === "agregar" &&
@@ -8647,8 +8663,8 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
             <FilaPrecierre key={n} color={g.color} numero={n}>
               <button
                 onClick={() => onIrNuevo(n)}
-                className="text-sm font-semibold px-4 py-2.5 rounded-md text-white shrink-0"
-                style={ { background: "#001E62" } }
+                className="font-bold px-4 text-white shrink-0"
+                style={ { background: "#001E62", height: 44, borderRadius: 12, fontSize: 13 } }
               >
                 + Agregar
               </button>
@@ -8707,8 +8723,8 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
             {coinciden.length > LIMITE_COINCIDEN && (
               <button
                 onClick={() => setVerTodas((v) => !v)}
-                className="text-xs font-medium py-2.5 w-full text-center"
-                style={ { color: "#001E62" } }
+                className="text-xs font-bold w-full text-center border-t"
+                style={ { color: "#001E62", minHeight: 44, borderColor: "#DFE5EF" } }
               >
                 {verTodas ? "Ver menos" : `Ver las ${coinciden.length - LIMITE_COINCIDEN} restantes`}
               </button>
@@ -8995,8 +9011,8 @@ function BotonCopiarOrden({ texto, label, vacio }) {
     <button
       onClick={copiar}
       disabled={!texto}
-      className="text-xs font-medium px-2.5 py-1 rounded-md disabled:opacity-40"
-      style={{ color: "#001E62", border: "1px solid #DFE5EF" }}
+      className="font-bold px-4 disabled:opacity-40"
+      style={{ color: "#001E62", border: "1px solid #DFE5EF", background: "#FFFFFF", height: 44, borderRadius: 12, fontSize: 13 }}
     >
       {!texto ? vacio || "Sin dato" : ok ? "✓ Copiado" : label}
     </button>
@@ -9005,21 +9021,24 @@ function BotonCopiarOrden({ texto, label, vacio }) {
 
 function FilaOrden({ color, nombre, sub, children, onClickNombre }) {
   return (
-    <div className="py-2.5 border-b border-gray-100 last:border-0">
-      <div className="flex items-start gap-2.5">
-        <span className="shrink-0 rounded-full" style={{ width: 8, height: 8, background: color, marginTop: 6 }} />
+    <div className="border-t" style={{ borderColor: "#DFE5EF", padding: "12px 16px 14px" }}>
+      <div className="flex items-start gap-3">
+        <span className="shrink-0 rounded-full flex items-center justify-center" style={{ width: 32, height: 32, background: color + "1F" }}>
+          <span className="rounded-full" style={{ width: 10, height: 10, background: color }} />
+        </span>
         <div className="min-w-0 flex-1">
           {onClickNombre ? (
-            <button type="button" onClick={onClickNombre} className="text-sm font-medium break-words text-left underline" style={{ color: "#001E62" }}>
-              {nombre} ›
+            <button type="button" onClick={onClickNombre} className="font-bold break-words text-left flex items-center gap-1" style={{ color: "#001E62", fontSize: 15, minHeight: 32 }}>
+              {nombre}
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5A6680" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M9 6l6 6-6 6" /></svg>
             </button>
           ) : (
-            <div className="text-sm font-medium break-words">{nombre}</div>
+            <div className="font-bold break-words" style={{ fontSize: 15 }}>{nombre}</div>
           )}
-          {sub && <div className="text-xs" style={{ color: "#5A6680" }}>{sub}</div>}
+          {sub && <div className="text-xs" style={{ color: "#5A6680", marginTop: 2, lineHeight: 1.35 }}>{sub}</div>}
         </div>
       </div>
-      {children && <div className="acciones-orden flex flex-wrap items-center gap-2 mt-2" style={{ marginLeft: 18 }}>{children}</div>}
+      {children && <div className="acciones-orden flex flex-wrap items-center gap-2 mt-2.5">{children}</div>}
     </div>
   );
 }
@@ -9040,7 +9059,8 @@ function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha, movil }) {
     if (!nueva) return;
     if (confirmarCambioFechaOrden(cliente, nueva, movil)) onCambiarFecha(cliente.id, nueva);
   }
-  const estiloBoton = { color: "#001E62", border: "1px solid #DFE5EF" };
+  const estiloBoton = { color: "#001E62", border: "1px solid #DFE5EF", background: "#FFFFFF", height: 44, borderRadius: 12, fontSize: 13 };
+  const estiloPrimario = { background: "#001E62", height: 44, borderRadius: 12, fontSize: 13 };
   return (
     <FilaOrden
       color={color}
@@ -9058,30 +9078,30 @@ function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha, movil }) {
             type="date"
             value={valor}
             onChange={(e) => setValor(e.target.value)}
-            className="text-xs px-2 py-1 rounded-md border"
-            style={{ borderColor: "#DFE5EF" }}
+            className="px-3 rounded-md border-2"
+            style={{ borderColor: "#DFE5EF", height: 44, fontSize: 16, color: "#001E62" }}
           />
           <button
             onClick={() => aplicar(valor)}
             disabled={!valor}
-            className="text-xs font-medium px-2.5 py-1 rounded-md text-white disabled:opacity-40"
-            style={{ background: "#001E62" }}
+            className="font-bold px-4 text-white disabled:opacity-40"
+            style={estiloPrimario}
           >
             Guardar
           </button>
-          <button onClick={() => setEditando(false)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+          <button onClick={() => setEditando(false)} className="font-bold px-4" style={estiloBoton}>
             Cancelar
           </button>
         </>
       ) : (
         <>
-          <button onClick={() => setEditando(true)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+          <button onClick={() => setEditando(true)} className="font-bold px-4" style={estiloBoton}>
             Editar fecha
           </button>
           <button
             onClick={() => aplicar(fila.fin)}
-            className="text-xs font-medium px-2.5 py-1 rounded-md text-white"
-            style={{ background: "#001E62" }}
+            className="font-bold px-4 text-white"
+            style={estiloPrimario}
           >
             Usar la de Tigo
           </button>
@@ -9128,7 +9148,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
     setGrupo(key);
   }
 
-  const estiloBoton = { color: "#001E62", border: "1px solid #DFE5EF" };
+  const estiloBoton = { color: "#001E62", border: "1px solid #DFE5EF", background: "#FFFFFF", height: 44, borderRadius: 12, fontSize: 13 };
+  const estiloPrimarioOrden = { background: "#001E62", height: 44, borderRadius: 12, fontSize: 13 };
   const m = resultado ? resultado.movil : null;
   const cH = resultado
     ? {
@@ -9166,9 +9187,14 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
   const activo = grupo && grupos.some((x) => x.key === grupo) ? grupo : primero;
   const g = grupos.find((x) => x.key === activo);
   const estiloSeccion = (sel) => ({
-    background: sel ? "#001E62" : "#FFFFFF",
-    color: sel ? "#FFFFFF" : "#374151",
-    border: "1px solid " + (sel ? "#001E62" : "#DFE5EF"),
+    flex: 1,
+    height: 44,
+    border: 0,
+    borderRadius: 11,
+    fontWeight: 700,
+    fontSize: 14,
+    background: sel ? "#001E62" : "transparent",
+    color: sel ? "#FFFFFF" : "#5A6680",
   });
 
   return (
@@ -9180,43 +9206,45 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
 
       {editando ? (
         <div className="mb-4">
-          <textarea
-            value={verif.texto}
-            onChange={(e) => { const v = e.target.value; setVerif((s) => ({ ...s, texto: v })); }}
-            rows={8}
-            placeholder="Pega aquí las órdenes de Tigo…"
-            className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-1 font-mono"
-            style={{ borderColor: "#DFE5EF" }}
-          />
-          <p className="text-xs mb-3" style={{ color: "#5A6680" }}>
-            {leerOrdenesTigo(verif.texto).filas.length} órdenes leídas
-          </p>
-          <div className="flex items-center gap-2">
+          <div className="bg-white rounded-xl border p-4 flex flex-col gap-3 mb-3" style={{ borderColor: "#DFE5EF" }}>
+            <textarea
+              value={verif.texto}
+              onChange={(e) => { const v = e.target.value; setVerif((s) => ({ ...s, texto: v })); }}
+              rows={8}
+              placeholder="Pega aquí las órdenes de Tigo…"
+              className="w-full px-3 py-2 rounded-md border-2 outline-none font-mono"
+              style={{ borderColor: "#DFE5EF", fontSize: 16, color: "#001E62" }}
+            />
+            <p className="text-xs" style={{ color: "#5A6680" }}>
+              {leerOrdenesTigo(verif.texto).filas.length} órdenes leídas
+            </p>
+          </div>
+          <div className="flex flex-col gap-2">
             <button
               onClick={verificar}
               disabled={!verif.texto.trim()}
-              className="text-sm font-medium px-4 py-2 rounded-md text-white disabled:opacity-40"
-              style={{ background: "#001E62" }}
+              className="w-full font-bold text-white disabled:opacity-40"
+              style={{ background: "#001E62", height: 52, borderRadius: 14, fontSize: 16 }}
             >
               Verificar órdenes
             </button>
             {verif.aplicado && (
-              <button onClick={() => setEditando(false)} className="text-sm font-medium px-3 py-2 rounded-md" style={{ color: "#5A6680", border: "1px solid #DFE5EF" }}>
+              <button onClick={() => setEditando(false)} className="w-full font-bold" style={{ color: "#5A6680", border: "1px solid #DFE5EF", height: 44, borderRadius: 12, background: "#FFFFFF", fontSize: 14 }}>
                 Cancelar
               </button>
             )}
           </div>
         </div>
       ) : (
-        <div className="flex items-center justify-between gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 mb-4">
-          <span className="text-xs min-w-0 truncate" style={{ color: "#5A6680" }}>
+        <div className="flex items-center justify-between gap-2 bg-white border mb-4" style={{ borderColor: "#DFE5EF", borderRadius: 18, padding: "6px 6px 6px 14px" }}>
+          <span className="min-w-0 truncate" style={{ color: "#5A6680", fontSize: 13 }}>
             {resultado ? resultado.total : 0} órdenes leídas
           </span>
           <div className="flex items-center gap-2 shrink-0">
-            <button onClick={() => setEditando(true)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+            <button onClick={() => setEditando(true)} className="font-bold px-4" style={estiloBoton}>
               Editar
             </button>
-            <button onClick={limpiar} className="text-xs font-medium px-2.5 py-1 rounded-md" style={{ color: "#B45309", border: "1px solid #DFE5EF" }}>
+            <button onClick={limpiar} className="font-bold px-4" style={{ ...estiloBoton, color: "#B45309" }}>
               Limpiar
             </button>
           </div>
@@ -9224,7 +9252,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
       )}
 
       {!editando && resultado && resultado.total === 0 && (
-        <p className="text-sm rounded-lg border p-4" style={{ borderColor: "#F3E3C3", background: "#FFFBF2", color: "#7A4E0E" }}>
+        <p className="text-sm font-bold rounded-xl p-4" style={{ border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", background: "#FFF3DC", color: "#B45309" }}>
           No encontré órdenes en lo que pegaste. Copia las filas desde la página de Tigo con todas las columnas
           (orden, tipo, estado, nombre, cédula y fechas).
         </p>
@@ -9232,19 +9260,9 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
 
       {!editando && resultado && resultado.total > 0 && (
         <div className="flex flex-col gap-3">
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
+          <div className="bg-white rounded-xl border p-4" style={{ borderColor: "#DFE5EF" }}>
             <div className="text-sm font-semibold" style={{ color: pendH + pendM === 0 ? "#001E62" : "#374151" }}>
               {pendH + pendM === 0 ? "✅ Todo cuadra" : pendH + pendM + (pendH + pendM === 1 ? " cosa por resolver" : " cosas por resolver")}
-            </div>
-            <div className="grid grid-cols-2 gap-2 mt-2">
-              <div className="rounded-lg p-3" style={ { background: pendH > 0 ? "#FFF3DC" : "#EAF0FB" } }>
-                <div className="text-2xl font-extrabold leading-tight" style={ { color: pendH > 0 ? "#B45309" : "#001E62" } }>{pendH === 0 ? "✅" : pendH}</div>
-                <div className="text-xs font-semibold" style={ { color: pendH > 0 ? "#B45309" : "#001E62" } }>🏠 Hogar {pendH === 0 ? "cuadra" : "por resolver"}</div>
-              </div>
-              <div className="rounded-lg p-3" style={ { background: pendM > 0 ? "#FFF3DC" : "#EAF0FB" } }>
-                <div className="text-2xl font-extrabold leading-tight" style={ { color: pendM > 0 ? "#B45309" : "#001E62" } }>{pendM === 0 ? "✅" : pendM}</div>
-                <div className="text-xs font-semibold" style={ { color: pendM > 0 ? "#B45309" : "#001E62" } }>📱 Móvil {pendM === 0 ? "cuadra" : "por resolver"}</div>
-              </div>
             </div>
             {(resultado.repetidas > 0 || resultado.ignoradas > 0 || resultado.noVerificadas.length > 0) && (
               <p className="text-xs mt-1" style={{ color: "#5A6680" }}>
@@ -9271,64 +9289,53 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
             )}
           </div>
 
-          {[["hogar", "🏠 Hogar", GRUPOS_ORDENES, cH, pendH, ["bien"]], ["movil", "📱 Móvil", GRUPOS_MOVIL, cM, pendM, ["proceso", "bien"]]].map(([sec, titulo, lista, cont, pend, tranquilos]) => (
-            <div key={sec}>
-              <div className="text-xs font-bold mb-1.5" style={{ color: pend > 0 ? "#B45309" : "#5A6680" }}>
-                {titulo}{pend > 0 ? " · " + pend + " por resolver" : " · ✅ cuadra"}
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {lista.filter((x) => !tranquilos.includes(x.key) && cont[x.key] > 0).map((x) => {
-                  const sel = seccionActiva === sec && activo === x.key;
-                  return (
-                    <button
-                      key={x.key}
-                      onClick={() => seleccionar(sec, x.key)}
-                      aria-pressed={sel}
-                      className="text-left rounded-lg px-3 py-2.5"
-                      style={{
-                        background: x.bg,
-                        border: sel ? "2px solid " + x.color : "1px solid " + x.borde,
-                        padding: sel ? "9.5px 11.5px" : undefined,
-                      }}
-                    >
-                      <div className="text-2xl font-mono font-semibold leading-tight" style={{ color: x.color }}>{cont[x.key]}</div>
-                      <div className="text-xs" style={{ color: x.color }}>{x.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-              {lista.some((x) => tranquilos.includes(x.key) && cont[x.key] > 0) && (
-                <div className="flex flex-wrap items-center gap-2 mt-2 rounded-lg border border-gray-200 bg-white px-3 py-2">
-                  {lista.filter((x) => tranquilos.includes(x.key) && cont[x.key] > 0).map((x) => {
-                    const sel = seccionActiva === sec && activo === x.key;
-                    return (
-                      <button
-                        key={x.key}
-                        onClick={() => seleccionar(sec, x.key)}
-                        aria-pressed={sel}
-                        className="text-xs font-medium px-2.5 py-1 rounded-full"
-                        style={{
-                          background: sel ? "#001E62" : "#F3F4F6",
-                          color: sel ? "#FFFFFF" : "#374151",
-                          border: "1px solid " + (sel ? "#001E62" : "#DFE5EF"),
-                        }}
-                      >
-                        {cont[x.key]} {x.label.toLowerCase()} ›
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          ))}
+          <div className="flex" style={{ padding: 3, background: "#E8EDF6", border: "1px solid #DFE5EF", borderRadius: 14 }}>
+            {[["hogar", "🏠 Hogar", pendH], ["movil", "📱 Móvil", pendM]].map(([sec, titulo, pend]) => (
+              <button
+                key={sec}
+                onClick={() => { setVerif((v) => ({ ...v, seccion: sec })); setGrupo(null); }}
+                aria-pressed={seccionActiva === sec}
+                style={estiloSeccion(seccionActiva === sec)}
+              >
+                {titulo}{pend > 0 ? " · " + pend : " · ✅"}
+              </button>
+            ))}
+          </div>
 
-          <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 pt-3 pb-1">
-            <div className="mb-1">
-              <div className="text-sm font-semibold" style={{ color: g.color }}>{g.label} ({conteos[g.key]})</div>
-              <div className="text-xs" style={{ color: "#5A6680" }}>{g.pista}</div>
+          <div className="flex flex-wrap gap-2">
+            {grupos.filter((x) => conteos[x.key] > 0).map((x) => {
+              const sel = activo === x.key;
+              return (
+                <button
+                  key={x.key}
+                  onClick={() => seleccionar(seccionActiva, x.key)}
+                  aria-pressed={sel}
+                  className="flex items-center gap-2 font-bold"
+                  style={{
+                    height: 44,
+                    padding: "0 14px",
+                    borderRadius: 12,
+                    fontSize: 13,
+                    color: "#001E62",
+                    background: sel ? x.bg : "#FFFFFF",
+                    border: "2px solid " + (sel ? x.color : "#DFE5EF"),
+                  }}
+                >
+                  <span className="rounded-full" style={{ width: 8, height: 8, background: x.color }} />
+                  {x.label}
+                  <span className="font-extrabold" style={{ fontVariantNumeric: "tabular-nums" }}>{conteos[x.key]}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="bg-white rounded-xl border overflow-hidden" style={{ borderColor: "#DFE5EF" }}>
+            <div className="px-4 pt-3.5 pb-3">
+              <div className="font-extrabold" style={{ color: "#001E62", fontSize: 15 }}>{g.label} ({conteos[g.key]})</div>
+              <div className="text-xs" style={{ color: "#5A6680", marginTop: 2 }}>{g.pista}</div>
             </div>
 
-            {conteos[g.key] === 0 && <p className="text-sm py-3" style={{ color: "#001E62" }}>✅ Ninguno.</p>}
+            {conteos[g.key] === 0 && <p className="text-sm px-4 py-3 border-t" style={{ color: "#001E62", borderColor: "#DFE5EF" }}>✅ Ninguno.</p>}
 
             {/* ---------- HOGAR ---------- */}
             {!esMovil && activo === "faltan" &&
@@ -9342,8 +9349,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
                   <button
                     onClick={() => onAgregar(f.nombre, f.fin)}
-                    className="text-xs font-medium px-3 py-1 rounded-md text-white"
-                    style={{ background: "#001E62" }}
+                    className="font-bold px-4 text-white"
+                    style={estiloPrimarioOrden}
                   >
                     + Agregar
                   </button>
@@ -9356,8 +9363,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
                   <button
                     onClick={() => onAgregar(f.nombre, "")}
-                    className="text-xs font-medium px-3 py-1 rounded-md text-white"
-                    style={{ background: "#001E62" }}
+                    className="font-bold px-4 text-white"
+                    style={estiloPrimarioOrden}
                   >
                     + Agregar (pendiente)
                   </button>
@@ -9378,8 +9385,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                     lista.forEach((x) => onCambiarFecha(x.cliente.id, x.fila.fin));
                   }
                 }}
-                className="w-full text-sm font-bold py-3 rounded-lg text-white mb-2 mt-1"
-                style={ { background: "#001E62" } }
+                className="font-bold text-white"
+                style={ { background: "#001E62", height: 52, borderRadius: 14, fontSize: 15, width: "calc(100% - 32px)", margin: "4px 16px 12px" } }
               >
                 Marcar todos como instalados ({resultado.pendientesInstalados.filter((x) => x.fila.fin).length})
               </button>
@@ -9396,8 +9403,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   <button
                     onClick={() => { if (confirmarCambioFechaOrden(cliente, fila.fin)) onCambiarFecha(cliente.id, fila.fin); }}
                     disabled={!fila.fin}
-                    className="text-xs font-medium px-3 py-1 rounded-md text-white disabled:opacity-40"
-                    style={{ background: "#001E62" }}
+                    className="font-bold px-4 text-white disabled:opacity-40"
+                    style={estiloPrimarioOrden}
                   >
                     Marcar como instalado
                   </button>
@@ -9413,7 +9420,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   sub={"Tigo: " + fila.estado + " · en tu app instalado el " + fmtFecha(cliente.fechaInstalacion)}
                 >
                   <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
-                  <button onClick={() => onAbrirCliente(cliente)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                  <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
                     Abrir cliente
                   </button>
                 </FilaOrden>
@@ -9427,10 +9434,10 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   nombre={fila.nombre}
                   sub={"Parecido en tu app: " + cliente.nombre + (cliente.fechaInstalacion ? " · instalado " + fmtFecha(cliente.fechaInstalacion) : " · pendiente")}
                 >
-                  <button onClick={() => onAbrirCliente(cliente)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                  <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
                     Abrir cliente
                   </button>
-                  <button onClick={() => descartarParecido(key)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                  <button onClick={() => descartarParecido(key)} className="font-bold px-4" style={estiloBoton}>
                     No es el mismo
                   </button>
                 </FilaOrden>
@@ -9459,8 +9466,8 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
                   <button
                     onClick={() => onAgregarMovil(f.nombre, f.fin)}
-                    className="text-xs font-medium px-3 py-1 rounded-md text-white"
-                    style={{ background: "#001E62" }}
+                    className="font-bold px-4 text-white"
+                    style={estiloPrimarioOrden}
                   >
                     + Agregar
                   </button>
@@ -9492,7 +9499,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   nombre={fila.nombre}
                   sub={"Parecido en tus Clientes Móvil: " + cliente.nombre + " · activada " + fmtFecha(fechaActivacionMovil(cliente))}
                 >
-                  <button onClick={() => descartarParecido(key)} className="text-xs font-medium px-2.5 py-1 rounded-md" style={estiloBoton}>
+                  <button onClick={() => descartarParecido(key)} className="font-bold px-4" style={estiloBoton}>
                     No es el mismo
                   </button>
                 </FilaOrden>
