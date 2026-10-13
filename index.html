@@ -554,6 +554,15 @@ function calcularComisionNueva({
   };
 }
 
+// Monto sin centavos cuando es redondo ($550, no $550.00); con centavos si no lo es.
+const fmtMontoCorto = (n) => (Math.abs(Number(n || 0) - Math.round(Number(n || 0))) < 0.005 ? "$" + Math.round(Number(n || 0)).toLocaleString("en-US") : fmtMonto(n));
+// Versión corta del ajuste por ingresos (para el detalle del historial).
+function textoAjusteIngresoCorto(r) {
+  if (r.pctIngreso == null) return "";
+  if (r.ajusteIngreso === "acelerador") return `× ${(r.factorAcelerador * 100).toFixed(1)}% ingresos (+10 pts de acelerador)`;
+  if (r.ajusteIngreso === "desacelerador") return `× ${(r.factorAcelerador * 100).toFixed(1)}% ingresos`;
+  return "× 100% ingresos";
+}
 // Texto corto que explica cómo se ajusta la posición según el % de ingresos.
 function textoAjusteIngreso(r) {
   if (r.pctIngreso == null) return "";
@@ -3408,6 +3417,8 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   memoriaCobros.rescateAbierto = rescateAbierto;
   memoriaCobros.rescateSeleccion = rescateSeleccion;
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
+  // Detalle de la proyección al cierre (hogar, móvil e ingresos): cerrado por defecto.
+  const [proyAbierta, setProyAbierta] = useState(false);
   useEffect(() => {
     setRescateSeleccion({});
     setRescateConfirmando(false);
@@ -4807,7 +4818,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                   const pts = tramoSig.min - pc;
                   const nH = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_HOGAR * 100 / metaClientesHogar) - 1e-9));
                   const nM = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_MOVIL * 100 / metaClientesMovil) - 1e-9));
-                  accion = <>Para subir a <b>{fmtMiles(tramoSig.monto, 0)}</b> de base ({"+" + fmtMiles(tramoSig.monto - base, 0)}) te faltan <b>{nH} {nH === 1 ? "cliente hogar" : "clientes hogar"}</b> o <b>{nM} móvil</b></>;
+                  accion = <>Para subir a <b>{fmtMiles(tramoSig.monto, 0)}</b> de base ({"+" + fmtMiles(tramoSig.monto - base, 0)}) te faltan <b>{nH} hogar</b> o <b>{nM} móvil</b></>;
                 }
                 const fila = { display: "flex", justifyContent: "space-between", gap: 10, padding: "5px 0", alignItems: "baseline" };
                 const peq = { opacity: 0.75, fontSize: 11, marginLeft: 6 };
@@ -4856,11 +4867,18 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                     {aunEsTemprano ? (
                       <div className="mt-3 text-xs opacity-90">Aún es temprano para proyectar tu cierre</div>
                     ) : proyeccion ? (
-                      <React.Fragment>
-                        <div className="mt-3 pt-3 flex justify-between items-baseline gap-2 text-[13px]" style={ { borderTop: "1px solid rgba(255,255,255,0.22)" } }>
-                          <span>Proyección al cierre{proyeccion.montoBase === 0 ? " (sin llegar al mínimo)" : ""}</span>
+      <React.Fragment>
+                        <button
+                          type="button"
+                          onClick={() => setProyAbierta((v) => !v)}
+                          aria-expanded={proyAbierta}
+                          className="mt-3 pt-3 w-full flex justify-between items-center gap-2 text-[13px] text-left"
+                          style={ { borderTop: "1px solid rgba(255,255,255,0.22)", minHeight: 44, color: "inherit" } }
+                        >
+                          <span>Proyección al cierre{proyeccion.montoBase === 0 ? " (sin llegar al mínimo)" : ""} <span className="opacity-80">{proyAbierta ? "▴" : "▾"}</span></span>
                           <b style={ { fontSize: 18 } }>~{fmtMiles(proyeccion.comision, 0)}</b>
-                        </div>
+                        </button>
+                        {proyAbierta && (
                         <div className="mt-2 rounded-[10px] px-3 py-2" style={ { background: "rgba(255,255,255,0.14)" } }>
                           {[
                             { n: "Clientes hogar", v: "~" + proyeccion.clientes, m: metaClientesHogar, fm: (x) => String(x), vp: proyeccion.clientes },
@@ -4876,6 +4894,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                             </div>
                           ))}
                         </div>
+                        )}
                       </React.Fragment>
                     ) : null}
                     <details className="mt-3 text-xs" style={ { borderTop: "1px solid rgba(255,255,255,0.22)", paddingTop: 10 } }>
@@ -5266,8 +5285,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
 
       {bloqueOrd("historial", "Historial de comisión", (
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
-        <h2 className="font-semibold text-sm mb-1">Historial de comisión (últimos 4 meses)</h2>
-        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>Toca o pasa el mouse sobre una barra para ver el detalle y la comparación.</p>
+        <h2 className="font-semibold text-sm mb-4">Historial de comisión (últimos 4 meses)</h2>
 
         <HistorialComisionChart
           data={historialComisiones}
@@ -5287,12 +5305,12 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
             <div className="text-xs" style={ { color: "#5A6680" } }>
               {detalleMostrado.completo
                 ? detalleMostrado.esquema === "nuevo"
-                  ? `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) ${textoAjusteIngreso(detalleMostrado)}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMonto(detalleMostrado.bonoConvergencias)} bono portabilidad` : ""}`
+                  ? `Base ${fmtMontoCorto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) ${textoAjusteIngresoCorto(detalleMostrado)}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMontoCorto(detalleMostrado.bonoConvergencias)} bono` : ""}`
                   : `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
                 : "Faltan metas cargadas en este período para calcular la comisión completa."}
             </div>
             <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>
-              {detalleMostrado.cantidad} clientes hogar · {fmtMonto(detalleMostrado.dinero)} en ingresos hogar
+              {detalleMostrado.cantidad} clientes hogar · {fmtMonto(detalleMostrado.dinero)} en ingresos
               {detalleMostrado.esquema === "nuevo" ? "" : ` · ARPU ${fmtMonto(detalleMostrado.arpu)}`}
             </div>
             {detalleAnterior && (
@@ -5302,7 +5320,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
               >
                 <span>{detalleMostrado.total >= detalleAnterior.total ? "▲" : "▼"}</span>
                 <span>
-                  {fmtMonto(Math.abs(detalleMostrado.total - detalleAnterior.total))} vs {mesLabel(detalleAnterior.key)}
+                  {fmtMonto(Math.abs(detalleMostrado.total - detalleAnterior.total))} {detalleMostrado.total >= detalleAnterior.total ? "más" : "menos"} que {mesLabel(detalleAnterior.key)}
                   {detalleAnterior.total > 0
                     ? ` (${detalleMostrado.total >= detalleAnterior.total ? "+" : "-"}${Math.abs(Math.round(((detalleMostrado.total - detalleAnterior.total) / detalleAnterior.total) * 100))}%)`
                     : ""}
@@ -5392,7 +5410,7 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
   const [diaSel, setDiaSel] = useState(memoriaDashboard.retorno && memoriaDashboard.diaPeriodo === periodoKey ? memoriaDashboard.dia : null);
   const [vistaDiaria, setVistaDiaria] = useState(leerVistaDiaria);
   const [menuAbierto, setMenuAbierto] = useState(null);
-  const [panelPend, setPanelPend] = useState(true);
+  const [panelPend, setPanelPend] = useState(false);
   const [confirmInst, setConfirmInst] = useState(null);
   const [detalleOculto, setDetalleOculto] = useState(false);
   const [leyendaAbierta, setLeyendaAbierta] = useState(false);
@@ -5623,7 +5641,8 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
                           <path d={ "M" + (x + 0.7) + " " + (base - hA - sep) + " V" + (base - hA - hB + r + 0.2) + " q0 -" + (r - 0.5) + " " + (r - 0.5) + " -" + (r - 0.5) + " H" + (x + bwP - r - 0.2) + " q" + (r - 0.5) + " 0 " + (r - 0.5) + " " + (r - 0.5) + " V" + (base - hA - sep) } fill="none" stroke={colorMovil.b} strokeWidth="1.4" />
                         </>
                       ) : null}
-                      {!mesCompleto && total > 0 ? <text x={x + bwP / 2} y={base - hA - hB - 5} textAnchor="middle" fontSize="12" fontWeight="700" fill="#001E62">{total}</text> : null}
+                      {!mesCompleto && a > 0 && hA >= 12 ? <text x={x + bwP / 2} y={base - hA / 2 + 4.5} textAnchor="middle" fontSize={hA >= 16 ? 13 : 11} fontWeight="700" fill="#fff">{a}</text> : null}
+                      {!mesCompleto && b > 0 && hB >= 12 ? <text x={x + bwP / 2} y={base - hA - sep - hB / 2 + 4.5} textAnchor="middle" fontSize={hB >= 16 ? 13 : 11} fontWeight="700" fill={vistaDiaria.c === "ambar" ? "#fff" : "#1F2937"}>{b}</text> : null}
                       {etiqueta}
                     </g>
                   );
@@ -5638,10 +5657,8 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
       })()}
 
 
+      {sel === null ? null : (
       <div className="mt-3 rounded-lg p-3.5 text-[13px]" style={ { background: "#F3F6FB", color: "#111827", minHeight: "46px" } }>
-        {sel === null ? (
-          <span className="text-xs">Toca una barra para ver qué entró ese día.</span>
-        ) : (
           <>
             <div className="flex items-center justify-between gap-2" style={ detalleOculto ? undefined : { borderBottom: "1px solid #DFE5EF", paddingBottom: 8 } }>
               <span className="font-semibold">Día {sel + 1} · {nombreDia(dias[sel])}<span className="block font-mono font-bold text-[15px]" style={ { color: "#001E62" } }>{fmtMonto(dineroDe(A[sel]) + dineroDe(B[sel]))}</span></span>
@@ -5683,8 +5700,8 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
             </div>
             </>}
           </>
-        )}
       </div>
+      )}
       </div>
     );
   }
