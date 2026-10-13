@@ -2391,7 +2391,8 @@ function App() {
       intentos += 1;
       if (!guardandoClientesRef.current || intentos > 20) {
         clearInterval(t);
-        window.location.reload();
+        // Se agrega un número a la dirección para saltarse la versión guardada del celular.
+        window.location.replace(window.location.pathname + "?v=" + Date.now());
       }
     }, 300);
   }
