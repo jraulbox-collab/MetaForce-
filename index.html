@@ -5440,6 +5440,8 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
   const [detalleOculto, setDetalleOculto] = useState(false);
   const [leyendaAbierta, setLeyendaAbierta] = useState(false);
   const [anchoGraf, setAnchoGraf] = useState(320);
+  // Posición del deslizamiento de la gráfica diaria, para ajustar la escala a los días que se ven.
+  const [scrollInfo, setScrollInfo] = useState({ c: "", x: 0 });
   const scrollRef = useRef(null);
   const colorMovil = COLORES_MOVIL.find((x) => x.k === vistaDiaria.c) || COLORES_MOVIL[0];
   function cambiarVista(cambio, mantenerMenu) {
@@ -5630,13 +5632,21 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
         const vis = mesCompleto ? tot : Math.min(tot, parseInt(vistaDiaria.d, 10) || 10);
         const dwP = Math.max(4, anchoGraf / vis);
         const wP = dwP * tot;
-        const hP = 200, base = 170, alto = 135;
-        const bwP = Math.max(3, dwP - (mesCompleto ? 3 : 8));
-        const mxP = Math.max(1, ...totDia, ritmo);
+        const hP = mesCompleto ? 200 : 262, base = mesCompleto ? 170 : 236, alto = mesCompleto ? 135 : 210;
+        const bwP = Math.max(3, dwP - (mesCompleto ? 2 : 4));
+        // La escala se ajusta a los días que se ven en pantalla (no al mejor día de todo el mes),
+        // para que las barras aprovechen toda la altura.
+        const destinoDefecto = mesCompleto ? 0 : Math.max(0, dwP * (cerrado ? lim : hoy) - anchoGraf + 6);
+        const claveVista = vistaDiaria.d + "|" + periodoKey + "|" + anchoGraf;
+        const xVista = scrollInfo.c === claveVista ? scrollInfo.x : destinoDefecto;
+        const primero = Math.max(0, Math.floor(xVista / dwP) - 1);
+        const ultimo = Math.min(tot - 1, Math.ceil((xVista + anchoGraf) / dwP));
+        const maxVista = Math.max(1, ritmo, ...totDia.slice(primero, ultimo + 1));
+        const mxP = mesCompleto ? Math.max(1, ...totDia, ritmo) : maxVista * 1.08;
         const yP = (v) => base - (v / mxP) * alto;
         return (
           <>
-            <div ref={scrollRef} className="overflow-x-auto" style={ { WebkitOverflowScrolling: "touch", borderBottom: "1px solid #DFE5EF" } }>
+            <div ref={scrollRef} onScroll={(e) => setScrollInfo({ c: claveVista, x: e.currentTarget.scrollLeft })} className="overflow-x-auto" style={ { WebkitOverflowScrolling: "touch", borderBottom: "1px solid #DFE5EF" } }>
               <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label={modoDias === "ing" ? "Ingresos por día" : "Instalaciones por día"} style={ { display: "block" } }>
                 <defs>
                   <pattern id={uid + "pn"} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><line x1="0" y1="0" x2="0" y2="4" stroke="#9CA3AF" strokeWidth="1.5" /></pattern>
@@ -5646,14 +5656,14 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
                   const x = i * dwP + (dwP - bwP) / 2;
                   const resalta = sel === i;
                   const etiqueta = (!mesCompleto || (i + 1) % 5 === 0 || i === 0) ? (
-                    <text x={x + bwP / 2} y={hP - 8} textAnchor="middle" fontSize="11" fill={resalta || (!cerrado && i + 1 === hoy) ? "#001E62" : "#5A6680"} fontWeight={resalta || (!cerrado && i + 1 === hoy) ? 800 : 400}>{i + 1}</text>
+                    <text x={x + bwP / 2} y={hP - 8} textAnchor="middle" fontSize={mesCompleto ? 11 : 13} fill={resalta || (!cerrado && i + 1 === hoy) ? "#001E62" : "#5A6680"} fontWeight={resalta || (!cerrado && i + 1 === hoy) ? 800 : 400}>{i + 1}</text>
                   ) : null;
                   if (modoDias === "ins" && i + 1 > lim) return <g key={d}><rect x={x} y={base - 6} width={bwP} height="6" fill={ "url(#" + uid + "pn)" } opacity="0.55" />{etiqueta}</g>;
                   if (!cerrado && i >= hoy) return <g key={d}><rect x={x} y={base - 1.5} width={bwP} height="1.5" fill="#DFE5EF" />{etiqueta}</g>;
                   const a = serieA[i], b = serieB[i];
                   const hA = (a / mxP) * alto, hB = (b / mxP) * alto;
                   const sep = a && b ? 2 : 0;
-                  const r = Math.min(3, bwP / 2);
+                  const r = Math.min(mesCompleto ? 3 : 6, bwP / 2);
                   const total = a + b;
                   return (
                     <g key={d} style={ { cursor: "pointer" } } onClick={() => elegirDia(i)} opacity={sel !== null && !resalta ? 0.55 : 1}>
@@ -5666,8 +5676,8 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
                           <path d={ "M" + (x + 0.7) + " " + (base - hA - sep) + " V" + (base - hA - hB + r + 0.2) + " q0 -" + (r - 0.5) + " " + (r - 0.5) + " -" + (r - 0.5) + " H" + (x + bwP - r - 0.2) + " q" + (r - 0.5) + " 0 " + (r - 0.5) + " " + (r - 0.5) + " V" + (base - hA - sep) } fill="none" stroke={colorMovil.b} strokeWidth="1.4" />
                         </>
                       ) : null}
-                      {!mesCompleto && a > 0 && hA >= 12 ? <text x={x + bwP / 2} y={base - hA / 2 + 4.5} textAnchor="middle" fontSize={hA >= 16 ? 13 : 11} fontWeight="700" fill="#fff">{a}</text> : null}
-                      {!mesCompleto && b > 0 && hB >= 12 ? <text x={x + bwP / 2} y={base - hA - sep - hB / 2 + 4.5} textAnchor="middle" fontSize={hB >= 16 ? 13 : 11} fontWeight="700" fill={vistaDiaria.c === "ambar" ? "#fff" : "#1F2937"}>{b}</text> : null}
+                      {!mesCompleto && a > 0 && hA >= 12 ? <text x={x + bwP / 2} y={base - hA / 2 + (hA >= 28 ? 7 : 4.5)} textAnchor="middle" fontSize={hA >= 28 ? 20 : hA >= 18 ? 14 : 11} fontWeight="700" fill="#fff">{a}</text> : null}
+                      {!mesCompleto && b > 0 && hB >= 12 ? <text x={x + bwP / 2} y={base - hA - sep - hB / 2 + (hB >= 28 ? 7 : 4.5)} textAnchor="middle" fontSize={hB >= 28 ? 20 : hB >= 18 ? 14 : 11} fontWeight="700" fill={vistaDiaria.c === "ambar" ? "#fff" : "#1F2937"}>{b}</text> : null}
                       {etiqueta}
                     </g>
                   );
