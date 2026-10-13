@@ -3346,6 +3346,25 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
   );
 }
 
+// Días de venta de un período: todos los días del mes menos los domingos y menos los
+// últimos 2 días del mes. "transcurridos" incluye hoy si hoy es un día de venta.
+function diasDeVentaPeriodo(periodoKey, hoy) {
+  const { inicio, fin } = rangoCiclo(periodoKey);
+  const ultimo = new Date(fin.getFullYear(), fin.getMonth(), fin.getDate() - 2);
+  const h = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+  const cursor = new Date(inicio.getFullYear(), inicio.getMonth(), inicio.getDate());
+  let total = 0;
+  let transcurridos = 0;
+  while (cursor <= ultimo) {
+    if (cursor.getDay() !== 0) {
+      total += 1;
+      if (cursor <= h) transcurridos += 1;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return { total, transcurridos };
+}
+
 // Tarjetas del Dashboard que se pueden ordenar. La de comisión nunca se esconde.
 const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "instalaciones", "planes", "dia", "historial"];
 function ordenDashboardNormal(cfg) {
@@ -3402,15 +3421,11 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   const metaClientesHogar = leerMeta(metas, periodoVisto, "clientesHogar");
   const metaClientesMovil = leerMeta(metas, periodoVisto, "clientesMovil");
 
-  // Progreso del ciclo actual (día 21 al 20) para poder proyectar a fin de ciclo.
-  const UN_DIA_MS = 24 * 60 * 60 * 1000;
+  // Progreso del período para poder proyectar el cierre. Solo cuentan los días de venta:
+  // no los domingos ni los últimos 2 días del mes (esas ventas se instalan ya en el mes siguiente).
   const cicloInfo = useMemo(() => {
-    const { inicio, fin } = rangoCiclo(periodoVisto);
-    const hoy = new Date();
-    const totalDias = Math.round((fin - inicio) / UN_DIA_MS) + 1;
-    let diasTranscurridos = Math.round((hoy - inicio) / UN_DIA_MS) + 1;
-    diasTranscurridos = Math.max(0, Math.min(totalDias, diasTranscurridos));
-    return { totalDias, diasTranscurridos, pctTranscurrido: totalDias > 0 ? diasTranscurridos / totalDias : 0 };
+    const dv = diasDeVentaPeriodo(periodoVisto, new Date());
+    return { totalDias: dv.total, diasTranscurridos: dv.transcurridos, pctTranscurrido: dv.total > 0 ? dv.transcurridos / dv.total : 0 };
   }, [periodoVisto]);
   const UMBRAL_PROYECCION = 0.15; // no proyectar antes del 15% del ciclo (muy poco dato, muy inestable)
   const aunEsTemprano = esActual && cicloInfo.pctTranscurrido < UMBRAL_PROYECCION;
@@ -4841,10 +4856,27 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                     {aunEsTemprano ? (
                       <div className="mt-3 text-xs opacity-90">Aún es temprano para proyectar tu cierre</div>
                     ) : proyeccion ? (
-                      <div className="mt-3 flex justify-between gap-2 text-xs opacity-95">
-                        <span>Proyección al cierre{proyeccion.montoBase === 0 ? " (sin llegar al mínimo)" : ""}</span>
-                        <b>~{fmtMiles(proyeccion.comision, 0)}</b>
-                      </div>
+                      <React.Fragment>
+                        <div className="mt-3 pt-3 flex justify-between items-baseline gap-2 text-[13px]" style={ { borderTop: "1px solid rgba(255,255,255,0.22)" } }>
+                          <span>Proyección al cierre{proyeccion.montoBase === 0 ? " (sin llegar al mínimo)" : ""}</span>
+                          <b style={ { fontSize: 18 } }>~{fmtMiles(proyeccion.comision, 0)}</b>
+                        </div>
+                        <div className="mt-2 rounded-[10px] px-3 py-2" style={ { background: "rgba(255,255,255,0.14)" } }>
+                          {[
+                            { n: "Clientes hogar", v: "~" + proyeccion.clientes, m: metaClientesHogar, fm: (x) => String(x), vp: proyeccion.clientes },
+                            { n: "Clientes móvil", v: "~" + proyeccion.convergencias, m: metaClientesMovil, fm: (x) => String(x), vp: proyeccion.convergencias },
+                            { n: "Ingresos", v: "~" + fmtMiles(proyeccion.ingresos, 0), m: metaDinero, fm: (x) => fmtMiles(x, 0), vp: proyeccion.ingresos },
+                          ].map((f) => (
+                            <div key={f.n} className="flex justify-between items-baseline gap-2 py-1">
+                              <span className="text-sm">{f.n}</span>
+                              <span className="text-sm font-bold" style={ { fontVariantNumeric: "tabular-nums" } }>
+                                {f.v}
+                                {f.m ? <span className="text-xs font-normal opacity-80"> de {f.fm(f.m)} · {Math.round((f.vp / f.m) * 100)}%</span> : null}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </React.Fragment>
                     ) : null}
                     <details className="mt-3 text-xs" style={ { borderTop: "1px solid rgba(255,255,255,0.22)", paddingTop: 10 } }>
                       <summary className="cursor-pointer opacity-90" style={ { listStyle: "none" } }>Ver detalle ▾</summary>
