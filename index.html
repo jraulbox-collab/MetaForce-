@@ -3882,6 +3882,11 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     () => (periodoRescateActivo ? calcularComisionConSubconjuntoHoy([]) : { completo: false, total: 0 }),
     [periodoRescateActivo, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, resumenMovilesConfirmadoHoy, bonoFullTigoHoy]
   );
+  // Lo máximo que podrías cobrar de ese período si pagan todos los clientes que siguen en plazo.
+  const comisionMaximaHoy = useMemo(
+    () => (periodoRescateActivo ? calcularComisionConSubconjuntoHoy(clientesDelPeriodoHoy.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c))) : { completo: false, total: 0 }),
+    [periodoRescateActivo, clientesDelPeriodoHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, resumenMovilesConfirmadoHoy, bonoFullTigoHoy]
+  );
   const rescateVencidos = useMemo(
     () => (periodoRescateActivo ? clientesDelPeriodoHoy.filter((c) => !clienteCuentaParaComision(c)) : []),
     [clientesDelPeriodoHoy, periodoRescateActivo]
@@ -4298,6 +4303,25 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
       {/* Sección 1: facturas pendientes que hay que cobrar para que cuenten en la comisión */}
       <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>1 · Facturas pendientes</h2>
       <div className="rounded-xl overflow-hidden border mb-8 bg-white" style={ { borderColor: "#DFE5EF" } }>
+      {periodoRescateActivo && comisionConfirmadaHoy.completo && (
+        <div className="px-4 pt-3">
+          <div className="text-xs" style={ { color: "#5A6680" } }>
+            {mesLabel(periodoRescateActivo).split(" ")[0]} → cobras en {mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0]}
+          </div>
+          <div className="flex items-end justify-between gap-3 mt-2">
+            <div>
+              <div className="text-xs" style={ { color: "#5A6680" } }>Confirmado</div>
+              <div className="font-mono" style={ { fontSize: 32, fontWeight: 700, lineHeight: 1.1, color: "#001E62" } }>{fmtMonto(comisionConfirmadaHoy.total)}</div>
+            </div>
+            {enRiesgoHoy.length > 0 && comisionMaximaHoy.completo && (
+              <div className="text-right">
+                <div className="text-xs" style={ { color: "#5A6680" } }>Hasta, si pagan {enRiesgoHoy.length === 1 ? "el pendiente" : `los ${enRiesgoHoy.length}`}</div>
+                <div className="font-mono" style={ { fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: "#B45309" } }>{fmtMonto(comisionMaximaHoy.total)}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
       <div className="px-4 py-3">
         {enRiesgoHoy.length > 0 ? (
           <>
@@ -4309,6 +4333,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
             )}
             <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
               Si no pagan, no cuentan
+              {periodoRescateActivo && fechaLimitePrimeraFactura(periodoRescateActivo) ? ` · vence el ${fmtFechaLarga(fechaLocalISO(fechaLimitePrimeraFactura(periodoRescateActivo)))}` : ""}
               {rescateDiasRestantes !== null && (
                 <React.Fragment>
                   {" · "}
