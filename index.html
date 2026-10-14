@@ -3197,11 +3197,11 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
   const activaAcel = ahora.ajusteIngreso !== "acelerador" && con.ajusteIngreso === "acelerador";
   const pierdeAcel = ahora.ajusteIngreso === "acelerador" && con.ajusteIngreso !== "acelerador";
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } } onClick={cerrar}>
+  return ReactDOM.createPortal(
+    <div className="fixed inset-0 z-50 flex items-end justify-center font-sans" style={ { background: "rgba(0,0,0,0.45)", color: "#001E62" } } onClick={cerrar}>
       <div
         className="bg-white w-full max-w-md p-4 overflow-y-auto"
-        style={ { borderRadius: "22px 22px 0 0", maxHeight: "92vh", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" } }
+        style={ { color: "#001E62", borderRadius: "22px 22px 0 0", maxHeight: "92vh", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" } }
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-start justify-between gap-2">
@@ -3223,16 +3223,16 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
               <div>
                 <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Cantidad</div>
                 <div className="flex items-center rounded-md overflow-hidden" style={ { border: "2px solid #DFE5EF" } }>
-                  <button type="button" onClick={() => cambiar(f.id, "cantidad", Math.max(1, (Number(f.cantidad) || 1) - 1))} style={ { width: 44, height: 44, background: "#F3F6FB", fontSize: 20, fontWeight: 700 } }>−</button>
+                  <button type="button" onClick={() => cambiar(f.id, "cantidad", Math.max(1, (Number(f.cantidad) || 1) - 1))} style={ { width: 44, height: 44, background: "#F3F6FB", color: "#001E62", fontSize: 20, fontWeight: 700 } }>−</button>
                   <span className="text-center font-bold" style={ { minWidth: 34 } }>{f.cantidad}</span>
-                  <button type="button" onClick={() => cambiar(f.id, "cantidad", (Number(f.cantidad) || 0) + 1)} style={ { width: 44, height: 44, background: "#F3F6FB", fontSize: 20, fontWeight: 700 } }>+</button>
+                  <button type="button" onClick={() => cambiar(f.id, "cantidad", (Number(f.cantidad) || 0) + 1)} style={ { width: 44, height: 44, background: "#F3F6FB", color: "#001E62", fontSize: 20, fontWeight: 700 } }>+</button>
                 </div>
               </div>
               <div>
                 <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>{f.tipo === "hogar" ? "Mensualidad c/u" : "Costo del plan c/u"}</div>
                 <div className="flex items-center gap-1 rounded-md px-2.5" style={ { border: "2px solid #DFE5EF", height: 44 } }>
                   <span>$</span>
-                  <input type="number" inputMode="decimal" min="0" step="0.01" value={f.monto} onChange={(e) => cambiar(f.id, "monto", e.target.value)} className="outline-none font-semibold" style={ { width: 70, border: 0 } } />
+                  <input type="number" inputMode="decimal" min="0" step="0.01" value={f.monto} onChange={(e) => cambiar(f.id, "monto", e.target.value)} className="outline-none font-semibold bg-white" style={ { width: 70, border: 0, color: "#001E62" } } />
                 </div>
               </div>
             </div>
@@ -3286,7 +3286,8 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
           <button type="button" onClick={cerrar} className="flex-1 text-sm font-bold rounded-md text-white" style={ { minHeight: 44, background: "#001E62" } }>Cerrar</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
@@ -5223,10 +5224,10 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                 <button
                   type="button"
                   onClick={() => setMostrarSimComision(true)}
-                  className="w-full mt-3 text-sm font-bold rounded-lg"
-                  style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid rgba(255,255,255,0.6)" } }
+                  className="mt-2 text-[11px] underline underline-offset-2"
+                  style={ { background: "transparent", color: "#fff", opacity: 0.7, padding: "8px 0", border: 0 } }
                 >
-                  🧮 Simular clientes nuevos
+                  Simular clientes nuevos
                 </button>
                 {mostrarSimComision && (
                   <SimuladorComisionModal
