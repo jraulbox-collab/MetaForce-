@@ -6013,30 +6013,6 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
           );
         })}
       </div>
-      {(() => {
-        // RPU: lo que deja cada cliente en promedio (ingresos entre clientes). Solo informativo,
-        // no entra en la comisión. Total = hogar + móvil juntos, igual que la caja de Ingreso.
-        const nH = hogarInstalado.length;
-        const nM = moviles.length;
-        if (nH + nM === 0) return null;
-        const rH = nH > 0 ? dineroHogarInstalado / nH : null;
-        const rM = nM > 0 ? dineroMovil / nM : null;
-        const rT = (dineroHogarInstalado + dineroMovil) / (nH + nM);
-        return (
-          <div className="mt-3" style={ { borderTop: "1px solid #E6EAF2" } }>
-            <button type="button" onClick={() => setRpuAbierto((v) => !v)} aria-expanded={rpuAbierto} className="w-full flex items-center justify-between text-xs" style={ { minHeight: 40, color: "#6B7794" } }>
-              <span>RPU por cliente</span>
-              <span>Total {fmtMonto(rT)} {rpuAbierto ? "▴" : "▾"}</span>
-            </button>
-            {rpuAbierto ? (
-              <div className="text-xs pb-1" style={ { color: "#6B7794" } }>
-                <div className="flex justify-between py-1"><span>Hogar</span><span className="font-mono" style={ { color: "#4A5878" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
-                <div className="flex justify-between py-1"><span>Móvil</span><span className="font-mono" style={ { color: "#4A5878" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
-              </div>
-            ) : null}
-          </div>
-        );
-      })()}
       {esActual && porInstalar.length > 0 ? (
         <div className="mt-3 rounded-[10px] overflow-hidden" style={ { border: "1px solid #DCE2EE" } }>
           <button
@@ -6085,6 +6061,30 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
           }) : null}
         </div>
       ) : null}
+      {(() => {
+        // RPU: lo que deja cada cliente en promedio (ingresos entre clientes). Solo informativo,
+        // no entra en la comisión. Total = hogar + móvil juntos, igual que la caja de Ingreso.
+        const nH = hogarInstalado.length;
+        const nM = moviles.length;
+        if (nH + nM === 0) return null;
+        const rH = nH > 0 ? dineroHogarInstalado / nH : null;
+        const rM = nM > 0 ? dineroMovil / nM : null;
+        const rT = (dineroHogarInstalado + dineroMovil) / (nH + nM);
+        return (
+          <div className="mt-3" style={ { borderTop: "1px solid #E6EAF2" } }>
+            <button type="button" onClick={() => setRpuAbierto((v) => !v)} aria-expanded={rpuAbierto} className="w-full flex items-center justify-between text-xs" style={ { minHeight: 40, color: "#6B7794" } }>
+              <span>RPU por cliente</span>
+              <span>Total {fmtMonto(rT)} {rpuAbierto ? "▴" : "▾"}</span>
+            </button>
+            {rpuAbierto ? (
+              <div className="text-xs pb-1" style={ { color: "#6B7794" } }>
+                <div className="flex justify-between py-1"><span>Hogar</span><span className="font-mono" style={ { color: "#4A5878" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
+                <div className="flex justify-between py-1"><span>Móvil</span><span className="font-mono" style={ { color: "#4A5878" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
 
     </div>
   );
