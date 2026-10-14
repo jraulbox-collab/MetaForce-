@@ -443,9 +443,10 @@ const TABLA_COMISION_BASE = [
   { min: 140, max: Infinity, monto: 1700 },
 ];
 function montoBaseComision(pctIngreso) {
-  if (pctIngreso == null || pctIngreso < 80) return 0;
-  const tramo = TABLA_COMISION_BASE.find((t) => pctIngreso >= t.min && pctIngreso <= t.max);
-  return tramo ? tramo.monto : 1700;
+  if (pctIngreso == null || pctIngreso + 1e-9 < 80) return 0;
+  // Se toma el tramo más alto cuyo mínimo ya se alcanzó (sin huecos entre tramos).
+  const tramo = [...TABLA_COMISION_BASE].reverse().find((t) => pctIngreso + 1e-9 >= t.min);
+  return tramo ? tramo.monto : 0;
 }
 const BONO_POR_CONVERGENCIA = 6; // bono por portabilidad pospago con 1ra factura pagada
 const PESO_CLIENTES_HOGAR = 0.65;
@@ -465,9 +466,10 @@ const TABLA_POSICION_NUEVA = [
 ];
 const MINIMO_COBRO = TABLA_POSICION_NUEVA[0].min; // % de clientes mínimo para empezar a cobrar comisión base
 function montoPosicionNueva(pctClientes) {
-  if (pctClientes == null || pctClientes < 70) return 0;
-  const tramo = TABLA_POSICION_NUEVA.find((t) => pctClientes >= t.min && pctClientes <= t.max);
-  return tramo ? tramo.monto : 1700;
+  if (pctClientes == null || pctClientes + 1e-9 < 70) return 0;
+  // Se toma el tramo más alto cuyo mínimo ya se alcanzó (sin huecos entre tramos).
+  const tramo = [...TABLA_POSICION_NUEVA].reverse().find((t) => pctClientes + 1e-9 >= t.min);
+  return tramo ? tramo.monto : 0;
 }
 
 // ---- Fórmula vieja (hasta el período "2026-09" inclusive) ----
@@ -510,13 +512,14 @@ function calcularComisionNueva({
   cantidadBonoMovil,
   cantidadBonoPendiente,
 }) {
+  const redondear6 = (x) => (x == null ? x : Math.round(x * 1e6) / 1e6); // quita ruido de decimales (89.99999999 -> 90)
   const pctHogar = metaClientesHogar ? (clientesHogar / metaClientesHogar) * 100 : null;
   const pctMovil = metaClientesMovil ? (clientesMovil / metaClientesMovil) * 100 : null;
   const pctClientesPonderado =
-    pctHogar != null && pctMovil != null ? pctHogar * PESO_CLIENTES_HOGAR + pctMovil * PESO_CLIENTES_MOVIL : null;
+    pctHogar != null && pctMovil != null ? redondear6(pctHogar * PESO_CLIENTES_HOGAR + pctMovil * PESO_CLIENTES_MOVIL) : null;
   const montoBase = montoPosicionNueva(pctClientesPonderado);
 
-  const pctIngreso = metaIngresos ? (ingresosDelPeriodo / metaIngresos) * 100 : null;
+  const pctIngreso = metaIngresos ? redondear6((ingresosDelPeriodo / metaIngresos) * 100) : null;
   let ajusteIngreso = "ninguno";
   let factorAcelerador = 1;
   if (pctIngreso != null) {
