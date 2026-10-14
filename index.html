@@ -3138,6 +3138,158 @@ function ResultadoSim({ label, actual, simulado, meta, formato }) {
   );
 }
 
+// Simulador de comisión (esquema nuevo): suma clientes Hogar y Móvil hipotéticos a los
+// reales del período y muestra cuánto subiría la comisión. No guarda nada.
+function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
+  const [filas, setFilas] = useState([]);
+
+  // Atrás del navegador/gesto del iPhone cierra el simulador y deja el Dashboard como estaba.
+  useEffect(() => {
+    try { window.history.pushState({ ...(window.history.state || {}), sim: true }, ""); } catch (e) {}
+    function onPop() { onClose(); }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function cerrar() {
+    try { window.history.back(); } catch (e) { onClose(); }
+  }
+
+  function agregar(tipo) {
+    setFilas((prev) => [...prev, { id: uid(), tipo, cantidad: 1, monto: String(tipo === "hogar" ? defecto.hogar : defecto.movil), portabilidad: false }]);
+  }
+  function cambiar(id, campo, valor) {
+    setFilas((prev) => prev.map((f) => (f.id === id ? { ...f, [campo]: valor } : f)));
+  }
+  function quitar(id) {
+    setFilas((prev) => prev.filter((f) => f.id !== id));
+  }
+
+  function calcular(lista) {
+    let hogar = base.clientesHogar;
+    let movil = base.clientesMovil;
+    let ingresos = base.ingresos;
+    let bonos = base.bonos;
+    lista.forEach((f) => {
+      const n = Math.max(0, Number(f.cantidad) || 0);
+      ingresos += n * (Number(f.monto) || 0);
+      if (f.tipo === "hogar") hogar += n;
+      else {
+        movil += n;
+        if (f.portabilidad) bonos += n;
+      }
+    });
+    return calcularComisionNueva({
+      clientesHogar: hogar,
+      metaClientesHogar: base.metaHogar,
+      clientesMovil: movil,
+      metaClientesMovil: base.metaMovil,
+      ingresosDelPeriodo: ingresos,
+      metaIngresos: base.metaIngresos,
+      cantidadBonoMovil: bonos,
+      cantidadBonoPendiente: 0,
+    });
+  }
+  const ahora = useMemo(() => calcular([]), []);
+  const con = calcular(filas);
+  const dif = con.total - ahora.total;
+  const cruzaTramo = con.montoBase !== ahora.montoBase;
+  const activaAcel = ahora.ajusteIngreso !== "acelerador" && con.ajusteIngreso === "acelerador";
+  const pierdeAcel = ahora.ajusteIngreso === "acelerador" && con.ajusteIngreso !== "acelerador";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } } onClick={cerrar}>
+      <div
+        className="bg-white w-full max-w-md p-4 overflow-y-auto"
+        style={ { borderRadius: "22px 22px 0 0", maxHeight: "92vh", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" } }
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h3 className="font-bold text-lg" style={ { color: "#001E62" } }>Simulador de comisión</h3>
+            <p className="text-xs mb-3" style={ { color: "#5A6680" } }>Suma clientes que todavía no tienes y mira cuánto subiría tu comisión de {mesLabel(periodoKey)}.</p>
+          </div>
+          <button type="button" onClick={cerrar} aria-label="Cerrar" className="shrink-0 text-sm" style={ { color: "#5A6680", minWidth: 44, minHeight: 44 } }>✕</button>
+        </div>
+
+        {filas.length === 0 && <p className="text-sm mb-3" style={ { color: "#5A6680" } }>Agrega un cliente Hogar o Móvil para empezar.</p>}
+        {filas.map((f) => (
+          <div key={f.id} className="rounded-lg border mb-2.5 p-3" style={ { borderColor: "#DFE5EF" } }>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>{f.tipo === "hogar" ? "🏠 Hogar" : "📱 Móvil"}</span>
+              <button type="button" onClick={() => quitar(f.id)} aria-label="Quitar" style={ { color: "#B45309", fontSize: 18, minWidth: 44, minHeight: 44 } }>✕</button>
+            </div>
+            <div className="flex items-end gap-3 flex-wrap">
+              <div>
+                <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Cantidad</div>
+                <div className="flex items-center rounded-md overflow-hidden" style={ { border: "2px solid #DFE5EF" } }>
+                  <button type="button" onClick={() => cambiar(f.id, "cantidad", Math.max(1, (Number(f.cantidad) || 1) - 1))} style={ { width: 44, height: 44, background: "#F3F6FB", fontSize: 20, fontWeight: 700 } }>−</button>
+                  <span className="text-center font-bold" style={ { minWidth: 34 } }>{f.cantidad}</span>
+                  <button type="button" onClick={() => cambiar(f.id, "cantidad", (Number(f.cantidad) || 0) + 1)} style={ { width: 44, height: 44, background: "#F3F6FB", fontSize: 20, fontWeight: 700 } }>+</button>
+                </div>
+              </div>
+              <div>
+                <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>{f.tipo === "hogar" ? "Mensualidad c/u" : "Costo del plan c/u"}</div>
+                <div className="flex items-center gap-1 rounded-md px-2.5" style={ { border: "2px solid #DFE5EF", height: 44 } }>
+                  <span>$</span>
+                  <input type="number" inputMode="decimal" min="0" step="0.01" value={f.monto} onChange={(e) => cambiar(f.id, "monto", e.target.value)} className="outline-none font-semibold" style={ { width: 70, border: 0 } } />
+                </div>
+              </div>
+            </div>
+            {f.tipo === "movil" && (
+              <label className="flex items-center gap-2 text-sm mt-2" style={ { minHeight: 44 } }>
+                <input type="checkbox" checked={f.portabilidad} onChange={(e) => cambiar(f.id, "portabilidad", e.target.checked)} style={ { width: 22, height: 22 } } />
+                Es portabilidad (bono de ${BONO_POR_CONVERGENCIA} c/u)
+              </label>
+            )}
+          </div>
+        ))}
+
+        <div className="flex gap-2 mt-1 mb-4">
+          <button type="button" onClick={() => agregar("hogar")} className="flex-1 font-bold text-sm rounded-md" style={ { minHeight: 46, border: "2px solid #001E62", color: "#001E62", background: "white" } }>+ Hogar</button>
+          <button type="button" onClick={() => agregar("movil")} className="flex-1 font-bold text-sm rounded-md" style={ { minHeight: 46, border: "2px solid #001E62", color: "#001E62", background: "white" } }>+ Móvil</button>
+        </div>
+
+        <div className="rounded-lg p-3.5" style={ { background: "#F3F6FB" } }>
+          <div className="flex items-end justify-between gap-2">
+            <div>
+              <div className="text-[11px]" style={ { color: "#5A6680" } }>Ahora</div>
+              <div className="text-xl font-bold tabular-nums">{fmtMiles(ahora.total)}</div>
+            </div>
+            <div style={ { color: "#5A6680", fontSize: 20 } }>→</div>
+            <div className="text-right">
+              <div className="text-[11px]" style={ { color: "#5A6680" } }>Con estos clientes</div>
+              <div className="text-xl font-bold tabular-nums" style={ { color: "#0072CE" } }>{fmtMiles(con.total)}</div>
+            </div>
+          </div>
+          <div className="flex items-baseline justify-between mt-2.5 pt-2.5" style={ { borderTop: "1px solid #DFE5EF" } }>
+            <span className="font-bold">{dif < -0.005 ? "Bajarías" : "Subirías"}</span>
+            <span className="text-2xl font-bold tabular-nums">{dif >= 0 ? "+" : "−"}{fmtMiles(Math.abs(dif))}</span>
+          </div>
+          {(cruzaTramo || activaAcel || pierdeAcel) && (
+            <div className="text-sm mt-2.5" style={ { lineHeight: 1.4 } }>
+              {cruzaTramo && <div className="py-1">📈 Pasarías del tramo de <b>{fmtMiles(ahora.montoBase, 0)}</b> al de <b>{fmtMiles(con.montoBase, 0)}</b>.</div>}
+              {activaAcel && <div className="py-1">⚡ Superarías el 100% de ingresos y se activaría el acelerador (+10 puntos).</div>}
+              {pierdeAcel && <div className="py-1">🐢 Dejarías de superar el 100% de ingresos y se perdería el acelerador.</div>}
+            </div>
+          )}
+          {!cruzaTramo && !activaAcel && !pierdeAcel && filas.length > 0 && (
+            <div className="text-sm mt-2.5" style={ { color: "#5A6680" } }>Sigues en el mismo tramo de base ({fmtMiles(con.montoBase, 0)}); la subida viene de ingresos y bonos.</div>
+          )}
+          <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
+            Clientes: {con.pctClientesPonderado.toFixed(1)}% de la meta (hogar {con.pctHogar.toFixed(0)}% · móvil {con.pctMovil.toFixed(0)}%) · Ingresos: {con.pctIngreso.toFixed(0)}% de la meta
+          </div>
+        </div>
+
+        <div className="flex gap-2 mt-3">
+          <button type="button" onClick={() => setFilas([])} className="flex-1 text-sm font-semibold rounded-md border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#5A6680" } }>Limpiar</button>
+          <button type="button" onClick={cerrar} className="flex-1 text-sm font-bold rounded-md text-white" style={ { minHeight: 44, background: "#001E62" } }>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MiniStat({ valor, label, color, onClick }) {
   return (
     <button
@@ -4243,6 +4395,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     };
   }, [clientes, convergencias, metas, periodoActual]);
   const [mostrarSimuladorArpu, setMostrarSimuladorArpu] = useState(false);
+  const [mostrarSimComision, setMostrarSimComision] = useState(false);
 
   // Ganancia estimada de rescatar UN cliente puntual (usada en el modo uno-por-uno).
   // Se calcula sola, sin depender de qué período estés viendo en el Dashboard, usando
@@ -5064,6 +5217,37 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                 ✓ Solo con 1ra factura pagada: <span className="font-mono font-semibold">{fmtMonto(comisionConfirmada.total)}</span>{" "}
                 ({clientesDelPeriodoConfirmados.length} de {clientesDelPeriodo.length} clientes hogar)
               </div>
+            )}
+            {esNuevo && (
+              <React.Fragment>
+                <button
+                  type="button"
+                  onClick={() => setMostrarSimComision(true)}
+                  className="w-full mt-3 text-sm font-bold rounded-lg"
+                  style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid rgba(255,255,255,0.6)" } }
+                >
+                  🧮 Simular clientes nuevos
+                </button>
+                {mostrarSimComision && (
+                  <SimuladorComisionModal
+                    periodoKey={periodoVisto}
+                    base={ {
+                      clientesHogar: clientesDelPeriodo.length,
+                      metaHogar: metaClientesHogar,
+                      clientesMovil: convergenciasPeriodo,
+                      metaMovil: metaClientesMovil,
+                      ingresos: dineroDelPeriodo + costoPlanesMovilesPeriodo,
+                      metaIngresos: metaDinero,
+                      bonos: resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente,
+                    } }
+                    defecto={ {
+                      hogar: clientesDelPeriodo.length ? Math.round(dineroDelPeriodo / clientesDelPeriodo.length) : 38,
+                      movil: convergenciasPeriodo ? Math.round(costoPlanesMovilesPeriodo / convergenciasPeriodo) : 20,
+                    } }
+                    onClose={() => setMostrarSimComision(false)}
+                  />
+                )}
+              </React.Fragment>
             )}
           </>
         ) : (
