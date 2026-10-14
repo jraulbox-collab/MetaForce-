@@ -7837,7 +7837,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           const q = busquedaMovil.trim().toLowerCase();
           const delMes = clientesMovil
             .filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key)
-            .filter((c) => !q || String(c.nombre || "").toLowerCase().includes(q) || String(c.telefono || "").includes(q) || String(c.whatsapp || "").includes(q));
+            .filter((c) => !q || String(c.nombre || "").toLowerCase().includes(q) || String(c.telefono || "").includes(q) || String(c.whatsapp || "").includes(q))
+            .sort((a, b) => String(b.creadoEn || "").localeCompare(String(a.creadoEn || "")));
           if (q && delMes.length === 0) return null;
           const metaMovilMes = leerMeta(metas || {}, m.key, "clientesMovil");
           const resumenMes = esquemaNuevo(m.key) ? resumenMovilesNuevo(delMes, false) : null;
