@@ -4366,7 +4366,10 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   const abrirClienteDesdeLista = (e, c) => {
     e.preventDefault();
     e.stopPropagation();
-    if (idsMovilHoy.has(c.id)) onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil" });
+    if (idsMovilHoy.has(c.id)) {
+      memoriaDashboard.retorno = true;
+      onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "dashboard" } });
+    }
     else onVerCliente(c);
   };
   function calcularComisionConSubconjuntoHoy(subset) {
@@ -8463,10 +8466,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   }
 
   function cancelEdit() {
-    const volver = vieneDePrecierre.current && destinoVolver.current === "alertas";
+    const volver = vieneDePrecierre.current && destinoVolver.current !== "precierre";
     limpiarForm();
     setFormAbierto(false);
-    if (volver && onVolverAPrecierre) onVolverAPrecierre("alertas");
+    if (volver && onVolverAPrecierre) onVolverAPrecierre(destinoVolver.current);
   }
 
   const campoCls = "w-full px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm outline-none";
