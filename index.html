@@ -459,6 +459,41 @@ function alertasMovilPendientes(lista) {
   });
   return out.sort((a, b) => a.milestone.triggerDate.localeCompare(b.milestone.triggerDate));
 }
+// Recordatorios que todavía no tocan pero llegan en los próximos `dias` días (Hogar y Móvil).
+// Devuelve [{ fecha, items: [{ cliente, esMovil, tipo }] }] con un renglón por día, aunque sea vacío.
+function recordatoriosProximos(clientesHogar, convergencias, dias) {
+  const TIPO_MOVIL = { m1: "toque1", m2: "d1", m3: "t3" };
+  const hoyISO = fechaLocalISO(new Date());
+  const porFecha = {};
+  const fechas = [];
+  for (let i = 1; i <= dias; i++) {
+    const f = addDays(hoyISO, i);
+    fechas.push(f);
+    porFecha[f] = [];
+  }
+  (clientesHogar || []).forEach((c) => {
+    (c.facturas || []).forEach((f) => {
+      f.milestones.forEach((m) => {
+        if (!m.enviado && porFecha[m.triggerDate]) porFecha[m.triggerDate].push({ cliente: c, esMovil: false, tipo: m.type });
+      });
+    });
+  });
+  (convergencias || []).forEach((c) => {
+    if (c.f1_estado === "pagada" || !c.telefono) return;
+    const periodo = periodoDelMovil(c);
+    if (!periodo || !esquemaNuevo(periodo)) return;
+    const limite = fechaLimitePrimeraFactura(periodo);
+    const fm = movilFechasPrimeraFactura(c);
+    if (!fm) return;
+    HITOS_MOVIL.forEach((h) => {
+      if (c[`aviso_${h.key}`]) return;
+      const fecha = fm[h.fecha];
+      if (limite && fecha > fechaLocalISO(limite)) return;
+      if (porFecha[fecha]) porFecha[fecha].push({ cliente: c, esMovil: true, tipo: TIPO_MOVIL[h.key] });
+    });
+  });
+  return fechas.map((fecha) => ({ fecha, items: porFecha[fecha] }));
+}
 function clienteCuentaParaComision(c) {
   if (clienteExcluido(c)) return false;
   if (!c.fechaInstalacion) return true;
@@ -2891,6 +2926,7 @@ function App() {
             alertasMovil={alertasMovilPendientes(convergencias)}
             onMarcarMovil={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
             onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
+            proximos={recordatoriosProximos(clientesActivos, convergencias, 3)}
             onVerMovil={(c) => {
               setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "alertas" }, token: Date.now() });
               navegarA("clientes");
@@ -6639,7 +6675,7 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
   );
 }
 
-function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
   const TIPO_POR_HITO = { m1: "toque1", m2: "d1", m3: "t3" };
@@ -6650,6 +6686,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   const [expandidos, setExpandidos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.expandidos : []));
   const [extrasAbiertos, setExtrasAbiertos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.extrasAbiertos : []));
   const listaAbierta = true;
+  const [proximosAbierto, setProximosAbierto] = useState(false);
   memoriaCobros.expandidos = Array.from(expandidos);
   memoriaCobros.extrasAbiertos = Array.from(extrasAbiertos);
   useEffect(() => { memoriaCobros.retorno = false; }, []);
@@ -6774,6 +6811,52 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
           </div>
           <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Mensaje automático para que paguen su factura</div>
         </div>
+        {proximos && (
+          <div style={ { borderBottom: "1px solid #DFE5EF" } }>
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => setProximosAbierto((v) => !v)}
+              className="flex items-center justify-between gap-2 px-4 py-3 cursor-pointer"
+              style={ { background: "#F3F6FB" } }
+            >
+              <div className="text-sm" style={ { color: "#1F2937" } }>
+                <span className="font-bold" style={ { color: "#001E62" } }>Próximos días: </span>
+                {proximos.map((d, i) => {
+                  const [y, m, dd] = d.fecha.split("-").map(Number);
+                  const nom = i === 0 ? "Mañana" : DIAS_SEMANA[new Date(y, m - 1, dd).getDay()].slice(0, 3);
+                  return (
+                    <span key={d.fecha} style={ { marginRight: 10, whiteSpace: "nowrap" } }>
+                      {nom} <span className="font-bold" style={ { color: d.items.length ? "#9A4A06" : "#5A6680" } }>{d.items.length}</span>
+                    </span>
+                  );
+                })}
+              </div>
+              <span className="text-sm font-semibold" style={ { color: "#0B4A99" } }>{proximosAbierto ? "Ocultar" : "Ver"}</span>
+            </div>
+            {proximosAbierto && (
+              <div className="px-4 pb-3 pt-1" style={ { background: "#F3F6FB" } }>
+                {proximos.map((d, i) => (
+                  <div key={d.fecha} className="mt-2">
+                    <div className="text-sm font-bold" style={ { color: "#001E62" } }>{i === 0 ? "Mañana · " : ""}{fmtFechaConDia(d.fecha)}</div>
+                    {d.items.length === 0 ? (
+                      <div className="text-sm" style={ { color: "#3D4A66" } }>Sin recordatorios nuevos</div>
+                    ) : d.items.map((it, k) => {
+                      const t = TIPOS_ALERTA.find((x) => x.type === it.tipo);
+                      return (
+                        <div key={it.cliente.id + "-" + it.tipo + "-" + k} className="flex items-center gap-2 mt-1 min-w-0">
+                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: it.esMovil ? "#0E7C66" : "#001E62", color: "#FFFFFF" } }>{it.esMovil ? "Móvil" : "Hogar"}</span>
+                          <span className="text-sm font-semibold truncate" style={ { color: "#001E62", minWidth: 0 } }>{it.cliente.nombre}</span>
+                          <span className="text-sm flex-shrink-0" style={ { color: "#3D4A66" } }>· {t ? t.corto : ""}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         {alertasHoy.length > 0 && (
           <div className="p-4">
             <button
