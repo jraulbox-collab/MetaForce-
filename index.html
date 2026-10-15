@@ -409,6 +409,27 @@ function movilFechasPrimeraFactura(c) {
     m3: addDays(metaISO, -4),
   };
 }
+// Cálculo aproximado de la 1ra factura de un cliente Móvil pospago:
+// prorrateo (plan ÷ 30 × días desde la activación hasta el día antes de su ciclo) + 1 mes completo,
+// más ISC 5%, ITBMS 7% (sobre plan + ISC) y la tasa de portabilidad de B/. 0.02 por cada mes facturado.
+const TASAS_MOVIL = { isc: 0.05, itbms: 0.07, portabilidadMes: 0.02 };
+function calcularPrimeraFacturaMovil(plan, fechas, planIncluyeImpuestos) {
+  const monto = Number(plan);
+  if (!fechas || !monto || monto <= 0) return null;
+  const aFecha = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d); };
+  const dias = Math.max(0, Math.round((aFecha(fechas.facturaISO) - aFecha(fechas.activacion)) / 86400000));
+  const factor = (1 + TASAS_MOVIL.isc) * (1 + TASAS_MOVIL.itbms);
+  const planBase = planIncluyeImpuestos ? monto / factor : monto;
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const prorrateo = r2((planBase / 30) * dias);
+  const mes = r2(planBase);
+  const subtotal = r2(prorrateo + mes);
+  const isc = r2(subtotal * TASAS_MOVIL.isc);
+  const itbms = r2((subtotal + isc) * TASAS_MOVIL.itbms);
+  const portabilidad = r2(TASAS_MOVIL.portabilidadMes * 2);
+  const total = r2(subtotal + isc + itbms + portabilidad);
+  return { dias, prorrateo, mes, subtotal, isc, itbms, portabilidad, total };
+}
 function saludoSegunHora() {
   const h = new Date().getHours();
   if (h < 12) return "Buenos días";
@@ -8427,6 +8448,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [f1Pagada, setF1Pagada] = useState(false);
   const [cicloManual, setCicloManual] = useState("");
   const [cicloDesbloqueado, setCicloDesbloqueado] = useState(false);
+  const [planConImpuestos, setPlanConImpuestos] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formAbierto, setFormAbierto] = useState(!!abrirForm);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
@@ -8699,6 +8721,36 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 Sale de la fecha de activación{cicloMostrado ? `. La 1ra factura le llega el ${fmtFecha((movilFechasPrimeraFactura({ fechaActivacion, cicloManual: cicloDesbloqueado ? cicloManual : "" }) || {}).facturaISO)}` : ""}.
               </div>
             </div>
+            {(() => {
+              const fx = movilFechasPrimeraFactura({ fechaActivacion, cicloManual: cicloDesbloqueado ? cicloManual : "" });
+              const calc = calcularPrimeraFacturaMovil(montoPlan, fx, planConImpuestos);
+              const fila = (txt, val, fuerte) => (
+                <div className="flex items-center justify-between text-sm" style={ { color: "#1F2937", fontWeight: fuerte ? 700 : 400 } }>
+                  <span>{txt}</span><span>{fmtMonto(val)}</span>
+                </div>
+              );
+              return (
+                <div className="col-span-2 rounded-md p-3" style={ { background: "#F3F6FB", border: "1px solid #C9D2E3" } }>
+                  <div className="text-sm font-bold" style={ { color: "#001E62" } }>Primera factura (aprox.)</div>
+                  {!calc ? (
+                    <div className="text-sm mt-1" style={ { color: "#3D4A66" } }>Escribe el costo del plan para ver el cálculo.</div>
+                  ) : (
+                    <div className="mt-2 flex flex-col gap-1">
+                      {fila(`Prorrateo (${calc.dias} días)`, calc.prorrateo)}
+                      {fila("Mes completo", calc.mes)}
+                      {fila("ISC 5%", calc.isc)}
+                      {fila("ITBMS 7%", calc.itbms)}
+                      {fila("Tasa de portabilidad", calc.portabilidad)}
+                      <div className="mt-1 pt-1.5" style={ { borderTop: "1px solid #C9D2E3" } }>{fila("Total aproximado", calc.total, true)}</div>
+                    </div>
+                  )}
+                  <label className="flex items-center gap-2 text-sm cursor-pointer mt-2" style={ { color: "#3D4A66" } }>
+                    <input type="checkbox" checked={planConImpuestos} onChange={(e) => setPlanConImpuestos(e.target.checked)} className="w-4 h-4" />
+                    <span>El costo del plan ya incluye impuestos</span>
+                  </label>
+                </div>
+              );
+            })()}
             <div className="col-span-2 flex flex-col gap-2 rounded-md p-3" style={ { background: "#F3F6FB" } }>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <input type="checkbox" checked={esPortabilidad} onChange={(e) => setEsPortabilidad(e.target.checked)} className="w-4 h-4" />
