@@ -8448,7 +8448,6 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [f1Pagada, setF1Pagada] = useState(false);
   const [cicloManual, setCicloManual] = useState("");
   const [cicloDesbloqueado, setCicloDesbloqueado] = useState(false);
-  const [planConImpuestos, setPlanConImpuestos] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formAbierto, setFormAbierto] = useState(!!abrirForm);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
@@ -8583,6 +8582,22 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     if (volver && onVolverAPrecierre) onVolverAPrecierre(destinoVolver.current);
   }
 
+  // Costos de plan más usados entre tus clientes Móvil: primero del mismo tipo de cliente
+  // (si hay al menos 2), y si no, de todos.
+  const montosSugeridosMovil = useMemo(() => {
+    const contar = (lista) => {
+      const conteo = new Map();
+      lista.forEach((c) => {
+        const m = Number(c.montoPlan);
+        if (!m) return;
+        conteo.set(m, (conteo.get(m) || 0) + 1);
+      });
+      return [...conteo.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([monto]) => monto);
+    };
+    const mismoTipo = (clientesMovil || []).filter((c) => tipoClienteMovil(c) === tipo);
+    const delTipo = contar(mismoTipo);
+    return mismoTipo.length >= 2 && delTipo.length > 0 ? delTipo : contar(clientesMovil || []);
+  }, [clientesMovil, tipo]);
   const cicloAuto = (movilFechasPrimeraFactura({ fechaActivacion }) || {}).ciclo || null;
   const cicloMostrado = cicloDesbloqueado && cicloManual ? Number(cicloManual) : cicloAuto;
   const campoCls = "w-full px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm outline-none";
@@ -8667,6 +8682,26 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 className={campoCls}
                 style={ { borderColor: "#DFE5EF" } }
               />
+              {montosSugeridosMovil.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  <span className="text-xs" style={ { color: "#5A6680" } }>Sugeridos:</span>
+                  {montosSugeridosMovil.map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setMontoPlan(String(m))}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-full border"
+                      style={
+                        Number(montoPlan) === m
+                          ? { background: "#001E62", color: "#fff", borderColor: "#001E62" }
+                          : { background: "#F3F6FB", color: "#1F2937", borderColor: "#C9D2E3" }
+                      }
+                    >
+                      {fmtMonto(m)}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
             <div>
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>Fecha de activación</label>
@@ -8723,31 +8758,15 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
             </div>
             {(() => {
               const fx = movilFechasPrimeraFactura({ fechaActivacion, cicloManual: cicloDesbloqueado ? cicloManual : "" });
-              const calc = calcularPrimeraFacturaMovil(montoPlan, fx, planConImpuestos);
-              const fila = (txt, val, fuerte) => (
-                <div className="flex items-center justify-between text-sm" style={ { color: "#1F2937", fontWeight: fuerte ? 700 : 400 } }>
-                  <span>{txt}</span><span>{fmtMonto(val)}</span>
-                </div>
-              );
+              const calc = calcularPrimeraFacturaMovil(montoPlan, fx, false);
+              if (!calc) return null;
               return (
-                <div className="col-span-2 rounded-md p-3" style={ { background: "#F3F6FB", border: "1px solid #C9D2E3" } }>
-                  <div className="text-sm font-bold" style={ { color: "#001E62" } }>Primera factura (aprox.)</div>
-                  {!calc ? (
-                    <div className="text-sm mt-1" style={ { color: "#3D4A66" } }>Escribe el costo del plan para ver el cálculo.</div>
-                  ) : (
-                    <div className="mt-2 flex flex-col gap-1">
-                      {fila(`Prorrateo (${calc.dias} días)`, calc.prorrateo)}
-                      {fila("Mes completo", calc.mes)}
-                      {fila("ISC 5%", calc.isc)}
-                      {fila("ITBMS 7%", calc.itbms)}
-                      {fila("Tasa de portabilidad", calc.portabilidad)}
-                      <div className="mt-1 pt-1.5" style={ { borderTop: "1px solid #C9D2E3" } }>{fila("Total aproximado", calc.total, true)}</div>
-                    </div>
-                  )}
-                  <label className="flex items-center gap-2 text-sm cursor-pointer mt-2" style={ { color: "#3D4A66" } }>
-                    <input type="checkbox" checked={planConImpuestos} onChange={(e) => setPlanConImpuestos(e.target.checked)} className="w-4 h-4" />
-                    <span>El costo del plan ya incluye impuestos</span>
-                  </label>
+                <div className="col-span-2 rounded-md p-3 flex items-center justify-between gap-3 flex-wrap" style={ { background: "#F3F6FB", border: "1px solid #C9D2E3" } }>
+                  <div>
+                    <div className="text-sm font-bold" style={ { color: "#001E62" } }>Primera factura aprox.</div>
+                    <div className="text-xs" style={ { color: "#3D4A66" } }>Prorrateo de {calc.dias} días + mes completo, con impuestos</div>
+                  </div>
+                  <div className="text-xl font-extrabold" style={ { color: "#001E62" } }>{fmtMonto(calc.total)}</div>
                 </div>
               );
             })()}
