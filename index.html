@@ -6811,7 +6811,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
           </div>
           <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Mensaje automático para que paguen su factura</div>
         </div>
-        {proximos && (
+        {proximos && proximos.some((d) => d.items.length > 0) && (
           <div style={ { borderBottom: "1px solid #DFE5EF" } }>
             <div
               role="button"
@@ -6822,12 +6822,12 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
             >
               <div className="text-sm" style={ { color: "#1F2937" } }>
                 <span className="font-bold" style={ { color: "#001E62" } }>Próximos días: </span>
-                {proximos.map((d, i) => {
+                {proximos.map((d, i) => ({ d, i })).filter(({ d }) => d.items.length > 0).map(({ d, i }) => {
                   const [y, m, dd] = d.fecha.split("-").map(Number);
                   const nom = i === 0 ? "Mañana" : DIAS_SEMANA[new Date(y, m - 1, dd).getDay()].slice(0, 3);
                   return (
                     <span key={d.fecha} style={ { marginRight: 10, whiteSpace: "nowrap" } }>
-                      {nom} <span className="font-bold" style={ { color: d.items.length ? "#9A4A06" : "#5A6680" } }>{d.items.length}</span>
+                      {nom} <span className="font-bold" style={ { color: "#9A4A06" } }>{d.items.length}</span>
                     </span>
                   );
                 })}
@@ -6836,12 +6836,10 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
             </div>
             {proximosAbierto && (
               <div className="px-4 pb-3 pt-1" style={ { background: "#F3F6FB" } }>
-                {proximos.map((d, i) => (
+                {proximos.map((d, i) => ({ d, i })).filter(({ d }) => d.items.length > 0).map(({ d, i }) => (
                   <div key={d.fecha} className="mt-2">
                     <div className="text-sm font-bold" style={ { color: "#001E62" } }>{i === 0 ? "Mañana · " : ""}{fmtFechaConDia(d.fecha)}</div>
-                    {d.items.length === 0 ? (
-                      <div className="text-sm" style={ { color: "#3D4A66" } }>Sin recordatorios nuevos</div>
-                    ) : d.items.map((it, k) => {
+                    {d.items.map((it, k) => {
                       const t = TIPOS_ALERTA.find((x) => x.type === it.tipo);
                       return (
                         <div key={it.cliente.id + "-" + it.tipo + "-" + k} className="flex items-center gap-2 mt-1 min-w-0">
