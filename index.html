@@ -381,7 +381,13 @@ function movilFechasPrimeraFactura(c) {
   const m = m1 - 1;
   let ciclo;
   let factura;
-  if (d >= 15 && d <= 27) { ciclo = 4; factura = new Date(y, m + 1, 4); }
+  const cicloForzado = Number(c.cicloManual);
+  if (cicloForzado === 4 || cicloForzado === 19) {
+    ciclo = cicloForzado;
+    factura = new Date(y, m, ciclo);
+    if (fechaLocalISO(factura) <= act) factura = new Date(y, m + 1, ciclo);
+  }
+  else if (d >= 15 && d <= 27) { ciclo = 4; factura = new Date(y, m + 1, 4); }
   else if (d >= 28) { ciclo = 19; factura = new Date(y, m + 1, 19); }
   else { ciclo = 19; factura = new Date(y, m, 19); }
   const facturaISO = fechaLocalISO(factura);
@@ -2045,6 +2051,7 @@ function App() {
       montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
       fechaActivacion: fechaActivacion || fechaLocalISO(new Date()),
       esPortabilidad: !!extra && !!extra.esPortabilidad,
+      cicloManual: extra && extra.cicloManual ? Number(extra.cicloManual) : null,
       f1_estado: pagada ? "pagada" : "",
       ...(pagada ? { f1_pagadaEn: new Date().toISOString() } : {}),
       creadoEn: new Date().toISOString(),
@@ -8418,6 +8425,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [fechaActivacion, setFechaActivacion] = useState(() => fechaLocalISO(new Date()));
   const [esPortabilidad, setEsPortabilidad] = useState(false);
   const [f1Pagada, setF1Pagada] = useState(false);
+  const [cicloManual, setCicloManual] = useState("");
+  const [cicloDesbloqueado, setCicloDesbloqueado] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [formAbierto, setFormAbierto] = useState(!!abrirForm);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
@@ -8441,6 +8450,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setFechaActivacion(fechaActivacionMovil(aEditar) || fechaLocalISO(new Date()));
         setEsPortabilidad(!!aEditar.esPortabilidad);
         setF1Pagada(aEditar.f1_estado === "pagada");
+        setCicloManual(aEditar.cicloManual ? String(aEditar.cicloManual) : "");
+        setCicloDesbloqueado(!!aEditar.cicloManual);
         setEditingId(aEditar.id);
         vieneDePrecierre.current = true;
         destinoVolver.current = prefill.volverA || "precierre";
@@ -8454,6 +8465,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setFechaActivacion(prefill.fecha || fechaLocalISO(new Date()));
         setEsPortabilidad(false);
         setF1Pagada(false);
+        setCicloManual("");
+        setCicloDesbloqueado(false);
         vieneDePrecierre.current = true;
         destinoVolver.current = "precierre";
       }
@@ -8481,6 +8494,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setFechaActivacion(fechaLocalISO(new Date()));
     setEsPortabilidad(false);
     setF1Pagada(false);
+    setCicloManual("");
+    setCicloDesbloqueado(false);
     setEditingId(null);
   }
 
@@ -8488,6 +8503,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     e.preventDefault();
     if (!nombre.trim() || !telefono.trim()) return;
     const volver = vieneDePrecierre.current;
+    const cicloManualEfectivo = cicloDesbloqueado && cicloManual && Number(cicloManual) !== cicloAuto ? cicloManual : "";
     const editando = editingId ? clientesMovil.find((x) => x.id === editingId) : null;
     if (editingId) {
       onEditar(editingId, {
@@ -8498,12 +8514,14 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         montoPlan: montoPlan ? Number(montoPlan) || 0 : null,
         fechaActivacion,
         esPortabilidad,
+        cicloManual: cicloManualEfectivo ? Number(cicloManualEfectivo) : null,
         ...fijarFactura(editando, f1Pagada),
       });
     } else {
       onAgregar(nombre.trim(), telefono.trim(), tipo, montoPlan, fechaActivacion, {
         whatsapp: whatsapp.trim(),
         esPortabilidad,
+        cicloManual: cicloManualEfectivo ? Number(cicloManualEfectivo) : null,
         f1_estado: f1Pagada ? "pagada" : "",
       });
     }
@@ -8522,6 +8540,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setFechaActivacion(fechaActivacionMovil(c) || fechaLocalISO(new Date()));
     setEsPortabilidad(!!c.esPortabilidad);
     setF1Pagada(c.f1_estado === "pagada");
+    setCicloManual(c.cicloManual ? String(c.cicloManual) : "");
+    setCicloDesbloqueado(!!c.cicloManual);
     setEditingId(c.id);
     setFormAbierto(true);
   }
@@ -8541,6 +8561,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     if (volver && onVolverAPrecierre) onVolverAPrecierre(destinoVolver.current);
   }
 
+  const cicloAuto = (movilFechasPrimeraFactura({ fechaActivacion }) || {}).ciclo || null;
+  const cicloMostrado = cicloDesbloqueado && cicloManual ? Number(cicloManual) : cicloAuto;
   const campoCls = "w-full px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm outline-none";
   const etiquetaCls = "text-xs font-medium block mb-1";
 
@@ -8633,6 +8655,49 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 className={campoCls}
                 style={ { borderColor: "#DFE5EF" } }
               />
+            </div>
+            <div className="col-span-2">
+              <label className={etiquetaCls} style={ { color: "#5A6680" } }>Ciclo de facturación</label>
+              {cicloDesbloqueado ? (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <select
+                    value={cicloManual || String(cicloAuto || "")}
+                    onChange={(e) => setCicloManual(e.target.value)}
+                    className={campoCls}
+                    style={ { borderColor: "#DFE5EF", maxWidth: 220 } }
+                  >
+                    <option value="4">Ciclo 04</option>
+                    <option value="19">Ciclo 19</option>
+                  </select>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setCicloManual(""); setCicloDesbloqueado(false); }}
+                    className="text-sm font-semibold underline cursor-pointer"
+                    style={ { color: "#0B4A99" } }
+                  >
+                    Volver a automático
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <div className="px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm font-semibold" style={ { borderColor: "#DFE5EF", background: "#F3F6FB", color: "#1F2937", minWidth: 220 } }>
+                    🔒 Ciclo {cicloAuto ? String(cicloAuto).padStart(2, "0") : "—"} <span className="font-normal" style={ { color: "#5A6680" } }>(automático)</span>
+                  </div>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => { setCicloManual(String(cicloAuto || 19)); setCicloDesbloqueado(true); }}
+                    className="text-sm font-semibold underline cursor-pointer"
+                    style={ { color: "#0B4A99" } }
+                  >
+                    Cambiar
+                  </span>
+                </div>
+              )}
+              <div className="text-xs mt-1" style={ { color: "#5A6680" } }>
+                Sale de la fecha de activación{cicloMostrado ? `. La 1ra factura le llega el ${fmtFecha((movilFechasPrimeraFactura({ fechaActivacion, cicloManual: cicloDesbloqueado ? cicloManual : "" }) || {}).facturaISO)}` : ""}.
+              </div>
             </div>
             <div className="col-span-2 flex flex-col gap-2 rounded-md p-3" style={ { background: "#F3F6FB" } }>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
