@@ -8448,6 +8448,14 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [f1Pagada, setF1Pagada] = useState(false);
   const [cicloManual, setCicloManual] = useState("");
   const [cicloDesbloqueado, setCicloDesbloqueado] = useState(false);
+  const [lineaCopiada, setLineaCopiada] = useState(null);
+  function copiarLinea(clave, numero) {
+    const limpio = String(numero || "").replace(/\D/g, "");
+    if (!limpio) return;
+    try { navigator.clipboard?.writeText(limpio).catch(() => {}); } catch (e) { /* sin portapapeles */ }
+    setLineaCopiada(clave);
+    setTimeout(() => setLineaCopiada((k) => (k === clave ? null : k)), 1500);
+  }
   const [editingId, setEditingId] = useState(null);
   const [formAbierto, setFormAbierto] = useState(!!abrirForm);
   const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
@@ -8643,6 +8651,17 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 className={campoCls}
                 style={ { borderColor: "#DFE5EF" } }
               />
+              {telefono.trim() && (
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => copiarLinea("form", telefono)}
+                  className="inline-flex items-center justify-center mt-1.5 text-sm font-semibold px-3 rounded-md cursor-pointer"
+                  style={ { minHeight: 40, background: lineaCopiada === "form" ? "#E3F5EA" : "#FFFFFF", color: lineaCopiada === "form" ? "#0F5A2B" : "#0B4A99", border: "2px solid " + (lineaCopiada === "form" ? "#7CC79A" : "#0B4A99") } }
+                >
+                  {lineaCopiada === "form" ? "Copiado ✓" : "Copiar número"}
+                </div>
+              )}
             </div>
             <div className="col-span-2">
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>WhatsApp (solo si es distinto al celular)</label>
@@ -8887,6 +8906,15 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         </div>
                         <div className="text-xs font-mono mt-1.5" style={ { color: "#5A6680" } }>
                           <a href={`tel:${String(c.telefono || "").replace(/[^0-9+]/g, "")}`} style={ { color: "#0072CE", textDecoration: "underline" } }>{c.telefono}</a>{c.whatsapp ? ` · WhatsApp ${c.whatsapp}` : ""} · activado {fmtFechaDia(fechaActivacionMovil(c))}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => copiarLinea(c.id, c.telefono)}
+                            className="ml-2 inline-flex items-center font-sans text-xs font-bold px-2.5 py-1 rounded-md cursor-pointer"
+                            style={ { background: lineaCopiada === c.id ? "#E3F5EA" : "#FFFFFF", color: lineaCopiada === c.id ? "#0F5A2B" : "#0B4A99", border: "1.5px solid " + (lineaCopiada === c.id ? "#7CC79A" : "#0B4A99") } }
+                          >
+                            {lineaCopiada === c.id ? "Copiado ✓" : "Copiar"}
+                          </span>
                         </div>
                         {esquemaNuevo(m.key) && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
