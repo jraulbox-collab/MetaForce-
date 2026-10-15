@@ -6543,6 +6543,28 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
                 <div className="flex justify-between py-1"><span>Móvil</span><span className="font-mono" style={ { color: "#4A5878" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
               </div>
             ) : null}
+            {(() => {
+              // Bono de ingresos (+10 puntos): se activa al pasar el 100% de la meta de ingresos.
+              // Aproximado: cuántos clientes más hacen falta según lo que deja cada tipo en promedio.
+              if (!metaDinero) return null;
+              const total = dineroHogarInstalado + dineroMovil;
+              if (total > metaDinero) {
+                return <div className="text-xs pb-2" style={ { color: "#166534" } }>✓ Bono de ingresos (+10%) activado</div>;
+              }
+              const falta = metaDinero - total;
+              const cuantos = (r) => (r != null && r > 0 ? Math.floor(falta / r) + 1 : null);
+              const cH = cuantos(rH);
+              const cM = cuantos(rM);
+              if (cH == null && cM == null) return null;
+              return (
+                <div className="text-xs pb-2" style={ { color: "#6B7794" } }>
+                  Para el bono de ingresos (+10%): faltan unos{" "}
+                  {cH != null && <b style={ { color: "#4A5878" } }>{cH} hogar</b>}
+                  {cH != null && cM != null && " o "}
+                  {cM != null && <b style={ { color: "#4A5878" } }>{cM} móvil</b>}
+                </div>
+              );
+            })()}
           </div>
         );
       })()}
