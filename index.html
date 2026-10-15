@@ -2888,6 +2888,9 @@ function App() {
           />
           <AlertasTab
             alertasHoy={alertasPorCliente}
+            alertasMovil={alertasMovilPendientes(convergencias)}
+            onMarcarMovil={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
+            onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
             alertasTodas={alertasHoy}
             onMarcar={toggleMilestone}
             onCopiarSuscriptor={copySuscriptor}
@@ -2902,11 +2905,6 @@ function App() {
             search={searchAlertas}
             filtroTipo={filtroTipoAlertas}
             setFiltroTipo={setFiltroTipoAlertas}
-          />
-          <AlertasMovilTab
-            convergencias={convergencias}
-            onMarcar={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
-            onPagoRealizado={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
           />
           </React.Fragment>
         )}
@@ -6352,7 +6350,14 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
   );
 }
 
-function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
+  // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
+  // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
+  const TIPO_POR_HITO = { m1: "toque1", m2: "d1", m3: "t3" };
+  const alertasHoy = [
+    ...alertasHogar,
+    ...(alertasMovil || []).map((a) => ({ ...a, esMovil: true, factura: null, milestone: { ...a.milestone, type: TIPO_POR_HITO[a.milestone.key] } })),
+  ];
   const [expandidos, setExpandidos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.expandidos : []));
   const [extrasAbiertos, setExtrasAbiertos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.extrasAbiertos : []));
   const [listaAbierta, setListaAbierta] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.listaAbierta : false));
@@ -6381,7 +6386,8 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
   function avanzarEnvio(marcarComoEnviado) {
     const actual = colaEnvio[indiceEnvio];
     if (marcarComoEnviado) {
-      onMarcar(actual.cliente.id, actual.milestone.key);
+      if (actual.esMovil) onMarcarMovil(actual.cliente.id, actual.milestone.key);
+      else onMarcar(actual.cliente.id, actual.milestone.key);
     }
     const nuevosEnviados = contadorEnviados + (marcarComoEnviado ? 1 : 0);
     const siguienteIndice = indiceEnvio + 1;
@@ -6616,23 +6622,45 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                 {grupo.titulo} ({grupo.items.length})
               </h2>
               <div className="flex flex-col gap-3">
-                {grupo.items.map(({ cliente, factura, milestone }) => {
+                {grupo.items.map(({ cliente, factura, milestone, esMovil, fechas }) => {
                   const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
                   return (
                     <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                       <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={ { borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" } }>
                         <div>
-                          <button
-                            onClick={() => onVerDetalle(cliente)}
-                            className="font-semibold text-sm text-left hover:underline"
-                            style={ { color: "#001E62" } }
-                          >
-                            {cliente.nombre}
-                          </button>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            {esMovil ? (
+                              <span className="font-semibold text-sm" style={ { color: "#001E62" } }>{cliente.nombre}</span>
+                            ) : (
+                              <button
+                                onClick={() => onVerDetalle(cliente)}
+                                className="font-semibold text-sm text-left hover:underline"
+                                style={ { color: "#001E62" } }
+                              >
+                                {cliente.nombre}
+                              </button>
+                            )}
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ esMovil ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
+                          </div>
                           <div className="text-xs" style={ { color: "#5A6680" } }>
-                            {cliente.telefono} · {cliente.plan} · {ORDINAL[factura.n]} factura
+                            {esMovil
+                              ? `Línea ${cliente.telefono} · ${etiquetaTipoMovil(tipoClienteMovil(cliente))} · activada ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
+                              : `${cliente.telefono} · ${cliente.plan} · ${ORDINAL[factura.n]} factura`}
                           </div>
                         </div>
+                        {esMovil ? (
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => {
+                                if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoMovil(cliente.id);
+                              } }
+                              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                              style={ { background: "#001E62" } }
+                            >
+                              Ya pagó su 1ra factura
+                            </button>
+                          </div>
+                        ) : (
                         <div className="flex items-center gap-2">
                           <button
                             onClick={() => onCopiarSuscriptor(cliente)}
@@ -6656,6 +6684,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                             {factura.n === 1 && cliente.f1_saldoPendiente ? "Saldo pagado" : "Pago realizado"}
                           </button>
                         </div>
+                        )}
                       </div>
                       <div className="p-4">
                         <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
@@ -6675,7 +6704,7 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                           </button>
                         </div>
                         {expandidos.has(cliente.id) && (
-                          <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151" } }>
+                          <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151", whiteSpace: "pre-wrap" } }>
                             {milestone.texto}
                           </div>
                         )}
@@ -6747,176 +6776,6 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                     </div>
                   );
                 })}
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// Recordatorios de Clientes Móvil dentro de Cobros: mismo estilo que los de Hogar.
-function AlertasMovilTab({ convergencias, onMarcar, onPagoRealizado }) {
-  const alertas = alertasMovilPendientes(convergencias);
-  const [listaAbierta, setListaAbierta] = useState(false);
-  const [expandidos, setExpandidos] = useState(() => new Set());
-  const [colaEnvio, setColaEnvio] = useState(null);
-  const [indiceEnvio, setIndiceEnvio] = useState(0);
-  const [contadorEnviados, setContadorEnviados] = useState(0);
-  const [resumenEnvio, setResumenEnvio] = useState(null);
-
-  function iniciarEnvioEnCadena(lista) {
-    if (!lista.length) return;
-    setColaEnvio(lista);
-    setIndiceEnvio(0);
-    setContadorEnviados(0);
-    setResumenEnvio(null);
-    window.location.href = whatsappLink(lista[0].cliente, lista[0].milestone);
-  }
-  function avanzarEnvio(marcarComoEnviado) {
-    const actual = colaEnvio[indiceEnvio];
-    if (marcarComoEnviado) onMarcar(actual.cliente.id, actual.milestone.key);
-    const nuevosEnviados = contadorEnviados + (marcarComoEnviado ? 1 : 0);
-    const siguienteIndice = indiceEnvio + 1;
-    if (siguienteIndice >= colaEnvio.length) {
-      setResumenEnvio({ total: colaEnvio.length, enviados: nuevosEnviados });
-      setColaEnvio(null);
-    } else {
-      setContadorEnviados(nuevosEnviados);
-      setIndiceEnvio(siguienteIndice);
-      const siguiente = colaEnvio[siguienteIndice];
-      window.location.href = whatsappLink(siguiente.cliente, siguiente.milestone);
-    }
-  }
-  function cancelarEnvioEnCadena() {
-    setColaEnvio(null);
-    setIndiceEnvio(0);
-  }
-  function toggleExpandido(id) {
-    setExpandidos((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-  function diasTexto(fecha) {
-    const dias = daysFromToday(fecha);
-    if (dias === 0) return "Para hoy";
-    const abs = Math.abs(dias);
-    return `Desde hace ${abs} día${abs === 1 ? "" : "s"}`;
-  }
-
-  return (
-    <div>
-      <h2 className="text-base font-extrabold mb-2 mt-8" style={ { color: "#001E62" } }>3 · Recordatorios · Clientes Móvil</h2>
-      <div className="bg-white rounded-xl border overflow-hidden mb-4" style={ { borderColor: "#DFE5EF" } }>
-        <div className="px-4 py-3.5" style={ { borderBottom: alertas.length > 0 ? "1px solid #DFE5EF" : "none" } }>
-          <div className="text-sm font-bold" style={ { color: "#001E62" } }>
-            {alertas.length > 0 ? (
-              <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{alertas.length}</span> {alertas.length === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>
-            ) : "✓ Sin recordatorios por enviar"}
-          </div>
-          <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Para que paguen su 1ra factura · clientes desde octubre 2026</div>
-        </div>
-        {alertas.length > 0 && (
-          <div className="p-4">
-            <button
-              type="button"
-              onClick={() => iniciarEnvioEnCadena(alertas)}
-              disabled={!!colaEnvio}
-              className="w-full py-3 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
-              style={ { background: "#001E62" } }
-            >
-              Enviar recordatorios <span style={ { fontWeight: 500, opacity: 0.8 } }>· {alertas.length} por WhatsApp</span>
-            </button>
-          </div>
-        )}
-        {alertas.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setListaAbierta((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-left"
-            style={ { background: "#EEF3FB", color: "#001E62", border: 0, borderTop: "1px solid #DFE5EF", cursor: "pointer" } }
-          >
-            <span>Ver lista</span><span>{listaAbierta ? "▲" : "▼"}</span>
-          </button>
-        )}
-      </div>
-
-      {colaEnvio && (
-        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap" style={ { background: "#001E62" } }>
-          <div>
-            <p className="text-sm font-semibold text-white">Enviando {indiceEnvio + 1} de {colaEnvio.length}: {colaEnvio[indiceEnvio].cliente.nombre}</p>
-            <p className="text-xs" style={ { color: "#B9C4E0" } }>Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <button onClick={() => avanzarEnvio(true)} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#001E62" } }>Sí, siguiente</button>
-            <button onClick={() => avanzarEnvio(false)} className="text-xs font-medium px-3 py-1.5 rounded-md border border-white text-white">No, saltar</button>
-            <button onClick={cancelarEnvioEnCadena} className="text-xs font-medium px-2 py-1.5 text-white opacity-70">Cancelar envío</button>
-          </div>
-        </div>
-      )}
-
-      {resumenEnvio && (
-        <div className="flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap" style={ { background: "#E9F7EF", border: "1px solid #BEE8CE" } }>
-          <p className="text-sm" style={ { color: "#166534" } }>
-            ✅ Envío en cadena terminado: <span className="font-semibold">{resumenEnvio.enviados} de {resumenEnvio.total}</span> mensajes marcados como enviados.
-          </p>
-          <button onClick={() => setResumenEnvio(null)} className="text-xs font-medium" style={ { color: "#166534" } }>Cerrar</button>
-        </div>
-      )}
-
-      {listaAbierta && alertas.length > 0 && (
-        <div className="flex flex-col gap-3 mb-6">
-          {alertas.map(({ cliente, milestone, fechas }) => (
-            <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-              <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={ { borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" } }>
-                <div>
-                  <div className="font-semibold text-sm" style={ { color: "#001E62" } }>{cliente.nombre}</div>
-                  <div className="text-xs" style={ { color: "#5A6680" } }>
-                    Línea {cliente.telefono} · {etiquetaTipoMovil(tipoClienteMovil(cliente))} · activada {fmtFecha(fechas.activacion)} · ciclo {String(fechas.ciclo).padStart(2, "0")}
-                  </div>
-                </div>
-                <button
-                  onClick={() => {
-                    if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoRealizado(cliente.id);
-                  } }
-                  className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                  style={ { background: "#001E62" } }
-                >
-                  Ya pagó su 1ra factura
-                </button>
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: milestone.bg, color: milestone.color } }>{milestone.tag}</span>
-                    <span className="text-xs" style={ { color: "#5A6680" } }>{milestone.label}</span>
-                    <span className="text-xs font-medium" style={ { color: milestone.color } }>{diasTexto(milestone.triggerDate)}</span>
-                  </div>
-                  <button onClick={() => toggleExpandido(cliente.id)} className="text-xs font-medium" style={ { color: "#0072CE" } }>
-                    {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
-                  </button>
-                </div>
-                {expandidos.has(cliente.id) && (
-                  <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151", whiteSpace: "pre-wrap" } }>{milestone.texto}</div>
-                )}
-                <div className="flex items-center gap-2 flex-wrap">
-                  <a href={whatsappLink(cliente, milestone)} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#25D366" } }>
-                    Enviar por WhatsApp
-                  </a>
-                  <button
-                    onClick={() => {
-                      if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) onMarcar(cliente.id, milestone.key);
-                    } }
-                    className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                    style={ { borderColor: "#DFE5EF", color: "#374151" } }
-                  >
-                    Marcar como enviado
-                  </button>
-                </div>
               </div>
             </div>
           ))}
