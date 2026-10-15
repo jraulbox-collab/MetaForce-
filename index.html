@@ -1262,60 +1262,177 @@ const CAMPOS_EXPORTAR = [
   ["monto", "Monto mensual"],
 ];
 
-function ExportarModal({ clientes, onCerrar }) {
+// "ISRAEL NORIEGA MENDOZA" -> "Israel Noriega Mendoza" (de, del, la, los... quedan en minúscula).
+const PARTICULAS_NOMBRE = ["de", "del", "la", "las", "los", "y"];
+function nombreLegible(s) {
+  return String(s || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p, i) => (i > 0 && PARTICULAS_NOMBRE.includes(p) ? p : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
+// "DOBLE 300 Megas + COMBO PACK" -> "Doble 300 + Combo"; "SINGLE 150 Megas" -> "Single 150".
+function planCorto(c) {
+  if (!c.planTipo || !c.velocidad) return "";
+  const tipo = c.planTipo === "SINGLE" ? "Single" : "Doble";
+  const vel = String(c.velocidad).replace(/\s*megas?/i, "").trim();
+  let tv = "";
+  if (c.planTipo === "DOBLE" && c.planTV) {
+    tv = /combo/i.test(c.planTV) ? "Combo" : nombreLegible(c.planTV).replace(/^Tv\b/, "TV");
+  }
+  return `${tipo} ${vel}${tv ? " + " + tv : ""}`;
+}
+
+function enRangoFechas(fecha, desde, hasta) {
+  if (!fecha) return false;
+  if (desde && fecha < desde) return false;
+  if (hasta && fecha > hasta) return false;
+  return true;
+}
+
+function ExportarModal({ clientes, clientesMovil, onCerrar }) {
   const [desde, setDesde] = useState("");
   const [hasta, setHasta] = useState("");
+  const [incluirHogar, setIncluirHogar] = useState(true);
+  const [incluirMovil, setIncluirMovil] = useState(true);
   const [campos, setCampos] = useState({
     suscriptor: true,
     nombre: true,
     instalacion: true,
-    facturasEmitidas: true,
-    facturasPagadas: true,
+    facturasEmitidas: false,
+    facturasPagadas: false,
     telefono: false,
-    plan: false,
-    monto: false,
+    plan: true,
+    monto: true,
   });
   const [copiado, setCopiado] = useState(false);
 
-  const filtrados = useMemo(() => {
+  // Hogar: clientes ya instalados dentro del rango.
+  const hogar = useMemo(() => {
     return clientes
-      .filter((c) => {
-        if (!c.fechaInstalacion) return false;
-        if (desde && c.fechaInstalacion < desde) return false;
-        if (hasta && c.fechaInstalacion > hasta) return false;
-        return true;
-      })
-      .sort((a, b) => (a.fechaInstalacion < b.fechaInstalacion ? -1 : 1));
+      .filter((c) => enRangoFechas(c.fechaInstalacion, desde, hasta))
+      .sort((a, b) => a.fechaInstalacion.localeCompare(b.fechaInstalacion))
+      .map((c) => {
+        const r = facturasResumen(c);
+        const monto = Number(c.montoMensual);
+        return {
+          tipo: "hogar",
+          fecha: c.fechaInstalacion,
+          nombre: c.nombre || "",
+          suscriptor: c.numeroSuscriptor || "",
+          telefono: c.telefono || "",
+          planCsv: planLabel(c),
+          planCorto: planCorto(c),
+          monto: c.montoMensual !== "" && c.montoMensual != null && !isNaN(monto) ? monto : null,
+          emitidas: r.emitidas,
+          pagadas: r.pagadas,
+        };
+      });
   }, [clientes, desde, hasta]);
 
+  // Móvil: por fecha de activación. No tienen N° de suscriptor: su "línea" es el teléfono del contrato.
+  const movil = useMemo(() => {
+    return (clientesMovil || [])
+      .map((c) => ({ c, fecha: fechaActivacionMovil(c) }))
+      .filter((x) => enRangoFechas(x.fecha, desde, hasta))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha))
+      .map(({ c, fecha }) => {
+        const etiqueta = etiquetaTipoMovil(tipoClienteMovil(c));
+        return {
+          tipo: "movil",
+          fecha,
+          nombre: c.nombre || "",
+          suscriptor: c.telefono || "",
+          telefono: c.telefono || "",
+          planCsv: etiqueta,
+          planCorto: etiqueta,
+          monto: c.montoPlan != null && c.montoPlan !== "" && !isNaN(Number(c.montoPlan)) ? Number(c.montoPlan) : null,
+          emitidas: "",
+          pagadas: "",
+        };
+      });
+  }, [clientesMovil, desde, hasta]);
+
+  const seleccion = [...(incluirHogar ? hogar : []), ...(incluirMovil ? movil : [])];
+  const hayCampos = CAMPOS_EXPORTAR.some(([key]) => campos[key]);
+  const labelCampo = (key, label) => {
+    if (key === "suscriptor" && incluirMovil) return "N° Suscriptor / línea";
+    if (key === "instalacion" && incluirMovil) return "Fecha de instalación / activación";
+    return label;
+  };
+
+  // ---- Texto para WhatsApp ----
+  function construirTexto() {
+    const dinero = (n) => `$${n.toFixed(2)}`;
+    const linea = (it) => {
+      const p = [];
+      if (campos.nombre) p.push(nombreLegible(it.nombre) || "Sin nombre");
+      if (campos.suscriptor && it.suscriptor) p.push(it.suscriptor);
+      if (campos.telefono && it.telefono && !(campos.suscriptor && it.tipo === "movil")) p.push(it.telefono);
+      if (campos.plan && it.planCorto) p.push(it.planCorto);
+      if (it.tipo === "hogar") {
+        if (campos.facturasEmitidas && campos.facturasPagadas) {
+          p.push(`${it.pagadas}/${it.emitidas} facturas pagadas`);
+        } else if (campos.facturasEmitidas) {
+          p.push(`${it.emitidas} factura${it.emitidas === 1 ? "" : "s"} emitida${it.emitidas === 1 ? "" : "s"}`);
+        } else if (campos.facturasPagadas) {
+          p.push(`${it.pagadas} factura${it.pagadas === 1 ? "" : "s"} pagada${it.pagadas === 1 ? "" : "s"}`);
+        }
+      }
+      if (campos.monto && it.monto != null) p.push(dinero(it.monto));
+      return "• " + p.join(" · ");
+    };
+    const seccion = (titulo, nombreTotal, lista) => {
+      let out = `*${titulo} (${lista.length})*\n`;
+      let dia = null;
+      lista.forEach((it) => {
+        if (campos.instalacion && it.fecha !== dia) {
+          dia = it.fecha;
+          out += `${fmtFechaDia(it.fecha)}\n`;
+        }
+        out += linea(it) + "\n";
+      });
+      if (campos.monto) {
+        const suma = lista.reduce((s, it) => s + (it.monto || 0), 0);
+        if (suma > 0) out += `Total ${nombreTotal}: ${dinero(suma)}\n`;
+      }
+      return out.trimEnd();
+    };
+    const rango = desde && hasta
+      ? `${fmtFecha(desde)} – ${fmtFecha(hasta)}`
+      : desde ? `desde ${fmtFecha(desde)}` : hasta ? `hasta ${fmtFecha(hasta)}` : "";
+    const titulo = incluirHogar && incluirMovil
+      ? "Instalaciones y activaciones"
+      : incluirMovil ? "Activaciones móvil" : "Instalaciones";
+    const bloques = [];
+    if (incluirHogar && hogar.length) bloques.push(seccion("HOGAR", "Hogar", hogar));
+    if (incluirMovil && movil.length) bloques.push(seccion("MÓVIL", "Móvil", movil));
+    return `*${titulo}${rango ? " " + rango : ""}*\n\n${bloques.join("\n\n")}`;
+  }
+
+  // ---- Tabla para CSV ----
   function construirTabla() {
     const activos = CAMPOS_EXPORTAR.filter(([key]) => campos[key]);
-    const encabezado = activos.map(([, label]) => label);
-    const filas = filtrados.map((c) => {
-      const r = facturasResumen(c);
-      return activos.map(([key]) => {
+    const encabezado = [...(incluirMovil ? ["Tipo"] : []), ...activos.map(([key, label]) => labelCampo(key, label))];
+    const filas = seleccion.map((it) => [
+      ...(incluirMovil ? [it.tipo === "movil" ? "Móvil" : "Hogar"] : []),
+      ...activos.map(([key]) => {
         switch (key) {
-          case "suscriptor":
-            return c.numeroSuscriptor || "";
-          case "nombre":
-            return c.nombre || "";
-          case "instalacion":
-            return fmtFechaNum(c.fechaInstalacion);
-          case "facturasEmitidas":
-            return r.emitidas;
-          case "facturasPagadas":
-            return r.pagadas;
-          case "telefono":
-            return c.telefono || "";
-          case "plan":
-            return planLabel(c);
-          case "monto":
-            return c.montoMensual || "";
-          default:
-            return "";
+          case "suscriptor": return it.suscriptor;
+          case "nombre": return it.nombre;
+          case "instalacion": return fmtFechaNum(it.fecha);
+          case "facturasEmitidas": return it.emitidas;
+          case "facturasPagadas": return it.pagadas;
+          case "telefono": return it.telefono;
+          case "plan": return it.planCsv;
+          case "monto": return it.monto != null ? it.monto : "";
+          default: return "";
         }
-      });
-    });
+      }),
+    ]);
     return { encabezado, filas };
   }
 
@@ -1336,20 +1453,37 @@ function ExportarModal({ clientes, onCerrar }) {
   }
 
   function copiarTexto() {
-    const { encabezado, filas } = construirTabla();
-    const texto = [encabezado, ...filas].map((fila) => fila.join("\t")).join("\n");
-    navigator.clipboard?.writeText(texto).catch(() => {});
+    navigator.clipboard?.writeText(construirTexto()).catch(() => {});
     setCopiado(true);
     setTimeout(() => setCopiado(false), 1500);
   }
 
-  const hayCampos = CAMPOS_EXPORTAR.some(([key]) => campos[key]);
+  const sinDatos = seleccion.length === 0 || !hayCampos;
+  const textoVista = seleccion.length && hayCampos ? construirTexto() : "";
+  const lineasVista = textoVista ? textoVista.split("\n") : [];
+  const LIMITE_VISTA = 12;
+  const vistaPrevia = lineasVista.length > LIMITE_VISTA
+    ? lineasVista.slice(0, LIMITE_VISTA).join("\n") + `\n… y ${lineasVista.length - LIMITE_VISTA} líneas más`
+    : textoVista;
+
+  const chipTipo = (activo, onClick, texto) => (
+    <button
+      type="button"
+      onClick={onClick}
+      className="text-sm font-medium px-4 rounded-full border"
+      style={ activo
+        ? { background: "#001E62", borderColor: "#001E62", color: "white", minHeight: 40 }
+        : { background: "white", borderColor: "#DFE5EF", color: "#374151", minHeight: 40 } }
+    >
+      {texto}
+    </button>
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,0.45)" } }>
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-5 max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold" style={ { color: "#001E62" } }>⬇️ Exportar suscriptores instalados</h3>
+          <h3 className="text-lg font-semibold" style={ { color: "#001E62" } }>⬇️ Exportar suscriptores</h3>
           <button onClick={onCerrar} className="text-sm px-2" style={ { color: "#5A6680" } }>✕</button>
         </div>
 
@@ -1366,7 +1500,15 @@ function ExportarModal({ clientes, onCerrar }) {
         </div>
 
         <div className="mb-4">
-          <label className="text-xs font-medium block mb-2" style={ { color: "#5A6680" } }>Qué incluir</label>
+          <label className="text-xs font-medium block mb-2" style={ { color: "#5A6680" } }>Qué clientes incluir</label>
+          <div className="flex gap-2 flex-wrap">
+            {chipTipo(incluirHogar, () => setIncluirHogar((v) => !v), `Hogar (${hogar.length})`)}
+            {chipTipo(incluirMovil, () => setIncluirMovil((v) => !v), `Móvil (${movil.length})`)}
+          </div>
+        </div>
+
+        <div className="mb-4">
+          <label className="text-xs font-medium block mb-2" style={ { color: "#5A6680" } }>Qué datos mostrar</label>
           <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
             {CAMPOS_EXPORTAR.map(([key, label]) => (
               <label key={key} className="flex items-center gap-2 text-sm">
@@ -1375,33 +1517,51 @@ function ExportarModal({ clientes, onCerrar }) {
                   checked={!!campos[key]}
                   onChange={(e) => setCampos((prev) => ({ ...prev, [key]: e.target.checked }))}
                 />
-                {label}
+                {labelCampo(key, label)}
               </label>
             ))}
           </div>
         </div>
 
-        <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
-          {filtrados.length} cliente{filtrados.length === 1 ? "" : "s"} instalado{filtrados.length === 1 ? "" : "s"}
-          {desde || hasta ? " en ese rango." : " en total (no elegiste rango — se exportan todos los instalados)."}
+        <p className="text-xs mb-3" style={ { color: "#9CA3AF" } }>
+          {desde || hasta ? "Solo los de ese rango." : "No elegiste rango: se incluyen todos."}
+          {" "}Los móviles cuentan por su fecha de activación.
         </p>
+
+        {vistaPrevia ? (
+          <div className="mb-4">
+            <label className="text-xs font-medium block mb-1.5" style={ { color: "#5A6680" } }>Así se verá al enviarlo</label>
+            <div
+              className="rounded-md border p-3 text-xs"
+              style={ { borderColor: "#DFE5EF", background: "#F7F9FC", color: "#1F2937", whiteSpace: "pre-wrap", lineHeight: 1.55 } }
+            >
+              {vistaPrevia}
+            </div>
+          </div>
+        ) : (
+          <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
+            {!incluirHogar && !incluirMovil
+              ? "Elige al menos un tipo de cliente."
+              : !hayCampos ? "Elige al menos un dato para mostrar." : "No hay clientes en ese rango."}
+          </p>
+        )}
 
         <div className="flex gap-2">
           <button
-            onClick={descargarCSV}
-            disabled={filtrados.length === 0 || !hayCampos}
+            onClick={copiarTexto}
+            disabled={sinDatos}
             className="flex-1 text-sm font-medium px-3 py-2 rounded-md text-white disabled:opacity-40"
             style={ { background: "#001E62" } }
           >
-            ⬇️ Descargar CSV
+            {copiado ? "✓ Copiado" : "📋 Copiar para WhatsApp"}
           </button>
           <button
-            onClick={copiarTexto}
-            disabled={filtrados.length === 0 || !hayCampos}
+            onClick={descargarCSV}
+            disabled={sinDatos}
             className="flex-1 text-sm font-medium px-3 py-2 rounded-md border disabled:opacity-40"
-            style={ { borderColor: "#DFE5EF", color: copiado ? "#001E62" : "#374151" } }
+            style={ { borderColor: "#DFE5EF", color: "#374151" } }
           >
-            {copiado ? "✓ Copiado" : "📋 Copiar"}
+            ⬇️ Descargar CSV
           </button>
         </div>
       </div>
@@ -7633,6 +7793,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         </button>
       </div>
 
+      {exportarAbierto && <ExportarModal clientes={clientes} clientesMovil={clientesMovil || []} onCerrar={() => setExportarAbierto(false)} />}
       {subVista === "movil" ? (
         <ClientesMovilPanel
           clientesMovil={clientesMovil || []}
@@ -7652,7 +7813,6 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         />
       ) : (
         <>
-      {exportarAbierto && <ExportarModal clientes={clientes} onCerrar={() => setExportarAbierto(false)} />}
       <div className="flex items-center gap-4 mb-4 flex-wrap">
         <p className="text-sm">
           <span className="font-semibold" style={ { color: "#001E62" } }>{statsClientes.instalados}</span>{" "}
