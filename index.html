@@ -3705,6 +3705,191 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
+// Tarjeta "Comisión del ciclo" en versión clara (fondo blanco) para el esquema nuevo del
+// período actual. Muestra los mismos números que la versión azul, ordenados para leerse
+// más fácil: fórmula en tres piezas, barra hacia el próximo escalón, tramos y detalle
+// plegables, y la proyección al final.
+function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaClientesHogar, metaClientesMovil, metaDinero, ingresosTotal, proyeccion, aunEsTemprano, onCambiarVista, onSimular }) {
+  const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", pn: "#EEF3FB", blue: "#0072CE", cell: "#E3EDFA" };
+  const pc = comision.pctClientesPonderado;
+  const base = comision.montoBase;
+  const tramoActual = TABLA_POSICION_NUEVA.filter((t) => pc >= t.min).slice(-1)[0] || null;
+  const tramoSig = TABLA_POSICION_NUEVA.find((t) => t.min > pc) || null;
+  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
+  const pi = comision.pctIngreso;
+  const acel = comision.ajusteIngreso === "acelerador";
+  const faltaIng = metaDinero ? Math.max(0, metaDinero - ingresosTotal) : 0;
+  let nH = 0;
+  let nM = 0;
+  if (tramoSig && metaClientesHogar && metaClientesMovil) {
+    const pts = tramoSig.min - pc;
+    nH = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_HOGAR * 100 / metaClientesHogar) - 1e-9));
+    nM = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_MOVIL * 100 / metaClientesMovil) - 1e-9));
+  }
+  const caja = { background: C.pn, borderRadius: 10, padding: "9px 6px", textAlign: "center" };
+  const peqTxt = { display: "block", fontSize: 11, color: C.mu, lineHeight: 1.25 };
+  const valTxt = { display: "block", fontSize: 17, fontWeight: 600, marginTop: 2, fontVariantNumeric: "tabular-nums" };
+  const op = { alignSelf: "center", color: C.mu, fontSize: 16 };
+  const bloque = { marginTop: 14, borderRadius: 10, border: "1px solid #C9DBF3", background: "#F7FAFE", padding: 12 };
+  const barra = { position: "relative", height: 10, borderRadius: 5, background: C.cell, margin: "12px 0 6px" };
+  const leyenda = { display: "flex", justifyContent: "space-between", fontSize: 11, color: C.mu };
+  const resumen = { listStyle: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", fontSize: 13, color: C.mu };
+  const caja2 = { marginTop: 12, borderTop: "1px solid " + C.bd, paddingTop: 11 };
+  const fila = { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, padding: "5px 0", fontSize: 13 };
+  const num = { fontVariantNumeric: "tabular-nums", fontWeight: 600, whiteSpace: "nowrap" };
+  const peq = { fontStyle: "normal", fontWeight: 400, fontSize: 11, color: C.mu, marginLeft: 6 };
+  const tit = { fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: C.mu, margin: "8px 0 2px", fontWeight: 700 };
+  const sep = { borderTop: "1px solid " + C.bd, margin: "5px 0" };
+  return (
+    <div className="rounded-xl p-5 mb-6" style={ { background: "#fff", color: C.navy, border: "1px solid " + C.bd } }>
+      <div className="flex items-start justify-between gap-2">
+        <div style={ { fontSize: 13, fontWeight: 600, color: C.mu } }>
+          {mesLabel(periodoVisto)} → cobras en {mesLabel(sumarMesClave(periodoVisto, 2))}
+        </div>
+        <button type="button" onClick={onCambiarVista} style={ { background: "transparent", border: 0, color: C.mu, fontSize: 11, textDecoration: "underline", padding: "2px 0", flexShrink: 0 } }>
+          Vista actual
+        </button>
+      </div>
+      <div style={ { fontSize: 36, fontWeight: 700, marginTop: 4, fontVariantNumeric: "tabular-nums" } }>
+        {fmtMiles(comision.total)}<span style={ { fontSize: 13, fontWeight: 400, marginLeft: 8, color: C.mu } }>estimada</span>
+      </div>
+      <div style={ { fontSize: 13, color: C.mu, marginTop: 2 } }>Con {hogarN} hogar y {movilN} móvil</div>
+
+      {base === 0 && (
+        <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: "#FFF3DC", color: "#7A3A06" } }>
+          Aún no llegas al mínimo de cobro ({MINIMO_COBRO}% de clientes). Tu base es $0; por ahora solo cuenta el bono.
+        </div>
+      )}
+
+      <div style={ { display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)", gap: 6, marginTop: 14 } }>
+        <div style={caja}><span style={peqTxt}>Base por clientes<br />({pc.toFixed(0)}% de la meta)</span><b style={valTxt}>{fmtMiles(base, 0)}</b></div>
+        <div style={op}>×</div>
+        <div style={ { ...caja, background: pi != null && pi < 100 && base > 0 ? "#FFF3DC" : C.pn } }>
+          <span style={ { ...peqTxt, color: pi != null && pi < 100 && base > 0 ? "#7A3A06" : C.mu } }>Ingresos<br />({pi != null ? pi.toFixed(0) : "—"}% de la meta{acel ? " + 10 pts" : ""})</span>
+          <b style={valTxt}>{base === 0 ? "—" : (comision.factorAcelerador * 100).toFixed(0) + "%"}</b>
+        </div>
+        <div style={op}>+</div>
+        <div style={caja}><span style={peqTxt}>Bono portabilidad<br />({comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA})</span><b style={valTxt}>{fmtMiles(comision.bonoConvergencias, 0)}</b></div>
+      </div>
+
+      <div style={bloque}>
+        {tramoSig ? (
+          <React.Fragment>
+            <div style={ { fontSize: 13, fontWeight: 600 } }>Próximo escalón: base de {fmtMiles(tramoSig.monto, 0)} ({"+" + fmtMiles(tramoSig.monto - base, 0)})</div>
+            <div style={barra}>
+              <i style={ { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 5, background: C.navy, width: Math.min(100, (pc / tramoSig.min) * 100) + "%" } } />
+              <u style={ { position: "absolute", top: -3, bottom: -3, right: 0, width: 0, borderLeft: "2px dashed " + C.blue } } />
+            </div>
+            <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Escalón en {tramoSig.min}%</span></div>
+            {nH > 0 && (
+              <div style={ { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } }>
+                <span style={ { fontSize: 12, padding: "5px 10px", borderRadius: 999, background: C.cell } }>Falta{nH === 1 ? "" : "n"} {nH} hogar</span>
+                <span style={ { fontSize: 12, padding: "5px 10px", borderRadius: 999, background: C.cell } }>o {nM} móvil</span>
+              </div>
+            )}
+          </React.Fragment>
+        ) : (
+          <div style={ { fontSize: 13 } }>★ <b>Tramo máximo</b> alcanzado ({fmtMiles(base, 0)} de base). Cada ingreso extra sube el acelerador.</div>
+        )}
+      </div>
+
+      {metaDinero && base > 0 && pi != null && pi < 100 && (
+        <div style={ { ...bloque, marginTop: 10 } }>
+          <div style={ { fontSize: 13, fontWeight: 600 } }>Ingresos: {fmtMiles(ingresosTotal, 0)} de {fmtMiles(metaDinero, 0)}</div>
+          <div style={barra}>
+            <i style={ { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 5, background: C.navy, width: Math.min(100, pi) + "%" } } />
+          </div>
+          <div style={leyenda}><span>{pi.toFixed(0)}%</span><span>100%</span></div>
+          <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Faltan unos {fmtMiles(faltaIng, 0)} para cobrar tu base completa sin descuento.</div>
+        </div>
+      )}
+      {acel && (
+        <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: C.pn } }>⚡ Superas la meta de ingresos: se activa el acelerador (+10 puntos).</div>
+      )}
+
+      <details style={caja2}>
+        <summary style={resumen}><span>Ver todos los tramos</span><span>▾</span></summary>
+        <div style={ { display: "grid", gridTemplateColumns: "repeat(8, minmax(0,1fr))", gap: 3, marginTop: 10 } }>
+          {TABLA_POSICION_NUEVA.map((t) => {
+            const esAct = tramoActual && t.min === tramoActual.min;
+            const sup = tramoActual && t.min < tramoActual.min;
+            const esSig = tramoSig && t.min === tramoSig.min;
+            const estilo = esAct
+              ? { background: C.navy, color: "#fff", border: "1.5px solid " + C.navy }
+              : sup
+              ? { background: C.cell, color: C.navy, border: "1.5px solid " + C.bd }
+              : esSig
+              ? { color: C.blue, border: "1.5px dashed " + C.blue }
+              : { color: C.mu, border: "1.5px solid " + C.bd };
+            return (
+              <div key={t.min} style={ { textAlign: "center", borderRadius: 7, padding: "5px 0 4px", fontSize: 10, lineHeight: 1.25, ...estilo } }>
+                <b style={ { display: "block", fontSize: 11 } }>{abrev(t.monto)}</b>
+                {t.max === Infinity ? t.min + "+" : t.min}
+                <br />
+                {sup ? "✓" : esAct ? "●" : esSig ? "→" : " "}
+              </div>
+            );
+          })}
+        </div>
+      </details>
+
+      <details style={caja2}>
+        <summary style={resumen}><span>Ver detalle del cálculo</span><span>▾</span></summary>
+        <div>
+          <div style={tit}>Clientes</div>
+          <div style={fila}><span>Hogar<em style={peq}>{hogarN} de {metaClientesHogar || "—"} · {comision.pctHogar.toFixed(0)}%</em></span><span style={num}>× {PESO_CLIENTES_HOGAR * 100}%</span></div>
+          <div style={fila}><span>Móvil<em style={peq}>{movilN} de {metaClientesMovil || "—"} · {comision.pctMovil.toFixed(0)}%</em></span><span style={num}>× {PESO_CLIENTES_MOVIL * 100}%</span></div>
+          <div style={fila}><span>Total de clientes</span><span style={num}>{pc.toFixed(1)}%</span></div>
+          <div style={fila}><span>{base === 0 ? "Base (bajo el mínimo de " + MINIMO_COBRO + "%)" : "Base del tramo"}</span><span style={num}>{fmtMiles(base)}</span></div>
+          <div style={sep} />
+          <div style={tit}>Ingresos</div>
+          <div style={fila}>
+            <span>Ingresos<em style={peq}>{fmtMiles(ingresosTotal, 0)} de {fmtMiles(metaDinero, 0)} · {pi.toFixed(base === 0 ? 1 : 0)}%{acel && base > 0 ? " + 10 pts" : ""}</em></span>
+            <span style={num}>{base === 0 ? "aún no afecta" : "× " + (comision.factorAcelerador * 100).toFixed(0) + "%"}</span>
+          </div>
+          {base > 0 && <div style={fila}><span>Base × ingresos</span><span style={num}>{fmtMiles(comision.comisionSinBono)}</span></div>}
+          <div style={sep} />
+          <div style={fila}>
+            <span>Bono portabilidad<em style={peq}>{comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA}{comision.bonoPendiente > 0 ? " · " + fmtMonto(comision.bonoPendiente) + " dependen de que paguen su 1ra factura" : ""}</em></span>
+            <span style={num}>+ {fmtMiles(comision.bonoConvergencias)}</span>
+          </div>
+          <div style={sep} />
+          <div style={ { ...fila, fontSize: 14 } }><span style={ { fontWeight: 600 } }>Total estimado</span><span style={num}>{fmtMiles(comision.total)}</span></div>
+        </div>
+      </details>
+
+      <div style={ { marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.bd } }>
+        {aunEsTemprano ? (
+          <div style={ { fontSize: 13, color: C.mu } }>Aún es temprano para proyectar tu cierre</div>
+        ) : proyeccion ? (
+          <details>
+            <summary style={ { ...resumen, alignItems: "center", color: C.navy } }>
+              <span>Proyección al cierre ▾<span style={ { display: "block", fontSize: 11, color: C.mu } }>Si sigues a este ritmo</span></span>
+              <b style={ { fontSize: 20 } }>~{fmtMiles(proyeccion.comision, 0)}</b>
+            </summary>
+            <div style={ { marginTop: 8, borderRadius: 10, padding: "6px 12px", background: C.pn } }>
+              {[
+                { n: "Clientes hogar", v: "~" + proyeccion.clientes, m: metaClientesHogar, fm: (x) => String(x), vp: proyeccion.clientes },
+                { n: "Clientes móvil", v: "~" + proyeccion.convergencias, m: metaClientesMovil, fm: (x) => String(x), vp: proyeccion.convergencias },
+                { n: "Ingresos", v: "~" + fmtMiles(proyeccion.ingresos, 0), m: metaDinero, fm: (x) => fmtMiles(x, 0), vp: proyeccion.ingresos },
+              ].map((f) => (
+                <div key={f.n} style={fila}>
+                  <span>{f.n}</span>
+                  <span style={num}>{f.v}{f.m ? <em style={peq}>de {f.fm(f.m)} · {Math.round((f.vp / f.m) * 100)}%</em> : null}</span>
+                </div>
+              ))}
+            </div>
+          </details>
+        ) : null}
+      </div>
+
+      <button type="button" onClick={onSimular} style={ { marginTop: 12, background: "transparent", border: 0, padding: "8px 0", color: C.blue, fontSize: 13, textDecoration: "underline" } }>
+        Simular clientes nuevos
+      </button>
+    </div>
+  );
+}
+
 function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
@@ -3730,6 +3915,15 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   memoriaCobros.rescateAbierto = rescateAbierto;
   memoriaCobros.rescateSeleccion = rescateSeleccion;
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
+  // Vista de la tarjeta de comisión (nueva = fondo blanco, actual = azul oscuro). Se
+  // recuerda la última que elegiste en este teléfono; si no hay nada guardado, la nueva.
+  const [vistaComision, setVistaComisionEstado] = useState(() => {
+    try { return localStorage.getItem("comision_vista") === "actual" ? "actual" : "nueva"; } catch (e) { return "nueva"; }
+  });
+  function cambiarVistaComision(v) {
+    setVistaComisionEstado(v);
+    try { localStorage.setItem("comision_vista", v); } catch (e) {}
+  }
   // Detalle de la proyección al cierre (hogar, móvil e ingresos): cerrado por defecto.
   const [proyAbierta, setProyAbierta] = useState(false);
   useEffect(() => {
@@ -5217,12 +5411,54 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
       </div>
 
       {bloqueOrd("comision", "Comisión del ciclo", (
+      esNuevo && esActual && comision.completo && vistaComision === "nueva" ? (
+        <React.Fragment>
+          <ComisionCardNueva
+            periodoVisto={periodoVisto}
+            comision={comision}
+            hogarN={clientesDelPeriodo.length}
+            movilN={convergenciasPeriodo}
+            metaClientesHogar={metaClientesHogar}
+            metaClientesMovil={metaClientesMovil}
+            metaDinero={metaDinero}
+            ingresosTotal={dineroDelPeriodo + costoPlanesMovilesPeriodo}
+            proyeccion={proyeccion}
+            aunEsTemprano={aunEsTemprano}
+            onCambiarVista={() => cambiarVistaComision("actual")}
+            onSimular={() => setMostrarSimComision(true)}
+          />
+          {mostrarSimComision && (
+            <SimuladorComisionModal
+              periodoKey={periodoVisto}
+              base={ {
+                clientesHogar: clientesDelPeriodo.length,
+                metaHogar: metaClientesHogar,
+                clientesMovil: convergenciasPeriodo,
+                metaMovil: metaClientesMovil,
+                ingresos: dineroDelPeriodo + costoPlanesMovilesPeriodo,
+                metaIngresos: metaDinero,
+                bonos: resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente,
+              } }
+              defecto={ {
+                hogar: clientesDelPeriodo.length ? Math.round(dineroDelPeriodo / clientesDelPeriodo.length) : 38,
+                movil: convergenciasPeriodo ? Math.round(costoPlanesMovilesPeriodo / convergenciasPeriodo) : 20,
+              } }
+              onClose={() => setMostrarSimComision(false)}
+            />
+          )}
+        </React.Fragment>
+      ) : (
       <div className="rounded-xl p-5 mb-6 text-white" style={ { background: "#001E62" } }>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
           <h2 className="font-semibold text-sm opacity-90 flex items-center gap-1.5">
             <span aria-hidden="true">{esActual ? "🔵" : "⚪"}</span>
             {mesLabel(periodoVisto)} → {esActual ? "cobras" : "cobraste"} en {mesLabel(sumarMesClave(periodoVisto, 2))}
           </h2>
+          {esNuevo && esActual && comision.completo && (
+            <button type="button" onClick={() => cambiarVistaComision("nueva")} style={ { background: "transparent", border: 0, color: "#fff", opacity: 0.6, fontSize: 11, textDecoration: "underline", padding: "2px 0" } }>
+              Vista nueva
+            </button>
+          )}
           {!esNuevo && comision.aplicaBono && (
             <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "rgba(255,255,255,0.2)" } }>
               + bono FULL TIGO aplicado
@@ -5486,6 +5722,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
           </p>
         )}
       </div>
+      )
       ))}
 
       {bloqueOrd("metas", "Avance del período", esNuevo ? (
