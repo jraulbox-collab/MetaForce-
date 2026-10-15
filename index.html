@@ -6905,6 +6905,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                       <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={ { borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" } }>
                         <div>
                           <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ esMovil ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                             {esMovil ? (
                               <span className="font-semibold text-sm" style={ { color: "#001E62" } }>{cliente.nombre}</span>
                             ) : (
@@ -6916,7 +6917,6 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                 {cliente.nombre}
                               </button>
                             )}
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ esMovil ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                           </div>
                           <div className="text-xs" style={ { color: "#5A6680" } }>
                             {esMovil
