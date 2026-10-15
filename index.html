@@ -2891,6 +2891,10 @@ function App() {
             alertasMovil={alertasMovilPendientes(convergencias)}
             onMarcarMovil={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
             onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
+            onVerMovil={(c) => {
+              setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", token: Date.now() });
+              navegarA("clientes");
+            } }
             alertasTodas={alertasHoy}
             onMarcar={toggleMilestone}
             onCopiarSuscriptor={copySuscriptor}
@@ -4359,6 +4363,12 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     [periodoRescateActivo, esNuevoHoy, convergenciasPeriodoHoy]
   );
   const idsMovilHoy = useMemo(() => new Set((convergencias || []).map((c) => c.id)), [convergencias]);
+  const abrirClienteDesdeLista = (e, c) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (idsMovilHoy.has(c.id)) onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil" });
+    else onVerCliente(c);
+  };
   function calcularComisionConSubconjuntoHoy(subset) {
     const subHogar = subset.filter((c) => !idsMovilHoy.has(c.id));
     const subMovil = subset.filter((c) => idsMovilHoy.has(c.id));
@@ -5030,7 +5040,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                               checked={!!rescateSeleccion[c.id]}
                               onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
                             />
-                            <span className="text-sm truncate">{c.nombre}</span>
+                            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-sm truncate text-left font-semibold underline underline-offset-2" style={ { color: "#0B4A99" } }>{c.nombre}</button>
                           </span>
                           <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
                             le faltan {fmtMonto(montoFaltanteCliente(c))}
@@ -5068,7 +5078,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                               checked={!!rescateSeleccion[c.id]}
                               onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
                             />
-                            <span className="text-sm truncate">{c.nombre}</span>
+                            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-sm truncate text-left font-semibold underline underline-offset-2" style={ { color: "#0B4A99" } }>{c.nombre}</button>
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={ idsMovilHoy.has(c.id) ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{idsMovilHoy.has(c.id) ? "Móvil" : "Hogar"}</span>
                           </span>
                           <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
@@ -6626,7 +6636,7 @@ function HistorialComisionChart({ data, periodoActivo, onSelect, onHover }) {
   );
 }
 
-function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
   const TIPO_POR_HITO = { m1: "toque1", m2: "d1", m3: "t3" };
@@ -6906,7 +6916,13 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                         <div className="flex items-center gap-2" style={ { minWidth: 0 } }>
                           <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                           {esMovil ? (
-                            <span className="font-semibold text-base truncate" style={ { color: "#001E62", minWidth: 0 } }>{cliente.nombre}</span>
+                            <button
+                              onClick={() => onVerMovil(cliente)}
+                              className="font-semibold text-base text-left hover:underline truncate"
+                              style={ { color: "#001E62", minWidth: 0 } }
+                            >
+                              {cliente.nombre}
+                            </button>
                           ) : (
                             <button
                               onClick={() => onVerDetalle(cliente)}
