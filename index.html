@@ -8894,7 +8894,15 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                   ) : (
                     delMes.map((c) => (
                       <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
-                        <div className="text-lg sm:text-base font-bold break-words" style={ { color: "#001E62" } }>{c.nombre}</div>
+                        <button
+                          type="button"
+                          onClick={() => startEdit(c)}
+                          className="block text-left text-lg sm:text-base font-bold break-words hover:underline"
+                          style={ { color: "#001E62" } }
+                          title="Abrir ficha"
+                        >
+                          {c.nombre}
+                        </button>
                         <div className="flex flex-wrap gap-1.5 mt-1.5">
                           <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
                             {etiquetaTipoMovil(tipoClienteMovil(c))}
