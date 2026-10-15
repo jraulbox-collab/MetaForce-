@@ -1007,9 +1007,9 @@ Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Una vez realiz
 }
 
 const MILESTONE_TYPES = [
-  { type: "d1", tag: "🧾", label: "Nueva factura", color: "#001E62", bg: "#EAF0FB", getTexto: textoD1 },
-  { type: "t15", tag: "⏰", label: "15 días", color: "#B45309", bg: "#FFF3DC", getTexto: textoT15 },
-  { type: "t3", tag: "⏰", label: "3 días", color: "#B45309", bg: "#FFF6E3", getTexto: textoT3 },
+  { type: "d1", tag: "🧾", corto: "Factura", label: "Nueva factura", color: "#001E62", bg: "#EAF0FB", getTexto: textoD1 },
+  { type: "t15", tag: "⏰", corto: "15 días", label: "15 días", color: "#B45309", bg: "#FFF3DC", getTexto: textoT15 },
+  { type: "t3", tag: "⏰", corto: "3 días", label: "3 días", color: "#B45309", bg: "#FFF6E3", getTexto: textoT3 },
 ];
 
 // Igual que MILESTONE_TYPES pero incluye también los avisos preventivos de abono
@@ -1017,8 +1017,8 @@ const MILESTONE_TYPES = [
 // parte de los hitos normales de factura.
 const TIPOS_ALERTA = [
   ...MILESTONE_TYPES,
-  { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", color: "#0072CE", bg: "#E3EDFA" },
-  { type: "toque2", tag: "🔔", label: "Recordatorio de abono", color: "#0072CE", bg: "#E3EDFA" },
+  { type: "toque1", tag: "👋", corto: "Bienvenida", label: "Bienvenida (pedir abono)", color: "#0072CE", bg: "#E3EDFA" },
+  { type: "toque2", tag: "🔔", corto: "Abono", label: "Recordatorio de abono", color: "#0072CE", bg: "#E3EDFA" },
 ];
 
 const emptyForm = () => ({
@@ -6844,34 +6844,33 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
         </div>
       )}
 
-      {listaAbierta && alertasHoy.length > 0 && (
+      {listaAbierta && alertasHoy.length > 0 && TIPOS_ALERTA.filter((m) => conteosPorTipo[m.type]).length > 1 && (
         <div className="flex flex-col gap-3 mb-6">
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setFiltroTipo("")}
-              className="text-xs font-medium px-3 py-1.5 rounded-full border"
+              className="text-sm font-semibold px-3.5 py-2 rounded-full border"
               style={ {
-                borderColor: filtroTipo === "" ? "#001E62" : "#DFE5EF",
+                borderColor: filtroTipo === "" ? "#001E62" : "#C9D2E3",
                 background: filtroTipo === "" ? "#001E62" : "white",
-                color: filtroTipo === "" ? "white" : "#374151",
+                color: filtroTipo === "" ? "white" : "#001E62",
               } }
             >
               Todas ({alertasHoy.length})
             </button>
-            {TIPOS_ALERTA.map((m) => (
+            {TIPOS_ALERTA.filter((m) => conteosPorTipo[m.type]).map((m) => (
               <button
                 key={m.type}
                 onClick={() => setFiltroTipo((t) => (t === m.type ? "" : m.type))}
-                disabled={!conteosPorTipo[m.type]}
-                className="text-xs font-medium px-3 py-1.5 rounded-full border disabled:opacity-30"
+                className="text-sm font-semibold px-3.5 py-2 rounded-full border"
                 style={ {
-                  borderColor: filtroTipo === m.type ? m.color : "#DFE5EF",
-                  background: filtroTipo === m.type ? m.bg : "white",
-                  color: filtroTipo === m.type ? m.color : "#374151",
+                  borderColor: filtroTipo === m.type ? "#001E62" : "#C9D2E3",
+                  background: filtroTipo === m.type ? "#001E62" : "white",
+                  color: filtroTipo === m.type ? "white" : "#001E62",
                 } }
                 title={m.label}
               >
-                {m.tag} ({conteosPorTipo[m.type] || 0})
+                {m.corto} ({conteosPorTipo[m.type]})
               </button>
             ))}
           </div>
