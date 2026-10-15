@@ -6649,10 +6649,9 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   ];
   const [expandidos, setExpandidos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.expandidos : []));
   const [extrasAbiertos, setExtrasAbiertos] = useState(() => new Set(memoriaCobros.retorno ? memoriaCobros.extrasAbiertos : []));
-  const [listaAbierta, setListaAbierta] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.listaAbierta : false));
+  const listaAbierta = true;
   memoriaCobros.expandidos = Array.from(expandidos);
   memoriaCobros.extrasAbiertos = Array.from(extrasAbiertos);
-  memoriaCobros.listaAbierta = listaAbierta;
   useEffect(() => { memoriaCobros.retorno = false; }, []);
 
   // ---- Envío en cadena por WhatsApp ----
@@ -6787,16 +6786,6 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
               Enviar recordatorios <span style={ { fontWeight: 500, opacity: 0.8 } }>· {alertasHoy.length} por WhatsApp</span>
             </button>
           </div>
-        )}
-        {alertasHoy.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setListaAbierta((v) => !v)}
-            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-left"
-            style={ { background: "#EEF3FB", color: "#001E62", border: 0, borderTop: "1px solid #DFE5EF", cursor: "pointer" } }
-          >
-            <span>Ver lista</span><span>{listaAbierta ? "▲" : "▼"}</span>
-          </button>
         )}
       </div>
 
