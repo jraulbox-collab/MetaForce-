@@ -6903,15 +6903,15 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                   return (
                     <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                       <div className="p-3">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={ esMovil ? { background: "#DCE9FB", color: "#0B4A99" } : { background: "#E4EAF5", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
+                        <div className="flex items-center gap-2" style={ { minWidth: 0 } }>
+                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#DCE9FB", color: "#0B4A99" } : { background: "#E4EAF5", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                           {esMovil ? (
-                            <span className="font-semibold text-base" style={ { color: "#001E62" } }>{cliente.nombre}</span>
+                            <span className="font-semibold text-base truncate" style={ { color: "#001E62", minWidth: 0 } }>{cliente.nombre}</span>
                           ) : (
                             <button
                               onClick={() => onVerDetalle(cliente)}
-                              className="font-semibold text-base text-left hover:underline"
-                              style={ { color: "#001E62" } }
+                              className="font-semibold text-base text-left hover:underline truncate"
+                              style={ { color: "#001E62", minWidth: 0 } }
                             >
                               {cliente.nombre}
                             </button>
@@ -6925,7 +6925,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                         </div>
                         <div className="text-sm mt-1" style={ { color: "#3D4A66" } }>
                           {esMovil
-                            ? `Línea ${cliente.telefono} · ${etiquetaTipoMovil(tipoClienteMovil(cliente))} · activada ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
+                            ? `${cliente.telefono} act: ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
                             : `${cliente.telefono} · ${cliente.plan} · ${ORDINAL[factura.n]} factura`}
                           {!esMovil && (
                             <button
@@ -6937,17 +6937,16 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                             </button>
                           )}
                         </div>
-                        <div className="text-sm mt-0.5" style={ { color: "#3D4A66" } }>{milestone.label}</div>
                         {expandidos.has(cliente.id) && (
                           <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>
                             {milestone.texto}
                           </div>
                         )}
-                        <div className="flex items-stretch gap-2 mt-3 flex-wrap">
+                        <div className="flex items-stretch gap-1.5 mt-3" style={ { flexWrap: "nowrap" } }>
                           <a
                             href={whatsappLink(cliente, milestone)}
-                            className="flex-1 flex items-center justify-center text-sm font-bold px-3 rounded-md"
-                            style={ { background: "#1FA855", color: "#FFFFFF", minHeight: 46, minWidth: 160 } }
+                            className="flex-1 flex items-center justify-center text-[13px] font-bold px-2 rounded-md text-center"
+                            style={ { background: "#1FA855", color: "#FFFFFF", minHeight: 46, minWidth: 0, lineHeight: 1.1 } }
                           >
                             Enviar por WhatsApp
                           </a>
@@ -6955,8 +6954,8 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                             role="button"
                             tabIndex={0}
                             onClick={() => toggleExpandido(cliente.id)}
-                            className="flex items-center justify-center text-sm font-semibold px-3 rounded-md cursor-pointer"
-                            style={ { background: "#FFFFFF", color: "#001E62", border: "2px solid #001E62", minHeight: 46 } }
+                            className="flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer flex-shrink-0"
+                            style={ { background: "#FFFFFF", color: "#001E62", border: "2px solid #001E62", minHeight: 46, whiteSpace: "nowrap" } }
                           >
                             {expandidos.has(cliente.id) ? "Ocultar" : "Ver"}
                           </div>
@@ -6969,8 +6968,8 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                 else onMarcar(cliente.id, milestone.key);
                               }
                             } }
-                            className="flex items-center justify-center text-sm font-semibold px-3 rounded-md cursor-pointer"
-                            style={ { background: "#001E62", color: "#FFFFFF", minHeight: 46 } }
+                            className="flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer flex-shrink-0"
+                            style={ { background: "#001E62", color: "#FFFFFF", minHeight: 46, whiteSpace: "nowrap" } }
                           >
                             ✓ Enviado
                           </div>
@@ -6989,8 +6988,8 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                 }
                               }
                             } }
-                            className="flex items-center justify-center text-sm font-semibold px-3 rounded-md cursor-pointer"
-                            style={ { background: "#FFFFFF", color: "#0B4A99", border: "2px solid #0B4A99", minHeight: 46 } }
+                            className="flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer flex-shrink-0"
+                            style={ { background: "#FFFFFF", color: "#0B4A99", border: "2px solid #0B4A99", minHeight: 46, whiteSpace: "nowrap" } }
                           >
                             $ Pagó
                           </div>
