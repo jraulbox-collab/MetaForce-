@@ -9051,6 +9051,11 @@ function claseEstadoOrden(estado) {
   return "otro";
 }
 
+// "Orden cancelada" (aparte de claseEstadoOrden a propósito: los móviles siguen como estaban).
+function esOrdenCancelada(estado) {
+  return normalizarNombreOrden(estado).includes("cancelad");
+}
+
 // Un cliente de la app con nombre casi igual (error de dedo) o que contiene todos los
 // nombres/apellidos del otro. Solo sirve para avisar: nunca se une nada automáticamente.
 function buscarClienteParecido(key, clientes) {
@@ -9089,12 +9094,20 @@ function compararOrdenes(clientes, texto, descartados, convergencias) {
     procesoFaltan: [],
     fechaDistinta: [],
     pendientesInstalados: [],
+    canceladas: [],
     alertas: [],
     posibles: [],
     bien: [],
     noVerificadas: [],
     movil: { faltan: [], proceso: [], fechaDistinta: [], alertas: [], posibles: [], bien: [] },
   };
+  // Nombres de Hogar que tienen al menos una orden completada o en proceso: si además
+  // tienen una cancelada, esa cancelada no se avisa (ya hay otra orden vigente).
+  const hogarVigentes = new Set();
+  filas.forEach((f) => {
+    if (!ORDENES_TIPOS_VERIFICABLES.includes(normalizarNombreOrden(f.tipo))) return;
+    if (claseEstadoOrden(f.estado) !== "otro") hogarVigentes.add(normalizarNombreOrden(f.nombre));
+  });
   const vistos = new Set();
   filas.forEach((f) => {
     const tipoNorm = normalizarNombreOrden(f.tipo);
@@ -9134,6 +9147,23 @@ function compararOrdenes(clientes, texto, descartados, convergencias) {
     }
 
     const tipoOk = ORDENES_TIPOS_VERIFICABLES.includes(tipoNorm);
+    // Hogar cancelada en Tigo: solo se avisa si el cliente está en la app, no está ya
+    // cancelado/penalizado allá, y ese nombre no tiene otra orden vigente en la lista.
+    if (tipoOk && key && esOrdenCancelada(f.estado)) {
+      const cc = porNombre.get(key);
+      const claveC = key + "|cancelada";
+      if (cc && !cc.cancelado && !cc.penalizado && !hogarVigentes.has(key)) {
+        if (vistos.has(claveC)) {
+          r.repetidas++;
+        } else {
+          vistos.add(claveC);
+          r.canceladas.push({ fila: f, cliente: cc });
+        }
+      } else {
+        r.noVerificadas.push(f);
+      }
+      return;
+    }
     if (!tipoOk || clase === "otro" || !key) {
       r.noVerificadas.push(f);
       return;
@@ -9171,6 +9201,7 @@ const GRUPOS_ORDENES = [
   { key: "procesoFaltan", label: "En proceso sin agregar", pista: "Ya ingresadas en Tigo (Procesando o Agendar visita) y no están en tu app.", color: "#B45309", bg: "#FFF3DC", borde: "#F3E3C3" },
   { key: "fechaDistinta", label: "Fecha distinta", pista: "La fecha de instalación de tu app no es la de Tigo.", color: "#001E62", bg: "#EAF0FB", borde: "#D6DEEF" },
   { key: "pendientesInstalados", label: "Ya instalados en Tigo", pista: "Los tienes como pendientes, pero Tigo ya los instaló.", color: "#001E62", bg: "#EAF0FB", borde: "#D6DEEF" },
+  { key: "canceladas", label: "Canceladas en Tigo", pista: "Tigo canceló la orden y en tu app el cliente sigue activo.", color: "#B45309", bg: "#FFF3DC", borde: "#F3E3C3" },
   { key: "alertas", label: "Alertas", pista: "Los tienes instalados, pero en Tigo siguen en proceso.", color: "#5A6680", bg: "#F3F6FB", borde: "#DFE5EF" },
   { key: "posibles", label: "Posibles coincidencias", pista: "No hay nombre igual, pero hay uno parecido en tu app.", color: "#5A6680", bg: "#F3F6FB", borde: "#DFE5EF" },
   { key: "bien", label: "Todo bien", pista: "Nombre y fecha coinciden.", color: "#001E62", bg: "#EAF0FB", borde: "#D6DEEF" },
@@ -9346,6 +9377,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
         procesoFaltan: resultado.procesoFaltan.length,
         fechaDistinta: resultado.fechaDistinta.length,
         pendientesInstalados: resultado.pendientesInstalados.length,
+        canceladas: resultado.canceladas.length,
         alertas: resultado.alertas.length,
         posibles: resultado.posibles.length,
         bien: resultado.bien.length,
@@ -9361,7 +9393,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
         bien: m.bien.length,
       }
     : {};
-  const pendH = resultado ? cH.faltan + cH.procesoFaltan + cH.fechaDistinta + cH.pendientesInstalados + cH.alertas + cH.posibles : 0;
+  const pendH = resultado ? cH.faltan + cH.procesoFaltan + cH.fechaDistinta + cH.pendientesInstalados + cH.canceladas + cH.alertas + cH.posibles : 0;
   // En Móvil, "En proceso" es solo informativo y no cuenta como algo por resolver.
   const pendM = m ? cM.faltan + cM.fechaDistinta + cM.alertas + cM.posibles : 0;
 
@@ -9371,7 +9403,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
   const conteos = esMovil ? cM : cH;
   const ordenPrimero = esMovil
     ? ["faltan", "fechaDistinta", "alertas", "posibles", "proceso"]
-    : ["faltan", "procesoFaltan", "fechaDistinta", "pendientesInstalados", "alertas", "posibles"];
+    : ["faltan", "procesoFaltan", "fechaDistinta", "pendientesInstalados", "canceladas", "alertas", "posibles"];
   const primero = ordenPrimero.find((k) => conteos[k] > 0) || "bien";
   const activo = grupo && grupos.some((x) => x.key === grupo) ? grupo : primero;
   const g = grupos.find((x) => x.key === activo);
@@ -9596,6 +9628,21 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                     style={estiloPrimarioOrden}
                   >
                     Marcar como instalado
+                  </button>
+                </FilaOrden>
+              ))}
+
+            {!esMovil && activo === "canceladas" &&
+              resultado.canceladas.map(({ fila, cliente }) => (
+                <FilaOrden
+                  key={cliente.id + fila.orden}
+                  color={g.color}
+                  nombre={cliente.nombre}
+                  sub={"Tigo: " + fila.estado + " · en tu app " + (cliente.fechaInstalacion ? "instalado el " + fmtFecha(cliente.fechaInstalacion) : "pendiente de instalación")}
+                >
+                  <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
+                  <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
+                    Abrir cliente
                   </button>
                 </FilaOrden>
               ))}
