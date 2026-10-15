@@ -1298,6 +1298,7 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
   const [hasta, setHasta] = useState("");
   const [incluirHogar, setIncluirHogar] = useState(true);
   const [incluirMovil, setIncluirMovil] = useState(true);
+  const [incluirPendientes, setIncluirPendientes] = useState(false);
   const [campos, setCampos] = useState({
     suscriptor: true,
     nombre: true,
@@ -1333,6 +1334,28 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
       });
   }, [clientes, desde, hasta]);
 
+  // Pendientes de instalación (Hogar sin fecha de instalación): no dependen del rango de fechas.
+  const pendientes = useMemo(() => {
+    return clientes
+      .filter((c) => !c.fechaInstalacion)
+      .sort((a, b) => String(a.creadoEn || "").localeCompare(String(b.creadoEn || "")))
+      .map((c) => {
+        const monto = Number(c.montoMensual);
+        return {
+          tipo: "pendiente",
+          fecha: "",
+          nombre: c.nombre || "",
+          suscriptor: c.numeroSuscriptor || "",
+          telefono: c.telefono || "",
+          planCsv: planLabel(c),
+          planCorto: planCorto(c),
+          monto: c.montoMensual !== "" && c.montoMensual != null && !isNaN(monto) ? monto : null,
+          emitidas: "",
+          pagadas: "",
+        };
+      });
+  }, [clientes]);
+
   // Móvil: por fecha de activación. No tienen N° de suscriptor: su "línea" es el teléfono del contrato.
   const movil = useMemo(() => {
     return (clientesMovil || [])
@@ -1356,7 +1379,11 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
       });
   }, [clientesMovil, desde, hasta]);
 
-  const seleccion = [...(incluirHogar ? hogar : []), ...(incluirMovil ? movil : [])];
+  const seleccion = [
+    ...(incluirHogar ? hogar : []),
+    ...(incluirPendientes ? pendientes : []),
+    ...(incluirMovil ? movil : []),
+  ];
   const hayCampos = CAMPOS_EXPORTAR.some(([key]) => campos[key]);
   const labelCampo = (key, label) => {
     if (key === "suscriptor" && incluirMovil) return "N° Suscriptor / línea";
@@ -1385,11 +1412,11 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
       if (campos.monto && it.monto != null) p.push(dinero(it.monto));
       return "• " + p.join(" · ");
     };
-    const seccion = (titulo, nombreTotal, lista) => {
+    const seccion = (titulo, nombreTotal, lista, sinFecha) => {
       let out = `*${titulo} (${lista.length})*\n`;
       let dia = null;
       lista.forEach((it) => {
-        if (campos.instalacion && it.fecha !== dia) {
+        if (!sinFecha && campos.instalacion && it.fecha !== dia) {
           dia = it.fecha;
           out += `${fmtFechaDia(it.fecha)}\n`;
         }
@@ -1401,14 +1428,20 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
       }
       return out.trimEnd();
     };
-    const rango = desde && hasta
-      ? `${fmtFecha(desde)} – ${fmtFecha(hasta)}`
-      : desde ? `desde ${fmtFecha(desde)}` : hasta ? `hasta ${fmtFecha(hasta)}` : "";
-    const titulo = incluirHogar && incluirMovil
-      ? "Instalaciones y activaciones"
-      : incluirMovil ? "Activaciones móvil" : "Instalaciones";
+    const soloPendientes = incluirPendientes && !incluirHogar && !incluirMovil;
+    const rango = soloPendientes
+      ? ""
+      : desde && hasta
+        ? `${fmtFecha(desde)} – ${fmtFecha(hasta)}`
+        : desde ? `desde ${fmtFecha(desde)}` : hasta ? `hasta ${fmtFecha(hasta)}` : "";
+    const titulo = soloPendientes
+      ? "Pendientes de instalación"
+      : incluirHogar && incluirMovil
+        ? "Instalaciones y activaciones"
+        : incluirMovil ? "Activaciones móvil" : "Instalaciones";
     const bloques = [];
     if (incluirHogar && hogar.length) bloques.push(seccion("HOGAR", "Hogar", hogar));
+    if (incluirPendientes && pendientes.length) bloques.push(seccion("PENDIENTES DE INSTALACIÓN", "por instalar", pendientes, true));
     if (incluirMovil && movil.length) bloques.push(seccion("MÓVIL", "Móvil", movil));
     return `*${titulo}${rango ? " " + rango : ""}*\n\n${bloques.join("\n\n")}`;
   }
@@ -1416,14 +1449,15 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
   // ---- Tabla para CSV ----
   function construirTabla() {
     const activos = CAMPOS_EXPORTAR.filter(([key]) => campos[key]);
-    const encabezado = [...(incluirMovil ? ["Tipo"] : []), ...activos.map(([key, label]) => labelCampo(key, label))];
+    const conTipo = incluirMovil || incluirPendientes;
+    const encabezado = [...(conTipo ? ["Tipo"] : []), ...activos.map(([key, label]) => labelCampo(key, label))];
     const filas = seleccion.map((it) => [
-      ...(incluirMovil ? [it.tipo === "movil" ? "Móvil" : "Hogar"] : []),
+      ...(conTipo ? [it.tipo === "movil" ? "Móvil" : it.tipo === "pendiente" ? "Pendiente de instalación" : "Hogar"] : []),
       ...activos.map(([key]) => {
         switch (key) {
           case "suscriptor": return it.suscriptor;
           case "nombre": return it.nombre;
-          case "instalacion": return fmtFechaNum(it.fecha);
+          case "instalacion": return it.fecha ? fmtFechaNum(it.fecha) : "";
           case "facturasEmitidas": return it.emitidas;
           case "facturasPagadas": return it.pagadas;
           case "telefono": return it.telefono;
@@ -1504,6 +1538,7 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
           <div className="flex gap-2 flex-wrap">
             {chipTipo(incluirHogar, () => setIncluirHogar((v) => !v), `Hogar (${hogar.length})`)}
             {chipTipo(incluirMovil, () => setIncluirMovil((v) => !v), `Móvil (${movil.length})`)}
+            {chipTipo(incluirPendientes, () => setIncluirPendientes((v) => !v), `Pendientes de instalación (${pendientes.length})`)}
           </div>
         </div>
 
@@ -1525,7 +1560,7 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
 
         <p className="text-xs mb-3" style={ { color: "#9CA3AF" } }>
           {desde || hasta ? "Solo los de ese rango." : "No elegiste rango: se incluyen todos."}
-          {" "}Los móviles cuentan por su fecha de activación.
+          {" "}Los móviles cuentan por su fecha de activación. Los pendientes de instalación no dependen del rango.
         </p>
 
         {vistaPrevia ? (
@@ -1540,7 +1575,7 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
           </div>
         ) : (
           <p className="text-xs mb-4" style={ { color: "#9CA3AF" } }>
-            {!incluirHogar && !incluirMovil
+            {!incluirHogar && !incluirMovil && !incluirPendientes
               ? "Elige al menos un tipo de cliente."
               : !hayCampos ? "Elige al menos un dato para mostrar." : "No hay clientes en ese rango."}
           </p>
