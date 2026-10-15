@@ -7297,7 +7297,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   const setFechaDesde = hacerSetter("fechaDesde");
   const setFechaHasta = hacerSetter("fechaHasta");
 
-  const [subVista, setSubVista] = useState("clientes");
+  const [subVista, setSubVista] = useState(() => {
+    try { return localStorage.getItem("clientes_subvista") === "movil" ? "movil" : "clientes"; } catch (e) { return "clientes"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("clientes_subvista", subVista); } catch (e) { /* sin almacenamiento */ }
+  }, [subVista]);
   const [abrirFormMovil, setAbrirFormMovil] = useState(false);
   const [prefillMovil, setPrefillMovil] = useState(null);
   useEffect(() => {
