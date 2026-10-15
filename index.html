@@ -1787,7 +1787,7 @@ function App() {
 
   const stats = useMemo(() => {
     const total = clientes.filter((c) => !clienteExcluido(c)).length;
-    const alHoy = alertasPorCliente.length;
+    const alHoy = alertasPorCliente.length + alertasMovilPendientes(convergencias).length;
     const proximos7 = clientesCalc.filter((c) =>
       c.facturas.some((f) =>
         f.milestones.some((m) => !m.enviado && daysFromToday(m.triggerDate) > 0 && daysFromToday(m.triggerDate) <= 7)
@@ -1795,7 +1795,7 @@ function App() {
     ).length;
     const atrasados = clientes.filter((c) => !clienteExcluido(c) && c.estadoPago === "Atrasado").length;
     return { total, alHoy, proximos7, atrasados };
-  }, [clientes, alertasPorCliente, clientesCalc]);
+  }, [clientes, alertasPorCliente, clientesCalc, convergencias]);
 
   useEffect(() => {
     if (!loaded || stats.alHoy === 0 || sonidoReproducidoRef.current) return;
@@ -4966,6 +4966,31 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
 
   return (
     <div>
+      {(() => {
+        const nRec = (stats && stats.alHoy) || 0;
+        const nFac = enRiesgoHoy.length;
+        if ((nRec === 0 && nFac === 0) || !onIrACobros) return null;
+        const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+        const titulo = nRec > 0 ? `${plural(nRec, "recordatorio por enviar", "recordatorios por enviar")}` : `${plural(nFac, "factura por cobrar", "facturas por cobrar")}`;
+        const partes = [];
+        if (nRec > 0 && nFac > 0) partes.push(plural(nFac, "factura por cobrar", "facturas por cobrar"));
+        if (nFac > 0 && rescateDiasRestantes !== null) partes.push(rescateDiasRestantes <= 0 ? "vence hoy" : rescateDiasRestantes === 1 ? "queda 1 día" : `quedan ${rescateDiasRestantes} días`);
+        return (
+          <button
+            type="button"
+            onClick={onIrACobros}
+            className="w-full text-left flex items-center gap-3 mb-4 px-4 py-3 rounded-xl"
+            style={ { background: "#001E62", color: "#fff", border: 0 } }
+          >
+            <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔔</span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-bold">{titulo}</span>
+              {partes.length > 0 && <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{partes.join(" · ")}</span>}
+            </span>
+            <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+          </button>
+        );
+      })()}
       {noCuentanComision > 0 && (
         <button
           type="button"
