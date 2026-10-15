@@ -364,6 +364,101 @@ function etiquetaTipoMovil(t) {
 function fechaActivacionMovil(c) {
   return c.fechaActivacion || (c.creadoEn || "").slice(0, 10);
 }
+
+// ---------- Recordatorios de Clientes Móvil (esquema nuevo, desde octubre 2026) ----------
+// El ciclo de facturación se deduce del día de activación: del 15 al 27 queda ciclo 04
+// (factura el 4 del mes siguiente); del 28 al 14 queda ciclo 19 (factura el 19, del mismo
+// mes si se activó del 1 al 14, y del mes siguiente si fue del 28 al 31).
+// La 1ra factura = prorrateo (desde la activación hasta el día antes de su ciclo) + un mes
+// completo. Fecha meta que se le pide al cliente: activados del 1 al 14 → día 15 del mes
+// siguiente; activados del 15 al 31 → día 30 del mes siguiente (último día si es más corto).
+// Si cae en fin de semana se corre al viernes anterior.
+function movilFechasPrimeraFactura(c) {
+  const act = fechaActivacionMovil(c);
+  if (!act) return null;
+  const [y, m1, d] = act.split("-").map(Number);
+  if (!y || !m1 || !d) return null;
+  const m = m1 - 1;
+  let ciclo;
+  let factura;
+  if (d >= 15 && d <= 27) { ciclo = 4; factura = new Date(y, m + 1, 4); }
+  else if (d >= 28) { ciclo = 19; factura = new Date(y, m + 1, 19); }
+  else { ciclo = 19; factura = new Date(y, m, 19); }
+  const facturaISO = fechaLocalISO(factura);
+  const proxima = new Date(factura.getFullYear(), factura.getMonth() + 1, ciclo);
+  const finMes = addDays(fechaLocalISO(proxima), -1);
+  const meta = d <= 14 ? new Date(y, m + 1, 15) : new Date(y, m + 1, Math.min(30, daysInMonth(y, m + 1)));
+  while (meta.getDay() === 0 || meta.getDay() === 6) meta.setDate(meta.getDate() - 1);
+  const metaISO = fechaLocalISO(meta);
+  return {
+    ciclo,
+    activacion: act,
+    facturaISO,
+    finProrrateo: addDays(facturaISO, -1),
+    inicioMes: facturaISO,
+    finMes,
+    metaISO,
+    m1: addDays(act, 2),
+    m2: addDays(facturaISO, 1),
+    m3: addDays(metaISO, -4),
+  };
+}
+function saludoSegunHora() {
+  const h = new Date().getHours();
+  if (h < 12) return "Buenos días";
+  if (h < 19) return "Buenas tardes";
+  return "Buenas noches";
+}
+function textoMovil1(c, f) {
+  return `${saludoSegunHora()} ${primerNombre(c)}. Soy José Severino de Tigo Panamá. ¿Cómo le ha ido con su línea? ¿Todo en orden con el servicio?
+
+Le aviso cómo funcionará su cobro. Tigo factura en fechas fijas, y su fecha de facturación será los días *${f.ciclo}* de cada mes, así que su primera factura le llegará el ${fmtFecha(f.facturaISO)}.
+
+Esa factura incluirá un *prorrateo* (los días que ya usa el servicio, del ${fmtFecha(f.activacion)} al ${fmtFecha(f.finProrrateo)}) más su primer mes completo, del ${fmtFecha(f.inicioMes)} al ${fmtFecha(f.finMes)}. Por eso esta primera factura saldrá un poco más alta de lo normal.
+
+Lo ideal es pagarla *a más tardar el ${fmtFecha(f.metaISO)}*. Cualquier duda, me escribe por aquí.`;
+}
+function textoMovil2(c, f) {
+  return `${saludoSegunHora()} ${primerNombre(c)}. Ya se generó la primera factura de su línea Tigo *#${c.telefono}*.
+
+Recuerde que incluye el *prorrateo* (desde que se le activó el servicio: ${fmtFecha(f.activacion)}, hasta el ${fmtFecha(f.finProrrateo)}) más su primer mes completo, del ${fmtFecha(f.inicioMes)} al ${fmtFecha(f.finMes)}. Por esta razón, su primera factura es un poco mayor que las siguientes. Ya debe tener la factura en su correo, donde puede ver el monto exacto.
+
+Lo ideal es pagarla *a más tardar el ${fmtFecha(f.metaISO)}* y enviarme el *comprobante de pago* por aquí. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
+}
+function textoMovil3(c, f) {
+  return `${saludoSegunHora()} ${primerNombre(c)}. Le escribo para recordarle que la primera factura de su línea Tigo *#${c.telefono}* se debe pagar *a más tardar el ${fmtFecha(f.metaISO)}*.
+
+Ya debe tener la factura en su correo. Si ya la pagó, me envía por favor el *comprobante de pago* para confirmarlo.
+
+Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
+}
+const HITOS_MOVIL = [
+  { key: "m1", tag: "1 · Bienvenida", label: "Explicar cómo será su factura", color: "#0072CE", bg: "#E3EDFA", fecha: "m1", texto: textoMovil1 },
+  { key: "m2", tag: "2 · Factura lista", label: "Ya se generó su 1ra factura", color: "#B45309", bg: "#FFF3DC", fecha: "m2", texto: textoMovil2 },
+  { key: "m3", tag: "3 · Recordatorio", label: "Faltan pocos días para su fecha de pago", color: "#B91C1C", bg: "#FDECEC", fecha: "m3", texto: textoMovil3 },
+];
+// Un recordatorio por cliente: el último que ya toca y todavía no se marcó como enviado
+// (si ya le tocaba el 2, el 1 pierde sentido). Solo clientes del esquema nuevo que aún no
+// pagan su 1ra factura y siguen dentro de su plazo.
+function alertasMovilPendientes(lista) {
+  const hoyISO = fechaLocalISO(new Date());
+  const out = [];
+  (lista || []).forEach((c) => {
+    if (c.f1_estado === "pagada" || !c.telefono) return;
+    const periodo = periodoDelMovil(c);
+    if (!periodo || !esquemaNuevo(periodo)) return;
+    const limite = fechaLimitePrimeraFactura(periodo);
+    if (limite && hoyISO > fechaLocalISO(limite)) return;
+    const f = movilFechasPrimeraFactura(c);
+    if (!f) return;
+    const yaToca = HITOS_MOVIL.filter((h) => f[h.fecha] <= hoyISO);
+    if (!yaToca.length) return;
+    const h = yaToca[yaToca.length - 1];
+    if (c[`aviso_${h.key}`]) return;
+    out.push({ cliente: c, milestone: { key: h.key, tag: h.tag, label: h.label, color: h.color, bg: h.bg, triggerDate: f[h.fecha], texto: h.texto(c, f) }, fechas: f });
+  });
+  return out.sort((a, b) => a.milestone.triggerDate.localeCompare(b.milestone.triggerDate));
+}
 function clienteCuentaParaComision(c) {
   if (clienteExcluido(c)) return false;
   if (!c.fechaInstalacion) return true;
@@ -2297,6 +2392,10 @@ function App() {
   // registro de si en general te ha convenido usar esto o no.
   function confirmarRescate(periodoKey, clientesSeleccionados, montoInvertido, ganancia) {
     clientesSeleccionados.forEach((c) => {
+      if (convergencias.some((x) => x.id === c.id)) {
+        editarConvergencia(c.id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() });
+        return;
+      }
       // Lo que cubre el rescate es la mitad pendiente del primer mes: en un cliente de
       // prorrateo alto eso equivale a un PAGO PARCIAL (queda saldo de la factura por cobrar).
       const cliente = clientes.find((x) => x.id === c.id) || c;
@@ -2781,6 +2880,7 @@ function App() {
             copiedSubKey={copiedSubKey}
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
+            onMarcarMovilPagada={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               navegarA("clientes");
@@ -2802,6 +2902,11 @@ function App() {
             search={searchAlertas}
             filtroTipo={filtroTipoAlertas}
             setFiltroTipo={setFiltroTipoAlertas}
+          />
+          <AlertasMovilTab
+            convergencias={convergencias}
+            onMarcar={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
+            onPagoRealizado={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
           />
           </React.Fragment>
         )}
@@ -3412,13 +3517,19 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
               {actual.riesgo.texto}
             </div>
             <div className="text-xl font-semibold mb-1" style={ { color: "#001E62" } }>{actual.cliente.nombre}</div>
-            <div className="text-sm mb-3" style={ { color: "#5A6680" } }>{planLabel(actual.cliente)}</div>
+            <div className="text-sm mb-3 flex items-center justify-center gap-2" style={ { color: "#5A6680" } }>
+              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={ actual.esMovil ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>
+                {actual.esMovil ? "Móvil" : "Hogar"}
+              </span>
+              <span>{actual.esMovil ? etiquetaTipoMovil(tipoClienteMovil(actual.cliente)) : planLabel(actual.cliente)}</span>
+            </div>
             {ganancia !== null && ganancia > 0 && (
               <div className="text-xs font-medium px-2 py-1 rounded-full inline-block mb-1" style={ { color: "#001E62", background: "#EAF0FB" } }>
                 💰 Regularizar la diferencia sube tu comisión confirmada {fmtMonto(ganancia)}
               </div>
             )}
 
+            {actual.esMovil && <div className="text-xs mb-1" style={ { color: "#5A6680" } }>Número de línea</div>}
             <button
               onClick={() => onCopiarSuscriptor(actual.cliente)}
               className="w-full py-3 rounded-md border-2 mb-2 font-mono text-2xl font-bold tracking-wide"
@@ -3442,6 +3553,7 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
 
             <p className="text-xs mb-4" style={ { color: "#5A6680" } }>
               Revisa en el sistema de Tigo si ya pagó su factura, y confirma abajo.
+              {actual.esMovil && <span className="block mt-1" style={ { color: "#B45309", fontWeight: 600 } }>Debe pagar su 1ra factura completa para contar.</span>}
             </p>
 
             {confirmando === "pagada" && permiteParcial && permiteParcial(actual.cliente) ? (
@@ -3520,13 +3632,15 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
                 >
                   ✕ No pagó todavía
                 </button>
-                <button
-                  onClick={() => setConfirmando("descartar")}
-                  className="w-full py-2 rounded-md font-medium text-xs"
-                  style={ { color: "#B45309" } }
-                >
-                  🚫 Descartar cliente (no va a pagar / se desconecta)
-                </button>
+                {!actual.esMovil && (
+                  <button
+                    onClick={() => setConfirmando("descartar")}
+                    className="w-full py-2 rounded-md font-medium text-xs"
+                    style={ { color: "#B45309" } }
+                  >
+                    🚫 Descartar cliente (no va a pagar / se desconecta)
+                  </button>
+                )}
                 <button
                   onClick={() => onSaltar(actual.cliente.id)}
                   className="w-full py-1.5 font-medium text-xs"
@@ -3593,7 +3707,7 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, vista = "dashboard", onIrACobros, onVerCliente }) {
+function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -4025,20 +4139,28 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     () => clientesConfirmadosHoy.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0),
     [clientesConfirmadosHoy]
   );
+  // Clientes Móvil (esquema nuevo) del ciclo activo que todavía no pagan su 1ra factura.
+  const movilesPendientesHoy = useMemo(
+    () => (periodoRescateActivo && esNuevoHoy ? convergenciasPeriodoHoy.filter((c) => c.f1_estado !== "pagada" && movilCuentaParaComision(c)) : []),
+    [periodoRescateActivo, esNuevoHoy, convergenciasPeriodoHoy]
+  );
+  const idsMovilHoy = useMemo(() => new Set((convergencias || []).map((c) => c.id)), [convergencias]);
   function calcularComisionConSubconjuntoHoy(subset) {
-    const clientesSimulados = clientesConfirmadosHoy.length + subset.length;
-    const dineroSimulado = dineroConfirmadoHoy + subset.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+    const subHogar = subset.filter((c) => !idsMovilHoy.has(c.id));
+    const subMovil = subset.filter((c) => idsMovilHoy.has(c.id));
+    const clientesSimulados = clientesConfirmadosHoy.length + subHogar.length;
+    const dineroSimulado = dineroConfirmadoHoy + subHogar.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
     const arpuSimulado = clientesSimulados > 0 ? dineroSimulado / clientesSimulados : 0;
     if (esNuevoHoy) {
       return calcularComision({
         periodoKey: periodoRescateActivo,
         clientesHogar: clientesSimulados,
         metaClientesHogar: metaClientesHogarHoy,
-        clientesMovil: resumenMovilesConfirmadoHoy.cantidad,
+        clientesMovil: resumenMovilesConfirmadoHoy.cantidad + subMovil.length,
         metaClientesMovil: metaClientesMovilHoy,
-        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodoHoy,
+        ingresosDelPeriodo: dineroSimulado + costoPlanesMovilesPeriodoHoy + subMovil.reduce((acc, c) => acc + (Number(c.montoPlan) || 0), 0),
         metaIngresos: metaDineroHoy,
-        cantidadBonoMovil: resumenMovilesConfirmadoHoy.bonoConfirmado,
+        cantidadBonoMovil: resumenMovilesConfirmadoHoy.bonoConfirmado + subMovil.filter((c) => c.esPortabilidad).length,
         cantidadBonoPendiente: 0,
       });
     }
@@ -4059,8 +4181,8 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   );
   // Lo máximo que podrías cobrar de ese período si pagan todos los clientes que siguen en plazo.
   const comisionMaximaHoy = useMemo(
-    () => (periodoRescateActivo ? calcularComisionConSubconjuntoHoy(clientesDelPeriodoHoy.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c))) : { completo: false, total: 0 }),
-    [periodoRescateActivo, clientesDelPeriodoHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, resumenMovilesConfirmadoHoy, bonoFullTigoHoy]
+    () => (periodoRescateActivo ? calcularComisionConSubconjuntoHoy([...clientesDelPeriodoHoy.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c)), ...movilesPendientesHoy]) : { completo: false, total: 0 }),
+    [periodoRescateActivo, clientesDelPeriodoHoy, movilesPendientesHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, metaClientesHogarHoy, metaClientesMovilHoy, metaDineroHoy, metaArpuHoy, metaClientesHoy, resumenMovilesConfirmadoHoy, bonoFullTigoHoy]
   );
   const rescateVencidos = useMemo(
     () => (periodoRescateActivo ? clientesDelPeriodoHoy.filter((c) => !clienteCuentaParaComision(c)) : []),
@@ -4070,7 +4192,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     () => (periodoRescateActivo ? clientesDelPeriodoHoy.filter((c) => c.f1_estado !== "pagada" && clienteCuentaParaComision(c)) : []),
     [clientesDelPeriodoHoy, periodoRescateActivo]
   );
-  const rescateCandidatos = useMemo(() => [...rescateVencidos, ...rescateEnPlazo], [rescateVencidos, rescateEnPlazo]);
+  const rescateCandidatos = useMemo(() => [...rescateVencidos, ...rescateEnPlazo, ...movilesPendientesHoy], [rescateVencidos, rescateEnPlazo, movilesPendientesHoy]);
   // Mitad de la mensualidad con impuesto: lo que el cliente paga por adelantado al contratar.
   function montoMitadCliente(c) {
     const monto = Number(c.montoMensual) || 0;
@@ -4096,12 +4218,12 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     [rescateCandidatos, rescateSeleccion]
   );
   const rescatePones = useMemo(
-    () => rescateSeleccionados.reduce((acc, c) => acc + montoFaltanteCliente(c), 0),
-    [rescateSeleccionados]
+    () => rescateSeleccionados.filter((c) => !idsMovilHoy.has(c.id)).reduce((acc, c) => acc + montoFaltanteCliente(c), 0),
+    [rescateSeleccionados, idsMovilHoy]
   );
   const rescateMinimo = useMemo(
-    () => rescateSeleccionados.reduce((acc, c) => acc + montoMinimoCliente(c), 0),
-    [rescateSeleccionados, umbralProrrateo]
+    () => rescateSeleccionados.filter((c) => !idsMovilHoy.has(c.id)).reduce((acc, c) => acc + montoMinimoCliente(c), 0),
+    [rescateSeleccionados, umbralProrrateo, idsMovilHoy]
   );
   // La comparación siempre parte de tu comisión CONFIRMADA (solo lo ya pagado) — es la
   // única cifra de la que te puedes fiar hoy.
@@ -4150,7 +4272,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     for (let mask = 1; mask < 1 << n; mask++) {
       const subset = rescateCandidatos.filter((_, i) => mask & (1 << i));
       if (calcularComisionConSubconjuntoHoy(subset).total < totalMaximo) continue;
-      const costo = subset.reduce((acc, c) => acc + montoMinimoCliente(c), 0);
+      const costo = subset.reduce((acc, c) => acc + (idsMovilHoy.has(c.id) ? 0 : montoMinimoCliente(c)), 0);
       if (!mejor || subset.length < mejor.subset.length || (subset.length === mejor.subset.length && costo < mejor.costo)) {
         mejor = { subset, costo };
       }
@@ -4169,10 +4291,11 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
     () => [...rescateVencidos].sort((a, b) => String(a.fechaInstalacion || "9999").localeCompare(String(b.fechaInstalacion || "9999")) || (Number(b.montoMensual) || 0) / montoFaltanteCliente(b) - (Number(a.montoMensual) || 0) / montoFaltanteCliente(a)),
     [rescateVencidos]
   );
-  const rescateEnPlazoOrdenados = useMemo(
-    () => [...rescateEnPlazo].sort((a, b) => String(a.fechaInstalacion || "9999").localeCompare(String(b.fechaInstalacion || "9999")) || (Number(b.montoMensual) || 0) / montoFaltanteCliente(b) - (Number(a.montoMensual) || 0) / montoFaltanteCliente(a)),
-    [rescateEnPlazo]
-  );
+  const rescateEnPlazoOrdenados = useMemo(() => {
+    const hogar = [...rescateEnPlazo].sort((a, b) => String(a.fechaInstalacion || "9999").localeCompare(String(b.fechaInstalacion || "9999")) || (Number(b.montoMensual) || 0) / montoFaltanteCliente(b) - (Number(a.montoMensual) || 0) / montoFaltanteCliente(a));
+    const fechaDe = (c) => (idsMovilHoy.has(c.id) ? fechaActivacionMovil(c) : c.fechaInstalacion) || "9999";
+    return [...hogar, ...movilesPendientesHoy].sort((a, b) => String(fechaDe(a)).localeCompare(String(fechaDe(b))));
+  }, [rescateEnPlazo, movilesPendientesHoy, idsMovilHoy]);
 
   // Proyección a fin de ciclo: regla de tres simple sobre el ritmo actual.
   // El ARPU no se extrapola directo (es un promedio) — se deriva de clientes/ingreso ya proyectados.
@@ -4299,7 +4422,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   // Se calcula con la fecha límite real de cada ciclo, no con resta fija de meses,
   // para que siga funcionando aunque algún período dure más o menos de lo normal.
   // Dentro del ciclo, solo entran los que todavía no pagaron su 1ra factura.
-  const enRiesgoHoy = useMemo(() => {
+  const enRiesgoHogar = useMemo(() => {
     const hoy = new Date();
     hoy.setHours(0, 0, 0, 0);
     const periodoObjetivo = periodoRescateActivo;
@@ -4330,10 +4453,40 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
       .filter((x) => x.diasParaLimite === null || x.diasParaLimite >= 0)
       .sort((a, b) => (a.diasParaLimite ?? 999) - (b.diasParaLimite ?? 999));
   }, [clientes, periodoRescateActivo]);
+  // Clientes Móvil del mismo ciclo (esquema nuevo): deben pagar su 1ra factura completa.
+  const enRiesgoMovil = useMemo(() => {
+    if (!periodoRescateActivo || !esquemaNuevo(periodoRescateActivo)) return [];
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const fechaLimite = fechaLimitePrimeraFactura(periodoRescateActivo);
+    const diasParaLimite = fechaLimite ? Math.round((fechaLimite - hoy) / 86400000) : null;
+    if (diasParaLimite !== null && diasParaLimite < 0) return [];
+    const texto =
+      diasParaLimite === null
+        ? "⚠️ Debe pagar su 1ra factura para contar en tu comisión"
+        : diasParaLimite === 0
+        ? "⏰ Vence HOY — última oportunidad"
+        : `⚠️ Vence el ${fmtFecha(fechaLocalISO(fechaLimite))} (${diasParaLimite} día${diasParaLimite === 1 ? "" : "s"})`;
+    return (convergencias || [])
+      .filter((c) => c.f1_estado !== "pagada" && periodoDelMovil(c) === periodoRescateActivo)
+      .map((c) => ({
+        cliente: { ...c, numeroSuscriptor: c.telefono },
+        esMovil: true,
+        facturaPendiente: { n: 1 },
+        fechaLimite,
+        diasParaLimite,
+        riesgo: { texto, color: "#B45309", bg: "#FFF6E3" },
+      }));
+  }, [convergencias, periodoRescateActivo]);
+  // Lista mezclada Hogar + Móvil: la que usan "por cobrar" y el uno a uno.
+  const enRiesgoHoy = useMemo(
+    () => [...enRiesgoHogar, ...enRiesgoMovil].sort((a, b) => (a.diasParaLimite ?? 999) - (b.diasParaLimite ?? 999)),
+    [enRiesgoHogar, enRiesgoMovil]
+  );
 
   const sumaPorCobrar = useMemo(
-    () => enRiesgoHoy.reduce((acc, x) => acc + montoFaltanteCliente(x.cliente), 0),
-    [enRiesgoHoy, umbralProrrateo]
+    () => enRiesgoHogar.reduce((acc, x) => acc + montoFaltanteCliente(x.cliente), 0),
+    [enRiesgoHogar, umbralProrrateo]
   );
   // Clientes que saltaste "por ahora" en el uno-por-uno: no quedan marcados como
   // revisados (mañana vuelven a aparecer igual si siguen sin resolver), pero se van
@@ -4425,6 +4578,29 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
   // el período propio del cliente. El bono FULL TIGO del esquema viejo no se suma acá
   // (es una estimación rápida para decidir en el momento, no el número exacto).
   function calcularGananciaPorRescate(cliente) {
+    if (idsMovilHoy.has(cliente.id)) {
+      const per = periodoDelMovil(cliente);
+      if (!per || !esquemaNuevo(per)) return null;
+      const hogarConf = clientes.filter((c) => c.fechaInstalacion && periodoDelCliente(c) === per && c.f1_estado === "pagada");
+      const dineroHogar = hogarConf.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+      const rmBase = resumenMovilesNuevo(convergencias.filter((c) => periodoComision(fechaActivacionMovil(c)) === per), true);
+      const calcMov = (suma) =>
+        calcularComision({
+          periodoKey: per,
+          clientesHogar: hogarConf.length,
+          metaClientesHogar: leerMeta(metas, per, "clientesHogar"),
+          clientesMovil: rmBase.cantidad + (suma ? 1 : 0),
+          metaClientesMovil: leerMeta(metas, per, "clientesMovil"),
+          ingresosDelPeriodo: dineroHogar + rmBase.costoPlanes + (suma ? Number(cliente.montoPlan) || 0 : 0),
+          metaIngresos: leerMeta(metas, per, "dinero"),
+          cantidadBonoMovil: rmBase.bonoConfirmado + (suma && cliente.esPortabilidad ? 1 : 0),
+          cantidadBonoPendiente: 0,
+        });
+      const antesM = calcMov(false);
+      const despuesM = calcMov(true);
+      if (!antesM.completo || !despuesM.completo) return null;
+      return despuesM.total - antesM.total;
+    }
     const periodoCliente = periodoDelCliente(cliente);
     if (!periodoCliente) return null;
     const nuevo = esquemaNuevo(periodoCliente);
@@ -4546,7 +4722,8 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
           total={enRiesgoHoy.length}
           permiteParcial={(c) => (c.facturas || []).some((f) => f.n === 1 && f.milestones.some((m) => m.type === "toque1"))}
           onMarcarPagada={(clienteId, n, opciones) => {
-            onActualizarEstadoFactura(clienteId, n, "pagada", opciones || {});
+            if (idsMovilHoy.has(clienteId)) onMarcarMovilPagada(clienteId);
+            else onActualizarEstadoFactura(clienteId, n, "pagada", opciones || {});
             marcarRevisadoHoy(clienteId);
           } }
           onNoPagoTodavia={marcarRevisadoHoy}
@@ -4678,12 +4855,13 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                               onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
                             />
                             <span className="text-sm truncate">{c.nombre}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={ idsMovilHoy.has(c.id) ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>{idsMovilHoy.has(c.id) ? "Móvil" : "Hogar"}</span>
                           </span>
                           <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
-                            le faltan {fmtMonto(montoFaltanteCliente(c))}
+                            {idsMovilHoy.has(c.id) ? "1ra factura completa" : `le faltan ${fmtMonto(montoFaltanteCliente(c))}`}
                           </span>
                         </div>
-                        {clienteProrrateoAlto(c) && (
+                        {!idsMovilHoy.has(c.id) && clienteProrrateoAlto(c) && (
                           <div className="mt-2 flex items-start gap-2 rounded-md px-2.5 py-2 text-xs font-bold" style={ { background: "#FFF3DC", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", color: "#B45309", lineHeight: 1.35 } }>
                             <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
@@ -4696,14 +4874,21 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
               )}
 
               <div className="rounded-md p-3" style={ { background: "#F3F6FB" } }>
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#5A6680" } }>Total a cobrar:</span>
-                  <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
-                </div>
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <span style={ { color: "#001E62" } }>Mínimo para que cuenten:</span>
-                  <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fmtMonto(rescateMinimo)}</span>
-                </div>
+                {rescatePones > 0 && (
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span style={ { color: "#5A6680" } }>Total a cobrar:</span>
+                    <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
+                  </div>
+                )}
+                {rescatePones > 0 && (
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span style={ { color: "#001E62" } }>Mínimo para que cuenten:</span>
+                    <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fmtMonto(rescateMinimo)}</span>
+                  </div>
+                )}
+                {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && (
+                  <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>
+                )}
                 <div className="flex items-center justify-between text-sm mb-1">
                   <span style={ { color: "#5A6680" } }>Tu comisión confirmada pasa de:</span>
                   <span className="font-mono">
@@ -6537,6 +6722,176 @@ function AlertasTab({ alertasHoy, alertasTodas, onMarcar, onCopiarSuscriptor, co
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Recordatorios de Clientes Móvil dentro de Cobros: mismo estilo que los de Hogar.
+function AlertasMovilTab({ convergencias, onMarcar, onPagoRealizado }) {
+  const alertas = alertasMovilPendientes(convergencias);
+  const [listaAbierta, setListaAbierta] = useState(false);
+  const [expandidos, setExpandidos] = useState(() => new Set());
+  const [colaEnvio, setColaEnvio] = useState(null);
+  const [indiceEnvio, setIndiceEnvio] = useState(0);
+  const [contadorEnviados, setContadorEnviados] = useState(0);
+  const [resumenEnvio, setResumenEnvio] = useState(null);
+
+  function iniciarEnvioEnCadena(lista) {
+    if (!lista.length) return;
+    setColaEnvio(lista);
+    setIndiceEnvio(0);
+    setContadorEnviados(0);
+    setResumenEnvio(null);
+    window.location.href = whatsappLink(lista[0].cliente, lista[0].milestone);
+  }
+  function avanzarEnvio(marcarComoEnviado) {
+    const actual = colaEnvio[indiceEnvio];
+    if (marcarComoEnviado) onMarcar(actual.cliente.id, actual.milestone.key);
+    const nuevosEnviados = contadorEnviados + (marcarComoEnviado ? 1 : 0);
+    const siguienteIndice = indiceEnvio + 1;
+    if (siguienteIndice >= colaEnvio.length) {
+      setResumenEnvio({ total: colaEnvio.length, enviados: nuevosEnviados });
+      setColaEnvio(null);
+    } else {
+      setContadorEnviados(nuevosEnviados);
+      setIndiceEnvio(siguienteIndice);
+      const siguiente = colaEnvio[siguienteIndice];
+      window.location.href = whatsappLink(siguiente.cliente, siguiente.milestone);
+    }
+  }
+  function cancelarEnvioEnCadena() {
+    setColaEnvio(null);
+    setIndiceEnvio(0);
+  }
+  function toggleExpandido(id) {
+    setExpandidos((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+  function diasTexto(fecha) {
+    const dias = daysFromToday(fecha);
+    if (dias === 0) return "Para hoy";
+    const abs = Math.abs(dias);
+    return `Desde hace ${abs} día${abs === 1 ? "" : "s"}`;
+  }
+
+  return (
+    <div>
+      <h2 className="text-base font-extrabold mb-2 mt-8" style={ { color: "#001E62" } }>3 · Recordatorios · Clientes Móvil</h2>
+      <div className="bg-white rounded-xl border overflow-hidden mb-4" style={ { borderColor: "#DFE5EF" } }>
+        <div className="px-4 py-3.5" style={ { borderBottom: alertas.length > 0 ? "1px solid #DFE5EF" : "none" } }>
+          <div className="text-sm font-bold" style={ { color: "#001E62" } }>
+            {alertas.length > 0 ? (
+              <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{alertas.length}</span> {alertas.length === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>
+            ) : "✓ Sin recordatorios por enviar"}
+          </div>
+          <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Para que paguen su 1ra factura · clientes desde octubre 2026</div>
+        </div>
+        {alertas.length > 0 && (
+          <div className="p-4">
+            <button
+              type="button"
+              onClick={() => iniciarEnvioEnCadena(alertas)}
+              disabled={!!colaEnvio}
+              className="w-full py-3 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
+              style={ { background: "#001E62" } }
+            >
+              Enviar recordatorios <span style={ { fontWeight: 500, opacity: 0.8 } }>· {alertas.length} por WhatsApp</span>
+            </button>
+          </div>
+        )}
+        {alertas.length > 0 && (
+          <button
+            type="button"
+            onClick={() => setListaAbierta((v) => !v)}
+            className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold text-left"
+            style={ { background: "#EEF3FB", color: "#001E62", border: 0, borderTop: "1px solid #DFE5EF", cursor: "pointer" } }
+          >
+            <span>Ver lista</span><span>{listaAbierta ? "▲" : "▼"}</span>
+          </button>
+        )}
+      </div>
+
+      {colaEnvio && (
+        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap" style={ { background: "#001E62" } }>
+          <div>
+            <p className="text-sm font-semibold text-white">Enviando {indiceEnvio + 1} de {colaEnvio.length}: {colaEnvio[indiceEnvio].cliente.nombre}</p>
+            <p className="text-xs" style={ { color: "#B9C4E0" } }>Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <button onClick={() => avanzarEnvio(true)} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#001E62" } }>Sí, siguiente</button>
+            <button onClick={() => avanzarEnvio(false)} className="text-xs font-medium px-3 py-1.5 rounded-md border border-white text-white">No, saltar</button>
+            <button onClick={cancelarEnvioEnCadena} className="text-xs font-medium px-2 py-1.5 text-white opacity-70">Cancelar envío</button>
+          </div>
+        </div>
+      )}
+
+      {resumenEnvio && (
+        <div className="flex items-center justify-between gap-3 rounded-lg p-4 mb-4 flex-wrap" style={ { background: "#E9F7EF", border: "1px solid #BEE8CE" } }>
+          <p className="text-sm" style={ { color: "#166534" } }>
+            ✅ Envío en cadena terminado: <span className="font-semibold">{resumenEnvio.enviados} de {resumenEnvio.total}</span> mensajes marcados como enviados.
+          </p>
+          <button onClick={() => setResumenEnvio(null)} className="text-xs font-medium" style={ { color: "#166534" } }>Cerrar</button>
+        </div>
+      )}
+
+      {listaAbierta && alertas.length > 0 && (
+        <div className="flex flex-col gap-3 mb-6">
+          {alertas.map(({ cliente, milestone, fechas }) => (
+            <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+              <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={ { borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" } }>
+                <div>
+                  <div className="font-semibold text-sm" style={ { color: "#001E62" } }>{cliente.nombre}</div>
+                  <div className="text-xs" style={ { color: "#5A6680" } }>
+                    Línea {cliente.telefono} · {etiquetaTipoMovil(tipoClienteMovil(cliente))} · activada {fmtFecha(fechas.activacion)} · ciclo {String(fechas.ciclo).padStart(2, "0")}
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoRealizado(cliente.id);
+                  } }
+                  className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
+                  style={ { background: "#001E62" } }
+                >
+                  Ya pagó su 1ra factura
+                </button>
+              </div>
+              <div className="p-4">
+                <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: milestone.bg, color: milestone.color } }>{milestone.tag}</span>
+                    <span className="text-xs" style={ { color: "#5A6680" } }>{milestone.label}</span>
+                    <span className="text-xs font-medium" style={ { color: milestone.color } }>{diasTexto(milestone.triggerDate)}</span>
+                  </div>
+                  <button onClick={() => toggleExpandido(cliente.id)} className="text-xs font-medium" style={ { color: "#0072CE" } }>
+                    {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
+                  </button>
+                </div>
+                {expandidos.has(cliente.id) && (
+                  <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151", whiteSpace: "pre-wrap" } }>{milestone.texto}</div>
+                )}
+                <div className="flex items-center gap-2 flex-wrap">
+                  <a href={whatsappLink(cliente, milestone)} className="text-xs font-medium px-3 py-1.5 rounded-md text-white" style={ { background: "#25D366" } }>
+                    Enviar por WhatsApp
+                  </a>
+                  <button
+                    onClick={() => {
+                      if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) onMarcar(cliente.id, milestone.key);
+                    } }
+                    className="text-xs font-medium px-3 py-1.5 rounded-md border"
+                    style={ { borderColor: "#DFE5EF", color: "#374151" } }
+                  >
+                    Marcar como enviado
+                  </button>
+                </div>
               </div>
             </div>
           ))}
