@@ -1007,9 +1007,9 @@ Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Una vez realiz
 }
 
 const MILESTONE_TYPES = [
-  { type: "d1", tag: "🧾", corto: "Factura", label: "Nueva factura", color: "#001E62", bg: "#EAF0FB", getTexto: textoD1 },
-  { type: "t15", tag: "⏰", corto: "15 días", label: "15 días", color: "#B45309", bg: "#FFF3DC", getTexto: textoT15 },
-  { type: "t3", tag: "⏰", corto: "3 días", label: "3 días", color: "#B45309", bg: "#FFF6E3", getTexto: textoT3 },
+  { type: "d1", tag: "🧾", corto: "Factura lista", label: "Nueva factura", color: "#001E62", bg: "#EAF0FB", getTexto: textoD1 },
+  { type: "t15", tag: "⏰", corto: "Aviso previo", label: "15 días", color: "#B45309", bg: "#FFF3DC", getTexto: textoT15 },
+  { type: "t3", tag: "⏰", corto: "Último aviso", label: "3 días", color: "#B45309", bg: "#FFF6E3", getTexto: textoT3 },
 ];
 
 // Igual que MILESTONE_TYPES pero incluye también los avisos preventivos de abono
@@ -1018,7 +1018,7 @@ const MILESTONE_TYPES = [
 const TIPOS_ALERTA = [
   ...MILESTONE_TYPES,
   { type: "toque1", tag: "👋", corto: "Bienvenida", label: "Bienvenida (pedir abono)", color: "#0072CE", bg: "#E3EDFA" },
-  { type: "toque2", tag: "🔔", corto: "Abono", label: "Recordatorio de abono", color: "#0072CE", bg: "#E3EDFA" },
+  { type: "toque2", tag: "🔔", corto: "Pedir abono", label: "Recordatorio de abono", color: "#0072CE", bg: "#E3EDFA" },
 ];
 
 const emptyForm = () => ({
