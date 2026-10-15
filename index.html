@@ -2841,7 +2841,7 @@ function App() {
             onAgregarMovil={agregarConvergencia}
             onEditarMovil={editarConvergencia}
             onEliminarMovil={eliminarConvergencia}
-            onVolverAPrecierre={() => volverA("precierre")}
+            onVolverAPrecierre={(destino) => volverA(destino || "precierre")}
           />
         )}
         {tab === "detalle" && (
@@ -2892,7 +2892,7 @@ function App() {
             onMarcarMovil={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
             onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
             onVerMovil={(c) => {
-              setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", token: Date.now() });
+              setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "alertas" }, token: Date.now() });
               navegarA("clientes");
             } }
             alertasTodas={alertasHoy}
@@ -8354,6 +8354,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const nombreRef = useRef(null);
   // true cuando el formulario se abrió desde "Verificar órdenes": al guardar vuelve al Precierre.
   const vieneDePrecierre = useRef(false);
+  const destinoVolver = useRef("precierre");
 
   // El formulario viene minimizado: solo se abre desde el botón flotante (+) o al editar un cliente.
   useEffect(() => {
@@ -8370,6 +8371,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setF1Pagada(aEditar.f1_estado === "pagada");
         setEditingId(aEditar.id);
         vieneDePrecierre.current = true;
+        destinoVolver.current = prefill.volverA || "precierre";
       } else if (prefill) {
         setEditingId(null);
         setNombre(prefill.nombre || "");
@@ -8381,6 +8383,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setEsPortabilidad(false);
         setF1Pagada(false);
         vieneDePrecierre.current = true;
+        destinoVolver.current = "precierre";
       }
       setFormAbierto(true);
       if (onFormAbierto) onFormAbierto();
@@ -8434,7 +8437,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     }
     limpiarForm();
     setFormAbierto(false);
-    if (volver && onVolverAPrecierre) onVolverAPrecierre();
+    if (volver && onVolverAPrecierre) onVolverAPrecierre(destinoVolver.current);
   }
 
   function startEdit(c) {
@@ -8460,8 +8463,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   }
 
   function cancelEdit() {
+    const volver = vieneDePrecierre.current && destinoVolver.current === "alertas";
     limpiarForm();
     setFormAbierto(false);
+    if (volver && onVolverAPrecierre) onVolverAPrecierre("alertas");
   }
 
   const campoCls = "w-full px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm outline-none";
