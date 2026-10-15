@@ -3736,9 +3736,11 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
     nH = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_HOGAR * 100 / metaClientesHogar) - 1e-9));
     nM = Math.max(1, Math.ceil(pts / (PESO_CLIENTES_MOVIL * 100 / metaClientesMovil) - 1e-9));
   }
-  const caja = { background: C.pn, borderRadius: 10, padding: "9px 6px", textAlign: "center" };
+  // Las tres cajas se estiran a la misma altura: el texto arriba y el monto siempre abajo,
+  // para que los números queden alineados aunque un texto ocupe más líneas.
+  const caja = { background: C.pn, borderRadius: 10, padding: "9px 6px", textAlign: "center", display: "flex", flexDirection: "column", justifyContent: "space-between", alignItems: "center", gap: 4 };
   const peqTxt = { display: "block", fontSize: 11, color: C.mu, lineHeight: 1.25 };
-  const valTxt = { display: "block", fontSize: 17, fontWeight: 600, marginTop: 2, fontVariantNumeric: "tabular-nums" };
+  const valTxt = { display: "block", fontSize: 17, fontWeight: 600, fontVariantNumeric: "tabular-nums" };
   const op = { alignSelf: "center", color: C.mu, fontSize: 16 };
   const bloque = { marginTop: 14, borderRadius: 10, border: "1px solid #C9DBF3", background: "#F7FAFE", padding: 12 };
   const barra = { position: "relative", height: 10, borderRadius: 5, background: C.cell, margin: "12px 0 6px" };
@@ -3771,7 +3773,7 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
         </div>
       )}
 
-      <div style={ { display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)", gap: 6, marginTop: 14 } }>
+      <div style={ { display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)", gap: 6, marginTop: 14, alignItems: "stretch" } }>
         <div style={caja}><span style={peqTxt}>Base por clientes<br />({pc.toFixed(0)}% de la meta)</span><b style={valTxt}>{fmtMiles(base, 0)}</b></div>
         <div style={op}>×</div>
         <div style={ { ...caja, background: pi != null && pi < 100 && base > 0 ? "#FFF3DC" : C.pn } }>
