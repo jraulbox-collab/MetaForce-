@@ -145,10 +145,29 @@ const daysFromToday = (dateStr) => {
   const target = new Date(dateStr + "T00:00:00");
   return Math.round((target - today) / 86400000);
 };
-const fmtFecha = (dateStr) => {
+// Formato numérico DD/MM/AAAA: solo para exportaciones y datos (no para leer en pantalla).
+const fmtFechaNum = (dateStr) => {
   if (!dateStr) return "—";
   const [y, m, d] = dateStr.split("-");
   return `${d}/${m}/${y}`;
+};
+const MESES_ABREV = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+const DIAS_ABREV = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+// Formato de pantalla: "14 oct" (con año solo si no es el año actual: "28 dic 2025").
+const fmtFecha = (dateStr) => {
+  if (!dateStr) return "—";
+  const [y, m, d] = String(dateStr).slice(0, 10).split("-");
+  const mes = MESES_ABREV[parseInt(m, 10) - 1];
+  if (!mes || !parseInt(d, 10)) return String(dateStr);
+  return `${parseInt(d, 10)} ${mes}${parseInt(y, 10) !== new Date().getFullYear() ? " " + y : ""}`;
+};
+// Igual, con día de la semana: "mié 14 oct". Para fechas de instalación y activación.
+const fmtFechaDia = (dateStr) => {
+  if (!dateStr) return "—";
+  const [y, m, d] = String(dateStr).slice(0, 10).split("-").map(Number);
+  const base = fmtFecha(dateStr);
+  if (!y || !m || !d) return base;
+  return `${DIAS_ABREV[new Date(y, m - 1, d).getDay()]} ${base}`;
 };
 const MESES = [
   "enero", "febrero", "marzo", "abril", "mayo", "junio",
@@ -1124,7 +1143,7 @@ function ExportarModal({ clientes, onCerrar }) {
           case "nombre":
             return c.nombre || "";
           case "instalacion":
-            return fmtFecha(c.fechaInstalacion);
+            return fmtFechaNum(c.fechaInstalacion);
           case "facturasEmitidas":
             return r.emitidas;
           case "facturasPagadas":
@@ -6798,7 +6817,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         return <span className="font-mono text-xs">{cicloCorto(c)}</span>;
       case "instalacion":
         return c.fechaInstalacion ? (
-          <span className="font-mono text-xs">{fmtFecha(c.fechaInstalacion)}</span>
+          <span className="font-mono text-xs">{fmtFechaDia(c.fechaInstalacion)}</span>
         ) : (
           <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#B45309", color: "white" } }>
             ⚠️ PENDIENTE POR INSTALAR
@@ -7097,7 +7116,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             .map((c) => ({
               id: c.id,
               nombre: c.nombre,
-              sub: [c.telefono, "Activada " + fmtFecha(fechaActivacionMovil(c))].filter(Boolean).join(" · "),
+              sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c))].filter(Boolean).join(" · "),
               ref: c,
             }))}
           onAbrir={() => setSubVista("movil")}
@@ -7617,7 +7636,7 @@ function ClienteDetalle({
         </div>
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Fecha de instalación</div>
-          <div className="font-medium">{fmtFecha(cliente.fechaInstalacion)}</div>
+          <div className="font-medium">{fmtFechaDia(cliente.fechaInstalacion)}</div>
         </div>
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Monto mensual recurrente</div>
@@ -8080,7 +8099,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           filas={(hogarCoincidencias || []).map((c) => ({
             id: c.id,
             nombre: c.nombre,
-            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFecha(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "),
+            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "),
             ref: c,
           }))}
           onAbrir={(c) => onVerDetalleHogar && onVerDetalleHogar(c)}
@@ -8143,7 +8162,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                           )}
                         </div>
                         <div className="text-xs font-mono mt-1.5" style={ { color: "#5A6680" } }>
-                          <a href={`tel:${String(c.telefono || "").replace(/[^0-9+]/g, "")}`} style={ { color: "#0072CE", textDecoration: "underline" } }>{c.telefono}</a>{c.whatsapp ? ` · WhatsApp ${c.whatsapp}` : ""} · activado {fmtFecha(fechaActivacionMovil(c))}
+                          <a href={`tel:${String(c.telefono || "").replace(/[^0-9+]/g, "")}`} style={ { color: "#0072CE", textDecoration: "underline" } }>{c.telefono}</a>{c.whatsapp ? ` · WhatsApp ${c.whatsapp}` : ""} · activado {fmtFechaDia(fechaActivacionMovil(c))}
                         </div>
                         {esquemaNuevo(m.key) && (
                           <div className="flex flex-wrap gap-1.5 mt-2">
@@ -8250,8 +8269,8 @@ function resumenPagoCliente(c) {
 function fmtFechaHora(iso) {
   if (!iso) return "—";
   const d = new Date(iso);
-  const fecha = d.toLocaleDateString("es-PA", { day: "2-digit", month: "2-digit", year: "numeric" });
-  const hora = d.toLocaleTimeString("es-PA", { hour: "2-digit", minute: "2-digit" });
+  const fecha = fmtFecha(fechaLocalISO(d));
+  const hora = d.toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" });
   return `${fecha} · ${hora}`;
 }
 function fmtRelativo(iso) {
@@ -8284,7 +8303,8 @@ const ENTIDAD_LABEL = {
 function valorLegible(campo, valor) {
   if (valor === "" || valor === null || valor === undefined) return "—";
   if (campo === "montoMensual" || campo === "monto1raFactura" || campo === "montoPlan") return fmtMonto(valor);
-  if (campo === "fechaInstalacion" || campo === "fecha1raFactura") return fmtFecha(valor);
+  if (campo === "fechaInstalacion") return fmtFechaDia(valor);
+  if (campo === "fecha1raFactura") return fmtFecha(valor);
   return String(valor);
 }
 const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -8817,7 +8837,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
 
   async function copiarReclamo() {
     const lineas = reclamar.map(
-      (c) => `${c.numeroSuscriptor} · ${c.nombre || "Sin nombre"} · instalado ${fmtFecha(c.fechaInstalacion)}`
+      (c) => `${c.numeroSuscriptor} · ${c.nombre || "Sin nombre"} · instalado ${fmtFechaDia(c.fechaInstalacion)}`
     );
     const encabezado = `Suscriptores instalados del ${fmtFecha(resultado.desde)} al ${fmtFecha(resultado.hasta)} que no aparecen en el precierre:`;
     const ok = await copiarTextoPrecierre([encabezado, ...lineas].join("\n"));
@@ -8938,7 +8958,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
                 onClick={() => onAbrirCliente(c)}
                 derecha={
                   <div className="text-right shrink-0">
-                    <div className="text-xs font-mono" style={ { color: "#5A6680" } }>{fmtFecha(c.fechaInstalacion)}</div>
+                    <div className="text-xs font-mono" style={ { color: "#5A6680" } }>{fmtFechaDia(c.fechaInstalacion)}</div>
                     <span
                       className="text-xs font-bold px-2 py-1 rounded-full inline-block mt-0.5"
                       style={ pagada ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#FFF3DC", color: "#B45309" } }
@@ -8958,7 +8978,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
               color={g.color}
               numero={c.numeroSuscriptor}
               nombre={c.nombre}
-              sub={`${c.fechaInstalacion ? fmtFecha(c.fechaInstalacion) + " · " : ""}${motivo}`}
+              sub={`${c.fechaInstalacion ? fmtFechaDia(c.fechaInstalacion) + " · " : ""}${motivo}`}
               onClick={() => onAbrirCliente(c)}
             />
           ))}
@@ -8972,7 +8992,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
                 numero={c.numeroSuscriptor}
                 nombre={c.nombre}
                 onClick={() => onAbrirCliente(c)}
-                derecha={<span className="text-xs font-mono shrink-0" style={ { color: "#5A6680" } }>{fmtFecha(c.fechaInstalacion)}</span>}
+                derecha={<span className="text-xs font-mono shrink-0" style={ { color: "#5A6680" } }>{fmtFechaDia(c.fechaInstalacion)}</span>}
               />
             ))}
             {coinciden.length > LIMITE_COINCIDEN && (
@@ -9331,9 +9351,9 @@ function FilaOrden({ color, nombre, sub, children, onClickNombre }) {
 
 function confirmarCambioFechaOrden(cliente, nueva, esMovil) {
   const actual = esMovil ? fechaActivacionMovil(cliente) : cliente.fechaInstalacion;
-  const antes = actual ? fmtFecha(actual) : "pendiente (sin fecha)";
+  const antes = actual ? fmtFechaDia(actual) : "pendiente (sin fecha)";
   return window.confirm(
-    "¿Cambiar la fecha de " + (esMovil ? "activación" : "instalación") + " de " + cliente.nombre + "?\n\nAntes: " + antes + "\nAhora: " + fmtFecha(nueva)
+    "¿Cambiar la fecha de " + (esMovil ? "activación" : "instalación") + " de " + cliente.nombre + "?\n\nAntes: " + antes + "\nAhora: " + fmtFechaDia(nueva)
   );
 }
 
@@ -9351,7 +9371,7 @@ function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha, movil }) {
     <FilaOrden
       color={color}
       nombre={cliente.nombre}
-      sub={"Tu app: " + fmtFecha(fechaApp) + " · Tigo: " + fmtFecha(fila.fin)}
+      sub={"Tu app: " + fmtFechaDia(fechaApp) + " · Tigo: " + fmtFechaDia(fila.fin)}
     >
       {movil ? (
         <BotonCopiarOrden texto={fila.cedula} label="Copiar cédula" />
@@ -9631,7 +9651,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={f.orden}
                   color={g.color}
                   nombre={f.nombre}
-                  sub={"Cédula " + f.cedula + (f.fin ? " · instalada " + fmtFecha(f.fin) : "")}
+                  sub={"Cédula " + f.cedula + (f.fin ? " · instalada " + fmtFechaDia(f.fin) : "")}
                 >
                   <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
                   <button
@@ -9667,7 +9687,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
               <button
                 onClick={() => {
                   const lista = resultado.pendientesInstalados.filter((x) => x.fila.fin);
-                  const detalle = lista.map((x) => x.cliente.nombre + " · " + fmtFecha(x.fila.fin)).join("\n");
+                  const detalle = lista.map((x) => x.cliente.nombre + " · " + fmtFechaDia(x.fila.fin)).join("\n");
                   if (window.confirm("¿Marcar " + lista.length + " clientes como instalados?\n\n" + detalle)) {
                     lista.forEach((x) => onCambiarFecha(x.cliente.id, x.fila.fin));
                   }
@@ -9684,7 +9704,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
-                  sub={fila.fin ? "Tigo lo instaló el " + fmtFecha(fila.fin) : "Tigo no trae fecha de cierre"}
+                  sub={fila.fin ? "Tigo lo instaló el " + fmtFechaDia(fila.fin) : "Tigo no trae fecha de cierre"}
                 >
                   <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
                   <button
@@ -9704,7 +9724,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
-                  sub={"Tigo: " + fila.estado + " · en tu app " + (cliente.fechaInstalacion ? "instalado el " + fmtFecha(cliente.fechaInstalacion) : "pendiente de instalación")}
+                  sub={"Tigo: " + fila.estado + " · en tu app " + (cliente.fechaInstalacion ? "instalado el " + fmtFechaDia(cliente.fechaInstalacion) : "pendiente de instalación")}
                 >
                   <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
                   <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
@@ -9719,7 +9739,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
-                  sub={"Tigo: " + fila.estado + " · en tu app instalado el " + fmtFecha(cliente.fechaInstalacion)}
+                  sub={"Tigo: " + fila.estado + " · en tu app instalado el " + fmtFechaDia(cliente.fechaInstalacion)}
                 >
                   <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
                   <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
@@ -9734,7 +9754,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={fila.orden}
                   color={g.color}
                   nombre={fila.nombre}
-                  sub={"Parecido en tu app: " + cliente.nombre + (cliente.fechaInstalacion ? " · instalado " + fmtFecha(cliente.fechaInstalacion) : " · pendiente")}
+                  sub={"Parecido en tu app: " + cliente.nombre + (cliente.fechaInstalacion ? " · instalado " + fmtFechaDia(cliente.fechaInstalacion) : " · pendiente")}
                 >
                   <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
                     Abrir cliente
@@ -9751,7 +9771,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
-                  sub={cliente.fechaInstalacion ? "Instalado " + fmtFecha(cliente.fechaInstalacion) : "Pendiente · " + fila.estado}
+                  sub={cliente.fechaInstalacion ? "Instalado " + fmtFechaDia(cliente.fechaInstalacion) : "Pendiente · " + fila.estado}
                   onClickNombre={() => onAbrirCliente(cliente)}
                 />
               ))}
@@ -9763,7 +9783,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={f.orden}
                   color={g.color}
                   nombre={f.nombre}
-                  sub={f.tipo + " · cédula " + f.cedula + (f.fin ? " · completada " + fmtFecha(f.fin) : "")}
+                  sub={f.tipo + " · cédula " + f.cedula + (f.fin ? " · completada " + fmtFechaDia(f.fin) : "")}
                 >
                   <BotonCopiarOrden texto={f.cedula} label="Copiar cédula" />
                   <button
@@ -9787,7 +9807,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
-                  sub={"Tigo: " + fila.estado + " · en tu app activada el " + fmtFecha(fechaActivacionMovil(cliente))}
+                  sub={"Tigo: " + fila.estado + " · en tu app activada el " + fmtFechaDia(fechaActivacionMovil(cliente))}
                 >
                   <BotonCopiarOrden texto={fila.cedula} label="Copiar cédula" />
                 </FilaOrden>
@@ -9799,7 +9819,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={fila.orden}
                   color={g.color}
                   nombre={fila.nombre}
-                  sub={"Parecido en tus Clientes Móvil: " + cliente.nombre + " · activada " + fmtFecha(fechaActivacionMovil(cliente))}
+                  sub={"Parecido en tus Clientes Móvil: " + cliente.nombre + " · activada " + fmtFechaDia(fechaActivacionMovil(cliente))}
                 >
                   <button onClick={() => descartarParecido(key)} className="font-bold px-4" style={estiloBoton}>
                     No es el mismo
@@ -9827,7 +9847,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   key={cliente.id + fila.orden}
                   color={g.color}
                   nombre={cliente.nombre}
-                  sub={"Activada " + fmtFecha(fechaActivacionMovil(cliente))}
+                  sub={"Activada " + fmtFechaDia(fechaActivacionMovil(cliente))}
                   onClickNombre={() => onAbrirMovil && onAbrirMovil(cliente.id)}
                 />
               ))}
