@@ -6854,16 +6854,6 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
 
       {listaAbierta && alertasHoy.length > 0 && (
         <div className="flex flex-col gap-3 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Buscar por nombre, teléfono o N° de suscriptor…"
-              className="w-full max-w-sm px-3 py-2 rounded-md border text-sm outline-none"
-              style={ { borderColor: "#DFE5EF" } }
-            />
-          </div>
           <div className="flex items-center gap-2 flex-wrap">
             <button
               onClick={() => setFiltroTipo("")}
