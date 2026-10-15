@@ -3705,11 +3705,20 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
+// Bono de ingresos (+10 puntos): se activa al pasar el 100% de la meta de ingresos.
+// Aproximado: cuántos clientes más hacen falta según lo que deja cada tipo en promedio.
+function clientesParaBonoIngresos(ingresosTotal, metaDinero, rpuHogar, rpuMovil) {
+  if (!metaDinero) return null;
+  const falta = metaDinero - ingresosTotal;
+  if (falta < 0) return { activo: true, falta: 0, cH: null, cM: null };
+  const cuantos = (r) => (r > 0 ? Math.floor(falta / r) + 1 : null);
+  return { activo: false, falta, cH: cuantos(rpuHogar), cM: cuantos(rpuMovil) };
+}
 // Tarjeta "Comisión del ciclo" en versión clara (fondo blanco) para el esquema nuevo del
 // período actual. Muestra los mismos números que la versión azul, ordenados para leerse
 // más fácil: fórmula en tres piezas, barra hacia el próximo escalón, tramos y detalle
 // plegables, y la proyección al final.
-function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaClientesHogar, metaClientesMovil, metaDinero, ingresosTotal, proyeccion, aunEsTemprano, onCambiarVista, onSimular }) {
+function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaClientesHogar, metaClientesMovil, metaDinero, ingresosTotal, rpuHogar, rpuMovil, proyeccion, aunEsTemprano, onCambiarVista, onSimular }) {
   const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", pn: "#EEF3FB", blue: "#0072CE", cell: "#E3EDFA" };
   const pc = comision.pctClientesPonderado;
   const base = comision.montoBase;
@@ -3718,6 +3727,7 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
   const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
   const pi = comision.pctIngreso;
   const acel = comision.ajusteIngreso === "acelerador";
+  const bonoIng = clientesParaBonoIngresos(ingresosTotal, metaDinero, rpuHogar, rpuMovil);
   const faltaIng = metaDinero ? Math.max(0, metaDinero - ingresosTotal) : 0;
   let nH = 0;
   let nM = 0;
@@ -3800,11 +3810,21 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
             <i style={ { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 5, background: C.navy, width: Math.min(100, pi) + "%" } } />
           </div>
           <div style={leyenda}><span>{pi.toFixed(0)}%</span><span>100%</span></div>
-          <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Faltan unos {fmtMiles(faltaIng, 0)} para cobrar tu base completa sin descuento.</div>
+          <div style={ { fontSize: 12, color: C.mu, marginTop: 2, lineHeight: 1.45 } }>
+            Faltan unos {fmtMiles(faltaIng, 0)} para llegar a la meta y activar el bono de ingresos (+10%).
+            {bonoIng && (bonoIng.cH != null || bonoIng.cM != null) && (
+              <span style={ { display: "block", marginTop: 2 } }>
+                Aprox.{" "}
+                {bonoIng.cH != null && <b style={ { color: C.navy } }>{bonoIng.cH} hogar</b>}
+                {bonoIng.cH != null && bonoIng.cM != null && " o "}
+                {bonoIng.cM != null && <b style={ { color: C.navy } }>{bonoIng.cM} móvil</b>}
+              </span>
+            )}
+          </div>
         </div>
       )}
       {acel && (
-        <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: C.pn } }>⚡ Superas la meta de ingresos: se activa el acelerador (+10 puntos).</div>
+        <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: C.pn } }>✓ Bono de ingresos activado: superas la meta y se suman +10 puntos.</div>
       )}
 
       <details style={caja2}>
@@ -5422,6 +5442,8 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
             metaClientesMovil={metaClientesMovil}
             metaDinero={metaDinero}
             ingresosTotal={dineroDelPeriodo + costoPlanesMovilesPeriodo}
+            rpuHogar={clientesDelPeriodo.length ? dineroDelPeriodo / clientesDelPeriodo.length : 0}
+            rpuMovil={convergenciasPeriodo ? costoPlanesMovilesPeriodo / convergenciasPeriodo : 0}
             proyeccion={proyeccion}
             aunEsTemprano={aunEsTemprano}
             onCambiarVista={() => cambiarVistaComision("actual")}
@@ -5532,6 +5554,21 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                       })}
                     </div>
                     {accion && <div className="mt-2 text-sm leading-snug">{accion}</div>}
+                {(() => {
+                  if (!comision.montoBase || comision.pctIngreso == null) return null;
+                  const bi = clientesParaBonoIngresos(dineroDelPeriodo + costoPlanesMovilesPeriodo, metaDinero, clientesDelPeriodo.length ? dineroDelPeriodo / clientesDelPeriodo.length : 0, convergenciasPeriodo ? costoPlanesMovilesPeriodo / convergenciasPeriodo : 0);
+                  if (!bi) return null;
+                  if (bi.activo) return <div className="mt-2 text-sm leading-snug">✓ <b>Bono de ingresos</b> (+10%) activado</div>;
+                  if (bi.cH == null && bi.cM == null) return null;
+                  return (
+                    <div className="mt-2 text-sm leading-snug">
+                      Para el <b>bono de ingresos</b> (+10%) faltan unos {fmtMiles(bi.falta, 0)}: aprox.{" "}
+                      {bi.cH != null && <b>{bi.cH} hogar</b>}
+                      {bi.cH != null && bi.cM != null && " o "}
+                      {bi.cM != null && <b>{bi.cM} móvil</b>}
+                    </div>
+                  );
+                })()}
                     {aunEsTemprano ? (
                       <div className="mt-3 text-xs opacity-90">Aún es temprano para proyectar tu cierre</div>
                     ) : proyeccion ? (
@@ -6543,28 +6580,6 @@ function AvanceMetasCard({ onMarcarInstalado, parte = "metas", clientesIng = [],
                 <div className="flex justify-between py-1"><span>Móvil</span><span className="font-mono" style={ { color: "#4A5878" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
               </div>
             ) : null}
-            {(() => {
-              // Bono de ingresos (+10 puntos): se activa al pasar el 100% de la meta de ingresos.
-              // Aproximado: cuántos clientes más hacen falta según lo que deja cada tipo en promedio.
-              if (!metaDinero) return null;
-              const total = dineroHogarInstalado + dineroMovil;
-              if (total > metaDinero) {
-                return <div className="text-xs pb-2" style={ { color: "#166534" } }>✓ Bono de ingresos (+10%) activado</div>;
-              }
-              const falta = metaDinero - total;
-              const cuantos = (r) => (r != null && r > 0 ? Math.floor(falta / r) + 1 : null);
-              const cH = cuantos(rH);
-              const cM = cuantos(rM);
-              if (cH == null && cM == null) return null;
-              return (
-                <div className="text-xs pb-2" style={ { color: "#6B7794" } }>
-                  Para el bono de ingresos (+10%): faltan unos{" "}
-                  {cH != null && <b style={ { color: "#4A5878" } }>{cH} hogar</b>}
-                  {cH != null && cM != null && " o "}
-                  {cM != null && <b style={ { color: "#4A5878" } }>{cM} móvil</b>}
-                </div>
-              );
-            })()}
           </div>
         );
       })()}
