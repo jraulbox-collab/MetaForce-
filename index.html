@@ -7010,6 +7010,10 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           onFormAbierto={() => { setAbrirFormMovil(false); setPrefillMovil(null); }}
           onVolverAPrecierre={onVolverAPrecierre}
           metas={metas}
+          search={search}
+          setSearch={setSearch}
+          hogarCoincidencias={search.trim() ? clientes.filter((c) => !c.penalizado) : []}
+          onVerDetalleHogar={onVerDetalle}
         />
       ) : (
         <>
@@ -7065,7 +7069,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar en todos los meses por nombre, teléfono, suscriptor o plan…"
+          placeholder="Buscar en Hogar y Móvil: nombre, teléfono, suscriptor o plan…"
           className="w-full px-3 py-2 pr-9 rounded-md border text-sm outline-none"
           style={ { borderColor: "#DFE5EF" } }
         />
@@ -7083,6 +7087,22 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </button>
         )}
       </div>
+
+      {search.trim() && (
+        <BloqueOtraLista
+          icono="📱"
+          titulo="Móvil"
+          filas={(clientesMovil || [])
+            .filter((c) => movilCoincideBusqueda(c, search.trim().toLowerCase()))
+            .map((c) => ({
+              id: c.id,
+              nombre: c.nombre,
+              sub: [c.telefono, "Activada " + fmtFecha(fechaActivacionMovil(c))].filter(Boolean).join(" · "),
+              ref: c,
+            }))}
+          onAbrir={() => setSubVista("movil")}
+        />
+      )}
 
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <button
@@ -7749,8 +7769,44 @@ function ClienteDetalle({
   );
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas }) {
-  const [busquedaMovil, setBusquedaMovil] = useState("");
+// Búsqueda compartida Hogar + Móvil: coincidencia de un Cliente Móvil con el texto buscado.
+function movilCoincideBusqueda(c, q) {
+  if (!q) return true;
+  return String(c.nombre || "").toLowerCase().includes(q) || String(c.telefono || "").includes(q) || String(c.whatsapp || "").includes(q);
+}
+
+// Bloque compacto con las coincidencias de la OTRA lista (Hogar o Móvil) bajo el buscador.
+function BloqueOtraLista({ icono, titulo, filas, onAbrir }) {
+  if (!filas || filas.length === 0) return null;
+  return (
+    <div className="bg-white rounded-lg border mb-3 overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
+      <div className="px-3 py-2 text-xs font-semibold" style={ { color: "#001E62", background: "#F3F6FB" } }>
+        {icono} También en {titulo} ({filas.length})
+      </div>
+      {filas.map((f) => (
+        <button
+          key={f.id}
+          type="button"
+          onClick={() => onAbrir(f.ref)}
+          className="w-full text-left px-3 py-2 border-t flex items-center justify-between gap-2"
+          style={ { borderColor: "#F0F0EF" } }
+        >
+          <span className="min-w-0">
+            <span className="block text-sm font-medium truncate" style={ { color: "#001E62" } }>{f.nombre}</span>
+            {f.sub && <span className="block text-xs truncate" style={ { color: "#5A6680" } }>{f.sub}</span>}
+          </span>
+          <span style={ { color: "#9CA3AF" } }>›</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar }) {
+  // El texto de búsqueda es el mismo que el de Hogar (viene de App); si no llega, queda local.
+  const [busquedaLocal, setBusquedaLocal] = useState("");
+  const busquedaMovil = search !== undefined ? search : busquedaLocal;
+  const setBusquedaMovil = setSearch || setBusquedaLocal;
   const [confirmarEliminarMovil, setConfirmarEliminarMovil] = useState(null);
   const [nombre, setNombre] = useState("");
   const [telefono, setTelefono] = useState("");
@@ -8013,16 +8069,29 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         type="search"
         value={busquedaMovil}
         onChange={(e) => setBusquedaMovil(e.target.value)}
-        placeholder="Buscar por nombre o teléfono"
+        placeholder="Buscar en Hogar y Móvil: nombre, teléfono…"
         className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 bg-white"
         style={ { borderColor: "#DFE5EF" } }
       />
+      {busquedaMovil.trim() && (
+        <BloqueOtraLista
+          icono="🏠"
+          titulo="Hogar"
+          filas={(hogarCoincidencias || []).map((c) => ({
+            id: c.id,
+            nombre: c.nombre,
+            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFecha(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "),
+            ref: c,
+          }))}
+          onAbrir={(c) => onVerDetalleHogar && onVerDetalleHogar(c)}
+        />
+      )}
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
           const q = busquedaMovil.trim().toLowerCase();
           const delMes = clientesMovil
             .filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key)
-            .filter((c) => !q || String(c.nombre || "").toLowerCase().includes(q) || String(c.telefono || "").includes(q) || String(c.whatsapp || "").includes(q))
+            .filter((c) => movilCoincideBusqueda(c, q))
             .sort((a, b) => String(b.creadoEn || "").localeCompare(String(a.creadoEn || "")));
           if (q && delMes.length === 0) return null;
           const metaMovilMes = leerMeta(metas || {}, m.key, "clientesMovil");
