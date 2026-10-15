@@ -6902,107 +6902,98 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                   const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
                   return (
                     <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                      <div className="p-4 flex items-center justify-between flex-wrap gap-2" style={ { borderBottom: "1px solid #F0F0EF", background: "#FAFAF9" } }>
-                        <div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ esMovil ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
-                            {esMovil ? (
-                              <span className="font-semibold text-sm" style={ { color: "#001E62" } }>{cliente.nombre}</span>
-                            ) : (
-                              <button
-                                onClick={() => onVerDetalle(cliente)}
-                                className="font-semibold text-sm text-left hover:underline"
-                                style={ { color: "#001E62" } }
-                              >
-                                {cliente.nombre}
-                              </button>
-                            )}
-                          </div>
-                          <div className="text-xs" style={ { color: "#5A6680" } }>
-                            {esMovil
-                              ? `Línea ${cliente.telefono} · ${etiquetaTipoMovil(tipoClienteMovil(cliente))} · activada ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
-                              : `${cliente.telefono} · ${cliente.plan} · ${ORDINAL[factura.n]} factura`}
-                          </div>
-                        </div>
-                        {esMovil ? (
-                          <div className="flex items-center gap-2">
+                      <div className="p-3">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded" style={ esMovil ? { background: "#DCE9FB", color: "#0B4A99" } : { background: "#E4EAF5", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
+                          {esMovil ? (
+                            <span className="font-semibold text-base" style={ { color: "#001E62" } }>{cliente.nombre}</span>
+                          ) : (
                             <button
-                              onClick={() => {
-                                if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoMovil(cliente.id);
-                              } }
-                              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                              style={ { background: "#001E62" } }
+                              onClick={() => onVerDetalle(cliente)}
+                              className="font-semibold text-base text-left hover:underline"
+                              style={ { color: "#001E62" } }
                             >
-                              Ya pagó su 1ra factura
+                              {cliente.nombre}
                             </button>
-                          </div>
-                        ) : (
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => onCopiarSuscriptor(cliente)}
-                            className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                            style={ { borderColor: "#DFE5EF", color: "#374151" } }
-                          >
-                            {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
-                          </button>
-                          <button
-                            onClick={() => {
-                              const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
-                              if (window.confirm(saldo
-                                ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
-                                : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
-                                onPagoRealizado(cliente.id, factura.n);
-                              }
-                            } }
-                            className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                            style={ { background: "#001E62" } }
-                          >
-                            {factura.n === 1 && cliente.f1_saldoPendiente ? "Saldo pagado" : "Pago realizado"}
-                          </button>
+                          )}
                         </div>
-                        )}
-                      </div>
-                      <div className="p-4">
-                        <div className="flex items-center justify-between gap-2 mb-2 flex-wrap">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: milestone.bg, color: milestone.color } }>
-                              {milestone.tag}
-                            </span>
-                            <span className="text-xs" style={ { color: "#5A6680" } }>{milestone.label}</span>
-                            <span className="text-xs font-medium" style={ { color: milestone.color } }>{diasTexto(milestone.triggerDate)}</span>
-                          </div>
-                          <button
-                            onClick={() => toggleExpandido(cliente.id)}
-                            className="text-xs font-medium"
-                            style={ { color: "#0072CE" } }
-                          >
-                            {expandidos.has(cliente.id) ? "Ocultar mensaje" : "Ver mensaje"}
-                          </button>
+                        <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded" style={ { background: "#DCE9FB", color: "#0B4A99" } }>
+                            {milestone.tag}
+                          </span>
+                          <span className="text-sm font-semibold" style={ { color: daysFromToday(milestone.triggerDate) === 0 ? "#9B1C1C" : "#9A4A06" } }>{diasTexto(milestone.triggerDate)}</span>
                         </div>
+                        <div className="text-sm mt-1" style={ { color: "#3D4A66" } }>
+                          {esMovil
+                            ? `Línea ${cliente.telefono} · ${etiquetaTipoMovil(tipoClienteMovil(cliente))} · activada ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
+                            : `${cliente.telefono} · ${cliente.plan} · ${ORDINAL[factura.n]} factura`}
+                          {!esMovil && (
+                            <button
+                              onClick={() => onCopiarSuscriptor(cliente)}
+                              className="ml-2 text-sm font-semibold underline"
+                              style={ { color: "#0B4A99" } }
+                            >
+                              {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
+                            </button>
+                          )}
+                        </div>
+                        <div className="text-sm mt-0.5" style={ { color: "#3D4A66" } }>{milestone.label}</div>
                         {expandidos.has(cliente.id) && (
-                          <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151", whiteSpace: "pre-wrap" } }>
+                          <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>
                             {milestone.texto}
                           </div>
                         )}
-                        <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-stretch gap-2 mt-3 flex-wrap">
                           <a
                             href={whatsappLink(cliente, milestone)}
-                            className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                            style={ { background: "#25D366" } }
+                            className="flex-1 flex items-center justify-center text-sm font-bold px-3 rounded-md"
+                            style={ { background: "#1FA855", color: "#FFFFFF", minHeight: 46, minWidth: 160 } }
                           >
                             Enviar por WhatsApp
                           </a>
-                          <button
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => toggleExpandido(cliente.id)}
+                            className="flex items-center justify-center text-sm font-semibold px-3 rounded-md cursor-pointer"
+                            style={ { background: "#FFFFFF", color: "#001E62", border: "2px solid #001E62", minHeight: 46 } }
+                          >
+                            {expandidos.has(cliente.id) ? "Ocultar" : "Ver"}
+                          </div>
+                          <div
+                            role="button"
+                            tabIndex={0}
                             onClick={() => {
                               if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
-                                onMarcar(cliente.id, milestone.key);
+                                if (esMovil) onMarcarMovil(cliente.id, milestone.key);
+                                else onMarcar(cliente.id, milestone.key);
                               }
                             } }
-                            className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                            style={ { borderColor: "#DFE5EF", color: "#374151" } }
+                            className="flex items-center justify-center text-sm font-semibold px-3 rounded-md cursor-pointer"
+                            style={ { background: "#001E62", color: "#FFFFFF", minHeight: 46 } }
                           >
-                            Marcar como enviado
-                          </button>
+                            ✓ Enviado
+                          </div>
+                          <div
+                            role="button"
+                            tabIndex={0}
+                            onClick={() => {
+                              if (esMovil) {
+                                if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoMovil(cliente.id);
+                              } else {
+                                const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
+                                if (window.confirm(saldo
+                                  ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
+                                  : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
+                                  onPagoRealizado(cliente.id, factura.n);
+                                }
+                              }
+                            } }
+                            className="flex items-center justify-center text-sm font-semibold px-3 rounded-md cursor-pointer"
+                            style={ { background: "#FFFFFF", color: "#0B4A99", border: "2px solid #0B4A99", minHeight: 46 } }
+                          >
+                            $ Pagó
+                          </div>
                         </div>
 
                         {extras.length > 0 && (
