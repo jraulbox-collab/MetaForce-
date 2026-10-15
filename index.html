@@ -5069,7 +5069,7 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
                               onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
                             />
                             <span className="text-sm truncate">{c.nombre}</span>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={ idsMovilHoy.has(c.id) ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#EEF3FB", color: "#001E62" } }>{idsMovilHoy.has(c.id) ? "Móvil" : "Hogar"}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={ idsMovilHoy.has(c.id) ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{idsMovilHoy.has(c.id) ? "Móvil" : "Hogar"}</span>
                           </span>
                           <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
                             {idsMovilHoy.has(c.id) ? "1ra factura completa" : `le faltan ${fmtMonto(montoFaltanteCliente(c))}`}
@@ -6904,7 +6904,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                     <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                       <div className="p-3">
                         <div className="flex items-center gap-2" style={ { minWidth: 0 } }>
-                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#DCE9FB", color: "#0B4A99" } : { background: "#E4EAF5", color: "#001E62" } }>{esMovil ? "Móvil" : "Hogar"}</span>
+                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                           {esMovil ? (
                             <span className="font-semibold text-base truncate" style={ { color: "#001E62", minWidth: 0 } }>{cliente.nombre}</span>
                           ) : (
