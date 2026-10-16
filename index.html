@@ -437,7 +437,7 @@ function saludoSegunHora() {
   return "Buenas noches";
 }
 function textoMovil1(c, f) {
-  return `${saludoSegunHora()} ${primerNombre(c)}. Soy José Severino de Tigo Panamá. ¿Cómo le ha ido con su línea? ¿Todo en orden con el servicio?
+  return `${saludoSegunHora()} ${primerNombre(c)}. Soy José Severino de Tigo Panamá, sobre su *plan pospago*. ¿Cómo le ha ido con su línea? ¿Todo en orden con el servicio?
 
 Le aviso cómo funcionará su cobro. Tigo factura en fechas fijas, y su fecha de facturación será los días *${f.ciclo}* de cada mes, así que su primera factura le llegará el ${fmtFecha(f.facturaISO)}.
 
@@ -446,14 +446,14 @@ Esa factura incluirá un *prorrateo* (los días que ya usa el servicio, del ${fm
 Lo ideal es pagarla *a más tardar el ${fmtFecha(f.metaISO)}*. Cualquier duda, me escribe por aquí.`;
 }
 function textoMovil2(c, f) {
-  return `${saludoSegunHora()} ${primerNombre(c)}. Ya se generó la primera factura de su línea Tigo *#${c.telefono}*.
+  return `${saludoSegunHora()} ${primerNombre(c)}. Ya se generó la primera factura de su *plan pospago* (línea Tigo *#${c.telefono}*).
 
 Recuerde que incluye el *prorrateo* (desde que se le activó el servicio: ${fmtFecha(f.activacion)}, hasta el ${fmtFecha(f.finProrrateo)}) más su primer mes completo, del ${fmtFecha(f.inicioMes)} al ${fmtFecha(f.finMes)}. Por esta razón, su primera factura es un poco mayor que las siguientes. Ya debe tener la factura en su correo, donde puede ver el monto exacto.
 
 Lo ideal es pagarla *a más tardar el ${fmtFecha(f.metaISO)}* y enviarme el *comprobante de pago* por aquí. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
 }
 function textoMovil3(c, f) {
-  return `${saludoSegunHora()} ${primerNombre(c)}. Le escribo para recordarle que la primera factura de su línea Tigo *#${c.telefono}* se debe pagar *a más tardar el ${fmtFecha(f.metaISO)}*.
+  return `${saludoSegunHora()} ${primerNombre(c)}. Le escribo para recordarle que la primera factura de su *plan pospago* (línea Tigo *#${c.telefono}*) se debe pagar *a más tardar el ${fmtFecha(f.metaISO)}*.
 
 Ya debe tener la factura en su correo. Si ya la pagó, me envía por favor el *comprobante de pago* para confirmarlo.
 
@@ -960,7 +960,7 @@ function textoD1(c, n) {
     const finProrrateo = addDays(c.fecha1raFactura, -1);
     return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
 
-Le confirmo que su primera factura ya fue generada:
+Le confirmo que la primera factura de su *servicio residencial* ya fue generada:
 📋 Plan: ${c.plan}
 📅 Prorrateo: ${fmtFechaLarga(c.fechaInstalacion)} al ${fmtFechaLarga(finProrrateo)}
 📅 Mensualidad regular: ${fmtFechaLarga(c.fecha1raFactura)} al ${fmtFechaLarga(c._venc)}
@@ -971,14 +971,14 @@ Este cobro incluye ambos períodos: el prorrateo desde su instalación y su prim
 
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier duda, quedo atento.`;
   }
-  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que su factura correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
+  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que la factura de su *servicio residencial* correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
 }
 function textoT15(c, n) {
   const nombre = primerNombre(c);
   const dias = daysFromToday(c._venc);
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
-Le recuerdo que su factura ${fraseVencimiento(dias)}:
+Le recuerdo que la factura de su *servicio residencial* ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
 🔢 N° de suscriptor: *${c.numeroSuscriptor}*
 
@@ -989,7 +989,7 @@ function textoT3(c, n) {
   const dias = daysFromToday(c._venc);
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
-Su factura ${fraseVencimiento(dias)}:
+La factura de su *servicio residencial* ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
 🔢 N° de suscriptor: *${c.numeroSuscriptor}*
 
@@ -1045,7 +1045,7 @@ function textoToque1(c) {
   const fechaPago = fechaPagoQuincena(c) || addDays(c.fechaInstalacion, 30);
   return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
 
-Le confirmamos que su instalación quedó activa. ✅
+Le confirmamos que la instalación de su *servicio residencial* quedó activa. ✅
 
 Como ya realizó su abono al contratar, ese pago se toma en cuenta para completar el costo de su primer mes. Le recomendamos completar el resto el *${fmtFechaConDia(fechaPago)}*, aprovechando la quincena, para dejar su cuenta al día desde el inicio.
 
@@ -1061,7 +1061,7 @@ function textoToque2(c) {
     : dias === 0 ? `Le recuerdo que hoy *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
     : dias > 1 ? `Le recuerdo que el *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
     : `Le recuerdo completar el pago restante de su primer mes para dejar su cuenta al día.`;
-  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
+  return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
 
 ${frase}
 
@@ -3142,6 +3142,11 @@ function App() {
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               navegarA("clientes");
+            } }
+            onVerCliente={(c) => {
+              setOrigenDetalle("alertas");
+              setClienteDetalleId(c.id);
+              navegarA("detalle");
             } }
           />
           <AlertasTab
