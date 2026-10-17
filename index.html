@@ -996,6 +996,8 @@ function leerOrdenInstalacionTigo(texto) {
   let t = String(texto || "").replace(/\r/g, "");
   const etiquetas = [
     "Fecha seleccionada",
+    "D[ií]a de la cita(?: actual)?\\s*:",
+    "Intervalo de tiempo\\s*:",
     "Tipo de tarea",
     "ID\\s*-\\s*Sales\\s*Forces?\\s*WO",
     "Seleccionar hora",
@@ -1017,15 +1019,25 @@ function leerOrdenInstalacionTigo(texto) {
     const m = t.match(re);
     return m ? m[1].trim() : "";
   };
-  const mf = t.match(/Fecha seleccionada\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) || t.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
-  let fecha = mf ? fechaTigoAISO(mf[1]) : "";
+  // Texto 1: "Fecha seleccionada" con el mes primero (MM/DD/AAAA).
+  // Texto 2: "Dia de la cita actual" con el día primero (DD/MM/AAAA).
+  const mf = t.match(/Fecha seleccionada\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i);
+  const mc = t.match(/D[ií]a de la cita(?: actual)?\s*:[ \t]*(\d{1,2})\/(\d{1,2})\/(\d{4})/i);
+  let fecha = "";
+  if (mf) fecha = fechaTigoAISO(mf[1]);
+  else if (mc) fecha = fechaTigoAISO(`${mc[2]}/${mc[1]}/${mc[3]}`);
+  if (!fecha) {
+    const mg = t.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+    if (mg) fecha = fechaTigoAISO(mg[1]);
+  }
   if (fecha) {
     const [y, m, d] = fecha.split("-").map(Number);
     const dt = new Date(y, m - 1, d);
     if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) fecha = "";
   }
   const franjas = [];
-  const reFranja = /(\d{1,2}):(\d{2})\s*([AP])\.?M\.?\s*a\s*(\d{1,2}):(\d{2})\s*([AP])\.?M\.?/gi;
+  // Acepta "8:00 AM a 12:00 PM" y también "01:00pm-04:00pm".
+  const reFranja = /(\d{1,2}):(\d{2})\s*([AP])\.?M\.?\s*(?:a|-|–|—)\s*(\d{1,2}):(\d{2})\s*([AP])\.?M\.?/gi;
   let mm;
   while ((mm = reFranja.exec(t)) !== null) {
     const f = `${parseInt(mm[1], 10)}:${mm[2]} ${mm[3].toUpperCase()}M a ${parseInt(mm[4], 10)}:${mm[5]} ${mm[6].toUpperCase()}M`;
