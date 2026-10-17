@@ -773,6 +773,11 @@ function camposEstadoCliente(form, previo) {
   const { estadoCliente, fechaCancelacion, motivoCancelacion, motivoPenalizacion, ...resto } = form;
   const hoy = fechaLocalISO(new Date());
   const out = { ...resto };
+  // Si ya tiene fecha de instalación real, ya no hay una instalación "programada" pendiente.
+  if (out.fechaInstalacion) {
+    out.instalacionProgramada = "";
+    out.franjaInstalacion = "";
+  }
   if (estadoCliente === "cancelado") {
     out.cancelado = true;
     out.fechaCancelacion = fechaCancelacion || hoy;
@@ -820,6 +825,8 @@ const CAMPOS_BITACORA = {
   planTV: "Plan de TV",
   montoMensual: "Monto mensual",
   fechaInstalacion: "Fecha de instalación",
+  instalacionProgramada: "Instalación programada",
+  franjaInstalacion: "Horario de instalación",
   fecha1raFactura: "Fecha 1ra factura",
   monto1raFactura: "Monto 1ra factura",
   estadoPago: "Estado de pago",
@@ -943,6 +950,187 @@ function primerNombre(c) {
   if (!primera) return "estimado cliente";
   const minus = primera.toLocaleLowerCase("es");
   return minus.charAt(0).toLocaleUpperCase("es") + minus.slice(1);
+}
+
+// ---------- Instalación programada (texto de la orden de Tigo) ----------
+// El cliente sigue "pendiente de instalación" (sin fechaInstalacion) hasta que se instala;
+// mientras tanto la fecha y el horario que da Tigo se guardan aparte, así no se mueve
+// ninguna factura ni comisión antes de tiempo.
+const DIAS_LARGOS = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
+const FRANJAS_INSTALACION = ["8:00 AM a 12:00 PM", "1:00 PM a 4:00 PM"];
+const MARCA_BLOQUE_TIGO = "Datos de la orden Tigo:";
+
+function fmtFechaInstalacionLarga(iso) {
+  const [y, m, d] = String(iso || "").slice(0, 10).split("-").map(Number);
+  if (!y || !m || !d) return "";
+  return `${DIAS_LARGOS[new Date(y, m - 1, d).getDay()]} ${d} de ${MESES[m - 1]}`;
+}
+// "8:00 AM a 12:00 PM" -> "8 a 12"; "1:00 PM a 4:00 PM" -> "1 a 4"
+function franjaCorta(franja) {
+  const m = String(franja || "").match(/(\d{1,2}):(\d{2})\s*[AP]M\s*a\s*(\d{1,2}):(\d{2})\s*[AP]M/i);
+  if (!m) return String(franja || "");
+  const f = (h, mm) => (mm === "00" ? String(parseInt(h, 10)) : `${parseInt(h, 10)}:${mm}`);
+  return `${f(m[1], m[2])} a ${f(m[3], m[4])}`;
+}
+// Hora de inicio en formato 24 h, para ordenar mañana antes que tarde.
+function horaInicioFranja(franja) {
+  const m = String(franja || "").match(/(\d{1,2}):(\d{2})\s*([AP])M/i);
+  if (!m) return 99;
+  let h = parseInt(m[1], 10) % 12;
+  if (m[3].toUpperCase() === "P") h += 12;
+  return h + parseInt(m[2], 10) / 60;
+}
+// Nombres en MAYÚSCULAS de Tigo -> "Los Santos", "Bda Rosales".
+function tituloEs(s) {
+  const chicas = ["de", "del", "y"];
+  return String(s || "")
+    .trim()
+    .toLocaleLowerCase("es")
+    .split(/\s+/)
+    .map((p, i) => (i > 0 && chicas.includes(p) ? p : p.charAt(0).toLocaleUpperCase("es") + p.slice(1)))
+    .join(" ");
+}
+
+// Lee el texto que Tigo da para la instalación (fecha MM/DD/AAAA, horario y datos del cliente).
+function leerOrdenInstalacionTigo(texto) {
+  let t = String(texto || "").replace(/\r/g, "");
+  const etiquetas = [
+    "Fecha seleccionada",
+    "Tipo de tarea",
+    "ID\\s*-\\s*Sales\\s*Forces?\\s*WO",
+    "Seleccionar hora",
+    "Nombre del cliente\\s*:",
+    "Suscript\\w*\\s*:",
+    "N[úu]mero de cuenta\\s*:",
+    "Distrito\\s*:",
+    "Corregim\\w*\\s*:",
+    "Barrio\\s*:",
+    "Direcci[óo]n de la calle[^:\\n]*:",
+    "Informaci[óo]n de direcci[óo]n adicional\\s*:",
+    "Preferencia de Contacto Voz 1\\s*:",
+    "Preferencia de Contacto Voz 2\\s*:",
+    "Preferencia de Contacto Correo\\s*:",
+  ];
+  // Si el texto llegó sin saltos de línea, se separa cada dato por su etiqueta.
+  t = t.replace(new RegExp("(" + etiquetas.join("|") + ")", "gi"), "\n$1");
+  const tomar = (re) => {
+    const m = t.match(re);
+    return m ? m[1].trim() : "";
+  };
+  const mf = t.match(/Fecha seleccionada\s*:?\s*(\d{1,2}\/\d{1,2}\/\d{4})/i) || t.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+  let fecha = mf ? fechaTigoAISO(mf[1]) : "";
+  if (fecha) {
+    const [y, m, d] = fecha.split("-").map(Number);
+    const dt = new Date(y, m - 1, d);
+    if (dt.getFullYear() !== y || dt.getMonth() !== m - 1 || dt.getDate() !== d) fecha = "";
+  }
+  const franjas = [];
+  const reFranja = /(\d{1,2}):(\d{2})\s*([AP])\.?M\.?\s*a\s*(\d{1,2}):(\d{2})\s*([AP])\.?M\.?/gi;
+  let mm;
+  while ((mm = reFranja.exec(t)) !== null) {
+    const f = `${parseInt(mm[1], 10)}:${mm[2]} ${mm[3].toUpperCase()}M a ${parseInt(mm[4], 10)}:${mm[5]} ${mm[6].toUpperCase()}M`;
+    if (!franjas.includes(f)) franjas.push(f);
+  }
+  return {
+    fecha,
+    franjas,
+    nombre: tomar(/Nombre del cliente\s*:[ \t]*([^\n]*)/i),
+    suscriptor: tomar(/Suscript\w*\s*:[ \t]*(\d+)/i),
+    cuenta: tomar(/N[úu]mero de cuenta\s*:[ \t]*(\d+)/i),
+    distrito: tomar(/Distrito\s*:[ \t]*([^\n]*)/i),
+    corregimiento: tomar(/Corregim\w*\s*:[ \t]*([^\n]*)/i),
+    barrio: tomar(/Barrio\s*:[ \t]*([^\n]*)/i),
+    direccion: tomar(/Direcci[óo]n de la calle[^:\n]*:[ \t]*([^\n]*)/i),
+    direccionAdicional: tomar(/Informaci[óo]n de direcci[óo]n adicional\s*:[ \t]*([^\n]*)/i),
+    voz1: tomar(/Preferencia de Contacto Voz 1\s*:[ \t]*([^\n]*)/i),
+    voz2: tomar(/Preferencia de Contacto Voz 2\s*:[ \t]*([^\n]*)/i),
+    correo: tomar(/Preferencia de Contacto Correo\s*:[ \t]*([^\s]*)/i).toLowerCase(),
+  };
+}
+
+// Bloque de texto que se guarda en Observaciones (los datos que no tienen campo propio en la ficha).
+function bloqueObservacionTigo(d) {
+  const lineas = [MARCA_BLOQUE_TIGO];
+  if (d.cuenta) lineas.push(`• Número de cuenta: ${d.cuenta}`);
+  if (d.barrio) lineas.push(`• Barrio: ${tituloEs(d.barrio)}`);
+  if (d.voz1) lineas.push(`• Teléfono de contacto 1: ${d.voz1}`);
+  if (d.voz2) lineas.push(`• Teléfono de contacto 2: ${d.voz2}`);
+  if (d.correo) lineas.push(`• Correo: ${d.correo}`);
+  if (d.direccion) lineas.push(`• Dirección: ${d.direccion}`);
+  if (d.direccionAdicional) lineas.push(`• Dirección adicional: ${d.direccionAdicional}`);
+  const zona = [d.distrito, d.corregimiento].filter(Boolean).join(" · ");
+  if (zona) lineas.push(`• Zona: ${zona}`);
+  return lineas.join("\n");
+}
+// Pone el bloque al final de Observaciones; si ya había uno de otra orden, lo reemplaza.
+function aplicarBloqueObservaciones(obs, bloque) {
+  const re = new RegExp("\\n*" + MARCA_BLOQUE_TIGO + "(?:\\n•[^\\n]*)*", "g");
+  const sin = String(obs || "").replace(re, "").trim();
+  return sin ? sin + "\n\n" + bloque : bloque;
+}
+// Lee de vuelta los datos del bloque (para armar el mensaje y los avisos).
+function leerBloqueTigo(obs) {
+  const texto = String(obs || "");
+  const get = (etiqueta) => {
+    const m = texto.match(new RegExp("•\\s*" + etiqueta + ":[ \\t]*([^\\n]*)", "i"));
+    return m ? m[1].trim() : "";
+  };
+  return {
+    cuenta: get("Número de cuenta"),
+    barrio: get("Barrio"),
+    voz1: get("Teléfono de contacto 1"),
+    voz2: get("Teléfono de contacto 2"),
+    correo: get("Correo"),
+  };
+}
+// Plan como lo entiende el cliente (sin "SINGLE/DOBLE").
+function planParaCliente(c) {
+  if (!c.planTipo || !c.velocidad) return "";
+  if (c.planTipo === "DOBLE") return `Internet ${c.velocidad} + TV${c.planTV ? " " + c.planTV : ""}`;
+  return `Internet ${c.velocidad}`;
+}
+// Mensaje para copiar y enviar al cliente con su fecha de instalación y los datos de su cuenta.
+function textoInstalacion(c) {
+  const b = leerBloqueTigo(c.observaciones);
+  const plan = planParaCliente(c);
+  const tels = [b.voz1, b.voz2].filter(Boolean).join(" y ");
+  const cuando = `${fmtFechaInstalacionLarga(c.instalacionProgramada)}${c.franjaInstalacion ? ", de " + c.franjaInstalacion : ""}`;
+  const tieneMonto = c.montoMensual !== "" && c.montoMensual != null && Number(c.montoMensual) > 0;
+  const datos = [
+    `• Cuenta a nombre de: ${tituloEs(c.nombre)}`,
+    c.numeroSuscriptor && `• Suscriptor: ${c.numeroSuscriptor}`,
+    b.cuenta && `• Número de cuenta: ${b.cuenta}`,
+    b.barrio && `• Barrio: ${b.barrio}`,
+    plan && `• Plan contratado: ${plan}`,
+    tieneMonto && `• Costo mensual: ${fmtMonto(c.montoMensual)} más impuesto`,
+    tels && `• Teléfonos de contacto: ${tels}`,
+    b.correo && `• Correo: ${b.correo}`,
+  ].filter(Boolean).join("\n");
+  return `${saludoSegunHora()} ${primerNombre(c)}. Soy José Severino de Tigo Panamá. Su fecha de instalación es el *${cuando}*.
+
+Le confirmo los datos de su *servicio residencial*:
+${datos}
+
+Recuerde estar pendiente a esos números, porque los técnicos pueden llamarle si necesitan comunicarse con usted. Avíseme por favor cuando le instalen, para confirmar que todo quedó bien.`;
+}
+// Clientes pendientes con instalación programada, separados en hoy, mañana y vencidas.
+function instalacionesPorAvisar(clientes) {
+  const hoy = fechaLocalISO(new Date());
+  const manana = addDays(hoy, 1);
+  const g = { hoy: [], manana: [], vencidas: [], total: 0 };
+  (clientes || []).forEach((c) => {
+    if (c.fechaInstalacion || !c.instalacionProgramada || c.cancelado || c.penalizado) return;
+    const f = c.instalacionProgramada;
+    if (f === hoy) g.hoy.push(c);
+    else if (f === manana) g.manana.push(c);
+    else if (f < hoy) g.vencidas.push(c);
+  });
+  const porHora = (a, b) => horaInicioFranja(a.franjaInstalacion) - horaInicioFranja(b.franjaInstalacion);
+  g.hoy.sort(porHora);
+  g.manana.sort(porHora);
+  g.vencidas.sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)) || porHora(a, b));
+  g.total = g.hoy.length + g.manana.length + g.vencidas.length;
+  return g;
 }
 
 // Frase de vencimiento calculada según los días reales que faltan hoy
@@ -1093,6 +1281,8 @@ const emptyForm = () => ({
   planTV: "",
   montoMensual: "",
   fechaInstalacion: fechaLocalISO(new Date()),
+  instalacionProgramada: "",
+  franjaInstalacion: "",
   fecha1raFactura: fechaLocalISO(new Date()),
   monto1raFactura: "",
   estadoPago: "Pendiente",
@@ -2172,7 +2362,7 @@ function App() {
   function cambiarFechaInstalacionDesdeOrden(clienteId, fechaISO) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes || !fechaISO) return;
-    let despues = { ...antes, fechaInstalacion: fechaISO };
+    let despues = { ...antes, fechaInstalacion: fechaISO, instalacionProgramada: "", franjaInstalacion: "" };
     const r = calcularPrimeraFactura(fechaISO, parseInt(antes.cicloFacturacion, 10), antes.montoMensual);
     if (r && antes.montoMensual !== "" && antes.montoMensual != null) {
       const total = +((Number(antes.montoMensual) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
@@ -2498,6 +2688,8 @@ function App() {
       planTV: c.planTV,
       montoMensual: c.montoMensual,
       fechaInstalacion: c.fechaInstalacion,
+      instalacionProgramada: c.instalacionProgramada || "",
+      franjaInstalacion: c.franjaInstalacion || "",
       fecha1raFactura: c.fecha1raFactura,
       monto1raFactura: c.monto1raFactura,
       estadoPago: c.estadoPago,
@@ -2697,6 +2889,36 @@ function App() {
     navigator.clipboard?.writeText(cliente.numeroSuscriptor || "").catch(() => {});
     setCopiedSubKey(cliente.id);
     setTimeout(() => setCopiedSubKey(null), 1500);
+  }
+
+  // Guarda en un cliente existente lo que viene en el texto de Tigo: fecha y horario de
+  // instalación (sigue pendiente de instalación) y los datos extra en Observaciones.
+  function guardarOrdenInstalacion(clienteId, d) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes || !d || !d.fecha) return;
+    const despues = {
+      ...antes,
+      instalacionProgramada: d.fecha,
+      franjaInstalacion: d.franja || "",
+      observaciones: aplicarBloqueObservaciones(antes.observaciones, bloqueObservacionTigo(d)),
+    };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+
+  // Cambia solo la fecha y el horario de una instalación programada (desde el Dashboard).
+  function reprogramarInstalacion(clienteId, fechaISO, franja) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes || !fechaISO) return;
+    const despues = { ...antes, instalacionProgramada: fechaISO, franjaInstalacion: franja || "" };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+
+  function copiarMensajeInstalacion(cliente) {
+    navigator.clipboard?.writeText(textoInstalacion(cliente)).catch(() => {});
+    setCopiedKey(cliente.id + "instalacion");
+    setTimeout(() => setCopiedKey(null), 1500);
   }
 
   function exportarRespaldo() {
@@ -3034,6 +3256,7 @@ function App() {
         {tab === "dashboard" && (
           <Dashboard
             onMarcarInstalado={cambiarFechaInstalacionDesdeOrden}
+            onReprogramarInstalacion={reprogramarInstalacion}
             periodoDash={periodoDash}
             onPeriodoDash={setPeriodoDash}
             ordenDashboard={ordenDashboard}
@@ -3120,6 +3343,8 @@ function App() {
             onDescancelar={descancelarCliente}
             onPenalizar={penalizarCliente}
             historialCambios={historialCambios}
+            onGuardarOrden={guardarOrdenInstalacion}
+            onCopiarMensajeInstalacion={copiarMensajeInstalacion}
           />
         )}
         {tab === "alertas" && (
@@ -3213,6 +3438,12 @@ function App() {
             editing={!!editingId}
             editingId={editingId}
             clientes={clientesCalc}
+            onAbrirExistente={(c) => {
+              resetForm();
+              setOrigenDetalle("clientes");
+              setClienteDetalleId(c.id);
+              navegarA("detalle");
+            } }
             onCancel={() => {
               resetForm();
               volverA(origenFormulario === "precierre" || origenFormulario === "detalle" ? origenFormulario : "clientes");
@@ -4180,7 +4411,115 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
   );
 }
 
-function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
+// Sección "Instalaciones" dentro del aviso azul del Dashboard: hoy, mañana y las vencidas sin confirmar.
+function AvisoInstalaciones({ grupos, conSeparador, onMarcarInstalado, onReprogramar, onVerCliente }) {
+  const [abiertos, setAbiertos] = useState({ hoy: true, manana: false, vencidas: false });
+  // accion: { id, tipo: "instalo" | "repro", fecha, franja } — el formulario que está abierto en un cliente.
+  const [accion, setAccion] = useState(null);
+  const inputStyle = { background: "#fff", color: "#001E62", border: 0, borderRadius: 8, padding: "6px 8px", fontSize: 13 };
+  const botonStyle = { background: "transparent", color: "#fff", border: "1px solid rgba(255,255,255,.6)", borderRadius: 10, padding: "7px 10px", fontSize: 12, cursor: "pointer" };
+  const botonLlenoStyle = { background: "#fff", color: "#001E62", border: 0, borderRadius: 10, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" };
+
+  const secciones = [
+    { key: "hoy", titulo: "Hoy", lista: grupos.hoy, botones: true },
+    { key: "manana", titulo: "Mañana", lista: grupos.manana, botones: false },
+    { key: "vencidas", titulo: "Vencidas, sin confirmar", lista: grupos.vencidas, botones: true },
+  ].filter((s) => s.lista.length > 0);
+
+  function fila(c, s) {
+    const barrio = leerBloqueTigo(c.observaciones).barrio;
+    const horario = c.franjaInstalacion ? franjaCorta(c.franjaInstalacion) : "";
+    const detalle =
+      s.key === "vencidas"
+        ? ["tenía instalación " + fmtFechaDia(c.instalacionProgramada), horario].filter(Boolean).join(" · ")
+        : [horario, barrio].filter(Boolean).join(" · ");
+    const a = accion && accion.id === c.id ? accion : null;
+    return (
+      <div key={c.id} className="rounded-xl px-3 py-2.5 mt-2" style={ { background: "rgba(255,255,255,.1)" } }>
+        <button
+          type="button"
+          onClick={() => onVerCliente && onVerCliente(c)}
+          className="block w-full text-left"
+          style={ { background: "transparent", color: "#fff", border: 0, padding: 0 } }
+        >
+          <span className="block text-sm font-semibold">{c.nombre}</span>
+          {detalle && <span className="block text-xs" style={ { color: "#B9C4E0" } }>{detalle}</span>}
+        </button>
+        {s.botones && !a && (
+          <div className="flex gap-2 mt-2">
+            <button type="button" style={ { ...botonStyle, flex: 1 } } onClick={() => setAccion({ id: c.id, tipo: "instalo", fecha: c.instalacionProgramada, franja: c.franjaInstalacion || "" })}>
+              Se instaló
+            </button>
+            <button type="button" style={ { ...botonStyle, flex: 1 } } onClick={() => setAccion({ id: c.id, tipo: "repro", fecha: c.instalacionProgramada, franja: c.franjaInstalacion || "" })}>
+              Reprogramar
+            </button>
+          </div>
+        )}
+        {a && a.tipo === "instalo" && (
+          <div className="mt-2">
+            <div className="text-xs mb-1.5" style={ { color: "#B9C4E0" } }>¿Qué día se instaló?</div>
+            <div className="flex gap-2 items-center flex-wrap">
+              <input type="date" value={a.fecha} onChange={(e) => setAccion({ ...a, fecha: e.target.value })} style={inputStyle} />
+              <button
+                type="button"
+                style={ { ...botonLlenoStyle, opacity: a.fecha ? 1 : 0.5 } }
+                onClick={() => { if (!a.fecha) return; onMarcarInstalado(c.id, a.fecha); setAccion(null); } }
+              >
+                Confirmar
+              </button>
+              <button type="button" style={botonStyle} onClick={() => setAccion(null)}>Cancelar</button>
+            </div>
+          </div>
+        )}
+        {a && a.tipo === "repro" && (
+          <div className="mt-2">
+            <div className="text-xs mb-1.5" style={ { color: "#B9C4E0" } }>Nueva fecha y horario</div>
+            <div className="flex gap-2 items-center flex-wrap">
+              <input type="date" value={a.fecha} onChange={(e) => setAccion({ ...a, fecha: e.target.value })} style={inputStyle} />
+              <select value={a.franja} onChange={(e) => setAccion({ ...a, franja: e.target.value })} style={inputStyle}>
+                <option value="">Sin horario</option>
+                {FRANJAS_INSTALACION.map((f) => <option key={f} value={f}>{franjaCorta(f)}</option>)}
+              </select>
+              <button
+                type="button"
+                style={ { ...botonLlenoStyle, opacity: a.fecha ? 1 : 0.5 } }
+                onClick={() => { if (!a.fecha || !onReprogramar) return; onReprogramar(c.id, a.fecha, a.franja); setAccion(null); } }
+              >
+                Guardar
+              </button>
+              <button type="button" style={botonStyle} onClick={() => setAccion(null)}>Cancelar</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <div className="px-4 pb-3 pt-3" style={ conSeparador ? { borderTop: "1px solid rgba(255,255,255,.25)" } : {} }>
+      <div className="text-sm font-bold mb-1">Instalaciones</div>
+      {secciones.map((s, i) => (
+        <div key={s.key} style={ i > 0 ? { borderTop: "1px solid rgba(255,255,255,.2)", marginTop: 10, paddingTop: 10 } : {} }>
+          <button
+            type="button"
+            onClick={() => setAbiertos((v) => ({ ...v, [s.key]: !v[s.key] }))}
+            className="w-full flex items-center justify-between text-sm"
+            style={ { background: "transparent", color: "#fff", border: 0, padding: 0 } }
+          >
+            <span>{s.titulo}</span>
+            <span className="flex items-center gap-2">
+              <span className="font-bold">{s.lista.length}</span>
+              <span aria-hidden="true">{abiertos[s.key] ? "▲" : "▼"}</span>
+            </span>
+          </button>
+          {abiertos[s.key] && s.lista.map((c) => fila(c, s))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -5460,26 +5799,42 @@ function Dashboard({ onMarcarInstalado, periodoDash: periodoDashProp, onPeriodoD
       {(() => {
         const nRec = (stats && stats.alHoy) || 0;
         const nFac = enRiesgoHoy.length;
-        if ((nRec === 0 && nFac === 0) || !onIrACobros) return null;
+        const hayCobros = !((nRec === 0 && nFac === 0) || !onIrACobros);
+        const instalaciones = instalacionesPorAvisar(clientes);
+        const hayInstalaciones = instalaciones.total > 0 && !!onMarcarInstalado;
+        if (!hayCobros && !hayInstalaciones) return null;
         const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
         const titulo = nRec > 0 ? `${plural(nRec, "recordatorio por enviar", "recordatorios por enviar")}` : `${plural(nFac, "factura por cobrar", "facturas por cobrar")}`;
         const partes = [];
         if (nRec > 0 && nFac > 0) partes.push(plural(nFac, "factura por cobrar", "facturas por cobrar"));
         if (nFac > 0 && rescateDiasRestantes !== null) partes.push(rescateDiasRestantes <= 0 ? "vence hoy" : rescateDiasRestantes === 1 ? "queda 1 día" : `quedan ${rescateDiasRestantes} días`);
         return (
-          <button
-            type="button"
-            onClick={onIrACobros}
-            className="w-full text-left flex items-center gap-3 mb-4 px-4 py-3 rounded-xl"
-            style={ { background: "#001E62", color: "#fff", border: 0 } }
-          >
-            <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔔</span>
-            <span className="min-w-0 flex-1">
-              <span className="block text-sm font-bold">{titulo}</span>
-              {partes.length > 0 && <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{partes.join(" · ")}</span>}
-            </span>
-            <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
-          </button>
+          <div className="mb-4 rounded-xl overflow-hidden" style={ { background: "#001E62", color: "#fff" } }>
+            {hayCobros && (
+              <button
+                type="button"
+                onClick={onIrACobros}
+                className="w-full text-left flex items-center gap-3 px-4 py-3"
+                style={ { background: "transparent", color: "#fff", border: 0 } }
+              >
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔔</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold">{titulo}</span>
+                  {partes.length > 0 && <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{partes.join(" · ")}</span>}
+                </span>
+                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+              </button>
+            )}
+            {hayInstalaciones && (
+              <AvisoInstalaciones
+                grupos={instalaciones}
+                conSeparador={hayCobros}
+                onMarcarInstalado={onMarcarInstalado}
+                onReprogramar={onReprogramarInstalacion}
+                onVerCliente={onVerCliente}
+              />
+            )}
+          </div>
         );
       })()}
       {noCuentanComision > 0 && (
@@ -7635,8 +7990,19 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         return c.fechaInstalacion ? (
           <span className="font-mono text-xs">{fmtFechaDia(c.fechaInstalacion)}</span>
         ) : (
-          <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#B45309", color: "white" } }>
-            ⚠️ PENDIENTE POR INSTALAR
+          <span className="inline-flex flex-col items-start gap-1">
+            <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#B45309", color: "white" } }>
+              ⚠️ PENDIENTE POR INSTALAR
+            </span>
+            {c.instalacionProgramada && (
+              <span
+                className="text-xs font-medium"
+                style={ { color: c.instalacionProgramada < fechaLocalISO(new Date()) ? "#B91C1C" : "#001E62" } }
+              >
+                {c.instalacionProgramada < fechaLocalISO(new Date()) ? "Venció: " : "Instalación: "}
+                {fmtFechaDia(c.instalacionProgramada)}{c.franjaInstalacion ? " · " + franjaCorta(c.franjaInstalacion) : ""}
+              </span>
+            )}
           </span>
         );
       case "ingreso":
@@ -8249,6 +8615,243 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   );
 }
 
+// Pegar el texto que Tigo da para la instalación: lo lee, muestra qué va a guardar y espera confirmación.
+// Con "cliente" (ficha existente) solo agrega fecha, horario y datos extra; sin "cliente" (formulario
+// de cliente nuevo) avisa si ese cliente ya existe y, si no, deja que el formulario se llene.
+function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, etiqueta = "Pegar texto de Tigo" }) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [datos, setDatos] = useState(null);
+  const [franja, setFranja] = useState("");
+  const [error, setError] = useState("");
+
+  function cerrar() {
+    setAbierto(false);
+    setTexto("");
+    setDatos(null);
+    setFranja("");
+    setError("");
+  }
+  function leer() {
+    const d = leerOrdenInstalacionTigo(texto);
+    if (!d.fecha) {
+      setDatos(null);
+      setError("No encontré la fecha de instalación. Pega el texto completo que da Tigo.");
+      return;
+    }
+    setError("");
+    setDatos(d);
+    setFranja(d.franjas.length === 1 ? d.franjas[0] : "");
+  }
+  function aplicar() {
+    if (!datos) return;
+    if (datos.franjas.length > 1 && !franja) {
+      setError("Elige el horario de instalación.");
+      return;
+    }
+    onAplicar({ ...datos, franja: franja || "" });
+    cerrar();
+  }
+
+  const existente = useMemo(() => {
+    if (cliente || !datos) return null;
+    const k = normalizarNombreOrden(datos.nombre);
+    return (
+      clientes.find(
+        (c) =>
+          (k && normalizarNombreOrden(c.nombre) === k) ||
+          (datos.suscriptor && String(c.numeroSuscriptor || "").trim() === datos.suscriptor)
+      ) || null
+    );
+  }, [cliente, datos, clientes]);
+
+  const nombreDistinto = useMemo(() => {
+    if (!cliente || !datos || !datos.nombre) return false;
+    const k = normalizarNombreOrden(datos.nombre);
+    if (!k) return false;
+    return normalizarNombreOrden(cliente.nombre) !== k && !buscarClienteParecido(k, [cliente]);
+  }, [cliente, datos]);
+
+  if (!abierto) {
+    return (
+      <button
+        type="button"
+        onClick={() => setAbierto(true)}
+        className="text-sm font-medium px-4 py-2.5 rounded-md border"
+        style={ { borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }
+      >
+        {etiqueta}
+      </button>
+    );
+  }
+
+  const antesProg = cliente && cliente.instalacionProgramada;
+  const cambioFecha = !!(datos && antesProg && antesProg !== datos.fecha);
+  const cambioHora = !!(datos && antesProg && franja && cliente.franjaInstalacion && cliente.franjaInstalacion !== franja);
+  const fila = (nombre, valor) =>
+    valor ? (
+      <div className="flex justify-between gap-3 py-1 text-xs" style={ { borderTop: "1px solid #E3EDFA" } }>
+        <span style={ { color: "#5A6680" } }>{nombre}</span>
+        <span className="text-right" style={ { color: "#001E62" } }>{valor}</span>
+      </div>
+    ) : null;
+
+  return (
+    <div className="rounded-lg border p-3" style={ { borderColor: "#DFE5EF", background: "#F3F6FB" } }>
+      {!datos && (
+        <React.Fragment>
+          <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Pega aquí el texto de la instalación que da Tigo.</p>
+          <textarea
+            value={texto}
+            onChange={(e) => { setTexto(e.target.value); setError(""); } }
+            rows={6}
+            className="w-full px-3 py-2 rounded-md border text-sm outline-none"
+            style={ { borderColor: "#DFE5EF", background: "#fff" } }
+          />
+        </React.Fragment>
+      )}
+      {datos && (
+        <div className="bg-white rounded-md p-3 mb-1" style={ { border: "1px solid #DFE5EF" } }>
+          <div className="text-xs font-semibold mb-1" style={ { color: "#001E62" } }>Esto se va a guardar</div>
+          {fila("Fecha de instalación", fmtFechaDia(datos.fecha))}
+          {datos.franjas.length === 1 && fila("Horario", franjaCorta(datos.franjas[0]))}
+          {datos.franjas.length === 0 && fila("Horario", "No venía en el texto")}
+          {fila("Barrio", tituloEs(datos.barrio))}
+          {fila("Número de cuenta", datos.cuenta)}
+          {fila("Teléfonos de contacto", [datos.voz1, datos.voz2].filter(Boolean).join(" y "))}
+          {fila("Correo", datos.correo)}
+          {datos.franjas.length > 1 && (
+            <div className="pt-2" style={ { borderTop: "1px solid #E3EDFA" } }>
+              <div className="text-xs mb-1.5" style={ { color: "#5A6680" } }>Vinieron dos horarios. ¿Cuál es el de este cliente?</div>
+              <div className="flex gap-2 flex-wrap">
+                {datos.franjas.map((f) => (
+                  <button
+                    key={f}
+                    type="button"
+                    onClick={() => { setFranja(f); setError(""); } }
+                    className="text-xs font-medium px-3 py-1.5 rounded-full border"
+                    style={ franja === f ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#374151", borderColor: "#DFE5EF" } }
+                  >
+                    {franjaCorta(f)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          {(cambioFecha || cambioHora) && (
+            <div className="text-xs mt-2 rounded-md px-2.5 py-2" style={ { background: "#FFF3DC", color: "#B45309" } }>
+              Antes era {fmtFechaDia(antesProg)}{cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : ""}. Ahora será {fmtFechaDia(datos.fecha)}{franja ? " · " + franjaCorta(franja) : ""}.
+            </div>
+          )}
+          {nombreDistinto && (
+            <div className="text-xs mt-2 rounded-md px-2.5 py-2" style={ { background: "#FFF3DC", color: "#B45309" } }>
+              El nombre del texto ({tituloEs(datos.nombre)}) no se parece al de esta ficha. Revisa que sea el cliente correcto.
+            </div>
+          )}
+          {existente && (
+            <div className="text-xs mt-2 rounded-md px-2.5 py-2" style={ { background: "#FFF3DC", color: "#B45309" } }>
+              Este cliente ya está registrado como {existente.nombre}. Pega el texto desde su ficha para no duplicarlo.
+            </div>
+          )}
+        </div>
+      )}
+      {error && <p className="text-xs mt-2" style={ { color: "#B45309" } }>{error}</p>}
+      <div className="flex gap-2 mt-2">
+        {!datos ? (
+          <button
+            type="button"
+            onClick={leer}
+            disabled={!texto.trim()}
+            className="flex-1 text-sm font-medium px-3 py-2 rounded-md text-white disabled:opacity-40"
+            style={ { background: "#001E62" } }
+          >
+            Leer texto
+          </button>
+        ) : existente ? (
+          <button
+            type="button"
+            onClick={() => { cerrar(); if (onAbrirExistente) onAbrirExistente(existente); } }
+            className="flex-1 text-sm font-medium px-3 py-2 rounded-md text-white"
+            style={ { background: "#001E62" } }
+          >
+            Abrir su ficha
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={aplicar}
+            className="flex-1 text-sm font-medium px-3 py-2 rounded-md text-white"
+            style={ { background: "#001E62" } }
+          >
+            {cliente ? "Guardar en la ficha" : "Usar en el formulario"}
+          </button>
+        )}
+        {datos && (
+          <button
+            type="button"
+            onClick={() => { setDatos(null); setFranja(""); setError(""); } }
+            className="text-sm font-medium px-3 py-2 rounded-md border"
+            style={ { borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }
+          >
+            Cambiar texto
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={cerrar}
+          className="text-sm font-medium px-3 py-2 rounded-md border"
+          style={ { borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }
+        >
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// Bloque "Instalación" de la ficha de un cliente Hogar pendiente: fecha y horario programados,
+// pegar el texto de Tigo y el mensaje listo para copiar y enviarle al cliente.
+function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado }) {
+  const prog = cliente.instalacionProgramada;
+  const vencida = !!prog && prog < fechaLocalISO(new Date());
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h2 className="text-sm font-semibold" style={ { color: "#001E62" } }>Instalación</h2>
+        <span
+          className="text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap"
+          style={ vencida ? { color: "#B91C1C", background: "#FDECEC" } : { color: "#B45309", background: "#FFF3DC" } }
+        >
+          {vencida ? "Vencida, sin confirmar" : "Pendiente de instalación"}
+        </span>
+      </div>
+      {prog ? (
+        <p className="text-sm mb-3" style={ { color: "#374151" } }>
+          Programada: <strong>{fmtFechaDia(prog)}</strong>{cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : ""}
+        </p>
+      ) : (
+        <p className="text-xs mb-3" style={ { color: "#5A6680" } }>Todavía sin fecha. Pega el texto de Tigo para cargarla.</p>
+      )}
+      <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta={prog ? "Pegar otro texto de Tigo" : "Pegar texto de Tigo"} />
+      {prog && (
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => onCopiarMensaje(cliente)}
+            className="w-full text-sm font-medium px-4 py-2.5 rounded-md text-white"
+            style={ { background: "#001E62" } }
+          >
+            {copiado ? "Copiado ✓" : "Copiar mensaje"}
+          </button>
+          <div className="text-sm rounded-md p-3 mt-3" style={ { background: "#F3F6FB", color: "#374151", whiteSpace: "pre-line" } }>
+            {textoInstalacion(cliente)}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ClienteDetalle({
   cliente,
   onVolver,
@@ -8266,6 +8869,8 @@ function ClienteDetalle({
   onDescancelar,
   onPenalizar,
   historialCambios,
+  onGuardarOrden,
+  onCopiarMensajeInstalacion,
 }) {
   const [mostrarPenalizar, setMostrarPenalizar] = useState(false);
   const [motivoPenal, setMotivoPenal] = useState("");
@@ -8452,7 +9057,13 @@ function ClienteDetalle({
         </div>
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Fecha de instalación</div>
-          <div className="font-medium">{fmtFechaDia(cliente.fechaInstalacion)}</div>
+          <div className="font-medium">
+            {cliente.fechaInstalacion
+              ? fmtFechaDia(cliente.fechaInstalacion)
+              : cliente.instalacionProgramada
+              ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "")
+              : "—"}
+          </div>
         </div>
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Monto mensual recurrente</div>
@@ -8481,8 +9092,17 @@ function ClienteDetalle({
         </div>
       </div>
 
+      {!cliente.fechaInstalacion && !cliente.cancelado && !cliente.penalizado && onGuardarOrden && (
+        <BloqueInstalacionProgramada
+          cliente={cliente}
+          onGuardarOrden={onGuardarOrden}
+          onCopiarMensaje={onCopiarMensajeInstalacion}
+          copiado={copiedKey === cliente.id + "instalacion"}
+        />
+      )}
+
       {cliente.observaciones && (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 text-sm">
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 text-sm" style={ { whiteSpace: "pre-line" } }>
           <div className="text-xs font-medium mb-1" style={ { color: "#5A6680" } }>Observaciones</div>
           {cliente.observaciones}
         </div>
@@ -10823,7 +11443,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
   );
 }
 
-function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCancel, clientes = [] }) {
+function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCancel, clientes = [], onAbrirExistente }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const inputClass = "w-full px-3 py-2 rounded-md border text-sm outline-none focus:ring-2";
   const inputStyle = { borderColor: "#DFE5EF" };
@@ -10910,6 +11530,24 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
         </p>
       )}
       <form onSubmit={onSubmit} className="flex flex-col gap-3 pb-24">
+        {!editing && (
+          <PegarOrdenTigo
+            clientes={clientes}
+            onAbrirExistente={onAbrirExistente}
+            etiqueta="Pegar texto de Tigo para llenar la ficha"
+            onAplicar={(d) =>
+              setForm((f) => ({
+                ...f,
+                nombre: f.nombre || d.nombre,
+                numeroSuscriptor: f.numeroSuscriptor || d.suscriptor,
+                fechaInstalacion: "",
+                instalacionProgramada: d.fecha,
+                franjaInstalacion: d.franja || "",
+                observaciones: aplicarBloqueObservaciones(f.observaciones, bloqueObservacionTigo(d)),
+              }))
+            }
+          />
+        )}
         <SeccionFormulario titulo="Datos del cliente">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Número de suscriptor *">
@@ -11012,6 +11650,11 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                   />
                   Pendiente de instalación (todavía no tiene fecha)
                 </label>
+                {!form.fechaInstalacion && form.instalacionProgramada && (
+                  <p className="text-xs mt-1.5" style={ { color: "#001E62" } }>
+                    Instalación programada: <strong>{fmtFechaDia(form.instalacionProgramada)}</strong>{form.franjaInstalacion ? " · " + franjaCorta(form.franjaInstalacion) : ""}
+                  </p>
+                )}
               </Field>
             </div>
             <Field label="Velocidad *">
