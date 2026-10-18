@@ -110,6 +110,285 @@ const storage = {
   },
 };
 
+// ---------- Sincronización segura entre celular y computadora ----------
+// Antes, cada guardado reemplazaba TODA la lista de la nube con lo que tenía esa pantalla:
+// si una pantalla tenía datos viejos (por ejemplo la computadora con la app abierta desde
+// ayer), al guardar pisaba lo que se hizo en el celular (marcas de "enviado", clientes...).
+// Ahora cada guardado hace esto:
+//   1) Lee lo que hay en la nube.
+//   2) Mezcla por cliente y por campo SOLO lo que cambiaste en esta pantalla, tomando como
+//      referencia la última versión sincronizada (mezcla de 3 vías). Lo que no tocaste aquí
+//      se queda como está en la nube.
+//   3) Guarda solo si nadie guardó entremedio ("compare-and-swap" con updated_at); si alguien
+//      guardó, vuelve a leer y mezclar.
+//   4) Si falla, reintenta solo (y avisa "Error al guardar" hasta lograrlo).
+const jsonDe = (v) => JSON.stringify(v);
+
+function dispositivoActual() {
+  const ua = (typeof navigator !== "undefined" && navigator.userAgent) || "";
+  if (/iPhone|iPad|iPod/i.test(ua)) return "iphone";
+  if (/Android/i.test(ua)) return "android";
+  return "computadora";
+}
+
+// Mezcla de 3 vías de listas de objetos con "id": base = última versión sincronizada,
+// local = lo que hay en esta pantalla, remoto = lo que hay en la nube ahora.
+function mezclarListasPorId(base, local, remoto, nuevosAlPrincipio) {
+  const mapa = (arr) => {
+    const m = new Map();
+    (Array.isArray(arr) ? arr : []).forEach((x) => { if (x && x.id != null) m.set(x.id, x); });
+    return m;
+  };
+  const mB = mapa(base);
+  const mL = mapa(local);
+  const resultado = [];
+  const usados = new Set();
+  (Array.isArray(remoto) ? remoto : []).forEach((r) => {
+    if (!r || r.id == null) { resultado.push(r); return; }
+    usados.add(r.id);
+    const l = mL.get(r.id);
+    const b = mB.get(r.id);
+    if (!l) {
+      // No está aquí: si estaba en lo sincronizado, lo borraste en esta pantalla; si no, lo
+      // agregaron en otro lado y se conserva.
+      if (b) return;
+      resultado.push(r);
+      return;
+    }
+    if (!b) { resultado.push({ ...r, ...l }); return; }
+    // No lo tocaste en esta pantalla: manda lo que hay en la nube.
+    if (jsonDe(l) === jsonDe(b)) { resultado.push(r); return; }
+    // Lo tocaste aquí: solo se aplican los campos que cambiaste.
+    const f = { ...r };
+    new Set([...Object.keys(l), ...Object.keys(b)]).forEach((k) => {
+      if (jsonDe(l[k]) === jsonDe(b[k])) return;
+      if (k in l) f[k] = l[k];
+      else delete f[k];
+    });
+    resultado.push(f);
+  });
+  const nuevos = [];
+  (Array.isArray(local) ? local : []).forEach((l) => {
+    if (!l || l.id == null || usados.has(l.id)) return;
+    // Estaba en lo sincronizado y ya no está en la nube: lo borraron en otro lado.
+    if (mB.has(l.id)) return;
+    nuevos.push(l);
+  });
+  return nuevosAlPrincipio ? [...nuevos, ...resultado] : [...resultado, ...nuevos];
+}
+
+function crearSincronizador(key, { nuevosAlPrincipio = false } = {}) {
+  const s = {
+    key,
+    cargado: false,
+    base: null,
+    baseJSON: null,
+    guardando: false,
+    pendiente: false,
+    fallos: 0,
+    timerReintento: null,
+    getLocal: () => [],
+    alFusionar: null,
+    alEstado: null,
+    alExito: null,
+  };
+
+  async function leerNube() {
+    const { data, error } = await supabaseClient
+      .from("kv_store")
+      .select("value, updated_at")
+      .eq("key", key)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return { lista: null, actualizadoEn: null };
+    let lista;
+    try { lista = JSON.parse(data.value); } catch (e) { throw new Error("Los datos de la nube no se pudieron leer (" + key + ")"); }
+    if (!Array.isArray(lista)) throw new Error("Los datos de la nube no tienen el formato esperado (" + key + ")");
+    return { lista, actualizadoEn: data.updated_at };
+  }
+
+  // Devuelve true si guardó, false si alguien guardó entremedio (hay que volver a mezclar).
+  async function escribirNube(lista, actualizadoEnPrevio) {
+    const valor = jsonDe(lista);
+    const ahora = new Date().toISOString();
+    if (actualizadoEnPrevio == null) {
+      const { error } = await supabaseClient.from("kv_store").insert({ key, value: valor, updated_at: ahora });
+      if (error) {
+        if (error.code === "23505") return false;
+        throw error;
+      }
+      return true;
+    }
+    const { data, error } = await supabaseClient
+      .from("kv_store")
+      .update({ value: valor, updated_at: ahora })
+      .eq("key", key)
+      .eq("updated_at", actualizadoEnPrevio)
+      .select("updated_at");
+    if (error) throw error;
+    return !!(data && data.length > 0);
+  }
+
+  function avisar(estado) {
+    if (s.alEstado) s.alEstado(estado);
+  }
+
+  s.cargar = async function cargar() {
+    try {
+      const { lista } = await leerNube();
+      s.cargado = true;
+      s.base = lista || [];
+      s.baseJSON = jsonDe(s.base);
+      return { ok: true, lista };
+    } catch (e) {
+      console.error("Error leyendo de Supabase:", key, e);
+      return { ok: false, lista: null };
+    }
+  };
+
+  function programarReintento() {
+    if (s.timerReintento) return;
+    const espera = Math.min(60000, 3000 * Math.pow(2, Math.min(s.fallos, 5)));
+    s.timerReintento = setTimeout(() => {
+      s.timerReintento = null;
+      s.sincronizar();
+    }, espera);
+  }
+
+  s.sincronizar = async function sincronizar() {
+    if (s.guardando) { s.pendiente = true; return; }
+    s.guardando = true;
+    try {
+      let soloCarga = false;
+      if (!s.cargado) {
+        const r = await s.cargar();
+        if (!r.ok) throw new Error("No se pudo leer la nube todavía");
+        // Datos que llegan tarde (la app se abrió sin conexión): se mezclan con lo que ya hubiera
+        // aquí y, como la pantalla cambia, el guardado se vuelve a disparar solo si hace falta.
+        if (r.lista && s.alFusionar) s.alFusionar(r.lista, []);
+        soloCarga = true;
+        if (!r.lista) s.pendiente = true;
+      }
+      let intentos = 0;
+      while (!soloCarga) {
+        const local = s.getLocal();
+        const { lista: remoto, actualizadoEn } = await leerNube();
+        const fusionada = remoto === null ? local : mezclarListasPorId(s.base, local, remoto, nuevosAlPrincipio);
+        const jsonFus = jsonDe(fusionada);
+        if (remoto === null || jsonFus !== jsonDe(remoto)) {
+          avisar("guardando");
+          const ok = await escribirNube(fusionada, actualizadoEn);
+          if (!ok) {
+            intentos += 1;
+            if (intentos >= 6) throw new Error("Demasiados guardados al mismo tiempo (" + key + ")");
+            continue;
+          }
+        }
+        s.base = fusionada;
+        s.baseJSON = jsonFus;
+        // Si la mezcla trajo cambios hechos en otro lado, esta pantalla los adopta (sin pisar
+        // lo que hayas tocado mientras tanto).
+        if (jsonFus !== jsonDe(local) && s.alFusionar) s.alFusionar(fusionada, local);
+        break;
+      }
+      s.fallos = 0;
+      avisar("guardado");
+      if (s.alExito) s.alExito();
+    } catch (e) {
+      console.error("Error guardando en Supabase:", key, e);
+      s.fallos += 1;
+      avisar("error");
+      programarReintento();
+    } finally {
+      s.guardando = false;
+      if (s.pendiente) {
+        s.pendiente = false;
+        s.sincronizar();
+      }
+    }
+  };
+
+  return s;
+}
+
+// Lista de objetos con "id" que vive en la nube y se mantiene sincronizada.
+// Devuelve [lista, setLista, sincronizador, cargada].
+function useListaNube(key, { nuevosAlPrincipio = false, alEstado = null, alExito = null, alFusionarExtra = null } = {}) {
+  const [lista, setLista] = useState([]);
+  const [cargada, setCargada] = useState(false);
+  const listaRef = useRef(lista);
+  listaRef.current = lista;
+  const refSync = useRef(null);
+  if (refSync.current === null) refSync.current = crearSincronizador(key, { nuevosAlPrincipio });
+  const sync = refSync.current;
+  sync.getLocal = () => listaRef.current;
+  sync.alEstado = alEstado;
+  sync.alExito = alExito;
+  sync.alFusionar = (fusionada, snapshot) => {
+    if (alFusionarExtra) alFusionarExtra(fusionada, snapshot);
+    setLista((prev) => mezclarListasPorId(snapshot, prev, fusionada, nuevosAlPrincipio));
+  };
+
+  useEffect(() => {
+    let vivo = true;
+    (async () => {
+      const r = await sync.cargar();
+      if (!vivo) return;
+      if (r.ok && r.lista) setLista(r.lista);
+      setCargada(true);
+      if (!r.ok) sync.sincronizar(); // sin conexión al abrir: reintenta solo, sin guardar nada vacío
+    })();
+    return () => { vivo = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!cargada) return;
+    if (!sync.cargado && lista.length === 0) return; // nada que guardar todavía
+    if (sync.baseJSON !== null && jsonDe(lista) === sync.baseJSON) return; // ya está sincronizado
+    sync.sincronizar();
+  }, [lista, cargada]);
+
+  return [lista, setLista, sync, cargada];
+}
+
+// Diario local de marcas de "enviado": se anota en este dispositivo ANTES de saltar a WhatsApp,
+// así aunque el guardado en la nube se corte, la marca se vuelve a aplicar al regresar.
+const DIARIO_ENVIOS_KEY = "antichurn_diario_envios";
+const DIARIO_VIGENCIA_MS = 3 * 86400000;
+function diarioLeer() {
+  try {
+    const v = JSON.parse(localStorage.getItem(DIARIO_ENVIOS_KEY) || "[]");
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+function diarioGuardar(arr) {
+  try { localStorage.setItem(DIARIO_ENVIOS_KEY, JSON.stringify(arr.slice(-300))); } catch (e) {}
+}
+function diarioAgregar(op) { diarioGuardar([...diarioLeer(), { ...op, ts: Date.now() }]); }
+function diarioQuitar(id, key) { diarioGuardar(diarioLeer().filter((o) => !(o.id === id && o.key === key))); }
+
+// Copia de seguridad diaria: una por día, en 14 "ranuras" que se van reemplazando (así no hace
+// falta borrar nada). Solo se hace si ya se leyeron los datos de la nube y no están vacíos.
+async function respaldoDiario(obtenerDatos) {
+  try {
+    const hoy = fechaLocalISO(new Date());
+    if (localStorage.getItem("antichurn_respaldo") === hoy) return;
+    const { clientes, convergencias } = obtenerDatos();
+    if (!Array.isArray(clientes) || clientes.length === 0) return;
+    const clave = "respaldo-clientes-" + (Math.floor(Date.now() / 86400000) % 14);
+    const { data, error } = await supabaseClient.from("kv_store").select("updated_at").eq("key", clave).maybeSingle();
+    if (error) throw error;
+    if (data && fechaLocalISO(data.updated_at) === hoy) {
+      localStorage.setItem("antichurn_respaldo", hoy);
+      return;
+    }
+    const r = await storage.set(clave, JSON.stringify({ fecha: hoy, clientes, convergencias }));
+    if (r) localStorage.setItem("antichurn_respaldo", hoy);
+  } catch (e) {
+    console.error("No se pudo hacer la copia diaria:", e);
+  }
+}
+
 // ---------- Helpers de fecha ----------
 const toISO = (d) => {
   const dt = new Date(d);
@@ -1854,8 +2133,48 @@ function App() {
       return false;
     }
   });
-  const [clientes, setClientes] = useState([]);
-  const [loaded, setLoaded] = useState(false);
+  // Estado de guardado visible para el usuario: "guardando" mientras hay una escritura en
+  // curso hacia Supabase, "guardado" cuando terminó bien, "error" si falló (se reintenta solo).
+  // Se combina con si el celular/navegador está sin conexión. Junta el estado de cada lista.
+  const [estadoGuardado, setEstadoGuardado] = useState("guardado");
+  const estadosNubeRef = useRef({});
+  const reportarEstadoNube = (clave) => (estado) => {
+    estadosNubeRef.current[clave] = estado;
+    const vals = Object.values(estadosNubeRef.current);
+    setEstadoGuardado(vals.includes("error") ? "error" : vals.includes("guardando") ? "guardando" : "guardado");
+  };
+  const depurarDiarioRef = useRef(() => {});
+  const aplicarDiarioRef = useRef(() => {});
+  const registrarFusionRef = useRef(() => {});
+  const opcionesNube = (clave, extra = {}) => ({
+    alEstado: reportarEstadoNube(clave),
+    alExito: () => depurarDiarioRef.current(),
+    alFusionarExtra: (fusionada, snapshot) => registrarFusionRef.current(clave, fusionada, snapshot),
+    ...extra,
+  });
+  const [clientes, setClientes, syncClientes, loaded] = useListaNube("clientes-churn", opcionesNube("clientes"));
+  const [convergencias, setConvergencias, syncConv, convergenciasLoaded] = useListaNube("convergencias-churn", opcionesNube("convergencias"));
+  const [eliminados, setEliminados, syncElim, eliminadosLoaded] = useListaNube("clientes-eliminados", opcionesNube("eliminados"));
+  const [historialCambios, setHistorialCambios, syncHist, historialCambiosLoaded] = useListaNube("historial-cambios-churn", opcionesNube("historial", { nuevosAlPrincipio: true }));
+  // Bitácora de envíos: cada marca de "enviado" (y cada vez que otro dispositivo trae cambios)
+  // queda anotada con fecha y dispositivo, para poder rastrear cualquier desajuste.
+  const [envios, setEnvios, syncEnvios] = useListaNube("envios-churn", opcionesNube("envios", { nuevosAlPrincipio: true }));
+  function registrarEnvio(datos) {
+    setEnvios((prev) => [{ id: uid(), fecha: new Date().toISOString(), dispositivo: dispositivoActual(), ...datos }, ...prev].slice(0, 600));
+  }
+  registrarFusionRef.current = (clave, fusionada, snapshot) => {
+    try {
+      if (clave === "envios" || clave === "historial" || !snapshot || snapshot.length === 0) return;
+      const m = new Map(snapshot.map((x) => [x.id, jsonDe(x)]));
+      let cambios = 0;
+      fusionada.forEach((x) => {
+        if (m.get(x.id) !== jsonDe(x)) cambios += 1;
+        m.delete(x.id);
+      });
+      cambios += m.size;
+      if (cambios > 0) registrarEnvio({ tipo: "fusion", lista: clave, cambios, origen: "sync" });
+    } catch (e) {}
+  };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
   const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre", "historial"];
   const [tab, setTab] = useState(() => {
@@ -1931,10 +2250,6 @@ function App() {
     } catch (e) {}
   }, [tab]);
   const [copiedSubKey, setCopiedSubKey] = useState(null);
-  // Estado de guardado visible para el usuario: "guardando" mientras hay una
-  // escritura en curso hacia Supabase, "guardado" cuando terminó bien, "error"
-  // si falló. Se combina con si el celular/navegador está sin conexión.
-  const [estadoGuardado, setEstadoGuardado] = useState("guardado");
   const [refrescando, setRefrescando] = useState(false);
   const [enLinea, setEnLinea] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
   useEffect(() => {
@@ -1962,12 +2277,6 @@ function App() {
   const [historial, setHistorial] = useState([]);
   const [metas, setMetas] = useState({});
   const [metasLoaded, setMetasLoaded] = useState(false);
-  const [convergencias, setConvergencias] = useState([]);
-  const [convergenciasLoaded, setConvergenciasLoaded] = useState(false);
-  const [eliminados, setEliminados] = useState([]);
-  const [eliminadosLoaded, setEliminadosLoaded] = useState(false);
-  const [historialCambios, setHistorialCambios] = useState([]);
-  const [historialCambiosLoaded, setHistorialCambiosLoaded] = useState(false);
   const [umbralProrrateo, setUmbralProrrateo] = useState(25);
   const [umbralProrrateoLoaded, setUmbralProrrateoLoaded] = useState(false);
   const [ordenDashboard, setOrdenDashboard] = useState({ orden: ORDEN_DASHBOARD_BASE.slice(), ocultos: [], mejorDia: "ing" });
@@ -1984,50 +2293,6 @@ function App() {
   const [mostrarSelectorNuevo, setMostrarSelectorNuevo] = useState(false);
   const importInputRef = useRef(null);
   const sonidoReproducidoRef = useRef(false);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await storage.get("clientes-churn");
-        if (res && res.value) setClientes(JSON.parse(res.value));
-      } catch (e) {}
-      setLoaded(true);
-    })();
-  }, []);
-
-  // Guarda los clientes en Supabase de a UN guardado a la vez (nunca en paralelo).
-  // Si mientras se está guardando llegan más cambios (por ejemplo, marcar 50 alertas
-  // seguidas en el envío en cadena), no se disparan 50 guardados sueltos que puedan
-  // llegar desordenados y pisarse entre sí — se guarda solo el más reciente en cuanto
-  // el guardado anterior termina.
-  const guardandoClientesRef = useRef(false);
-  const clientesPendienteRef = useRef(null);
-  const persistirClientes = useRef(async function persist(json) {
-    if (guardandoClientesRef.current) {
-      clientesPendienteRef.current = json;
-      return;
-    }
-    guardandoClientesRef.current = true;
-    setEstadoGuardado("guardando");
-    try {
-      const r = await storage.set("clientes-churn", json);
-      setEstadoGuardado(r ? "guardado" : "error");
-    } catch (e) {
-      setEstadoGuardado("error");
-    } finally {
-      guardandoClientesRef.current = false;
-      if (clientesPendienteRef.current !== null) {
-        const siguiente = clientesPendienteRef.current;
-        clientesPendienteRef.current = null;
-        persistirClientes(siguiente);
-      }
-    }
-  }).current;
-
-  useEffect(() => {
-    if (!loaded) return;
-    persistirClientes(JSON.stringify(clientes));
-  }, [clientes, loaded]);
 
   // Guarda un valor en Supabase de a UNO a la vez (nunca en paralelo), para que un
   // guardado atrasado nunca pise a uno más reciente si llegan desordenados por la
@@ -2068,54 +2333,6 @@ function App() {
     if (!metasLoaded) return;
     persistirMetas(JSON.stringify(metas));
   }, [metas, metasLoaded]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await storage.get("convergencias-churn");
-        if (res && res.value) setConvergencias(JSON.parse(res.value));
-      } catch (e) {}
-      setConvergenciasLoaded(true);
-    })();
-  }, []);
-
-  const persistirConvergencias = useGuardadoSerie("convergencias-churn");
-  useEffect(() => {
-    if (!convergenciasLoaded) return;
-    persistirConvergencias(JSON.stringify(convergencias));
-  }, [convergencias, convergenciasLoaded]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await storage.get("clientes-eliminados");
-        if (res && res.value) setEliminados(JSON.parse(res.value));
-      } catch (e) {}
-      setEliminadosLoaded(true);
-    })();
-  }, []);
-
-  const persistirEliminados = useGuardadoSerie("clientes-eliminados");
-  useEffect(() => {
-    if (!eliminadosLoaded) return;
-    persistirEliminados(JSON.stringify(eliminados));
-  }, [eliminados, eliminadosLoaded]);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await storage.get("historial-cambios-churn");
-        if (res && res.value) setHistorialCambios(JSON.parse(res.value));
-      } catch (e) {}
-      setHistorialCambiosLoaded(true);
-    })();
-  }, []);
-
-  const persistirHistorial = useGuardadoSerie("historial-cambios-churn");
-  useEffect(() => {
-    if (!historialCambiosLoaded) return;
-    persistirHistorial(JSON.stringify(historialCambios));
-  }, [historialCambios, historialCambiosLoaded]);
 
   useEffect(() => {
     (async () => {
@@ -2716,9 +2933,124 @@ function App() {
     navegarA("nuevo");
   }
 
+  // Marca/desmarca un aviso desde la ficha del cliente (interruptor).
   function toggleMilestone(clienteId, key) {
+    const actual = clientes.find((c) => c.id === clienteId);
+    const quedaMarcado = actual ? !actual[key] : true;
+    if (!quedaMarcado) diarioQuitar(clienteId, key); // si lo desmarcas a propósito, el diario no lo vuelve a marcar
+    registrarEnvio({ tipo: quedaMarcado ? "marcar" : "desmarcar", clienteId, nombre: actual ? actual.nombre : "", key, origen: "ficha" });
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? { ...c, [key]: !c[key] } : c)));
   }
+
+  // Marca un recordatorio de Hogar como ENVIADO desde Cobros (lista o envío en cadena). Siempre
+  // deja el aviso marcado (nunca lo desmarca, aunque se toque dos veces), lo anota en el diario
+  // local ANTES de que la app salte a WhatsApp, y queda en la bitácora de envíos.
+  function marcarEnviadoSeguro(clienteId, key, origen) {
+    const actual = clientes.find((c) => c.id === clienteId);
+    diarioAgregar({ t: "h", id: clienteId, key });
+    registrarEnvio({ tipo: "marcar", clienteId, nombre: actual ? actual.nombre : "", key, origen: origen || "lista" });
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId && !c[key] ? { ...c, [key]: true } : c)));
+  }
+
+  // Igual, para recordatorios de Clientes Móvil.
+  function marcarMovilEnviadoSeguro(id, key, origen) {
+    const actual = convergencias.find((c) => c.id === id);
+    diarioAgregar({ t: "m", id, key: `aviso_${key}` });
+    registrarEnvio({ tipo: "marcar", clienteId: id, nombre: actual ? actual.nombre : "", key: `aviso_${key}`, origen: origen || "lista", movil: true });
+    editarConvergencia(id, { [`aviso_${key}`]: true });
+  }
+
+  // Vuelve a aplicar las marcas del diario que todavía no figuran en lo sincronizado con la nube
+  // (por ejemplo, si el guardado se cortó al saltar a WhatsApp).
+  function aplicarDiario() {
+    const ops = diarioLeer().filter((o) => Date.now() - o.ts < DIARIO_VIGENCIA_MS);
+    if (!ops.length) return;
+    const h = ops.filter((o) => o.t === "h");
+    const m = ops.filter((o) => o.t === "m");
+    const aplicarA = (setter, lista) => {
+      if (!lista.length) return;
+      setter((prev) => {
+        let cambio = false;
+        const sig = prev.map((c) => {
+          const pend = lista.filter((o) => o.id === c.id && !c[o.key]);
+          if (!pend.length) return c;
+          cambio = true;
+          const n = { ...c };
+          pend.forEach((o) => { n[o.key] = true; });
+          return n;
+        });
+        return cambio ? sig : prev;
+      });
+    };
+    if (loaded) aplicarA(setClientes, h);
+    if (convergenciasLoaded) aplicarA(setConvergencias, m);
+  }
+
+  // Quita del diario las marcas que ya quedaron guardadas en la nube.
+  depurarDiarioRef.current = function depurarDiario() {
+    if (!syncClientes.base || !syncConv.base) return;
+    const mc = new Map(syncClientes.base.map((c) => [c.id, c]));
+    const mm = new Map(syncConv.base.map((c) => [c.id, c]));
+    const vigentes = diarioLeer().filter((o) => {
+      if (Date.now() - o.ts > DIARIO_VIGENCIA_MS) return false;
+      const it = (o.t === "h" ? mc : mm).get(o.id);
+      return !!it && !it[o.key];
+    });
+    diarioGuardar(vigentes);
+  };
+  aplicarDiarioRef.current = aplicarDiario;
+
+  // Al abrir la app, reaplica las marcas del diario que no llegaron a la nube.
+  useEffect(() => {
+    if (loaded && convergenciasLoaded) aplicarDiario();
+  }, [loaded, convergenciasLoaded]);
+
+  // Al volver a la app (desde WhatsApp, otra pestaña, otra ventana, o al recuperar internet)
+  // y cada minuto mientras está a la vista, se revisa la nube: si el otro dispositivo (celular o
+  // computadora) hizo cambios, esta pantalla los trae sin pisar lo que tú hayas tocado aquí.
+  useEffect(() => {
+    let ultima = 0;
+    let ultimaHist = Date.now();
+    function revisarNube(completo) {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const ahora = Date.now();
+      if (completo) {
+        if (ahora - ultima < 4000) return;
+        ultima = ahora;
+        aplicarDiarioRef.current();
+      }
+      [syncClientes, syncConv, syncElim].forEach((x) => x.sincronizar());
+      if (completo) {
+        syncEnvios.sincronizar();
+        if (ahora - ultimaHist > 60000) {
+          ultimaHist = ahora;
+          syncHist.sincronizar();
+        }
+      }
+    }
+    const alVolver = () => revisarNube(true);
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("focus", alVolver);
+    window.addEventListener("pageshow", alVolver);
+    window.addEventListener("online", alVolver);
+    const t = setInterval(() => revisarNube(false), 60000);
+    return () => {
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("focus", alVolver);
+      window.removeEventListener("pageshow", alVolver);
+      window.removeEventListener("online", alVolver);
+      clearInterval(t);
+    };
+  }, []);
+
+  // Copia de seguridad diaria (se guardan las últimas 14 en la nube, una por día, rotando).
+  useEffect(() => {
+    if (!loaded || !convergenciasLoaded || !syncClientes.cargado) return;
+    const t = setTimeout(() => {
+      respaldoDiario(() => ({ clientes: syncClientes.getLocal(), convergencias: syncConv.getLocal() }));
+    }, 8000);
+    return () => clearTimeout(t);
+  }, [loaded, convergenciasLoaded]);
 
   function marcarFacturaPagada(clienteId, n) {
     const antes = clientes.find((c) => c.id === clienteId);
@@ -3002,7 +3334,8 @@ function App() {
     let intentos = 0;
     const t = setInterval(() => {
       intentos += 1;
-      if (!guardandoClientesRef.current || intentos > 20) {
+      const ocupado = [syncClientes, syncConv, syncElim, syncHist, syncEnvios].some((x) => x.guardando);
+      if (!ocupado || intentos > 20) {
         clearInterval(t);
         // Se agrega un número a la dirección para saltarse la versión guardada del celular.
         window.location.replace(window.location.pathname + "?v=" + Date.now());
@@ -3389,7 +3722,7 @@ function App() {
           <AlertasTab
             alertasHoy={alertasPorCliente}
             alertasMovil={alertasMovilPendientes(convergencias)}
-            onMarcarMovil={(id, key) => editarConvergencia(id, { [`aviso_${key}`]: true })}
+            onMarcarMovil={marcarMovilEnviadoSeguro}
             onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
             proximos={recordatoriosProximos(clientesActivos, convergencias, 3)}
             onVerMovil={(c) => {
@@ -3397,7 +3730,7 @@ function App() {
               navegarA("clientes");
             } }
             alertasTodas={alertasHoy}
-            onMarcar={toggleMilestone}
+            onMarcar={marcarEnviadoSeguro}
             onCopiarSuscriptor={copySuscriptor}
             copiedSubKey={copiedSubKey}
             onPagoRealizado={pedirMarcarPagada}
@@ -7306,8 +7639,8 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   function avanzarEnvio(marcarComoEnviado) {
     const actual = colaEnvio[indiceEnvio];
     if (marcarComoEnviado) {
-      if (actual.esMovil) onMarcarMovil(actual.cliente.id, actual.milestone.key);
-      else onMarcar(actual.cliente.id, actual.milestone.key);
+      if (actual.esMovil) onMarcarMovil(actual.cliente.id, actual.milestone.key, "cadena");
+      else onMarcar(actual.cliente.id, actual.milestone.key, "cadena");
     }
     const nuevosEnviados = contadorEnviados + (marcarComoEnviado ? 1 : 0);
     const siguienteIndice = indiceEnvio + 1;
