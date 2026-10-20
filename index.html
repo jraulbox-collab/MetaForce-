@@ -9180,14 +9180,29 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
       <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta={prog ? "Pegar otro texto de Tigo" : "Pegar texto de Tigo"} />
       {prog && (
         <div className="mt-3">
-          <button
-            type="button"
-            onClick={() => onCopiarMensaje(cliente)}
-            className="w-full text-sm font-medium px-4 py-2.5 rounded-md text-white"
-            style={ { background: "#001E62" } }
-          >
-            {copiado ? "Copiado ✓" : "Copiar mensaje"}
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onCopiarMensaje(cliente)}
+              className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white"
+              style={ { background: "#001E62" } }
+            >
+              {copiado ? "Copiado ✓" : "Copiar mensaje"}
+            </button>
+            {String(cliente.telefono || "").replace(/\D/g, "") ? (
+              <a
+                href={whatsappLink(cliente, { texto: textoInstalacion(cliente) })}
+                className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white text-center"
+                style={ { background: "#25D366" } }
+              >
+                Enviar por WhatsApp
+              </a>
+            ) : (
+              <span className="flex-1 text-xs text-center px-3 py-2.5 rounded-md" style={ { background: "#F3F6FB", color: "#5A6680" } }>
+                Sin WhatsApp en la ficha
+              </span>
+            )}
+          </div>
           <div className="text-sm rounded-md p-3 mt-3" style={ { background: "#F3F6FB", color: "#374151", whiteSpace: "pre-line" } }>
             {textoInstalacion(cliente)}
           </div>
