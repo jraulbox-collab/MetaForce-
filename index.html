@@ -8713,20 +8713,19 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               )}
             </div>
             <div className="flex items-center gap-4 flex-wrap">
-              <label className="flex items-center gap-1.5 text-xs" style={ { color: "#5A6680" } }>
-                Rango de fechas de instalación
+              <label className="flex items-center gap-1.5 text-xs w-full" style={ { color: "#5A6680" } }>
                 <RangoFechasInput
                   desde={fechaDesde}
                   hasta={fechaHasta}
                   onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } }
                   className="px-2 py-1 rounded-md border text-xs outline-none cursor-pointer"
-                  style={ { borderColor: "#DFE5EF", minWidth: "180px" } }
+                  style={ { borderColor: "#DFE5EF", minWidth: "180px", width: "100%" } }
                 />
               </label>
             </div>
           </div>
 
-          <p className="text-[11px] -mb-1" style={ { color: "#9CA3AF" } }>Tip: toca el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
+          <p className="hidden md:block text-[11px] -mb-1" style={ { color: "#9CA3AF" } }>Tip: toca el encabezado de cualquier columna en la tabla para ordenar por ella.</p>
 
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             <FiltroCampo label="Tipo de plan">
@@ -8741,7 +8740,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               </select>
             </FiltroCampo>
 
-            <FiltroCampo label="Instalación">
+            <div className="hidden md:block"><FiltroCampo label="Instalación">
               <select
                 value={filtroInstalacion}
                 onChange={(e) => setFiltroInstalacion(e.target.value)}
@@ -8752,22 +8751,29 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                 <option value="instalados">Instalados</option>
                 <option value="pendientes">Pendientes de instalación</option>
               </select>
-            </FiltroCampo>
+            </FiltroCampo></div>
 
-            <FiltroCampo label="1ra factura">
-              <select
-                value={filtroEstado}
-                onChange={(e) => setFiltroEstado(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
-                style={ { borderColor: "#DFE5EF" } }
-              >
-                <option value="">Todos</option>
-                <option value="pago1">✓ Pagó su 1ra factura</option>
-                <option value="nopago1">Aún no la ha pagado</option>
-                <option value="nocuenta">⛔ No cuenta para comisión</option>
-                <option value="penalizado">🚫 Penalizados</option>
-              </select>
-            </FiltroCampo>
+            <div className="col-span-2 sm:col-span-3">
+              <div className="text-xs font-medium mb-1.5" style={ { color: "#5A6680" } }>1ra factura</div>
+              <div className="flex flex-wrap gap-1.5">
+                {[
+                  ["pago1", "✓ Pagó"],
+                  ["nopago1", "Aún no la paga"],
+                  ["nocuenta", "⛔ No cuenta"],
+                  ["penalizado", "🚫 Penalizados"],
+                ].map(([k, t]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setFiltroEstado(filtroEstado === k ? "" : k)}
+                    className="rounded-full px-3 py-1.5 text-xs font-bold border"
+                    style={ filtroEstado === k ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       )}
