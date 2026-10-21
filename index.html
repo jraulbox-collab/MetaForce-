@@ -8689,7 +8689,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         <button
           type="button"
           onClick={() => setMostrarSelectorColumnas(true)}
-          className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
+          className="hidden md:flex text-xs font-medium px-3 py-1.5 rounded-md border items-center gap-1.5"
           style={ { borderColor: "#DFE5EF", color: "#374151" } }
         >
           🧱 Columnas ({columnasAMostrar.length})
