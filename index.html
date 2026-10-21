@@ -8451,8 +8451,10 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   }, [visiblesOrdenados, filtroEstado, filtroInstalacion, filtroPlan, rangoActivo, fechaDesde, fechaHasta]);
   const filtrosActivos = [filtroEstado, filtroInstalacion, filtroPlan, rangoActivo].filter(Boolean).length;
   const statsClientes = useMemo(() => {
-    const instalados = visiblesFinal.filter((c) => !!c.fechaInstalacion).length;
-    return { instalados, pendientes: visiblesFinal.length - instalados, total: visiblesFinal.length };
+    // Los penalizados y cancelados sin 1ra factura pagada no cuentan: solo se muestran como referencia.
+    const cuentan = visiblesFinal.filter((c) => !clienteExcluido(c));
+    const instalados = cuentan.filter((c) => !!c.fechaInstalacion).length;
+    return { instalados, pendientes: cuentan.length - instalados, total: cuentan.length };
   }, [visiblesFinal]);
 
   const [exportarAbierto, setExportarAbierto] = useState(false);
@@ -8534,7 +8536,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               : { borderColor: "#DFE5EF", color: "#374151" }
           }
         >
-          🏠 Hogar ({clientesDelMes.length})
+          🏠 Hogar ({clientesDelMes.filter((c) => !clienteExcluido(c)).length})
         </button>
         <button
           onClick={() => setSubVista("movil")}
@@ -8807,13 +8809,14 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {(() => {
               // Lista compacta para celular: grupos por urgencia (por instalar / instalados / cancelados),
               // chips con conteos y estado + fecha en una sola línea.
-              const grupoDe = (c) => (c.cancelado || c.penalizado ? "cancelados" : !c.fechaInstalacion ? "porInstalar" : "instalados");
+              const grupoDe = (c) => (clienteExcluido(c) ? "cancelados" : !c.fechaInstalacion ? "porInstalar" : "instalados");
               const conteoG = { porInstalar: 0, instalados: 0, cancelados: 0 };
               visiblesFinal.forEach((c) => { conteoG[grupoDe(c)] += 1; });
+              const totalCuentan = conteoG.porInstalar + conteoG.instalados;
               const GRUPOS = [
                 { k: "porInstalar", t: "Por instalar" },
                 { k: "instalados", t: "Instalados" },
-                { k: "cancelados", t: "Cancelados" },
+                { k: "cancelados", t: "Cancelados (no cuentan)" },
               ];
               const hoyISO = fechaLocalISO(new Date());
               const estadoLinea = (c) => {
@@ -8903,10 +8906,10 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               return (
                 <>
                   <div className="flex flex-wrap gap-1.5 mb-1">
-                    {chip("todos", "Todos", visiblesFinal.length)}
+                    {chip("todos", "Todos", totalCuentan)}
                     {chip("porInstalar", "Por instalar", conteoG.porInstalar)}
                     {chip("instalados", "Instalados", conteoG.instalados)}
-                    {conteoG.cancelados > 0 && chip("cancelados", "Cancelados", conteoG.cancelados)}
+                    {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
                   </div>
                   {GRUPOS.filter((g) => (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
                     <div key={g.k} className="flex flex-col gap-2">
