@@ -8332,6 +8332,9 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       case "ciclo":
         return <span className="font-mono text-xs">{cicloCorto(c)}</span>;
       case "instalacion":
+        if (!c.fechaInstalacion && (c.cancelado || c.penalizado)) {
+          return <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#EEF0F4", color: "#5A6680" } }>{c.penalizado ? "✕ PENALIZADO" : "✕ CANCELADO"}</span>;
+        }
         return c.fechaInstalacion ? (
           <span className="font-mono text-xs">{fmtFechaDia(c.fechaInstalacion)}</span>
         ) : (
@@ -8454,6 +8457,8 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
 
   const [exportarAbierto, setExportarAbierto] = useState(false);
   const [menuMasAbierto, setMenuMasAbierto] = useState(false);
+  const [chipGrupo, setChipGrupo] = useState("todos");
+  const [menuTarjeta, setMenuTarjeta] = useState(null);
   const [copiadoReporte, setCopiadoReporte] = useState(false);
   function copiarReporteDiario() {
     const texto = textoReporteDiario(clientesTodos || clientes, clientesMovil);
@@ -8800,58 +8805,118 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               Muestra exactamente las columnas activadas en el selector ⚙️, igual que la tabla. */}
           <div className="md:hidden flex flex-col gap-2">
             {(() => {
-              // El nombre siempre va en el encabezado de la tarjeta (para poder tocarlo y
-              // abrir el detalle); el resto de columnas activadas se listan debajo.
-              const camposCard = columnasAMostrar.filter((k) => k !== "cliente");
-              return visiblesFinal.map((c) => {
-                const cuenta = clienteCuentaParaComision(c);
-                return (
-                <div
-                  key={c.id}
-                  className="bg-white rounded-lg border p-3"
-                  style={ { borderColor: "#DFE5EF", opacity: cuenta ? 1 : 0.5 } }
+              // Lista compacta para celular: grupos por urgencia (por instalar / instalados / cancelados),
+              // chips con conteos y estado + fecha en una sola línea.
+              const grupoDe = (c) => (c.cancelado || c.penalizado ? "cancelados" : !c.fechaInstalacion ? "porInstalar" : "instalados");
+              const conteoG = { porInstalar: 0, instalados: 0, cancelados: 0 };
+              visiblesFinal.forEach((c) => { conteoG[grupoDe(c)] += 1; });
+              const GRUPOS = [
+                { k: "porInstalar", t: "Por instalar" },
+                { k: "instalados", t: "Instalados" },
+                { k: "cancelados", t: "Cancelados" },
+              ];
+              const hoyISO = fechaLocalISO(new Date());
+              const estadoLinea = (c) => {
+                if (c.penalizado) return { cls: "can", txt: "✕ Penalizado" };
+                if (c.cancelado) return { cls: "can", txt: "✕ Cancelado · no cuenta en pendientes" };
+                if (!c.fechaInstalacion) {
+                  if (c.instalacionProgramada) {
+                    const venc = c.instalacionProgramada < hoyISO;
+                    return { cls: "pen", txt: `⚠ ${venc ? "Venció" : "Por instalar"} · ${fmtFechaDia(c.instalacionProgramada)}${c.franjaInstalacion ? ", " + franjaCorta(c.franjaInstalacion) : ""}` };
+                  }
+                  return { cls: "sin", txt: "📅 Por instalar · falta agendar fecha" };
+                }
+                return { cls: "ok", txt: `✓ Instalado · ${fmtFechaDia(c.fechaInstalacion)}` };
+              };
+              const estiloEstado = {
+                pen: { background: "#FFF3DC", color: "#B45309", borderLeft: "4px solid #B45309" },
+                sin: { background: "#FFFFFF", color: "#B45309", border: "1.5px dashed #B45309" },
+                ok: { background: "#EAF0FB", color: "#0B4A99" },
+                can: { background: "#EEF0F4", color: "#5A6680" },
+              };
+              const chip = (k, t, n) => (
+                <button
+                  key={k}
+                  type="button"
+                  onClick={() => setChipGrupo(k)}
+                  className="rounded-full px-3 py-1.5 text-xs font-bold border"
+                  style={ chipGrupo === k ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
                 >
-                  <button onClick={() => onVerDetalle(c)} className="text-left block w-full">
-                    <div className="font-medium text-sm truncate" style={ { color: "#001E62" } }>{c.nombre}</div>
-                    {c.telefono && (
-                      <div className="text-xs font-mono truncate" style={ { color: "#9CA3AF" } }>{c.telefono}</div>
-                    )}
-                    {!cuenta && (
-                      <div className="text-[10px] font-semibold mt-0.5" style={ { color: "#B45309" } }>
-                        ⛔ No cuenta para tu comisión (venció sin pagar la 1ra factura)
+                  {t} <span style={ { fontWeight: 800 } }>{n}</span>
+                </button>
+              );
+              const tarjeta = (c) => {
+                const cuenta = clienteCuentaParaComision(c);
+                const est = estadoLinea(c);
+                const plan = planCorto(c) || planResumen(c);
+                return (
+                  <div key={c.id} className="bg-white rounded-xl border p-3" style={ { borderColor: "#DFE5EF", opacity: cuenta ? 1 : 0.75 } }>
+                    <button type="button" onClick={() => onVerDetalle(c)} className="text-left block w-full">
+                      <div className="flex items-center gap-2">
+                        <span className="font-extrabold text-sm flex-1 min-w-0 truncate" style={ { color: "#001E62" } }>{c.nombre}</span>
+                        <span className="text-[10.5px] font-extrabold rounded-md px-1.5 py-0.5" style={ { background: "#EAF0FB", color: "#0B4A99", border: "1px solid #CFE0F7" } }>Hogar</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs mt-1 mb-2" style={ { color: "#5A6680" } }>
+                        <span>{plan}</span>
+                        <span className="font-bold" style={ { color: "#001E62" } }>{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>
+                      </div>
+                      <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold" style={ estiloEstado[est.cls] }>{est.txt}</div>
+                      {!cuenta && !c.cancelado && !c.penalizado && (
+                        <div className="text-[10px] font-semibold mt-1" style={ { color: "#B45309" } }>
+                          ⛔ No cuenta para tu comisión (venció sin pagar la 1ra factura)
+                        </div>
+                      )}
+                    </button>
+                    <div className="flex items-center gap-2 mt-2.5">
+                      <button
+                        type="button"
+                        onClick={() => copiarCelda(c.numeroSuscriptor, c.id, "sub")}
+                        className="flex-1 rounded-lg border py-1.5 text-xs font-bold font-mono"
+                        style={ { borderColor: "#DFE5EF", color: copiedCell === c.id + "sub" ? "#001E62" : "#0072CE" } }
+                      >
+                        {copiedCell === c.id + "sub" ? "✓ Copiado" : "📋 " + (c.numeroSuscriptor || "Sin N°")}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setMenuTarjeta(menuTarjeta === c.id ? null : c.id)}
+                        aria-label="Más acciones"
+                        className="rounded-lg border px-3 py-1.5 text-xs font-bold"
+                        style={ { borderColor: "#DFE5EF", color: "#5A6680", minWidth: 40 } }
+                      >
+                        ⋯
+                      </button>
+                    </div>
+                    {menuTarjeta === c.id && (
+                      <div className="flex items-center gap-4 mt-2 pt-2 border-t" style={ { borderColor: "#F0F0EF" } }>
+                        {c.actual && (
+                          <button onClick={() => { setMenuTarjeta(null); onMarcarPagada(c.id, c.actual.n); } } className="text-xs font-medium" style={ { color: "#001E62" } }>
+                            {c.actual.n === 1 && c.f1_saldoPendiente ? "Saldo pagado" : "Marcar pagada"}
+                          </button>
+                        )}
+                        <button onClick={() => { setMenuTarjeta(null); onEdit(c); } } className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
+                        <button onClick={() => { setMenuTarjeta(null); onDelete(c.id); } } className="text-xs font-medium" style={ { color: "#B45309" } }>Eliminar</button>
                       </div>
                     )}
-                  </button>
-
-                  {camposCard.length > 0 && (
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-2 mt-2.5 pt-2.5 border-t" style={ { borderColor: "#F0F0EF" } }>
-                      {camposCard.map((key) => {
-                        const col = COLUMNAS_CLIENTES.find((x) => x.key === key);
-                        if (!col) return null;
-                        return (
-                          <div key={key} className="min-w-0">
-                            <div className="text-[10px] font-medium uppercase tracking-wide mb-0.5" style={ { color: "#9CA3AF" } }>
-                              {col.label}
-                            </div>
-                            <div className="truncate">{renderCeldaCliente(c, key)}</div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-4 mt-2.5 pt-2.5 border-t" style={ { borderColor: "#F0F0EF" } }>
-                    {c.actual && (
-                      <button onClick={() => onMarcarPagada(c.id, c.actual.n)} className="text-xs font-medium" style={ { color: "#001E62" } }>
-                        {c.actual.n === 1 && c.f1_saldoPendiente ? "Saldo pagado" : "Marcar pagada"}
-                      </button>
-                    )}
-                    <button onClick={() => onEdit(c)} className="text-xs font-medium" style={ { color: "#0072CE" } }>Editar</button>
-                    <button onClick={() => onDelete(c.id)} className="text-xs font-medium" style={ { color: "#B45309" } }>Eliminar</button>
                   </div>
-                </div>
                 );
-              });
+              };
+              return (
+                <>
+                  <div className="flex flex-wrap gap-1.5 mb-1">
+                    {chip("todos", "Todos", visiblesFinal.length)}
+                    {chip("porInstalar", "Por instalar", conteoG.porInstalar)}
+                    {chip("instalados", "Instalados", conteoG.instalados)}
+                    {conteoG.cancelados > 0 && chip("cancelados", "Cancelados", conteoG.cancelados)}
+                  </div>
+                  {GRUPOS.filter((g) => (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
+                    <div key={g.k} className="flex flex-col gap-2">
+                      <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>{g.t} · {conteoG[g.k]}</div>
+                      {visiblesFinal.filter((c) => grupoDe(c) === g.k).map(tarjeta)}
+                    </div>
+                  ))}
+                  <div style={ { height: 72 } } />
+                </>
+              );
             })()}
           </div>
 
