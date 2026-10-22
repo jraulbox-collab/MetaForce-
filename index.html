@@ -1570,6 +1570,7 @@ const emptyForm = () => ({
   planTipo: "",
   velocidad: "",
   planTV: "",
+  cuentaTigo: "",
   montoMensual: "",
   fechaInstalacion: fechaLocalISO(new Date()),
   instalacionProgramada: "",
@@ -2564,11 +2565,59 @@ function App() {
     setEditingId(null);
   }
 
-  function irANuevoConSuscriptor(numero) {
-    setForm({ ...emptyForm(), numeroSuscriptor: numero });
+  function irANuevoConSuscriptor(numero, datos) {
+    const base = { ...emptyForm(), numeroSuscriptor: numero };
+    if (datos) {
+      const pt = planDeTigo(datos);
+      if (pt.tipo === "SINGLE" || pt.tipo === "DOBLE") {
+        base.planTipo = pt.tipo;
+        base.velocidad = pt.velocidad;
+        base.planTV = pt.tipo === "DOBLE" ? pt.tv : "";
+      }
+      if (datos.fecha) base.fechaInstalacion = datos.fecha;
+      if (datos.cuenta) base.cuentaTigo = datos.cuenta;
+    }
+    setForm(base);
     setEditingId(null);
     setOrigenFormulario("precierre");
     navegarA("nuevo");
+  }
+
+  // Datos que vienen del precierre de Tigo y se guardan solos: número de cuenta y
+  // suscriptor sin espacios sobrantes. No pasa por la bitácora porque no es un cambio tuyo.
+  function aplicarDatosTigo(lista) {
+    if (!lista || lista.length === 0) return;
+    const porId = new Map(lista.map((u) => [u.id, u]));
+    actualizarClientes((prev) => prev.map((c) => (porId.has(c.id) ? { ...c, ...porId.get(c.id) } : c)));
+  }
+
+  // Desde el precierre: iguala el plan (Single/Doble, velocidad, TV) al que activó Tigo.
+  // La mensualidad no cambia sola: se propone la más común entre tus clientes con ese plan.
+  function corregirPlanDesdePrecierre(clienteId, plan) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes || !plan || (plan.tipo !== "SINGLE" && plan.tipo !== "DOBLE")) return;
+    const mismos = clientes
+      .filter((c) => c.id !== clienteId && c.planTipo === plan.tipo && String(c.velocidad || "").trim() === plan.velocidad && (plan.tipo === "SINGLE" || String(c.planTV || "").trim() === plan.tv))
+      .map((c) => Number(c.montoMensual))
+      .filter((m) => m > 0);
+    const cuenta = {};
+    mismos.forEach((m) => { cuenta[m] = (cuenta[m] || 0) + 1; });
+    const masComun = Object.entries(cuenta).sort((x, y) => y[1] - x[1])[0];
+    const montoNuevo = masComun ? Number(masComun[0]) : antes.montoMensual;
+    const textoAntes = `${planCorto(antes) || "—"} · ${antes.montoMensual !== "" && antes.montoMensual != null ? fmtMonto(antes.montoMensual) : "sin monto"}`;
+    const textoAhora = `${planTigoTexto(plan)} · ${montoNuevo !== "" && montoNuevo != null ? fmtMonto(montoNuevo) : "sin monto"}`;
+    const nota = masComun ? "\n\n(La mensualidad es la más común entre tus clientes con ese plan. Puedes ajustarla en Editar.)" : "\n\nLa mensualidad no cambia. Revísala en Editar si hace falta.";
+    if (!window.confirm("¿Corregir el plan de " + antes.nombre + "?\n\nAntes: " + textoAntes + "\nAhora (Tigo): " + textoAhora + nota)) return;
+    let despues = { ...antes, planTipo: plan.tipo, velocidad: plan.velocidad, planTV: plan.tipo === "DOBLE" ? plan.tv : "", montoMensual: montoNuevo };
+    if (antes.fechaInstalacion && antes.cicloFacturacion && montoNuevo !== "" && montoNuevo != null) {
+      const r = calcularPrimeraFactura(antes.fechaInstalacion, parseInt(antes.cicloFacturacion, 10), montoNuevo);
+      if (r) {
+        const total = +((Number(montoNuevo) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
+        despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
+      }
+    }
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
   function abrirClienteDesdePrecierre(c) {
@@ -2891,14 +2940,14 @@ function App() {
 
     if (editingId) {
       const antes = clientes.find((c) => c.id === editingId);
-      const camposForm = camposEstadoCliente(form, antes);
+      const camposForm = camposEstadoCliente({ ...form, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, antes);
       const despues = antes ? { ...antes, ...camposForm } : null;
       actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...camposForm } : c)));
       if (antes && despues) {
         registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: editingId });
       }
     } else {
-      const nuevo = { id: uid(), ...camposEstadoCliente(form, null), creadoEn: new Date().toISOString() };
+      const nuevo = { id: uid(), ...camposEstadoCliente({ ...form, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, null), creadoEn: new Date().toISOString() };
       actualizarClientes((prev) => [...prev, nuevo]);
       registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
@@ -2915,6 +2964,7 @@ function App() {
       planTipo: c.planTipo,
       velocidad: c.velocidad,
       planTV: c.planTV,
+      cuentaTigo: c.cuentaTigo || "",
       montoMensual: c.montoMensual,
       fechaInstalacion: c.fechaInstalacion,
       instalacionProgramada: c.instalacionProgramada || "",
@@ -3758,6 +3808,8 @@ function App() {
             setVerif={setVerifOrdenes}
             onAgregarOrden={irANuevoDesdeOrden}
             onCambiarFecha={cambiarFechaInstalacionDesdeOrden}
+            onCorregirPlan={corregirPlanDesdePrecierre}
+            onAplicarDatosTigo={aplicarDatosTigo}
             convergencias={convergencias}
             onAgregarMovil={irANuevoMovilDesdeOrden}
             onCambiarFechaMovil={cambiarFechaActivacionMovilDesdeOrden}
@@ -9478,6 +9530,12 @@ function ClienteDetalle({
             )}
           </div>
         </div>
+        {cliente.cuentaTigo && (
+          <div>
+            <div className="text-xs" style={ { color: "#5A6680" } }>Número de cuenta (Tigo)</div>
+            <div className="font-medium">{cliente.cuentaTigo}</div>
+          </div>
+        )}
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Teléfono</div>
           <div className="font-medium">{cliente.telefono || "—"}</div>
@@ -10572,23 +10630,139 @@ function leerSuscriptoresPrecierre(textoPegado, existentes) {
   return { numeros, duplicados, sinNumero, lineas: lineas.length };
 }
 
+// ---------- Precierre completo de Tigo (con encabezado y columnas) ----------
+// Tigo manda una tabla (columnas separadas por tab) con SUSCRIPTOR, CUENTA, VENDEDOR, PRODUCTO,
+// VARIANTE, FECHA_ACTIVACION y RAZON_SOLICITUD_PROD, entre otras. Un cliente con Internet + TV
+// aparece en DOS líneas con el mismo suscriptor: aquí se unen en un solo cliente.
+const VENDEDOR_PROPIO = "jose severino";
+function sinAcentosMin(t) {
+  return String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+function esVendedorPropio(v) {
+  return !String(v || "").trim() || sinAcentosMin(v).includes(VENDEDOR_PROPIO);
+}
+// "10/14/26 0:00" (mes/día/año) -> "2026-10-14"
+function fechaPrecierreAISO(t) {
+  const m = String(t || "").match(/^\s*(\d{1,2})\/(\d{1,2})\/(\d{2,4})/);
+  if (!m) return "";
+  const y = Number(m[3]) < 100 ? 2000 + Number(m[3]) : Number(m[3]);
+  return `${y}-${String(m[1]).padStart(2, "0")}-${String(m[2]).padStart(2, "0")}`;
+}
+function leerTablaPrecierre(texto) {
+  const lineas = String(texto || "").split(/\r?\n/).filter((l) => l.trim());
+  if (lineas.length < 2) return null;
+  const enc = lineas[0].split("\t").map((x) => x.trim().toUpperCase());
+  const iSus = enc.indexOf("SUSCRIPTOR");
+  if (iSus < 0 || enc.length < 3) return null;
+  const iCta = enc.indexOf("CUENTA");
+  const iVen = enc.indexOf("VENDEDOR");
+  const iPro = enc.indexOf("PRODUCTO");
+  const iVar = enc.indexOf("VARIANTE");
+  const iAct = enc.indexOf("FECHA_ACTIVACION");
+  const iRaz = enc.indexOf("RAZON_SOLICITUD_PROD");
+  const datos = new Map();
+  let filas = 0;
+  lineas.slice(1).forEach((l) => {
+    const c = l.split("\t");
+    const num = String(c[iSus] || "").replace(/\D/g, "");
+    if (num.length < 6) return;
+    filas++;
+    const g = (i) => (i >= 0 ? String(c[i] || "").trim() : "");
+    let d = datos.get(num);
+    if (!d) {
+      d = { numero: num, cuenta: "", vendedor: g(iVen), razon: "", fechaInternet: "", fechaTV: "", velocidad: "", tv: "", tieneInternet: false, tieneTV: false };
+      datos.set(num, d);
+    }
+    if (!d.cuenta) d.cuenta = g(iCta);
+    const prod = sinAcentosMin(g(iPro));
+    const variante = g(iVar);
+    const fecha = fechaPrecierreAISO(g(iAct));
+    if (/internet/.test(prod)) {
+      d.tieneInternet = true;
+      const m = variante.match(/(\d+)\s*megas/i);
+      d.velocidad = m ? m[1] + " Megas" : variante;
+      d.fechaInternet = fecha || d.fechaInternet;
+    } else if (/cable|tv/.test(prod)) {
+      d.tieneTV = true;
+      d.tv = /combo/i.test(variante) ? "COMBO PACK" : /perfecto/i.test(variante) ? "TV PERFECTO" : variante.toUpperCase().replace(/^TV\s+/, "");
+      d.fechaTV = fecha || d.fechaTV;
+    }
+    const raz = g(iRaz);
+    if (raz && (!d.razon || /reconex/i.test(raz))) d.razon = raz;
+  });
+  if (datos.size === 0) return null;
+  datos.forEach((d) => {
+    d.fecha = d.fechaInternet || d.fechaTV || "";
+    d.reconexion = /reconex/i.test(d.razon);
+  });
+  return { datos, numeros: [...datos.keys()], lineas: filas };
+}
+// Plan que Tigo activó: Single (solo Internet), Doble (Internet + TV) o solo TV.
+function planDeTigo(d) {
+  const tipo = d.tieneInternet ? (d.tieneTV ? "DOBLE" : "SINGLE") : d.tieneTV ? "SOLO_TV" : "";
+  return { tipo, velocidad: d.velocidad || "", tv: tipo === "DOBLE" ? d.tv : "" };
+}
+function planTigoTexto(p) {
+  if (p.tipo === "SOLO_TV") return "Solo TV" + (p.tv ? " " + p.tv : "");
+  return planCorto({ planTipo: p.tipo, velocidad: p.velocidad, planTV: p.tv }) || p.tipo || "—";
+}
+function planCoincideConTigo(c, p) {
+  if (!p.tipo) return true;
+  if (p.tipo === "SOLO_TV") return false;
+  if (c.planTipo !== p.tipo) return false;
+  if (String(c.velocidad || "").trim().toLowerCase() !== p.velocidad.toLowerCase()) return false;
+  if (p.tipo === "DOBLE" && String(c.planTV || "").trim().toUpperCase() !== String(p.tv || "").toUpperCase()) return false;
+  return true;
+}
+
 // Compara el precierre pegado contra los clientes de la app. Es una función pura:
 // se recalcula sola cada vez que cambian los clientes (por ejemplo, al agregar uno).
 function calcularPrecierre(clientes, textoPegado, desde, hasta) {
-  const existentes = new Set(clientes.map((c) => (c.numeroSuscriptor || "").trim()).filter(Boolean));
-  const { numeros, duplicados, sinNumero, lineas } = leerSuscriptoresPrecierre(textoPegado, existentes);
-
   const clientesPorNumero = new Map(
     clientes.filter((c) => c.numeroSuscriptor).map((c) => [c.numeroSuscriptor.trim(), c])
   );
   const enRango = (c) => !!c.fechaInstalacion && c.fechaInstalacion >= desde && c.fechaInstalacion <= hasta;
+  const tabla = leerTablaPrecierre(textoPegado);
 
-  // En el precierre pero NO en la app -> hay que agregarlos.
-  const agregar = numeros.filter((n) => !clientesPorNumero.has(n));
+  if (tabla) {
+    // Tabla completa de Tigo: el rango que eliges decide qué filas se comparan.
+    const setTodos = new Set(tabla.numeros);
+    const considerados = tabla.numeros.filter((n) => {
+      const f = tabla.datos.get(n).fecha;
+      return !f || (f >= desde && f <= hasta);
+    });
+    const agregar = [], fecha = [], plan = [], vendedor = [], coinciden = [], actualizaciones = [];
+    considerados.forEach((n) => {
+      const d = tabla.datos.get(n);
+      const c = clientesPorNumero.get(n);
+      if (!esVendedorPropio(d.vendedor)) { vendedor.push({ numero: n, datos: d, cliente: c || null }); return; }
+      if (!c) { agregar.push({ numero: n, datos: d }); return; }
+      const upd = {};
+      if (d.cuenta && c.cuentaTigo !== d.cuenta) upd.cuentaTigo = d.cuenta;
+      if ((c.numeroSuscriptor || "") !== n) upd.numeroSuscriptor = n;
+      if (Object.keys(upd).length) actualizaciones.push({ id: c.id, ...upd });
+      let ok = true;
+      if (d.fecha && c.fechaInstalacion !== d.fecha) { fecha.push({ cliente: c, tigo: d.fecha, app: c.fechaInstalacion || "" }); ok = false; }
+      const pt = planDeTigo(d);
+      if (!planCoincideConTigo(c, pt)) { plan.push({ cliente: c, tigo: pt, soloTV: pt.tipo === "SOLO_TV" }); ok = false; }
+      if (ok) coinciden.push({ cliente: c, reconexion: d.reconexion });
+    });
+    // En la app, instalados dentro del rango, pero NO en el precierre -> reclamar a Tigo.
+    const reclamar = clientes
+      .filter((c) => c.numeroSuscriptor && !clienteExcluido(c) && enRango(c) && !setTodos.has(c.numeroSuscriptor.trim()))
+      .sort((a, b) => (a.fechaInstalacion || "").localeCompare(b.fechaInstalacion || ""));
+    return {
+      completo: true, desde, hasta, total: considerados.length, duplicados: 0, sinNumero: 0, lineas: tabla.lineas,
+      agregar, coinciden, revisar: [], reclamar, fecha, plan, vendedor, actualizaciones,
+    };
+  }
 
-  // En el precierre Y en la app.
+  // Solo números de suscriptor (sin encabezado): se compara como antes.
+  const existentes = new Set(clientes.map((c) => (c.numeroSuscriptor || "").trim()).filter(Boolean));
+  const { numeros, duplicados, sinNumero, lineas } = leerSuscriptoresPrecierre(textoPegado, existentes);
+  const agregar = numeros.filter((n) => !clientesPorNumero.has(n)).map((n) => ({ numero: n, datos: null }));
   const enApp = numeros.filter((n) => clientesPorNumero.has(n)).map((n) => clientesPorNumero.get(n));
-  const coinciden = enApp.filter(enRango);
+  const coinciden = enApp.filter(enRango).map((c) => ({ cliente: c, reconexion: false }));
   const revisar = enApp
     .filter((c) => !enRango(c))
     .map((c) => ({
@@ -10599,19 +10773,14 @@ function calcularPrecierre(clientes, textoPegado, desde, hasta) {
           ? "Instalado antes del rango"
           : "Instalado después del rango",
     }));
-
-  // En la app, instalados dentro del rango, pero NO en el precierre -> reclamar a Tigo.
-  // Primero los que ya tienen la 1ª factura pagada (esos cuentan para la comisión).
   const setNumeros = new Set(numeros);
   const reclamar = clientes
-    .filter((c) => c.numeroSuscriptor && enRango(c) && !setNumeros.has(c.numeroSuscriptor.trim()))
-    .sort(
-      (a, b) =>
-        (b.f1_estado === "pagada" ? 1 : 0) - (a.f1_estado === "pagada" ? 1 : 0) ||
-        (a.fechaInstalacion || "").localeCompare(b.fechaInstalacion || "")
-    );
-
-  return { desde, hasta, total: numeros.length, duplicados, sinNumero, lineas, agregar, coinciden, revisar, reclamar };
+    .filter((c) => c.numeroSuscriptor && !clienteExcluido(c) && enRango(c) && !setNumeros.has(c.numeroSuscriptor.trim()))
+    .sort((a, b) => (a.fechaInstalacion || "").localeCompare(b.fechaInstalacion || ""));
+  return {
+    completo: false, desde, hasta, total: numeros.length, duplicados, sinNumero, lineas,
+    agregar, coinciden, revisar, reclamar, fecha: [], plan: [], vendedor: [], actualizaciones: [],
+  };
 }
 
 // Rango de un mes calendario: offset 0 = este mes (del día 1 hasta hoy), -1 = mes anterior completo.
@@ -10632,12 +10801,19 @@ function avisoRangoPrecierre(desde, hasta) {
   if (completo && h.getMonth() === d.getMonth() && h.getFullYear() === d.getFullYear()) return null;
   return "El rango no abarca un mes calendario completo (del 1 al 30 o 31).";
 }
-function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, onAbrirMovil, verif, setVerif, onAgregarOrden, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
+function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, onAbrirMovil, verif, setVerif, onAgregarOrden, onCambiarFecha, onCorregirPlan, onAplicarDatosTigo, onAgregarMovil, onCambiarFechaMovil }) {
   const [editando, setEditando] = useState(!estado.aplicado);
   const resultado = useMemo(
     () => (estado.aplicado ? calcularPrecierre(clientes, estado.aplicado.texto, estado.aplicado.desde, estado.aplicado.hasta) : null),
     [clientes, estado.aplicado]
   );
+
+  // Número de cuenta y suscriptores sin espacios: se guardan solos al validar el precierre.
+  useEffect(() => {
+    if (resultado && resultado.actualizaciones && resultado.actualizaciones.length > 0 && onAplicarDatosTigo) {
+      onAplicarDatosTigo(resultado.actualizaciones);
+    }
+  }, [resultado]);
 
   function validar() {
     setEstado((e) => ({ ...e, aplicado: { texto: e.texto, desde: e.desde, hasta: e.hasta } }));
@@ -10696,7 +10872,7 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
       <React.Fragment>
       <h1 className="text-2xl font-semibold mb-1">Validar precierre</h1>
       <p className="text-sm mb-4" style={ { color: "#5A6680" } }>
-        Pega la lista que te envió Tigo, una fila por línea.
+        Pega el precierre que te envió Tigo, con el encabezado y todas las columnas. También sirve una lista de suscriptores.
       </p>
 
       {editando ? (
@@ -10746,9 +10922,18 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
             className="w-full px-3 py-2 rounded-md border-2 outline-none font-mono"
             style={ { borderColor: "#DFE5EF", fontSize: 16, color: "#001E62" } }
           />
-          <p className="text-xs" style={ { color: "#5A6680" } }>
-            {estado.texto.split("\n").filter((l) => l.trim()).length} filas detectadas
-          </p>
+          {(() => {
+            const t = leerTablaPrecierre(estado.texto);
+            return t ? (
+              <p className="text-xs font-bold rounded-lg px-3 py-2" style={ { background: "#EAF0FB", color: "#0B4A99" } }>
+                ✓ Detecté {t.lineas} líneas · {t.numeros.length} clientes · con fecha de activación, plan, vendedor y razón
+              </p>
+            ) : (
+              <p className="text-xs" style={ { color: "#5A6680" } }>
+                {estado.texto.split("\n").filter((l) => l.trim()).length} filas detectadas
+              </p>
+            );
+          })()}
           </div>
           <div className="flex flex-col gap-2">
             <button
@@ -10795,7 +10980,7 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
       )}
 
       {!editando && resultado && (
-        <ResultadoPrecierre resultado={resultado} onIrNuevo={onIrNuevo} onAbrirCliente={onAbrirCliente} />
+        <ResultadoPrecierre resultado={resultado} onIrNuevo={onIrNuevo} onAbrirCliente={onAbrirCliente} onCambiarFecha={onCambiarFecha} onCorregirPlan={onCorregirPlan} />
       )}
       </React.Fragment>
       )}
@@ -10804,10 +10989,13 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
 }
 
 const GRUPOS_PRECIERRE = [
-  { key: "agregar", label: "Agregar a mi app", pista: "Están en Tigo, no en tu app.", color: "#B45309", bg: "#FFF3DC", borde: "#F3E3C3" },
-  { key: "reclamar", label: "Reclamar a Tigo", pista: "Están en tu app, no en Tigo.", color: "#001E62", bg: "#EAF0FB", borde: "#D6DEEF" },
-  { key: "revisar", label: "Revisar", pista: "Fecha de instalación fuera del rango.", color: "#0072CE", bg: "#E3EDFA", borde: "#C5DAF0" },
-  { key: "coinciden", label: "Coinciden", pista: "Todo en orden.", color: "#5A6680", bg: "#F3F6FB", borde: "#DFE5EF" },
+  { key: "fecha", label: "Fecha distinta", pista: "La fecha de activación de Tigo no es la de tu app.", accion: "Toca “Usar fecha de Tigo”: la de Tigo es la que manda.", color: "#B45309", bg: "#FFF3DC", borde: "#F3E3C3" },
+  { key: "plan", label: "Plan distinto", pista: "El plan que Tigo activó no es el que tienes en tu app.", accion: "Corrígelo para que la mensualidad y tu comisión salgan bien.", color: "#7A4B00", bg: "#FFF3DC", borde: "#F3E3C3" },
+  { key: "agregar", label: "Falta en tu app", pista: "Tigo te las acreditó, pero no están en tu app.", accion: "Agrégalas para que cuenten en tus clientes y en tu comisión.", color: "#0072CE", bg: "#E3EDFA", borde: "#C5DAF0" },
+  { key: "reclamar", label: "Reclamar a Tigo", pista: "Las tienes instaladas en tu app, pero NO aparecen en el precierre de Tigo.", accion: "Puede que Tigo no te las esté acreditando. Pídeles que las revisen.", color: "#5A2D91", bg: "#F1EAFB", borde: "#DCCDF3" },
+  { key: "vendedor", label: "Otro vendedor", pista: "Estas filas del precierre tienen otro vendedor.", accion: "No son tuyas: no se agregan ni cuentan en tu app.", color: "#5A6680", bg: "#EEF0F4", borde: "#DFE5EF" },
+  { key: "revisar", label: "Revisar", pista: "Fecha de instalación fuera del rango.", accion: "", color: "#0B4A99", bg: "#E3EDFA", borde: "#C5DAF0" },
+  { key: "coinciden", label: "Coinciden", pista: "Fecha, plan y vendedor coinciden con Tigo.", accion: "No tienes que hacer nada con estos.", color: "#0B4A99", bg: "#EAF0FB", borde: "#D6DEEF" },
 ];
 
 function FilaPrecierre({ color, numero, nombre, sub, derecha, onClick, children }) {
@@ -10840,20 +11028,27 @@ function FilaPrecierre({ color, numero, nombre, sub, derecha, onClick, children 
   );
 }
 
-function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
-  const { agregar, reclamar, revisar, coinciden } = resultado;
-  const conteos = { agregar: agregar.length, reclamar: reclamar.length, revisar: revisar.length, coinciden: coinciden.length };
-  const pendientes = conteos.agregar + conteos.reclamar + conteos.revisar;
-  const primeroConPendientes = ["agregar", "reclamar", "revisar"].find((k) => conteos[k] > 0) || "coinciden";
+function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente, onCambiarFecha, onCorregirPlan }) {
+  const { agregar, reclamar, revisar, coinciden, fecha = [], plan = [], vendedor = [] } = resultado;
+  const [ignorados, setIgnorados] = useState([]);
+  const vendedorVisible = vendedor.filter((v) => !ignorados.includes(v.numero));
+  const conteos = {
+    fecha: fecha.length, plan: plan.length, agregar: agregar.length, reclamar: reclamar.length,
+    vendedor: vendedorVisible.length, revisar: revisar.length, coinciden: coinciden.length,
+  };
+  const ORDEN = ["fecha", "plan", "agregar", "reclamar", "vendedor", "revisar"];
+  const pendientes = ORDEN.reduce((a, k) => a + conteos[k], 0);
+  const primeroConPendientes = ORDEN.find((k) => conteos[k] > 0) || "coinciden";
   const [grupo, setGrupo] = useState(primeroConPendientes);
   const [verTodas, setVerTodas] = useState(false);
   const [copiado, setCopiado] = useState(false);
-  const g = GRUPOS_PRECIERRE.find((x) => x.key === grupo);
+  const grupoActivo = conteos[grupo] === 0 && grupo !== "coinciden" ? primeroConPendientes : grupo;
+  const g = GRUPOS_PRECIERRE.find((x) => x.key === grupoActivo);
   const LIMITE_COINCIDEN = 8;
 
   async function copiarReclamo() {
     const lineas = reclamar.map(
-      (c) => `${c.numeroSuscriptor} · ${c.nombre || "Sin nombre"} · instalado ${fmtFechaDia(c.fechaInstalacion)}`
+      (c) => `• ${c.numeroSuscriptor} · ${c.nombre || "Sin nombre"} · instalado ${fmtFechaDia(c.fechaInstalacion)}`
     );
     const encabezado = `Suscriptores instalados del ${fmtFecha(resultado.desde)} al ${fmtFecha(resultado.hasta)} que no aparecen en el precierre:`;
     const ok = await copiarTextoPrecierre([encabezado, ...lineas].join("\n"));
@@ -10863,15 +11058,20 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
     }
   }
 
-  if (resultado.total === 0) {
+  if (resultado.total === 0 && reclamar.length === 0) {
     return (
       <p className="text-sm font-bold rounded-xl p-4" style={ { border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", background: "#FFF3DC", color: "#B45309" } }>
-        No encontré números de suscriptor en lo que pegaste. Revisa que cada fila lo incluya.
+        No encontré números de suscriptor dentro del rango que elegiste. Revisa el rango y que cada fila incluya el suscriptor.
       </p>
     );
   }
 
-  const barra = ["coinciden", "agregar", "reclamar", "revisar"].filter((k) => conteos[k] > 0);
+  const barra = ["coinciden", ...ORDEN].filter((k) => conteos[k] > 0);
+  const caja = (cls) => ({
+    flex: 1, borderRadius: 9, padding: "6px 8px", fontSize: 12,
+    background: cls === "tigo" ? "#EAF0FB" : "#EEF0F4", color: "#001E62",
+  });
+  const rotulo = { display: "block", fontSize: 10, letterSpacing: ".05em", textTransform: "uppercase", color: "#5A6680", fontWeight: 700 };
 
   return (
     <div className="flex flex-col gap-3">
@@ -10901,8 +11101,8 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
 
       {/* Grupos tocables */}
       <div className="flex flex-wrap gap-2">
-        {GRUPOS_PRECIERRE.filter((x) => conteos[x.key] > 0 || grupo === x.key).map((x) => {
-          const activo = grupo === x.key;
+        {GRUPOS_PRECIERRE.filter((x) => conteos[x.key] > 0 || grupoActivo === x.key).map((x) => {
+          const activo = grupoActivo === x.key;
           return (
             <button
               key={x.key}
@@ -10932,7 +11132,8 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
         <div className="flex items-start justify-between gap-2 px-4 pt-3.5 pb-3">
           <div>
             <div className="font-extrabold" style={ { color: "#001E62", fontSize: 15 } }>{g.label} ({conteos[g.key]})</div>
-            <div className="text-xs" style={ { color: "#5A6680" } }>{g.pista}</div>
+            <div className="text-xs font-bold mt-0.5" style={ { color: "#001E62" } }>{g.pista}</div>
+            {g.accion && <div className="text-xs" style={ { color: "#5A6680" } }>{g.accion}</div>}
           </div>
           {g.key === "reclamar" && reclamar.length > 0 && (
             <button
@@ -10940,7 +11141,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
               className="font-bold px-4 shrink-0"
               style={ { color: "#001E62", border: "1px solid #DFE5EF", background: "white", height: 44, borderRadius: 12, fontSize: 13 } }
             >
-              {copiado ? "✓ Copiado" : "Copiar lista"}
+              {copiado ? "✓ Copiado" : "Copiar mensaje"}
             </button>
           )}
         </div>
@@ -10949,11 +11150,65 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
           <p className="text-sm px-4 py-3 border-t" style={ { color: "#001E62", borderColor: "#DFE5EF" } }>✅ Ninguno.</p>
         )}
 
-        {g.key === "agregar" &&
-          agregar.map((n) => (
-            <FilaPrecierre key={n} color={g.color} numero={n}>
+        {g.key === "fecha" &&
+          fecha.map(({ cliente: c, tigo, app }) => (
+            <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#DFE5EF" } }>
+              <button onClick={() => onAbrirCliente(c)} className="text-left block w-full">
+                <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>{c.nombre || "Sin nombre"}</div>
+                <div className="text-xs" style={ { color: "#5A6680" } }>{c.numeroSuscriptor}{planCorto(c) ? " · " + planCorto(c) : ""}</div>
+              </button>
+              <div className="flex gap-2 my-2">
+                <div style={caja("tigo")}><span style={rotulo}>Tigo (manda)</span>{fmtFechaDia(tigo)}</div>
+                <div style={caja("app")}><span style={rotulo}>Tu app</span>{app ? fmtFechaDia(app) : "Sin fecha de instalación"}</div>
+              </div>
               <button
-                onClick={() => onIrNuevo(n)}
+                onClick={() => { if (confirmarCambioFechaOrden(c, tigo, false)) onCambiarFecha(c.id, tigo); } }
+                className="w-full font-bold text-white"
+                style={ { background: "#001E62", height: 44, borderRadius: 12, fontSize: 14 } }
+              >
+                Usar fecha de Tigo
+              </button>
+            </div>
+          ))}
+
+        {g.key === "plan" &&
+          plan.map(({ cliente: c, tigo, soloTV }) => (
+            <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#DFE5EF" } }>
+              <button onClick={() => onAbrirCliente(c)} className="text-left block w-full">
+                <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>{c.nombre || "Sin nombre"}</div>
+                <div className="text-xs" style={ { color: "#5A6680" } }>{c.numeroSuscriptor}</div>
+              </button>
+              <div className="flex gap-2 my-2">
+                <div style={caja("tigo")}><span style={rotulo}>Tigo (manda)</span>{planTigoTexto(tigo)}</div>
+                <div style={caja("app")}><span style={rotulo}>Tu app</span>{planCorto(c) || "—"}{c.montoMensual ? ` · ${fmtMonto(c.montoMensual)}` : ""}</div>
+              </div>
+              {soloTV ? (
+                <p className="text-xs font-bold rounded-lg px-3 py-2" style={ { background: "#FFF3DC", color: "#B45309", borderLeft: "4px solid #B45309" } }>
+                  Tigo solo trae la línea de TV, sin Internet. Puede ser un TV agregado a un cliente que ya tenías. Revísalo en su ficha.
+                </p>
+              ) : (
+                <button
+                  onClick={() => onCorregirPlan(c.id, tigo)}
+                  className="w-full font-bold text-white"
+                  style={ { background: "#001E62", height: 44, borderRadius: 12, fontSize: 14 } }
+                >
+                  Corregir plan
+                </button>
+              )}
+            </div>
+          ))}
+
+        {g.key === "agregar" &&
+          agregar.map(({ numero, datos }) => (
+            <FilaPrecierre
+              key={numero}
+              color={g.color}
+              numero={numero}
+              nombre={datos && datos.reconexion ? "🔁 Reconexión" : ""}
+              sub={datos ? `${planTigoTexto(planDeTigo(datos))}${datos.fecha ? " · activada " + fmtFechaDia(datos.fecha) : ""}${datos.cuenta ? " · cuenta Tigo " + datos.cuenta : ""}` : undefined}
+            >
+              <button
+                onClick={() => onIrNuevo(numero, datos)}
                 className="font-bold px-4 text-white shrink-0"
                 style={ { background: "#001E62", height: 44, borderRadius: 12, fontSize: 13 } }
               >
@@ -10963,29 +11218,35 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
           ))}
 
         {g.key === "reclamar" &&
-          reclamar.map((c) => {
-            const pagada = c.f1_estado === "pagada";
-            return (
-              <FilaPrecierre
-                key={c.id}
-                color={g.color}
-                numero={c.numeroSuscriptor}
-                nombre={c.nombre}
-                onClick={() => onAbrirCliente(c)}
-                derecha={
-                  <div className="text-right shrink-0">
-                    <div className="text-xs font-mono" style={ { color: "#5A6680" } }>{fmtFechaDia(c.fechaInstalacion)}</div>
-                    <span
-                      className="text-xs font-bold px-2 py-1 rounded-full inline-block mt-0.5"
-                      style={ pagada ? { background: "#E3EDFA", color: "#0072CE" } : { background: "#FFF3DC", color: "#B45309" } }
-                    >
-                      {pagada ? "pagada" : "sin pagar"}
-                    </span>
-                  </div>
-                }
-              />
-            );
-          })}
+          reclamar.map((c) => (
+            <FilaPrecierre
+              key={c.id}
+              color={g.color}
+              numero={c.numeroSuscriptor}
+              nombre={c.nombre}
+              onClick={() => onAbrirCliente(c)}
+              derecha={<span className="text-xs font-mono shrink-0" style={ { color: "#5A6680" } }>{fmtFechaDia(c.fechaInstalacion)}</span>}
+            />
+          ))}
+
+        {g.key === "vendedor" &&
+          vendedorVisible.map(({ numero, datos, cliente }) => (
+            <FilaPrecierre
+              key={numero}
+              color={g.color}
+              numero={numero}
+              nombre={cliente ? cliente.nombre : ""}
+              sub={`Vendedor: ${datos.vendedor}${datos.fecha ? " · " + fmtFechaDia(datos.fecha) : ""}`}
+            >
+              <button
+                onClick={() => setIgnorados((l) => [...l, numero])}
+                className="font-bold px-3 shrink-0"
+                style={ { color: "#001E62", border: "1.5px solid #001E62", background: "white", height: 44, borderRadius: 12, fontSize: 13 } }
+              >
+                Entendido
+              </button>
+            </FilaPrecierre>
+          ))}
 
         {g.key === "revisar" &&
           revisar.map(({ cliente: c, motivo }) => (
@@ -11001,12 +11262,13 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente }) {
 
         {g.key === "coinciden" && (
           <>
-            {(verTodas ? coinciden : coinciden.slice(0, LIMITE_COINCIDEN)).map((c) => (
+            {(verTodas ? coinciden : coinciden.slice(0, LIMITE_COINCIDEN)).map(({ cliente: c, reconexion }) => (
               <FilaPrecierre
                 key={c.id}
                 color={g.color}
                 numero={c.numeroSuscriptor}
                 nombre={c.nombre}
+                sub={reconexion ? "🔁 Reconexión" : undefined}
                 onClick={() => onAbrirCliente(c)}
                 derecha={<span className="text-xs font-mono shrink-0" style={ { color: "#5A6680" } }>{fmtFechaDia(c.fechaInstalacion)}</span>}
               />
