@@ -1463,9 +1463,8 @@ function planParaCliente(c) {
   return `Internet ${c.velocidad}`;
 }
 // Mensaje para copiar y enviar al cliente. Cambia según la situación de su instalación:
-// hoy o mañana → recordatorio corto con los datos del servicio; más adelante → confirmación con
-// todos los datos de la cuenta; fecha ya pasada sin confirmar → pregunta si ya se instaló;
-// sin fecha → pide día y horario. Sin palabras que dependan del género del cliente.
+// hoy o mañana → recordatorio corto con los datos del servicio; cualquier otro caso → la
+// confirmación de siempre con todos los datos de la cuenta. Sin palabras que dependan del género.
 function textoInstalacion(c) {
   const b = leerBloqueTigo(c.observaciones);
   const plan = planParaCliente(c);
@@ -1475,20 +1474,6 @@ function textoInstalacion(c) {
   const f = c.instalacionProgramada || "";
   const franja = c.franjaInstalacion ? franjaCorta(c.franjaInstalacion) : "";
   const saludo = `${saludoSegunHora()} ${primerNombre(c)}, le escribe José Severino de Tigo.`;
-  if (!f) {
-    return `${saludo}
-
-Estoy coordinando la fecha de su instalación. ¿Qué día y en qué horario le queda mejor: ${franjaCorta(FRANJAS_INSTALACION[0])} o ${franjaCorta(FRANJAS_INSTALACION[1])}?
-
-¡Gracias!`;
-  }
-  if (f < hoy) {
-    return `${saludo}
-
-Quería saber si ya le instalaron su servicio, que estaba programado para el *${fmtFechaInstalacionLarga(f)}*. Si el técnico aún no ha pasado, avíseme para dar seguimiento con Tigo.
-
-¡Gracias!`;
-  }
   if (f === hoy || f === manana) {
     const dia = f === hoy ? "hoy" : "mañana";
     const datos = [
