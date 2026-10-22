@@ -5089,23 +5089,15 @@ function BloqueAbonoInicial({ cliente, onMarcar }) {
   const recibido = cliente.abonoInicial !== false;
   const marcada = cliente.abonoFecha ? new Date(cliente.abonoFecha) : null;
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
-      <h2 className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Abono inicial</h2>
+    <div className={"bg-white rounded-lg border border-gray-200 shadow-sm mb-3 " + (recibido ? "px-4 py-2" : "p-5")}>
+      {!recibido && <h2 className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Abono inicial</h2>}
       {recibido ? (
-        <React.Fragment>
-          <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5" style={ { background: "#EAF0FB", color: "#001E62" } }>✓ Abono recibido</span>
-          {marcada && !isNaN(marcada.getTime()) && (
-            <p className="text-xs mt-2" style={ { color: "#5A6680" } }>Marcado el {fmtFechaDia(fechaLocalISO(marcada))}, {horaAMPM(marcada)}</p>
-          )}
-          <button
-            type="button"
-            onClick={() => onMarcar(cliente.id, false)}
-            className="w-full text-sm font-bold rounded-lg py-2.5 mt-3"
-            style={ { background: "#EEF2F9", color: "#001E62", border: "1px solid #C9D3E6" } }
-          >
-            Quitar marca
-          </button>
-        </React.Fragment>
+        <div className="flex items-center justify-between gap-2" style={ { minHeight: 36 } }>
+          <span className="text-[13px] font-semibold" style={ { color: "#001E62" } }>
+            ✓ Abono recibido{marcada && !isNaN(marcada.getTime()) ? " · " + fmtFechaDia(fechaLocalISO(marcada)) : ""}
+          </span>
+          <button type="button" onClick={() => onMarcar(cliente.id, false)} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 36 } }>Quitar</button>
+        </div>
       ) : (
         <React.Fragment>
           {abonoPendiente(cliente) ? (
@@ -9608,14 +9600,18 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
 
 // Bloque "Instalación" de la ficha de un cliente Hogar pendiente: fecha y horario programados,
 // pegar el texto de Tigo y el mensaje listo para copiar y enviarle al cliente.
-function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado }) {
+function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono }) {
   const prog = cliente.instalacionProgramada;
+  const vencida = !!prog && prog < fechaLocalISO(new Date());
   const hoyISO = fechaLocalISO(new Date());
   const [fechaInst, setFechaInst] = useState(null); // null = cerrado; si no, la fecha elegida para marcarlo instalado
-  const vencida = !!prog && prog < fechaLocalISO(new Date());
+  const [verMas, setVerMas] = useState(false);
+  const abonoRecibido = cliente.abonoInicial !== false;
+  const marcada = cliente.abonoFecha ? new Date(cliente.abonoFecha) : null;
+  const tieneTel = !!String(cliente.telefono || "").replace(/\D/g, "");
   return (
-    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
-      <div className="flex items-center justify-between gap-2 mb-2">
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 py-3 mb-3">
+      <div className="flex items-center justify-between gap-2">
         <h2 className="text-sm font-semibold" style={ { color: "#001E62" } }>Instalación</h2>
         <span
           className="text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap"
@@ -9625,52 +9621,46 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
         </span>
       </div>
       {prog ? (
-        <p className="text-sm mb-3" style={ { color: "#374151" } }>
+        <p className="text-sm mt-1.5" style={ { color: "#374151" } }>
           Programada: <strong>{fmtFechaDia(prog)}</strong>{cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : ""}
         </p>
       ) : (
-        <p className="text-xs mb-3" style={ { color: "#5A6680" } }>Todavía sin fecha. Pega el texto de Tigo para cargarla.</p>
+        <p className="text-xs mt-1.5 mb-2" style={ { color: "#5A6680" } }>Todavía sin fecha. Pega el texto de Tigo para cargarla.</p>
       )}
-      <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta={prog ? "Pegar otro texto de Tigo" : "Pegar texto de Tigo"} />
-      {prog && (
-        <div className="mt-3">
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => onCopiarMensaje(cliente)}
-              className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white"
-              style={ { background: "#001E62" } }
-            >
-              {copiado ? "Copiado ✓" : "Copiar mensaje"}
-            </button>
-            {String(cliente.telefono || "").replace(/\D/g, "") ? (
-              <a
-                href={whatsappLink(cliente, { texto: textoInstalacion(cliente) })}
-                className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white text-center"
-                style={ { background: "#25D366" } }
-              >
-                Enviar por WhatsApp
-              </a>
-            ) : (
-              <span className="flex-1 text-xs text-center px-3 py-2.5 rounded-md" style={ { background: "#F3F6FB", color: "#5A6680" } }>
-                Sin WhatsApp en la ficha
-              </span>
-            )}
-          </div>
+      {!prog && <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta="Pegar texto de Tigo" />}
+      {onMarcarAbono && abonoRecibido && (
+        <div className="flex items-center justify-between gap-2 mt-2" style={ { minHeight: 32 } }>
+          <span className="text-[13px] font-semibold" style={ { color: "#001E62" } }>
+            ✓ Abono recibido{marcada && !isNaN(marcada.getTime()) ? " · " + fmtFechaDia(fechaLocalISO(marcada)) : ""}
+          </span>
+          <button type="button" onClick={() => onMarcarAbono(cliente.id, false)} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Quitar</button>
         </div>
       )}
       {onMarcarInstalado && fechaInst === null && (
-        <button
-          type="button"
-          onClick={() => setFechaInst(hoyISO)}
-          className="w-full mt-2 text-sm font-bold rounded-md"
-          style={ { minHeight: 46, border: "2px solid #001E62", color: "#001E62", background: "white" } }
-        >
-          ✓ Ya instalado
-        </button>
+        <div className="flex gap-2 mt-2.5">
+          <button
+            type="button"
+            onClick={() => setFechaInst(hoyISO)}
+            className="flex-1 text-sm font-bold rounded-md"
+            style={ { minHeight: 44, border: "2px solid #001E62", color: "#001E62", background: "white" } }
+          >
+            ✓ Ya instalado
+          </button>
+          {prog && (
+            <button
+              type="button"
+              onClick={() => setVerMas(!verMas)}
+              aria-expanded={verMas}
+              className="text-sm font-semibold rounded-md px-4"
+              style={ { minHeight: 44, border: "1px solid #DFE5EF", color: "#374151", background: "white" } }
+            >
+              Más {verMas ? "▴" : "▾"}
+            </button>
+          )}
+        </div>
       )}
       {onMarcarInstalado && fechaInst !== null && (
-        <div className="mt-2 rounded-lg p-3" style={ { background: "#F3F6FB" } }>
+        <div className="mt-2.5 rounded-lg p-3" style={ { background: "#F3F6FB" } }>
           <label className="block text-xs font-semibold mb-1.5" style={ { color: "#001E62" } }>¿Qué día se instaló?</label>
           <input
             type="date"
@@ -9698,6 +9688,34 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
             >
               Cancelar
             </button>
+          </div>
+        </div>
+      )}
+      {prog && verMas && (
+        <div className="mt-3 pt-3" style={ { borderTop: "1px solid #EEF2F9" } }>
+          <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta="Pegar otro texto de Tigo" />
+          <div className="flex gap-2 mt-2.5">
+            <button
+              type="button"
+              onClick={() => onCopiarMensaje(cliente)}
+              className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white"
+              style={ { background: "#001E62" } }
+            >
+              {copiado ? "Copiado ✓" : "Copiar mensaje"}
+            </button>
+            {tieneTel ? (
+              <a
+                href={whatsappLink(cliente, { texto: textoInstalacion(cliente) })}
+                className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white text-center"
+                style={ { background: "#25D366" } }
+              >
+                Enviar por WhatsApp
+              </a>
+            ) : (
+              <span className="flex-1 text-xs text-center px-3 py-2.5 rounded-md" style={ { background: "#F3F6FB", color: "#5A6680" } }>
+                Sin WhatsApp en la ficha
+              </span>
+            )}
           </div>
         </div>
       )}
@@ -9732,6 +9750,7 @@ function ClienteDetalle({
   const [mostrarCancelar, setMostrarCancelar] = useState(false);
   const [fechaCancel, setFechaCancel] = useState(() => fechaLocalISO(new Date()));
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
+  const [verObs, setVerObs] = useState(false);
 
   if (!cliente) {
     return (
@@ -9748,6 +9767,7 @@ function ClienteDetalle({
 
   const cicloLabel = (CICLOS.find((c) => c.value === cliente.cicloFacturacion) || {}).label || "—";
   const riesgo = estadoRiesgoChurn(cliente, periodoActual);
+  const mostrarInst = !cliente.fechaInstalacion && !cliente.cancelado && !cliente.penalizado && !!onGuardarOrden;
 
   return (
     <div className="max-w-2xl">
@@ -9767,17 +9787,18 @@ function ClienteDetalle({
       </div>
       <p className="text-sm mb-3" style={ { color: "#5A6680" } }>{planLabel(cliente)}</p>
 
-      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && (
+      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && !(mostrarInst && cliente.abonoInicial !== false) && (
         <BloqueAbonoInicial cliente={cliente} onMarcar={onMarcarAbono} />
       )}
 
-      {!cliente.fechaInstalacion && !cliente.cancelado && !cliente.penalizado && onGuardarOrden && (
+      {mostrarInst && (
         <BloqueInstalacionProgramada
           cliente={cliente}
           onGuardarOrden={onGuardarOrden}
           onCopiarMensaje={onCopiarMensajeInstalacion}
           copiado={copiedKey === cliente.id + "instalacion"}
           onMarcarInstalado={onMarcarInstalado}
+          onMarcarAbono={onMarcarAbono}
         />
       )}
 
@@ -9969,9 +9990,22 @@ function ClienteDetalle({
 
 
       {cliente.observaciones && (
-        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 text-sm" style={ { whiteSpace: "pre-line" } }>
-          <div className="text-xs font-medium mb-1" style={ { color: "#5A6680" } }>Observaciones</div>
-          {cliente.observaciones}
+        <div className="mb-4">
+          <button
+            type="button"
+            onClick={() => setVerObs(!verObs)}
+            aria-expanded={verObs}
+            className="w-full flex items-center justify-between bg-white rounded-lg border border-gray-200 shadow-sm px-4 text-sm font-semibold"
+            style={ { color: "#001E62", minHeight: 44 } }
+          >
+            <span>Observaciones</span>
+            <span style={ { color: "#5A6680" } }>{verObs ? "▴" : "▾"}</span>
+          </button>
+          {verObs && (
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2 text-sm" style={ { whiteSpace: "pre-line" } }>
+              {cliente.observaciones}
+            </div>
+          )}
         </div>
       )}
 
