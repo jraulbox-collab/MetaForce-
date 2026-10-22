@@ -8841,6 +8841,24 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         </button>
       </div>
 
+      <div className="flex items-center gap-1.5 mb-4 flex-wrap">
+        {meses.map((m, i) => (
+          <button
+            key={m.key}
+            onClick={() => { setMesActivo(m.key); setModoVerTodos(false); } }
+            disabled={subVista === "clientes" && (rangoActivo || modoVerTodos)}
+            className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
+            style={ {
+              borderColor: mesActivoEfectivo === m.key ? "#001E62" : "#DFE5EF",
+              background: mesActivoEfectivo === m.key ? "#001E62" : "white",
+              color: mesActivoEfectivo === m.key ? "white" : "#374151",
+            } }
+          >
+            {m.label.toUpperCase()}{i === 0 ? " (actual)" : ""}
+          </button>
+        ))}
+      </div>
+
       {exportarAbierto && <ExportarModal clientes={clientes} clientesMovil={clientesMovil || []} onCerrar={() => setExportarAbierto(false)} />}
       {subVista === "movil" ? (
         <ClientesMovilPanel
@@ -8892,23 +8910,6 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         </div>
       )}
 
-      <div className="flex items-center gap-1.5 mb-4 flex-wrap">
-        {meses.map((m, i) => (
-          <button
-            key={m.key}
-            onClick={() => { setMesActivo(m.key); setModoVerTodos(false); } }
-            disabled={rangoActivo || modoVerTodos}
-            className="text-xs font-medium px-3 py-1.5 rounded-full border transition-colors disabled:opacity-40"
-            style={ {
-              borderColor: mesActivoEfectivo === m.key ? "#001E62" : "#DFE5EF",
-              background: mesActivoEfectivo === m.key ? "#001E62" : "white",
-              color: mesActivoEfectivo === m.key ? "white" : "#374151",
-            } }
-          >
-            {m.label.toUpperCase()}{i === 0 ? " (actual)" : ""}
-          </button>
-        ))}
-      </div>
 
       <div className="relative mb-3">
         <input
@@ -10044,8 +10045,9 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   }
   const [editingId, setEditingId] = useState(null);
   const [formAbierto, setFormAbierto] = useState(!!abrirForm);
-  const [mesExpandido, setMesExpandido] = useState(() => mesActivo || periodoComision(fechaLocalISO(new Date())));
-  const meses = useMemo(() => periodosRecientes(6), []);
+  // El mes se elige arriba, en la fila compartida con Hogar (mesActivo). Aquí solo se muestra ese mes.
+  const mesVisto = mesActivo || periodoComision(fechaLocalISO(new Date()));
+  const meses = useMemo(() => periodosRecientes(4), []);
   const formRef = useRef(null);
   const nombreRef = useRef(null);
   // true cuando el formulario se abrió desde "Verificar órdenes": al guardar vuelve al Precierre.
@@ -10435,8 +10437,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         />
       )}
       {(() => {
-        const clavesMeses = new Set(meses.map((m) => m.key));
-        const visibles = clientesMovil.filter((c) => clavesMeses.has(periodoComision(fechaActivacionMovil(c))));
+        const visibles = clientesMovil.filter((c) => periodoComision(fechaActivacionMovil(c)) === mesVisto);
         const n = (k) => visibles.filter((c) => pasaChipMovil(c, k)).length;
         const chips = [
           ["todos", "Todos", n("todos"), false],
@@ -10474,19 +10475,19 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
             .sort((a, b) => chipMovil === "sinPagar"
               ? String(fechaActivacionMovil(a)).localeCompare(String(fechaActivacionMovil(b)))
               : String(b.creadoEn || "").localeCompare(String(a.creadoEn || "")));
+          if (!q && m.key !== mesVisto) return null;
           if ((q || filtrando) && delMes.length === 0) return null;
           const metaMovilMes = leerMeta(metas || {}, m.key, "clientesMovil");
           const resumenMes = esquemaNuevo(m.key) && !filtrando ? resumenMovilesNuevo(delMes, false) : null;
-          const abierto = !!q || filtrando || mesExpandido === m.key;
+          const abierto = true;
           return (
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
               <button
-                onClick={() => setMesExpandido(abierto ? null : m.key)}
-                className="w-full px-4 py-3 text-left"
+                type="button"
+                className="w-full px-4 py-3 text-left cursor-default"
               >
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
-                  <span style={ { color: "#9CA3AF" } }>{abierto ? "▲" : "▼"}</span>
                 </div>
                 <div className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap mt-1">
                   <span className="text-sm font-mono" style={ { color: "#001E62" } }>
