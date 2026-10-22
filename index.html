@@ -10499,14 +10499,22 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                             >
                               {c.esPortabilidad ? "✓ Portabilidad" : "Portabilidad: no"}
                             </span>
-                            <span
-                              className="text-xs font-medium px-2.5 py-1 rounded-full border"
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const yaPagada = c.f1_estado === "pagada";
+                                const ok = window.confirm(yaPagada ? `¿Quitar la marca de 1ra factura pagada a ${c.nombre}?` : `¿Confirmas que ${c.nombre} ya pagó su 1ra factura?`);
+                                if (!ok) return;
+                                onEditar(c.id, yaPagada ? { f1_estado: "", f1_pagadaEn: null } : { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() });
+                              } }
+                              className="text-xs font-bold px-3 py-1.5 rounded-full border"
                               style={ c.f1_estado === "pagada"
-                                ? { background: "#EAF0FB", color: "#001E62", borderColor: "#001E62" }
-                                : { background: "white", color: "#5A6680", borderColor: "#DFE5EF" } }
+                                ? { background: "#EAF0FB", color: "#001E62", borderColor: "#001E62", minHeight: 34 }
+                                : { background: "white", color: "#001E62", border: "2px solid #001E62", minHeight: 34 } }
+                              title={c.f1_estado === "pagada" ? "Tocar para quitar la marca" : "Tocar para marcar como pagada"}
                             >
-                              {c.f1_estado === "pagada" ? "✓ 1ra factura pagada" : "1ra factura: sin pagar"}
-                            </span>
+                              {c.f1_estado === "pagada" ? "✓ 1ra factura pagada" : "1ra factura: sin pagar ›"}
+                            </button>
                             {!movilCuentaParaComision(c) && (
                               <span className="text-xs font-medium px-2 py-1 rounded-full" style={ { background: "#FFF3DC", color: "#B45309" } }>
                                 ⛔ No cuenta (venció el plazo)
