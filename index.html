@@ -4294,6 +4294,51 @@ function ResultadoSim({ label, actual, simulado, meta, formato }) {
 
 // Simulador de comisión (esquema nuevo): suma clientes Hogar y Móvil hipotéticos a los
 // reales del período y muestra cuánto subiría la comisión. No guarda nada.
+// Consejo "¿qué me conviene vender?": prueba con la fórmula real una venta más de Hogar y una de
+// Móvil (con el plan promedio del período, sin bono de portabilidad) y compara cuánto sube cada una.
+// "falta" dice cuántos clientes de cada tipo harían falta para subir al siguiente tramo; "tope" es
+// true cuando ya se está en el último tramo de la tabla (140%), donde solo cuentan los ingresos.
+function consejoVenta(base, defecto) {
+  const r = (h, m) => calcularComisionNueva({
+    clientesHogar: base.clientesHogar + h,
+    metaClientesHogar: base.metaHogar,
+    clientesMovil: base.clientesMovil + m,
+    metaClientesMovil: base.metaMovil,
+    ingresosDelPeriodo: base.ingresos + (h ? defecto.hogar : 0) + (m ? defecto.movil : 0),
+    metaIngresos: base.metaIngresos,
+    cantidadBonoMovil: base.bonos,
+    cantidadBonoPendiente: 0,
+  });
+  const ahora = r(0, 0);
+  if (!ahora.completo || ahora.pctClientesPonderado == null) return null;
+  const gH = r(1, 0).total - ahora.total;
+  const gM = r(0, 1).total - ahora.total;
+  const pct = ahora.pctClientesPonderado;
+  const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pct + 1e-9);
+  let falta = null;
+  if (sig) {
+    const dif = sig.min - pct;
+    const ptsH = base.metaHogar ? (PESO_CLIENTES_HOGAR * 100) / base.metaHogar : 0;
+    const ptsM = base.metaMovil ? (PESO_CLIENTES_MOVIL * 100) / base.metaMovil : 0;
+    falta = {
+      min: sig.min,
+      monto: sig.monto,
+      hogar: ptsH ? Math.ceil(dif / ptsH - 1e-9) : null,
+      movil: ptsM ? Math.ceil(dif / ptsM - 1e-9) : null,
+    };
+  }
+  const mejor = Math.abs(gH - gM) < 0.5 ? null : gM > gH ? "movil" : "hogar";
+  return { gH, gM, mejor, falta, tope: !sig, pct };
+}
+// Línea corta del consejo (para las tarjetas). Devuelve null si no hay nada útil que decir.
+function textoConsejoVenta(c) {
+  if (!c) return null;
+  if (c.tope) return "💡 Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.";
+  if (!c.mejor) return null;
+  const g = c.mejor === "movil" ? c.gM : c.gH;
+  return `💡 Te conviene vender: ${c.mejor === "movil" ? "📱 Móvil" : "🏠 Hogar"} (+${fmtMiles(g, 0)} c/u)`;
+}
+
 function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
   const [filas, setFilas] = useState([]);
 
@@ -4345,6 +4390,7 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
     });
   }
   const ahora = useMemo(() => calcular([]), []);
+  const consejo = useMemo(() => consejoVenta(base, defecto), []);
   const con = calcular(filas);
   const dif = con.total - ahora.total;
   const cruzaTramo = con.montoBase !== ahora.montoBase;
@@ -4365,6 +4411,32 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
           </div>
           <button type="button" onClick={cerrar} aria-label="Cerrar" className="shrink-0 text-sm" style={ { color: "#5A6680", minWidth: 44, minHeight: 44 } }>✕</button>
         </div>
+
+        {consejo && (
+          <div className="rounded-lg border p-3 mb-3" style={ { borderColor: "#DFE5EF" } }>
+            <div className="text-sm font-bold mb-1.5">¿Qué me conviene vender?</div>
+            {consejo.tope ? (
+              <div className="text-sm" style={ { lineHeight: 1.4 } }>Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.</div>
+            ) : (
+              <div className="text-sm">
+                <div className="flex items-baseline justify-between py-0.5">
+                  <span>🏠 Siguiente Hogar</span>
+                  <span className="font-bold tabular-nums">+{fmtMiles(consejo.gH, 0)}{consejo.mejor === "hogar" ? "  ← mejor" : ""}</span>
+                </div>
+                <div className="flex items-baseline justify-between py-0.5">
+                  <span>📱 Siguiente Móvil</span>
+                  <span className="font-bold tabular-nums">+{fmtMiles(consejo.gM, 0)}{consejo.mejor === "movil" ? "  ← mejor" : ""}</span>
+                </div>
+              </div>
+            )}
+            {consejo.falta && (
+              <div className="text-sm mt-1.5" style={ { lineHeight: 1.4 } }>
+                📈 Para subir al tramo de {consejo.falta.min}% ({fmtMiles(consejo.falta.monto, 0)} de base) te faltan {consejo.falta.movil != null ? `${consejo.falta.movil} Móvil` : ""}{consejo.falta.movil != null && consejo.falta.hogar != null ? " o " : ""}{consejo.falta.hogar != null ? `${consejo.falta.hogar} Hogar` : ""}.
+              </div>
+            )}
+            <div className="text-[11px] mt-1.5" style={ { color: "#5A6680" } }>Calculado con plan de {fmtMiles(defecto.hogar, 0)} en Hogar y {fmtMiles(defecto.movil, 0)} en Móvil (promedio de este período), sin bono de portabilidad.</div>
+          </div>
+        )}
 
         {filas.length === 0 && <p className="text-sm mb-3" style={ { color: "#5A6680" } }>Agrega un cliente Hogar o Móvil para empezar.</p>}
         {filas.map((f) => (
@@ -4934,7 +5006,14 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
         ) : null}
       </div>
 
-      <button type="button" onClick={onSimular} style={ { marginTop: 12, background: "transparent", border: 0, padding: "8px 0", color: C.blue, fontSize: 13, textDecoration: "underline" } }>
+      {(() => {
+        const t = textoConsejoVenta(consejoVenta(
+          { clientesHogar: hogarN, metaHogar: metaClientesHogar, clientesMovil: movilN, metaMovil: metaClientesMovil, ingresos: ingresosTotal, metaIngresos: metaDinero, bonos: comision.cantidadConvergencias || 0 },
+          { hogar: rpuHogar ? Math.round(rpuHogar) : 38, movil: rpuMovil ? Math.round(rpuMovil) : 20 }
+        ));
+        return t ? <div style={ { marginTop: 12, fontSize: 13, lineHeight: 1.4, color: C.navy } }>{t}</div> : null;
+      })()}
+      <button type="button" onClick={onSimular} style={ { marginTop: 4, background: "transparent", border: 0, padding: "8px 0", color: C.blue, fontSize: 13, textDecoration: "underline" } }>
         Simular clientes nuevos
       </button>
     </div>
@@ -6997,6 +7076,13 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             )}
             {esNuevo && (
               <React.Fragment>
+                {(() => {
+                  const t = textoConsejoVenta(consejoVenta(
+                    { clientesHogar: clientesDelPeriodo.length, metaHogar: metaClientesHogar, clientesMovil: convergenciasPeriodo, metaMovil: metaClientesMovil, ingresos: dineroDelPeriodo + costoPlanesMovilesPeriodo, metaIngresos: metaDinero, bonos: resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente },
+                    { hogar: clientesDelPeriodo.length ? Math.round(dineroDelPeriodo / clientesDelPeriodo.length) : 38, movil: convergenciasPeriodo ? Math.round(costoPlanesMovilesPeriodo / convergenciasPeriodo) : 20 }
+                  ));
+                  return t ? <div className="text-xs mt-2 leading-snug" style={ { opacity: 0.9 } }>{t}</div> : null;
+                })()}
                 <button
                   type="button"
                   onClick={() => setMostrarSimComision(true)}
