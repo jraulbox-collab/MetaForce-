@@ -3898,6 +3898,7 @@ function App() {
             onPenalizar={penalizarCliente}
             historialCambios={historialCambios}
             onGuardarOrden={guardarOrdenInstalacion}
+            onMarcarInstalado={cambiarFechaInstalacionDesdeOrden}
             onCopiarMensajeInstalacion={copiarMensajeInstalacion}
             onMarcarAbono={marcarAbonoInicial}
           />
@@ -9607,8 +9608,10 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
 
 // Bloque "Instalación" de la ficha de un cliente Hogar pendiente: fecha y horario programados,
 // pegar el texto de Tigo y el mensaje listo para copiar y enviarle al cliente.
-function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado }) {
+function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado }) {
   const prog = cliente.instalacionProgramada;
+  const hoyISO = fechaLocalISO(new Date());
+  const [fechaInst, setFechaInst] = useState(null); // null = cerrado; si no, la fecha elegida para marcarlo instalado
   const vencida = !!prog && prog < fechaLocalISO(new Date());
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
@@ -9656,6 +9659,48 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
           </div>
         </div>
       )}
+      {onMarcarInstalado && fechaInst === null && (
+        <button
+          type="button"
+          onClick={() => setFechaInst(hoyISO)}
+          className="w-full mt-2 text-sm font-bold rounded-md"
+          style={ { minHeight: 46, border: "2px solid #001E62", color: "#001E62", background: "white" } }
+        >
+          ✓ Ya instalado
+        </button>
+      )}
+      {onMarcarInstalado && fechaInst !== null && (
+        <div className="mt-2 rounded-lg p-3" style={ { background: "#F3F6FB" } }>
+          <label className="block text-xs font-semibold mb-1.5" style={ { color: "#001E62" } }>¿Qué día se instaló?</label>
+          <input
+            type="date"
+            value={fechaInst}
+            max={hoyISO}
+            onChange={(e) => setFechaInst(e.target.value)}
+            className="w-full rounded-md px-2.5 text-sm"
+            style={ { background: "#fff", color: "#001E62", border: "1px solid #C9D3E6", height: 42 } }
+          />
+          <div className="flex gap-2 mt-2.5">
+            <button
+              type="button"
+              disabled={!fechaInst}
+              onClick={() => { onMarcarInstalado(cliente.id, fechaInst); setFechaInst(null); } }
+              className="flex-1 text-sm font-bold rounded-md text-white"
+              style={ { minHeight: 46, background: "#001E62", opacity: fechaInst ? 1 : 0.5 } }
+            >
+              Sí, marcar instalado
+            </button>
+            <button
+              type="button"
+              onClick={() => setFechaInst(null)}
+              className="text-sm font-semibold rounded-md px-4"
+              style={ { minHeight: 46, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -9680,6 +9725,7 @@ function ClienteDetalle({
   onGuardarOrden,
   onCopiarMensajeInstalacion,
   onMarcarAbono,
+  onMarcarInstalado,
 }) {
   const [mostrarPenalizar, setMostrarPenalizar] = useState(false);
   const [motivoPenal, setMotivoPenal] = useState("");
@@ -9917,6 +9963,7 @@ function ClienteDetalle({
           onGuardarOrden={onGuardarOrden}
           onCopiarMensaje={onCopiarMensajeInstalacion}
           copiado={copiedKey === cliente.id + "instalacion"}
+          onMarcarInstalado={onMarcarInstalado}
         />
       )}
 
