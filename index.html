@@ -1462,12 +1462,54 @@ function planParaCliente(c) {
   if (c.planTipo === "DOBLE") return `Internet ${c.velocidad} + TV${c.planTV ? " " + c.planTV : ""}`;
   return `Internet ${c.velocidad}`;
 }
-// Mensaje para copiar y enviar al cliente con su fecha de instalación y los datos de su cuenta.
+// Mensaje para copiar y enviar al cliente. Cambia según la situación de su instalación:
+// hoy o mañana → recordatorio corto con los datos del servicio; más adelante → confirmación con
+// todos los datos de la cuenta; fecha ya pasada sin confirmar → pregunta si ya se instaló;
+// sin fecha → pide día y horario. Sin palabras que dependan del género del cliente.
 function textoInstalacion(c) {
   const b = leerBloqueTigo(c.observaciones);
   const plan = planParaCliente(c);
   const tels = [b.voz1, b.voz2].filter(Boolean).join(" y ");
-  const cuando = `${fmtFechaInstalacionLarga(c.instalacionProgramada)}${c.franjaInstalacion ? ", de " + franjaCorta(c.franjaInstalacion) : ""}`;
+  const hoy = fechaLocalISO(new Date());
+  const manana = addDays(hoy, 1);
+  const f = c.instalacionProgramada || "";
+  const franja = c.franjaInstalacion ? franjaCorta(c.franjaInstalacion) : "";
+  const saludo = `${saludoSegunHora()} ${primerNombre(c)}, le escribe José Severino de Tigo.`;
+  if (!f) {
+    return `${saludo}
+
+Estoy coordinando la fecha de su instalación. ¿Qué día y en qué horario le queda mejor: ${franjaCorta(FRANJAS_INSTALACION[0])} o ${franjaCorta(FRANJAS_INSTALACION[1])}?
+
+¡Gracias!`;
+  }
+  if (f < hoy) {
+    return `${saludo}
+
+Quería saber si ya le instalaron su servicio, que estaba programado para el *${fmtFechaInstalacionLarga(f)}*. Si el técnico aún no ha pasado, avíseme para dar seguimiento con Tigo.
+
+¡Gracias!`;
+  }
+  if (f === hoy || f === manana) {
+    const dia = f === hoy ? "hoy" : "mañana";
+    const datos = [
+      plan && `• Plan: ${plan}`,
+      c.numeroSuscriptor && `• Número de suscriptor: ${c.numeroSuscriptor}`,
+      b.barrio && `• Barrio: ${b.barrio}`,
+      tels && `• Teléfonos de contacto: ${tels}`,
+    ].filter(Boolean);
+    const cuando = franja ? `, en el horario de *${franja}*` : "";
+    const pendiente = f === hoy
+      ? `Por favor esté en casa y pendiente del teléfono, porque el técnico puede llegar en cualquier momento${franja ? " de ese horario" : " del día"}.`
+      : `Por favor tenga a alguien en casa${franja ? " en ese horario" : ""} y esté pendiente del teléfono por si el técnico se comunica.`;
+    return `${saludo}
+
+Le recuerdo que *${dia}* es su instalación${cuando}.
+${datos.length ? `\nEstos son los datos de su servicio:\n${datos.join("\n")}\n` : ""}
+${pendiente}
+
+Cuando terminen me avisa para confirmar que todo quedó bien. ¡Gracias!`;
+  }
+  const cuando = `${fmtFechaInstalacionLarga(f)}${franja ? ", de " + franja : ""}`;
   const tieneMonto = c.montoMensual !== "" && c.montoMensual != null && Number(c.montoMensual) > 0;
   const datos = [
     `• Cuenta a nombre de: ${tituloEs(c.nombre)}`,
