@@ -5130,9 +5130,6 @@ function BloqueAbonoInicial({ cliente, onMarcar }) {
 // y sin fecha agendada, todo a la vista y ordenado por urgencia.
 function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCopiarMensaje, copiedKey, onVerCliente }) {
   const [abierto, setAbierto] = useState(null); // null = automático: se abre solo si hay vencidas
-  const [menu, setMenu] = useState(null);
-  // accion: { id, tipo: "instalo" | "repro", fecha, franja }
-  const [accion, setAccion] = useState(null);
   const hoy = fechaLocalISO(new Date());
   const manana = addDays(hoy, 1);
   const porHora = (a, b) => horaInicioFranja(a.franjaInstalacion) - horaInicioFranja(b.franjaInstalacion);
@@ -5163,7 +5160,6 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
   if (g.vencidas.length) partes.push(`${g.vencidas.length} ${g.vencidas.length === 1 ? "vencida" : "vencidas"}`);
   if (g.hoy.length) partes.push(`hoy ${g.hoy.length}`);
   if (g.manana.length) partes.push(`mañana ${g.manana.length}`);
-  const inputEstilo = { background: "#fff", color: "#001E62", border: "1px solid #C9D3E6", borderRadius: 8, padding: "6px 8px", fontSize: 13, height: 40 };
 
   function fila(c, k) {
     const barrio = leerBloqueTigo(c.observaciones).barrio;
@@ -5177,64 +5173,29 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
     } else detalle = [horario, barrio].filter(Boolean).join(" · ");
     const plan = [c.planTipo, c.velocidad].filter(Boolean).join(" ");
     const sub = [detalle, plan].filter(Boolean).join(" · ");
-    const a = accion && accion.id === c.id ? accion : null;
+    // Recordatorio por WhatsApp: solo para instalaciones de hoy y mañana.
+    const recordar = k === "hoy" || k === "manana";
     return (
-      <div key={c.id} className="px-3 py-2.5" style={ { borderTop: "1px solid #EEF2F9" } }>
+      <div key={c.id} className="px-3 py-2" style={ { borderTop: "1px solid #EEF2F9" } }>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => onVerCliente(c)} className="flex-1 min-w-0 text-left" title="Abrir ficha">
             <span className="block text-[13px] font-bold underline underline-offset-2" style={ { color: "#0072CE", overflowWrap: "anywhere" } }>{nombreBonito(c.nombre)}</span>
             {sub ? <span className="block text-[11.5px]" style={ { color: "#5A6680" } }>{sub}</span> : null}
           </button>
-          {onMarcarInstalado && !a ? (
-            <button type="button" onClick={() => { setMenu(null); setAccion({ id: c.id, tipo: "instalo", fecha: fechaLocalISO(new Date()), franja: "" }); } } className="shrink-0 rounded-[10px] text-xs font-bold px-2.5" style={ { height: 40, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }>✓ Ya instalado</button>
+          {recordar ? (
+            <a
+              href={whatsappLink(c, { texto: textoInstalacion(c) })}
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label={"Enviar recordatorio de instalación por WhatsApp a " + nombreBonito(c.nombre)}
+              title="Enviar recordatorio por WhatsApp"
+              className="shrink-0 flex items-center justify-center rounded-[9px]"
+              style={ { width: 36, height: 34, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3.5 20.5l1.3-4.2A8.5 8.5 0 1 1 8 19.3z" /><path d="M9 8.5c0 3.5 3 6.5 6.5 6.5l1-1.5-2-1-1 .7c-.9-.4-1.9-1.4-2.3-2.3l.7-1-1-2z" /></svg>
+            </a>
           ) : null}
-          <button type="button" onClick={() => setMenu(menu === c.id ? null : c.id)} aria-label="Más acciones" className="shrink-0 rounded-[10px] text-sm font-bold" style={ { width: 38, height: 40, border: "1px solid #DFE5EF", color: "#5A6680", background: "white" } }>⋯</button>
         </div>
-        {menu === c.id && !a ? (
-          <div className="flex gap-2 mt-2">
-            {onReprogramar ? (
-              <button type="button" className="flex-1 rounded-lg text-xs font-bold" style={ { height: 40, border: "1.5px solid #001E62", color: "#001E62", background: "white" } } onClick={() => { setMenu(null); setAccion({ id: c.id, tipo: "repro", fecha: c.instalacionProgramada || hoy, franja: c.franjaInstalacion || "" }); } }>
-                {c.instalacionProgramada ? "Reprogramar" : "Agendar fecha"}
-              </button>
-            ) : null}
-            {c.instalacionProgramada && onCopiarMensaje ? (
-              <button type="button" className="flex-1 rounded-lg text-xs font-bold" style={ { height: 40, border: "1.5px solid #001E62", color: "#001E62", background: "white" } } onClick={() => { onCopiarMensaje(c); setMenu(null); } }>
-                {copiedKey === c.id + "instalacion" ? "Copiado ✓" : "Copiar mensaje"}
-              </button>
-            ) : null}
-          </div>
-        ) : null}
-        {a && a.tipo === "instalo" ? (
-          <div className="mt-2 rounded-lg p-2.5" style={ { background: "#F3F6FB" } }>
-            <label className="block text-xs font-semibold mb-1" style={ { color: "#001E62" } }>¿Qué día se instaló?</label>
-            <input type="date" value={a.fecha} max={hoy} onChange={(e) => setAccion({ ...a, fecha: e.target.value })} className="w-full rounded-md px-2 text-sm" style={ { ...inputEstilo, width: "100%" } } />
-            <div className="flex gap-2 mt-2">
-              <button type="button" disabled={!a.fecha} onClick={() => { onMarcarInstalado(c.id, a.fecha); setAccion(null); } } className="flex-1 rounded-lg text-sm font-bold text-white" style={ { height: 44, background: "#001E62", opacity: a.fecha ? 1 : 0.5 } }>Sí, marcar instalado</button>
-              <button type="button" onClick={() => setAccion(null)} className="rounded-lg text-sm font-semibold px-3" style={ { height: 44, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }>Cancelar</button>
-            </div>
-          </div>
-        ) : null}
-        {a && a.tipo === "repro" ? (
-          <div className="mt-2 rounded-lg p-2.5" style={ { background: "#F3F6FB" } }>
-            <label className="block text-xs font-semibold mb-1" style={ { color: "#001E62" } }>Nueva fecha</label>
-            <input type="date" value={a.fecha} min={hoy} onChange={(e) => setAccion({ ...a, fecha: e.target.value })} style={ { ...inputEstilo, width: "100%" } } />
-            <label className="block text-xs font-semibold mt-2 mb-1" style={ { color: "#001E62" } }>Horario</label>
-            <div className="flex gap-2">
-              {FRANJAS_INSTALACION.map((fr) => {
-                const sel = a.franja === fr;
-                return (
-                  <button key={fr} type="button" onClick={() => setAccion({ ...a, franja: sel ? "" : fr })} className="flex-1 rounded-lg text-xs font-bold px-1" style={ { height: 42, border: "1.5px solid #001E62", background: sel ? "#001E62" : "white", color: sel ? "#fff" : "#001E62" } }>
-                    {sel ? "✓ " : ""}{franjaCorta(fr)}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex gap-2 mt-2">
-              <button type="button" disabled={!a.fecha} onClick={() => { if (!a.fecha || !onReprogramar) return; onReprogramar(c.id, a.fecha, a.franja); setAccion(null); } } className="flex-1 rounded-lg text-sm font-bold text-white" style={ { height: 44, background: "#001E62", opacity: a.fecha ? 1 : 0.5 } }>Guardar</button>
-              <button type="button" onClick={() => setAccion(null)} className="rounded-lg text-sm font-semibold px-3" style={ { height: 44, border: "1.5px solid #001E62", color: "#001E62", background: "white" } }>Cancelar</button>
-            </div>
-          </div>
-        ) : null}
       </div>
     );
   }
