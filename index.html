@@ -719,6 +719,10 @@ function saludoSegunHora() {
   if (h < 19) return "Buenas tardes";
   return "Buenas noches";
 }
+// Pago en línea (Yappy o tarjeta) de Tigo: se agrega a los mensajes en los que se pide pagar.
+const URL_PAGO_TIGO = "https://mi.tigo.com.pa/pago-express/facturas";
+const bloquePagoHogar = () => `💳 Puede pagar fácil con Yappy o tarjeta aquí:\n${URL_PAGO_TIGO}\nSolo ingrese su número de suscriptor.`;
+const bloquePagoMovil = () => `💳 Puede pagar fácil con Yappy o tarjeta aquí:\n${URL_PAGO_TIGO}\nSolo ingrese su número de celular.`;
 function textoMovil1(c, f) {
   return `${saludoSegunHora()} ${primerNombre(c)}. Soy José Severino de Tigo Panamá, sobre su *plan pospago*. ¿Cómo le ha ido con su línea? ¿Todo en orden con el servicio?
 
@@ -733,14 +737,20 @@ function textoMovil2(c, f) {
 
 Recuerde que incluye el *prorrateo* (desde que se le activó el servicio: ${fmtFecha(f.activacion)}, hasta el ${fmtFecha(f.finProrrateo)}) más su primer mes completo, del ${fmtFecha(f.inicioMes)} al ${fmtFecha(f.finMes)}. Por esta razón, su primera factura es un poco mayor que las siguientes. Ya debe tener la factura en su correo, donde puede ver el monto exacto.
 
-Lo ideal es pagarla *a más tardar el ${fmtFecha(f.metaISO)}* y enviarme el *comprobante de pago* por aquí. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
+Lo ideal es pagarla *a más tardar el ${fmtFecha(f.metaISO)}* y enviarme el *comprobante de pago* por aquí.
+
+${bloquePagoMovil()}
+
+Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
 }
 function textoMovil3(c, f) {
   return `${saludoSegunHora()} ${primerNombre(c)}. Le escribo para recordarle que la primera factura de su *plan pospago* (línea Tigo *#${c.telefono}*) se debe pagar *a más tardar el ${fmtFecha(f.metaISO)}*.
 
-Ya debe tener la factura en su correo. Si ya la pagó, me envía por favor el *comprobante de pago* para confirmarlo.
+Ya debe tener la factura en su correo.
 
-Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
+${bloquePagoMovil()}
+
+Si ya la pagó, me envía por favor el *comprobante de pago* para confirmarlo. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
 }
 const HITOS_MOVIL = [
   { key: "m1", tag: "1 · Bienvenida", label: "Explicar cómo será su factura", color: "#0072CE", bg: "#E3EDFA", fecha: "m1", texto: textoMovil1 },
@@ -1557,9 +1567,15 @@ Le confirmo que la primera factura de su *servicio residencial* ya fue generada:
 
 Este cobro incluye ambos períodos: el prorrateo desde su instalación y su primera mensualidad regular completa. Por eso el monto de esta factura difiere de las próximas, que solo cobrarán la mensualidad regular.
 
+${bloquePagoHogar()}
+
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier duda, quedo atento.`;
   }
-  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que la factura de su *servicio residencial* correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente. Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
+  return `Hola ${nombre}, le saluda José Severino, ejecutivo de ventas residenciales en Tigo Panamá. Le confirmo que la factura de su *servicio residencial* correspondiente a este mes ya fue generada, con vencimiento el *${fmtFechaLarga(c._venc)}*. Su número de suscriptor es *${c.numeroSuscriptor}*, lo va a necesitar para realizar el pago correctamente.
+
+${bloquePagoHogar()}
+
+Una vez realizado el pago, por favor compárteme el comprobante para validar que haya ingresado correctamente al sistema. Cualquier duda, quedo atento.`;
 }
 function textoT15(c, n) {
   const nombre = primerNombre(c);
@@ -1569,6 +1585,8 @@ function textoT15(c, n) {
 Le recuerdo que la factura de su *servicio residencial* ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
 🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+${bloquePagoHogar()}
 
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier consulta sobre su plan, con gusto le ayudo.`;
 }
@@ -1581,7 +1599,11 @@ La factura de su *servicio residencial* ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
 🔢 N° de suscriptor: *${c.numeroSuscriptor}*
 
-Le recomiendo realizar el pago a tiempo para evitar la suspensión del servicio. Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`;
+Le recomiendo realizar el pago a tiempo para evitar la suspensión del servicio.
+
+${bloquePagoHogar()}
+
+Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`;
 }
 
 // Mensajes preventivos para clientes de prorrateo alto instalados desde septiembre
