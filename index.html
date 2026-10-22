@@ -1047,6 +1047,69 @@ const ESTADOS_CLIENTE = [
 function clienteExcluido(c) {
   return !!c.penalizado || (!!c.cancelado && c.f1_estado !== "pagada");
 }
+// ---------- Abono inicial (solo Hogar) ----------
+// Al contratar el cliente paga el 50 % de su plan. Si se instala sin ese abono, Tigo lo
+// penaliza. abonoInicial: true = recibido, false = falta; sin el campo (clientes de antes)
+// cuenta como recibido. El plazo corre desde que se registra el cliente: hasta el día
+// siguiente a las 12:00 PM.
+function abonoPendiente(c) {
+  return c.abonoInicial === false && !c.fechaInstalacion && !clienteExcluido(c);
+}
+function plazoAbono(c) {
+  if (!c.creadoEn) return null;
+  const d = new Date(c.creadoEn);
+  if (isNaN(d.getTime())) return null;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 12, 0, 0);
+}
+function horaAMPM(d) {
+  const h = d.getHours();
+  const m = String(d.getMinutes()).padStart(2, "0");
+  return `${h % 12 === 0 ? 12 : h % 12}:${m} ${h >= 12 ? "PM" : "AM"}`;
+}
+function diaRelativo(fecha, ahoraMs) {
+  const k = fechaLocalISO(fecha);
+  const hoy = new Date(ahoraMs);
+  if (k === fechaLocalISO(hoy)) return "hoy";
+  if (k === fechaLocalISO(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() - 1))) return "ayer";
+  if (k === fechaLocalISO(new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate() + 1))) return "mañana";
+  return fmtFechaDia(k);
+}
+// nivel: "normal" | "urgente" (quedan 3 h o menos) | "vencido"
+function infoPlazoAbono(c, ahoraMs) {
+  const lim = plazoAbono(c);
+  if (!lim) return { nivel: "normal", texto: "⚠ Falta abono" };
+  const ms = lim.getTime() - ahoraMs;
+  if (ms <= 0) return { nivel: "vencido", texto: `⚠ VENCIÓ · ${diaRelativo(lim, ahoraMs)} ${horaAMPM(lim)}` };
+  const min = Math.ceil(ms / 60000);
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  const dur = h > 0 ? `${h} h${m ? " " + m + " min" : ""}` : `${m} min`;
+  return { nivel: ms <= 3 * 3600000 ? "urgente" : "normal", texto: `⚠ Falta abono · quedan ${dur}` };
+}
+const ESTILO_ABONO = {
+  normal: { background: "#FFF3DC", color: "#7A4100", border: "2px solid transparent" },
+  urgente: { background: "#FFE0A8", color: "#5C2D00", border: "2px solid #B45309" },
+  vencido: { background: "#FFFFFF", color: "#5C2D00", border: "2px dashed #B45309" },
+};
+// Reloj que se actualiza solo, para que los contadores del abono no se queden quietos.
+function useAhoraMin() {
+  const [t, setT] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setT(Date.now()), 30000);
+    const vis = () => { if (!document.hidden) setT(Date.now()); };
+    document.addEventListener("visibilitychange", vis);
+    return () => { clearInterval(id); document.removeEventListener("visibilitychange", vis); };
+  }, []);
+  return t;
+}
+function EtiquetaAbono({ cliente }) {
+  const ahora = useAhoraMin();
+  const i = infoPlazoAbono(cliente, ahora);
+  return (
+    <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5" style={ { ...ESTILO_ABONO[i.nivel] } }>{i.texto}</span>
+  );
+}
+
 // Pasa los campos de estado del formulario a los campos reales del cliente.
 function camposEstadoCliente(form, previo) {
   const { estadoCliente, fechaCancelacion, motivoCancelacion, motivoPenalizacion, ...resto } = form;
@@ -1113,6 +1176,7 @@ const CAMPOS_BITACORA = {
   cancelado: "Cliente cancelado",
   fechaCancelacion: "Fecha de cancelación",
   motivoCancelacion: "Motivo de cancelación",
+  abonoInicial: "Abono inicial",
 };
 function diffCliente(antes, despues) {
   if (!antes || !despues) return [];
@@ -1583,6 +1647,7 @@ const emptyForm = () => ({
   motivoCancelacion: "",
   motivoPenalizacion: "",
   observaciones: "",
+  abonoInicial: false,
 });
 
 // Cliente de "prorrateo alto": instalado desde el 1 de septiembre de 2026 y cuyo
@@ -2177,9 +2242,13 @@ function App() {
     } catch (e) {}
   };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
+  const MINUTOS_PARA_DASHBOARD = 5;
   const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre", "historial"];
   const [tab, setTab] = useState(() => {
     try {
+      // Si pasaron más de 5 minutos desde la última vez que se usó la app, abre en el Dashboard.
+      const ultima = parseInt(localStorage.getItem("mf_ultima_actividad") || "0", 10);
+      if (ultima && Date.now() - ultima > MINUTOS_PARA_DASHBOARD * 60000) return "dashboard";
       const guardado = localStorage.getItem("antichurn_tab");
       return TABS_PERSISTIBLES.includes(guardado) ? guardado : "dashboard";
     } catch (e) {
@@ -2250,6 +2319,35 @@ function App() {
       }
     } catch (e) {}
   }, [tab]);
+  // Después de más de 5 minutos fuera de la app, al volver abre en el Dashboard. Si estabas
+  // llenando un formulario (pestaña "nuevo"), no te saca de ahí para no perder lo escrito.
+  const tabVolverRef = useRef(tab);
+  tabVolverRef.current = tab;
+  useEffect(() => {
+    function anotar() {
+      try { localStorage.setItem("mf_ultima_actividad", String(Date.now())); } catch (e) {}
+    }
+    function alVolver() {
+      if (document.hidden) { anotar(); return; }
+      let ultima = 0;
+      try { ultima = parseInt(localStorage.getItem("mf_ultima_actividad") || "0", 10); } catch (e) {}
+      if (ultima && Date.now() - ultima > MINUTOS_PARA_DASHBOARD * 60000 && tabVolverRef.current !== "nuevo" && tabVolverRef.current !== "dashboard") {
+        setPeriodoDash(periodoActualApp);
+        setTab("dashboard");
+        window.scrollTo(0, 0);
+      }
+      anotar();
+    }
+    anotar();
+    const id = setInterval(() => { if (!document.hidden) anotar(); }, 30000);
+    document.addEventListener("visibilitychange", alVolver);
+    window.addEventListener("pagehide", anotar);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", alVolver);
+      window.removeEventListener("pagehide", anotar);
+    };
+  }, []);
   const [copiedSubKey, setCopiedSubKey] = useState(null);
   const [refrescando, setRefrescando] = useState(false);
   const [enLinea, setEnLinea] = useState(() => (typeof navigator !== "undefined" ? navigator.onLine : true));
@@ -2947,7 +3045,7 @@ function App() {
         registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: editingId });
       }
     } else {
-      const nuevo = { id: uid(), ...camposEstadoCliente({ ...form, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, null), creadoEn: new Date().toISOString() };
+      const nuevo = { id: uid(), ...camposEstadoCliente({ ...form, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, null), abonoInicial: form.fechaInstalacion ? true : false, creadoEn: new Date().toISOString() };
       actualizarClientes((prev) => [...prev, nuevo]);
       registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
@@ -3309,6 +3407,18 @@ function App() {
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
+  // Marca (o quita la marca de) el abono inicial de un cliente Hogar. Siempre pide confirmación.
+  function marcarAbonoInicial(clienteId, recibido) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes) return;
+    const quien = antes.nombre || antes.numeroSuscriptor || "este cliente";
+    const ok = window.confirm(recibido ? `¿Confirmas que ${quien} ya hizo su abono?` : `¿Quitar la marca de abono a ${quien}?`);
+    if (!ok) return;
+    const despues = { ...antes, abonoInicial: recibido, abonoFecha: recibido ? new Date().toISOString() : "" };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+
   function copiarMensajeInstalacion(cliente) {
     navigator.clipboard?.writeText(textoInstalacion(cliente)).catch(() => {});
     setCopiedKey(cliente.id + "instalacion");
@@ -3652,6 +3762,7 @@ function App() {
           <Dashboard
             onMarcarInstalado={cambiarFechaInstalacionDesdeOrden}
             onReprogramarInstalacion={reprogramarInstalacion}
+            onMarcarAbono={marcarAbonoInicial}
             periodoDash={periodoDash}
             onPeriodoDash={setPeriodoDash}
             ordenDashboard={ordenDashboard}
@@ -3740,6 +3851,7 @@ function App() {
             historialCambios={historialCambios}
             onGuardarOrden={guardarOrdenInstalacion}
             onCopiarMensajeInstalacion={copiarMensajeInstalacion}
+            onMarcarAbono={marcarAbonoInicial}
           />
         )}
         {tab === "alertas" && (
@@ -4808,6 +4920,99 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
   );
 }
 
+// Tarjeta blanca del Dashboard: clientes Hogar por instalar que todavía no han hecho el abono inicial.
+function AvisoAbonoPendiente({ clientes, onMarcar, onVerCliente }) {
+  const [abierto, setAbierto] = useState(true);
+  const ahora = useAhoraMin();
+  const lista = clientes
+    .filter(abonoPendiente)
+    .sort((a, b) => {
+      const la = plazoAbono(a);
+      const lb = plazoAbono(b);
+      return (la ? la.getTime() : Infinity) - (lb ? lb.getTime() : Infinity);
+    });
+  if (lista.length === 0) return null;
+  return (
+    <div className="mb-4 rounded-xl bg-white p-4" style={ { border: "1px solid #E1E7F2" } }>
+      <button
+        type="button"
+        onClick={() => setAbierto((v) => !v)}
+        className="w-full flex items-center justify-between text-sm font-bold"
+        style={ { background: "transparent", color: "#001E62", border: 0, padding: 0 } }
+      >
+        <span>ABONO PENDIENTE</span>
+        <span className="flex items-center gap-2">
+          <span>{lista.length}</span>
+          <span aria-hidden="true">{abierto ? "▲" : "▼"}</span>
+        </span>
+      </button>
+      {abierto && lista.map((c) => {
+        const reg = c.creadoEn ? new Date(c.creadoEn) : null;
+        return (
+          <div key={c.id} className="rounded-xl mt-2 p-3" style={ { background: "#F3F6FB" } }>
+            <button type="button" onClick={() => onVerCliente && onVerCliente(c)} className="block w-full text-left" style={ { background: "transparent", border: 0, padding: 0 } }>
+              <span className="block text-sm font-bold truncate" style={ { color: "#001E62" } }>{c.nombre || c.numeroSuscriptor}</span>
+              {reg && <span className="block text-xs" style={ { color: "#5A6680" } }>Registrado {diaRelativo(reg, ahora)} {horaAMPM(reg)}</span>}
+            </button>
+            <div className="mt-1.5"><EtiquetaAbono cliente={c} /></div>
+            <button
+              type="button"
+              onClick={() => onMarcar && onMarcar(c.id, true)}
+              className="w-full text-sm font-bold rounded-lg py-2.5 mt-2 text-white"
+              style={ { background: "#001E62", border: 0 } }
+            >
+              Marcar abono recibido
+            </button>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// Bloque "Abono inicial" de la ficha de un cliente Hogar: solo dice si ya hizo el abono o no.
+function BloqueAbonoInicial({ cliente, onMarcar }) {
+  const recibido = cliente.abonoInicial !== false;
+  const marcada = cliente.abonoFecha ? new Date(cliente.abonoFecha) : null;
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
+      <h2 className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Abono inicial</h2>
+      {recibido ? (
+        <React.Fragment>
+          <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5" style={ { background: "#EAF0FB", color: "#001E62" } }>✓ Abono recibido</span>
+          {marcada && !isNaN(marcada.getTime()) && (
+            <p className="text-xs mt-2" style={ { color: "#5A6680" } }>Marcado el {fmtFechaDia(fechaLocalISO(marcada))}, {horaAMPM(marcada)}</p>
+          )}
+          <button
+            type="button"
+            onClick={() => onMarcar(cliente.id, false)}
+            className="w-full text-sm font-bold rounded-lg py-2.5 mt-3"
+            style={ { background: "#EEF2F9", color: "#001E62", border: "1px solid #C9D3E6" } }
+          >
+            Quitar marca
+          </button>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          {abonoPendiente(cliente) ? (
+            <EtiquetaAbono cliente={cliente} />
+          ) : (
+            <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5" style={ { ...ESTILO_ABONO.normal } }>⚠ Sin abono marcado</span>
+          )}
+          <button
+            type="button"
+            onClick={() => onMarcar(cliente.id, true)}
+            className="w-full text-sm font-bold rounded-lg py-2.5 mt-3 text-white"
+            style={ { background: "#001E62", border: 0 } }
+          >
+            Marcar abono recibido
+          </button>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
 // Sección "Instalaciones" dentro del aviso azul del Dashboard: hoy, mañana y las vencidas sin confirmar.
 function AvisoInstalaciones({ grupos, conSeparador, onMarcarInstalado, onReprogramar, onVerCliente }) {
   const [abiertos, setAbiertos] = useState({ hoy: true, manana: false, vencidas: false });
@@ -4916,7 +5121,7 @@ function AvisoInstalaciones({ grupos, conSeparador, onMarcarInstalado, onReprogr
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -6193,6 +6398,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, periodoDash: p
 
   return (
     <div>
+      <AvisoAbonoPendiente clientes={clientes} onMarcar={onMarcarAbono} onVerCliente={onVerCliente} />
       {(() => {
         const nRec = (stats && stats.alHoy) || 0;
         const nFac = enRiesgoHoy.length;
@@ -8922,6 +9128,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         <span className="font-bold" style={ { color: "#001E62" } }>{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>
                       </div>
                       <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold" style={ estiloEstado[est.cls] }>{est.txt}</div>
+                      {!c.fechaInstalacion && !c.cancelado && !c.penalizado && (
+                        <div className="mt-1.5">
+                          {c.abonoInicial === false ? (
+                            <EtiquetaAbono cliente={c} />
+                          ) : (
+                            <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5" style={ { background: "#EAF0FB", color: "#001E62" } }>✓ Abono recibido</span>
+                          )}
+                        </div>
+                      )}
                       {!cuenta && !c.cancelado && !c.penalizado && (
                         <div className="text-[10px] font-semibold mt-1" style={ { color: "#B45309" } }>
                           ⛔ No cuenta para tu comisión (venció sin pagar la 1ra factura)
@@ -9354,6 +9569,7 @@ function ClienteDetalle({
   historialCambios,
   onGuardarOrden,
   onCopiarMensajeInstalacion,
+  onMarcarAbono,
 }) {
   const [mostrarPenalizar, setMostrarPenalizar] = useState(false);
   const [motivoPenal, setMotivoPenal] = useState("");
@@ -9580,6 +9796,10 @@ function ClienteDetalle({
           <div className="font-medium">{cliente.creadoEn ? fmtFecha(cliente.creadoEn.slice(0, 10)) : "—"}</div>
         </div>
       </div>
+
+      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && (
+        <BloqueAbonoInicial cliente={cliente} onMarcar={onMarcarAbono} />
+      )}
 
       {!cliente.fechaInstalacion && !cliente.cancelado && !cliente.penalizado && onGuardarOrden && (
         <BloqueInstalacionProgramada
@@ -10375,6 +10595,7 @@ const ENTIDAD_LABEL = {
   rescate: "Rescate",
 };
 function valorLegible(campo, valor) {
+  if (campo === "abonoInicial") return valor === false || valor === "false" ? "Falta abono" : "✓ Recibido";
   if (valor === "" || valor === null || valor === undefined) return "—";
   if (campo === "montoMensual" || campo === "monto1raFactura" || campo === "montoPlan") return fmtMonto(valor);
   if (campo === "fechaInstalacion") return fmtFechaDia(valor);
