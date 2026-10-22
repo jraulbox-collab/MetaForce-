@@ -12337,20 +12337,34 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                   className={inputClass}
                   style={inputStyle}
                 />
-                <label className="flex items-center gap-2 mt-1.5 text-xs" style={ { color: "#5A6680" } }>
-                  <input
-                    type="checkbox"
-                    checked={!form.fechaInstalacion && !form.instalacionProgramada}
-                    onChange={(e) =>
-                      setForm((f) => ({ ...f, fechaInstalacion: e.target.checked ? "" : fechaLocalISO(new Date()), instalacionProgramada: "", franjaInstalacion: "" }))
-                    }
-                  />
-                  Pendiente de instalación (todavía no tiene fecha)
-                </label>
                 {!form.fechaInstalacion && form.instalacionProgramada && (
-                  <p className="text-xs mt-1.5" style={ { color: "#001E62" } }>
-                    📅 Fecha futura: se guardará como instalación programada (<strong>{fmtFechaDia(form.instalacionProgramada)}</strong>{form.franjaInstalacion ? " · " + franjaCorta(form.franjaInstalacion) : ""}). Sigue pendiente de instalación hasta que lo confirmes.
-                  </p>
+                  <div className="mt-2">
+                    <select
+                      value={form.franjaInstalacion || ""}
+                      onChange={set("franjaInstalacion")}
+                      className={inputClass}
+                      style={inputStyle}
+                    >
+                      <option value="">Sin horario</option>
+                      {FRANJAS_INSTALACION.map((f) => <option key={f} value={f}>{f}</option>)}
+                    </select>
+                    <p className="text-xs mt-1.5" style={ { color: "#001E62" } }>
+                      📅 Se guardará como instalación programada: <strong>{fmtFechaDia(form.instalacionProgramada)}</strong>{form.franjaInstalacion ? " · " + franjaCorta(form.franjaInstalacion) : ""}. Sigue pendiente de instalación hasta que lo confirmes.
+                    </p>
+                  </div>
+                )}
+                {!form.fechaInstalacion && !form.instalacionProgramada && (
+                  <p className="text-xs mt-1.5" style={ { color: "#5A6680" } }>Todavía sin fecha · Pendiente de instalación</p>
+                )}
+                {(form.fechaInstalacion || form.instalacionProgramada) && (
+                  <button
+                    type="button"
+                    className="text-xs mt-1.5 underline"
+                    style={ { color: "#5A6680" } }
+                    onClick={() => setForm((f) => ({ ...f, fechaInstalacion: "", instalacionProgramada: "", franjaInstalacion: "" }))}
+                  >
+                    Quitar fecha
+                  </button>
                 )}
               </Field>
             </div>
