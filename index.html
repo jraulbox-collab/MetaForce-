@@ -8483,7 +8483,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       }));
       setChipGrupo(saltarAMes.chipGrupo || "todos");
       setSearch("");
-      setFiltrosAbiertos(true);
+      setFiltrosAbiertos(false);
       // La orden de "saltar a tal mes/filtros" se usa UNA sola vez: se borra en cuanto
       // se aplica, para que al volver del detalle de un cliente no se vuelva a ejecutar
       // y te pise el mes y los filtros que tenías.
@@ -8721,6 +8721,30 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   const [menuMasAbierto, setMenuMasAbierto] = useState(false);
   const [chipGrupo, setChipGrupo] = useState("todos");
   const [menuTarjeta, setMenuTarjeta] = useState(null);
+  // Chips del celular (Todos / Falta abono / Por instalar / Instalados / Cancelados): se calculan
+  // aquí para poder ponerlos en la misma fila que el botón de Filtros.
+  const grupoDe = (c) => (clienteExcluido(c) ? "cancelados" : !c.fechaInstalacion ? "porInstalar" : "instalados");
+  const conteoG = { porInstalar: 0, instalados: 0, cancelados: 0 };
+  visiblesFinal.forEach((c) => { conteoG[grupoDe(c)] += 1; });
+  const totalCuentan = conteoG.porInstalar + conteoG.instalados;
+  const listaAbono = visiblesFinal
+    .filter(abonoPendiente)
+    .sort((a, b) => {
+      const la = plazoAbono(a);
+      const lb = plazoAbono(b);
+      return (la ? la.getTime() : Infinity) - (lb ? lb.getTime() : Infinity);
+    });
+  const chip = (k, t, n) => (
+    <button
+      key={k}
+      type="button"
+      onClick={() => setChipGrupo(k)}
+      className="rounded-full px-3 py-1.5 text-xs font-bold border"
+      style={ chipGrupo === k ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+    >
+      {t} <span style={ { fontWeight: 800 } }>{n}</span>
+    </button>
+  );
   const [copiadoReporte, setCopiadoReporte] = useState(false);
   function copiarReporteDiario() {
     const texto = textoReporteDiario(clientesTodos || clientes, clientesMovil);
@@ -8831,7 +8855,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         />
       ) : (
         <>
-      <div className="flex items-center gap-4 mb-4 flex-wrap">
+      <div className="hidden md:flex items-center gap-4 mb-4 flex-wrap">
         <p className="text-sm">
           <span className="font-semibold" style={ { color: "#001E62" } }>{statsClientes.instalados}</span>{" "}
           <span style={ { color: "#5A6680" } }>instalados</span>
@@ -8945,6 +8969,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           >
             ✕ Limpiar filtros
           </button>
+        )}
+        {visiblesFinal.length > 0 && (
+          <div className="md:hidden contents">
+            {chip("todos", "Todos", totalCuentan)}
+            {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && chip("faltaAbono", "⚠ Falta abono", listaAbono.length)}
+            {chip("porInstalar", "Por instalar", conteoG.porInstalar)}
+            {chip("instalados", "Instalados", conteoG.instalados)}
+            {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
+          </div>
         )}
         <button
           type="button"
@@ -9075,10 +9108,6 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {(() => {
               // Lista compacta para celular: grupos por urgencia (por instalar / instalados / cancelados),
               // chips con conteos y estado + fecha en una sola línea.
-              const grupoDe = (c) => (clienteExcluido(c) ? "cancelados" : !c.fechaInstalacion ? "porInstalar" : "instalados");
-              const conteoG = { porInstalar: 0, instalados: 0, cancelados: 0 };
-              visiblesFinal.forEach((c) => { conteoG[grupoDe(c)] += 1; });
-              const totalCuentan = conteoG.porInstalar + conteoG.instalados;
               const GRUPOS = [
                 { k: "porInstalar", t: "Por instalar" },
                 { k: "instalados", t: "Instalados" },
@@ -9103,17 +9132,6 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                 ok: { background: "#EAF0FB", color: "#0B4A99" },
                 can: { background: "#EEF0F4", color: "#5A6680" },
               };
-              const chip = (k, t, n) => (
-                <button
-                  key={k}
-                  type="button"
-                  onClick={() => setChipGrupo(k)}
-                  className="rounded-full px-3 py-1.5 text-xs font-bold border"
-                  style={ chipGrupo === k ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
-                >
-                  {t} <span style={ { fontWeight: 800 } }>{n}</span>
-                </button>
-              );
               const tarjeta = (c) => {
                 const cuenta = clienteCuentaParaComision(c);
                 const est = estadoLinea(c);
@@ -9178,22 +9196,8 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                   </div>
                 );
               };
-              const listaAbono = visiblesFinal
-                .filter(abonoPendiente)
-                .sort((a, b) => {
-                  const la = plazoAbono(a);
-                  const lb = plazoAbono(b);
-                  return (la ? la.getTime() : Infinity) - (lb ? lb.getTime() : Infinity);
-                });
               return (
                 <>
-                  <div className="flex flex-wrap gap-1.5 mb-1">
-                    {chip("todos", "Todos", totalCuentan)}
-                    {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && chip("faltaAbono", "⚠ Falta abono", listaAbono.length)}
-                    {chip("porInstalar", "Por instalar", conteoG.porInstalar)}
-                    {chip("instalados", "Instalados", conteoG.instalados)}
-                    {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
-                  </div>
                   {chipGrupo === "faltaAbono" && (
                     listaAbono.length > 0 ? (
                       <div className="flex flex-col gap-2">
