@@ -8468,6 +8468,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   }, [subVista]);
   const [abrirFormMovil, setAbrirFormMovil] = useState(false);
   const [prefillMovil, setPrefillMovil] = useState(null);
+  const [chipMovilSalto, setChipMovilSalto] = useState(null);
   useEffect(() => {
     if (saltarAMes) {
       if (saltarAMes.periodo) setMesActivo(saltarAMes.periodo);
@@ -8486,6 +8487,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         modoVerTodos: !!saltarAMes.todosLosMeses,
       }));
       setChipGrupo(saltarAMes.chipGrupo || "todos");
+      setChipMovilSalto(saltarAMes.chipMovil || null);
       setSearch("");
       setFiltrosAbiertos(false);
       // La orden de "saltar a tal mes/filtros" se usa UNA sola vez: se borra en cuanto
@@ -8856,6 +8858,8 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           setSearch={setSearch}
           hogarCoincidencias={search.trim() ? clientes.filter((c) => !c.penalizado) : []}
           onVerDetalleHogar={onVerDetalle}
+          chipInicial={chipMovilSalto}
+          onChipAplicado={() => setChipMovilSalto(null)}
         />
       ) : (
         <>
@@ -9997,7 +10001,24 @@ function BloqueOtraLista({ icono, titulo, filas, onAbrir }) {
   );
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar }) {
+// Filtros rápidos de la pestaña Móvil. Los de factura solo aplican a períodos del esquema nuevo
+// (antes no se llevaba el pago de la 1ra factura de los móviles).
+function pasaChipMovil(c, chip) {
+  if (chip === "todos") return true;
+  if (chip === "portabilidad") return !!c.esPortabilidad;
+  if (!esquemaNuevo(periodoDelMovil(c))) return false;
+  const pagada = c.f1_estado === "pagada";
+  if (chip === "pagadas") return pagada;
+  if (chip === "sinPagar") return !pagada && movilCuentaParaComision(c);
+  if (chip === "noCuenta") return !movilCuentaParaComision(c);
+  return true;
+}
+
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar, chipInicial, onChipAplicado }) {
+  const [chipMovil, setChipMovil] = useState(chipInicial || "todos");
+  useEffect(() => {
+    if (chipInicial) { setChipMovil(chipInicial); if (onChipAplicado) onChipAplicado(); }
+  }, [chipInicial]);
   // El texto de búsqueda es el mismo que el de Hogar (viene de App); si no llega, queda local.
   const [busquedaLocal, setBusquedaLocal] = useState("");
   const busquedaMovil = search !== undefined ? search : busquedaLocal;
@@ -10413,17 +10434,50 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           onAbrir={(c) => onVerDetalleHogar && onVerDetalleHogar(c)}
         />
       )}
+      {(() => {
+        const clavesMeses = new Set(meses.map((m) => m.key));
+        const visibles = clientesMovil.filter((c) => clavesMeses.has(periodoComision(fechaActivacionMovil(c))));
+        const n = (k) => visibles.filter((c) => pasaChipMovil(c, k)).length;
+        const chips = [
+          ["todos", "Todos", n("todos"), false],
+          ["sinPagar", "⚠ Sin pagar 1ra factura", n("sinPagar"), true],
+          ["pagadas", "✓ Pagadas", n("pagadas"), false],
+          ["portabilidad", "Portabilidad", n("portabilidad"), true],
+          ["noCuenta", "⛔ No cuenta", n("noCuenta"), true],
+        ];
+        return (
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            {chips.filter(([k, , cant, ocultable]) => !ocultable || cant > 0 || chipMovil === k).map(([k, texto, cant]) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setChipMovil(k)}
+                className="text-xs font-bold px-3 py-1.5 rounded-full border"
+                style={ chipMovil === k
+                  ? { background: "#001E62", color: "#fff", borderColor: "#001E62", minHeight: 34 }
+                  : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF", minHeight: 34 } }
+              >
+                {texto} ({cant})
+              </button>
+            ))}
+          </div>
+        );
+      })()}
       <div className="flex flex-col gap-2">
         {meses.map((m, i) => {
           const q = busquedaMovil.trim().toLowerCase();
+          const filtrando = chipMovil !== "todos";
           const delMes = clientesMovil
             .filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key)
             .filter((c) => movilCoincideBusqueda(c, q))
-            .sort((a, b) => String(b.creadoEn || "").localeCompare(String(a.creadoEn || "")));
-          if (q && delMes.length === 0) return null;
+            .filter((c) => pasaChipMovil(c, chipMovil))
+            .sort((a, b) => chipMovil === "sinPagar"
+              ? String(fechaActivacionMovil(a)).localeCompare(String(fechaActivacionMovil(b)))
+              : String(b.creadoEn || "").localeCompare(String(a.creadoEn || "")));
+          if ((q || filtrando) && delMes.length === 0) return null;
           const metaMovilMes = leerMeta(metas || {}, m.key, "clientesMovil");
-          const resumenMes = esquemaNuevo(m.key) ? resumenMovilesNuevo(delMes, false) : null;
-          const abierto = !!q || mesExpandido === m.key;
+          const resumenMes = esquemaNuevo(m.key) && !filtrando ? resumenMovilesNuevo(delMes, false) : null;
+          const abierto = !!q || filtrando || mesExpandido === m.key;
           return (
             <div key={m.key} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
               <button
@@ -10437,7 +10491,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 <div className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap mt-1">
                   <span className="text-sm font-mono" style={ { color: "#001E62" } }>
                     {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
-                    {!q && metaMovilMes ? ` · ${delMes.length} de ${metaMovilMes}` : ""}
+                    {!q && !filtrando && metaMovilMes ? ` · ${delMes.length} de ${metaMovilMes}` : ""}
                   </span>
                   {resumenMes && (resumenMes.bonoConfirmado > 0 || resumenMes.bonoPendiente > 0) && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>
