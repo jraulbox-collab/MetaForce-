@@ -1244,12 +1244,12 @@ function fmtFechaInstalacionLarga(iso) {
   if (!y || !m || !d) return "";
   return `${DIAS_LARGOS[new Date(y, m - 1, d).getDay()]} ${d} de ${MESES[m - 1]}`;
 }
-// "8:00 AM a 12:00 PM" -> "8 a 12"; "1:00 PM a 4:00 PM" -> "1 a 4"
+// Muestra el horario siempre igual: "8:00 AM - 12:00 PM" y "1:00 PM - 4:00 PM".
 function franjaCorta(franja) {
-  const m = String(franja || "").match(/(\d{1,2}):(\d{2})\s*[AP]M\s*a\s*(\d{1,2}):(\d{2})\s*[AP]M/i);
+  const m = String(franja || "").match(/(\d{1,2}):(\d{2})\s*([AP])M\s*(?:a|-|–|al?)\s*(\d{1,2}):(\d{2})\s*([AP])M/i);
   if (!m) return String(franja || "");
-  const f = (h, mm) => (mm === "00" ? String(parseInt(h, 10)) : `${parseInt(h, 10)}:${mm}`);
-  return `${f(m[1], m[2])} a ${f(m[3], m[4])}`;
+  const f = (h, mm, ap) => `${parseInt(h, 10)}:${mm} ${ap.toUpperCase()}M`;
+  return `${f(m[1], m[2], m[3])} - ${f(m[4], m[5], m[6])}`;
 }
 // Hora de inicio en formato 24 h, para ordenar mañana antes que tarde.
 function horaInicioFranja(franja) {
@@ -1385,7 +1385,7 @@ function textoInstalacion(c) {
   const b = leerBloqueTigo(c.observaciones);
   const plan = planParaCliente(c);
   const tels = [b.voz1, b.voz2].filter(Boolean).join(" y ");
-  const cuando = `${fmtFechaInstalacionLarga(c.instalacionProgramada)}${c.franjaInstalacion ? ", de " + c.franjaInstalacion : ""}`;
+  const cuando = `${fmtFechaInstalacionLarga(c.instalacionProgramada)}${c.franjaInstalacion ? ", de " + franjaCorta(c.franjaInstalacion) : ""}`;
   const tieneMonto = c.montoMensual !== "" && c.montoMensual != null && Number(c.montoMensual) > 0;
   const datos = [
     `• Cuenta a nombre de: ${tituloEs(c.nombre)}`,
@@ -12339,15 +12339,22 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                 />
                 {!form.fechaInstalacion && form.instalacionProgramada && (
                   <div className="mt-2">
-                    <select
-                      value={form.franjaInstalacion || ""}
-                      onChange={set("franjaInstalacion")}
-                      className={inputClass}
-                      style={inputStyle}
-                    >
-                      <option value="">Sin horario</option>
-                      {FRANJAS_INSTALACION.map((f) => <option key={f} value={f}>{f}</option>)}
-                    </select>
+                    <div className="flex gap-2">
+                      {FRANJAS_INSTALACION.map((fr) => {
+                        const sel = form.franjaInstalacion === fr;
+                        return (
+                          <button
+                            key={fr}
+                            type="button"
+                            onClick={() => setForm((f) => ({ ...f, franjaInstalacion: f.franjaInstalacion === fr ? "" : fr }))}
+                            className="flex-1 text-sm font-medium px-2 py-2.5 rounded-md"
+                            style={ sel ? { background: "#001E62", color: "#fff", border: "1px solid #001E62" } : { background: "#fff", color: "#001E62", border: "1px solid #C9D3E6" } }
+                          >
+                            {sel ? "✓ " : ""}{franjaCorta(fr)}
+                          </button>
+                        );
+                      })}
+                    </div>
                     <p className="text-xs mt-1.5" style={ { color: "#001E62" } }>
                       📅 Se guardará como instalación programada: <strong>{fmtFechaDia(form.instalacionProgramada)}</strong>{form.franjaInstalacion ? " · " + franjaCorta(form.franjaInstalacion) : ""}. Sigue pendiente de instalación hasta que lo confirmes.
                     </p>
