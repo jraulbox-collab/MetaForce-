@@ -12329,6 +12329,9 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                   value={form.fechaInstalacion || form.instalacionProgramada || ""}
                   onChange={(e) => {
                     const v = e.target.value;
+                    const campoFecha = e.target;
+                    // Cierra el calendario del celular apenas se elige el día.
+                    if (v) setTimeout(() => { try { campoFecha.blur(); } catch (err) {} }, 0);
                     const hoyF = fechaLocalISO(new Date());
                     // Fecha futura = instalación programada (sigue pendiente). Hoy o antes = ya instalado.
                     if (v && v > hoyF) setForm((f) => ({ ...f, fechaInstalacion: "", instalacionProgramada: v }));
