@@ -652,6 +652,9 @@ function fechaActivacionMovil(c) {
 // completo. Fecha meta que se le pide al cliente: activados del 1 al 14 → día 15 del mes
 // siguiente; activados del 15 al 31 → día 30 del mes siguiente (último día si es más corto).
 // Si cae en fin de semana se corre al viernes anterior.
+// La factura se genera el día del ciclo, pero en el sistema se refleja y le llega al cliente unos
+// días después. Valor provisional (3) hasta confirmar con más casos; cambiar solo aquí.
+const DIAS_RETRASO_FACTURA_MOVIL = 3;
 function movilFechasPrimeraFactura(c) {
   const act = fechaActivacionMovil(c);
   if (!act) return null;
@@ -684,7 +687,8 @@ function movilFechasPrimeraFactura(c) {
     finMes,
     metaISO,
     m1: addDays(act, 2),
-    m2: addDays(facturaISO, 1),
+    llegaISO: addDays(facturaISO, DIAS_RETRASO_FACTURA_MOVIL),
+    m2: addDays(facturaISO, DIAS_RETRASO_FACTURA_MOVIL),
     m3: addDays(metaISO, -4),
   };
 }
@@ -718,7 +722,7 @@ function saludoSegunHora() {
 function textoMovil1(c, f) {
   return `${saludoSegunHora()} ${primerNombre(c)}. Soy José Severino de Tigo Panamá, sobre su *plan pospago*. ¿Cómo le ha ido con su línea? ¿Todo en orden con el servicio?
 
-Le aviso cómo funcionará su cobro. Tigo factura en fechas fijas, y su fecha de facturación será los días *${f.ciclo}* de cada mes, así que su primera factura le llegará el ${fmtFecha(f.facturaISO)}.
+Le aviso cómo funcionará su cobro. Tigo factura en fechas fijas, y su fecha de facturación será los días *${f.ciclo}* de cada mes. Su primera factura se genera ese día y le llega a su correo unos días después, alrededor del ${fmtFecha(f.llegaISO)}.
 
 Esa factura incluirá un *prorrateo* (los días que ya usa el servicio, del ${fmtFecha(f.activacion)} al ${fmtFecha(f.finProrrateo)}) más su primer mes completo, del ${fmtFecha(f.inicioMes)} al ${fmtFecha(f.finMes)}. Por eso esta primera factura saldrá un poco más alta de lo normal.
 
@@ -10333,7 +10337,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 </div>
               )}
               <div className="text-xs mt-1" style={ { color: "#5A6680" } }>
-                Sale de la fecha de activación{cicloMostrado ? `. La 1ra factura le llega el ${fmtFecha((movilFechasPrimeraFactura({ fechaActivacion, cicloManual: cicloDesbloqueado ? cicloManual : "" }) || {}).facturaISO)}` : ""}.
+                Sale de la fecha de activación{cicloMostrado ? `. La 1ra factura se genera el ${fmtFecha((movilFechasPrimeraFactura({ fechaActivacion, cicloManual: cicloDesbloqueado ? cicloManual : "" }) || {}).facturaISO)} y le llega unos ${DIAS_RETRASO_FACTURA_MOVIL} días después` : ""}.
               </div>
             </div>
             {(() => {
