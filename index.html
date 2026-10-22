@@ -10271,7 +10271,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 className={campoCls + " bg-white"}
                 style={ { borderColor: "#DFE5EF" } }
               >
-                {TIPOS_CLIENTE_MOVIL.map((t) => (
+                {TIPOS_CLIENTE_MOVIL.filter((t) => t.value !== "fulltigo" || tipo === "fulltigo").map((t) => (
                   <option key={t.value} value={t.value}>{t.label}</option>
                 ))}
               </select>
@@ -10404,6 +10404,18 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 Cancelar
               </button>
             </div>
+            {editingId && (
+              <div className="col-span-2 text-center pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmarEliminarMovil(editingId)}
+                  className="text-xs font-bold underline"
+                  style={ { color: "#B45309", minHeight: 36 } }
+                >
+                  🗑 Eliminar este cliente
+                </button>
+              </div>
+            )}
           </form>
         </div>
         </div>
@@ -10412,7 +10424,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
       {confirmarEliminarMovil && (
         <ConfirmModal
           onCancel={() => setConfirmarEliminarMovil(null)}
-          onConfirm={() => { onEliminar(confirmarEliminarMovil); setConfirmarEliminarMovil(null); } }
+          onConfirm={() => { onEliminar(confirmarEliminarMovil); if (editingId === confirmarEliminarMovil) cancelEdit(); setConfirmarEliminarMovil(null); } }
         />
       )}
       <input
@@ -10531,77 +10543,77 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                               Falta el monto del plan
                             </span>
                           )}
-                        </div>
-                        <div className="text-xs font-mono mt-1.5" style={ { color: "#5A6680" } }>
-                          <a href={`tel:${String(c.telefono || "").replace(/[^0-9+]/g, "")}`} style={ { color: "#0072CE", textDecoration: "underline" } }>{c.telefono}</a>{c.whatsapp ? ` · WhatsApp ${c.whatsapp}` : ""} · activado {fmtFechaDia(fechaActivacionMovil(c))}
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => copiarLinea(c.id, c.telefono)}
-                            className="ml-2 inline-flex items-center font-sans text-xs font-bold px-2.5 py-1 rounded-md cursor-pointer"
-                            style={ { background: lineaCopiada === c.id ? "#E3F5EA" : "#FFFFFF", color: lineaCopiada === c.id ? "#0F5A2B" : "#0B4A99", border: "1.5px solid " + (lineaCopiada === c.id ? "#7CC79A" : "#0B4A99") } }
-                          >
-                            {lineaCopiada === c.id ? "Copiado ✓" : "Copiar"}
-                          </span>
-                        </div>
-                        {esquemaNuevo(m.key) && (
-                          <div className="flex flex-wrap gap-1.5 mt-2">
-                            <span
-                              className="text-xs font-medium px-2.5 py-1 rounded-full border"
-                              style={ c.esPortabilidad
-                                ? { background: "#E3EDFA", color: "#0072CE", borderColor: "#0072CE" }
-                                : { background: "white", color: "#5A6680", borderColor: "#DFE5EF" } }
-                            >
-                              {c.esPortabilidad ? "✓ Portabilidad" : "Portabilidad: no"}
+                          {c.esPortabilidad && (
+                            <span className="text-xs font-medium px-2 py-0.5 rounded-full border" style={ { background: "#E3EDFA", color: "#0072CE", borderColor: "#0072CE" } }>
+                              ✓ Portabilidad
                             </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const yaPagada = c.f1_estado === "pagada";
-                                const ok = window.confirm(yaPagada ? `¿Quitar la marca de 1ra factura pagada a ${c.nombre}?` : `¿Confirmas que ${c.nombre} ya pagó su 1ra factura?`);
-                                if (!ok) return;
-                                onEditar(c.id, yaPagada ? { f1_estado: "", f1_pagadaEn: null } : { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() });
-                              } }
-                              className="text-xs font-bold px-3 py-1.5 rounded-full border"
-                              style={ c.f1_estado === "pagada"
-                                ? { background: "#EAF0FB", color: "#001E62", borderColor: "#001E62", minHeight: 34 }
-                                : { background: "white", color: "#001E62", border: "2px solid #001E62", minHeight: 34 } }
-                              title={c.f1_estado === "pagada" ? "Tocar para quitar la marca" : "Tocar para marcar como pagada"}
-                            >
-                              {c.f1_estado === "pagada" ? "✓ 1ra factura pagada" : "1ra factura: sin pagar ›"}
-                            </button>
-                            {!movilCuentaParaComision(c) && (
-                              <span className="text-xs font-medium px-2 py-1 rounded-full" style={ { background: "#FFF3DC", color: "#B45309" } }>
-                                ⛔ No cuenta (venció el plazo)
+                          )}
+                        </div>
+                        {(() => {
+                          const fch = movilFechasPrimeraFactura(c);
+                          return (
+                            <div className="flex items-center flex-wrap gap-x-2 gap-y-1.5 mt-1.5 text-xs font-mono" style={ { color: "#5A6680" } }>
+                              <span>
+                                <a href={`tel:${String(c.telefono || "").replace(/[^0-9+]/g, "")}`} style={ { color: "#0072CE", textDecoration: "underline" } }>{c.telefono}</a>
+                                {" · "}activado {fmtFechaDia(fechaActivacionMovil(c))}{fch ? ` · ciclo ${fch.ciclo}` : ""}
                               </span>
-                            )}
-                          </div>
-                        )}
-                        <div className="flex gap-2 mt-3">
-                          <a
-                            href={`https://wa.me/${telefonoWhatsapp(c.whatsapp || c.telefono)}`}
-                            className="flex-1 sm:flex-none text-center text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
-                            style={ { color: "#001E62", borderColor: "#001E62" } }
-                          >
-                            WhatsApp
-                          </a>
-                          <button
-                            onClick={() => startEdit(c)}
-                            className="flex-1 sm:flex-none text-sm font-medium px-3 py-2.5 sm:py-1.5 rounded-md border"
-                            style={ { color: "#0072CE", borderColor: "#0072CE" } }
-                          >
-                            Editar
-                          </button>
-                        </div>
-                        <div className="mt-3 text-right">
-                          <button
-                            onClick={() => setConfirmarEliminarMovil(c.id)}
-                            className="text-xs font-medium underline"
-                            style={ { color: "#B45309", minHeight: 32 } }
-                          >
-                            Eliminar
-                          </button>
-                        </div>
+                              <span className="inline-flex items-center gap-1.5">
+                                <span
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => copiarLinea(c.id, c.telefono)}
+                                  className="inline-flex items-center font-sans text-xs font-bold px-2.5 py-1 rounded-md cursor-pointer"
+                                  style={ { background: lineaCopiada === c.id ? "#E3F5EA" : "#FFFFFF", color: lineaCopiada === c.id ? "#0F5A2B" : "#0B4A99", border: "1.5px solid " + (lineaCopiada === c.id ? "#7CC79A" : "#0B4A99") } }
+                                >
+                                  {lineaCopiada === c.id ? "Copiado ✓" : "Copiar"}
+                                </span>
+                                <a
+                                  href={`https://wa.me/${telefonoWhatsapp(c.whatsapp || c.telefono)}`}
+                                  className="inline-flex items-center font-sans text-xs font-bold px-2.5 py-1 rounded-md"
+                                  style={ { background: "#FFFFFF", color: "#001E62", border: "1.5px solid #001E62" } }
+                                >
+                                  WhatsApp
+                                </a>
+                              </span>
+                            </div>
+                          );
+                        })()}
+                        {esquemaNuevo(m.key) && (() => {
+                          const fch = movilFechasPrimeraFactura(c);
+                          const pagada = c.f1_estado === "pagada";
+                          const sinSalir = !pagada && !!fch && fechaLocalISO(new Date()) < fch.llegaISO;
+                          const texto = pagada
+                            ? "✓ 1ra factura pagada"
+                            : sinSalir
+                              ? `⏳ Factura aún no sale · se espera ~${fmtFechaDia(fch.llegaISO)}`
+                              : `💵 Factura generada · por pagar${fch ? ` · meta ${fmtFechaDia(fch.metaISO)}` : ""} ›`;
+                          return (
+                            <div className="flex flex-wrap gap-1.5 mt-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const ok = window.confirm(pagada ? `¿Quitar la marca de 1ra factura pagada a ${c.nombre}?` : `¿Confirmas que ${c.nombre} ya pagó su 1ra factura?`);
+                                  if (!ok) return;
+                                  onEditar(c.id, pagada ? { f1_estado: "", f1_pagadaEn: null } : { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() });
+                                } }
+                                className="text-xs font-bold px-3 py-1.5 rounded-full text-left"
+                                style={ pagada
+                                  ? { background: "#EAF0FB", color: "#001E62", border: "1.5px solid #001E62", minHeight: 34 }
+                                  : sinSalir
+                                    ? { background: "white", color: "#5A6680", border: "2px dashed #9CA3AF", minHeight: 34 }
+                                    : { background: "white", color: "#001E62", border: "2px solid #001E62", minHeight: 34 } }
+                                title={pagada ? "Tocar para quitar la marca" : "Tocar para marcar como pagada"}
+                              >
+                                {texto}
+                              </button>
+                              {!movilCuentaParaComision(c) && (
+                                <span className="text-xs font-medium px-2 py-1 rounded-full" style={ { background: "#FFF3DC", color: "#B45309" } }>
+                                  ⛔ No cuenta (venció el plazo)
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))
                   )}
