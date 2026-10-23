@@ -1306,7 +1306,7 @@ const planLabel = (c) => {
 const planLabelMensaje = (c) => {
   if (!c.planTipo || !c.velocidad) return "";
   const nombre = c.planTipo === "SINGLE" ? "Single" : "Doble";
-  return `${nombre} ${c.velocidad}`;
+  return `${nombre} ${c.velocidad}${c.tecnologia ? " · " + c.tecnologia : ""}`;
 };
 // Versión resumida para la tabla de Clientes: tipo de plan + velocidad (+TV si es doble), sin costo.
 const planResumen = (c) => {
@@ -1563,8 +1563,9 @@ function leerBloqueTigo(obs) {
 // Plan como lo entiende el cliente (sin "SINGLE/DOBLE").
 function planParaCliente(c) {
   if (!c.planTipo || !c.velocidad) return "";
-  if (c.planTipo === "DOBLE") return `Internet ${c.velocidad} + TV${c.planTV ? " " + c.planTV : ""}`;
-  return `Internet ${c.velocidad}`;
+  const tec = c.tecnologia ? ` · ${c.tecnologia}` : "";
+  if (c.planTipo === "DOBLE") return `Internet ${c.velocidad} + TV${c.planTV ? " " + c.planTV : ""}${tec}`;
+  return `Internet ${c.velocidad}${tec}`;
 }
 // Mensaje para copiar y enviar al cliente. Cambia según la situación de su instalación:
 // hoy o mañana → recordatorio corto con los datos del servicio; cualquier otro caso → la
