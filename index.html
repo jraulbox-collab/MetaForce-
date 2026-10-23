@@ -8834,6 +8834,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     return arr;
   }, [visiblesOrdenados, filtroEstado, filtroInstalacion, filtroPlan, rangoActivo, fechaDesde, fechaHasta]);
   const filtrosActivos = [filtroEstado, filtroInstalacion, filtroPlan, rangoActivo].filter(Boolean).length;
+  const [chipGrupo, setChipGrupo] = useState("todos");
   // Filtros rápidos de la web (siempre visibles). Cada chip activa un solo filtro a la vez.
   const baseChipsWeb = visiblesOrdenados.filter((c) => !c.penalizado);
   const conteoChipsWeb = {
@@ -8866,7 +8867,6 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
 
   const [exportarAbierto, setExportarAbierto] = useState(false);
   const [menuMasAbierto, setMenuMasAbierto] = useState(false);
-  const [chipGrupo, setChipGrupo] = useState("todos");
   const [menuTarjeta, setMenuTarjeta] = useState(null);
   // Chips del celular (Todos / Falta abono / Por instalar / Instalados / Cancelados): se calculan
   // aquí para poder ponerlos en la misma fila que el botón de Filtros.
