@@ -8821,7 +8821,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     const baseSinPenalizados = filtroEstado === "penalizado" ? visiblesOrdenados : visiblesOrdenados.filter((c) => !c.penalizado);
     let arr = filtroEstado ? baseSinPenalizados.filter((c) => pasaFiltroFactura(c, filtroEstado)) : baseSinPenalizados;
     if (filtroInstalacion === "instalados") arr = arr.filter((c) => !!c.fechaInstalacion);
-    if (filtroInstalacion === "pendientes") arr = arr.filter((c) => !c.fechaInstalacion);
+    if (filtroInstalacion === "pendientes") arr = arr.filter((c) => !c.fechaInstalacion && !clienteExcluido(c));
     if (filtroPlan) arr = arr.filter((c) => c.planTipo === filtroPlan);
     if (rangoActivo) {
       arr = arr.filter((c) => {
@@ -8838,7 +8838,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   // Filtros rápidos de la web (siempre visibles). Cada chip activa un solo filtro a la vez.
   const baseChipsWeb = visiblesOrdenados.filter((c) => !c.penalizado);
   const conteoChipsWeb = {
-    porInstalar: baseChipsWeb.filter((c) => !c.fechaInstalacion).length,
+    porInstalar: baseChipsWeb.filter((c) => !c.fechaInstalacion && !clienteExcluido(c)).length,
     instalados: baseChipsWeb.filter((c) => !!c.fechaInstalacion).length,
     faltaAbono: baseChipsWeb.filter(abonoPendiente).length,
     nocuenta: baseChipsWeb.filter((c) => pasaFiltroFactura(c, "nocuenta")).length,
