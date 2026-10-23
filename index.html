@@ -8506,10 +8506,8 @@ const CHIPS_WEB_BASE = [
   ["instalados", "✓ Instalados"],
   ["faltaAbono", "⚠ Falta abono"],
   ["nocuenta", "⛔ No cuenta"],
-  ["cancelados", "✕ Cancelados"],
-  ["penalizado", "🚫 Penalizados"],
-  ["pago1", "✓ Pagó 1ra factura"],
-  ["nopago1", "⏱ Aún no la paga"],
+  ["cerrados", "Cerrados ▾"],
+  ["factura1", "1ra factura ▾"],
 ];
 function SelectorColumnasModal({ orden, visibles, onToggle, onMover, onClose, chipsOrden, chipsOcultos, onToggleChip, onResetChips }) {
   return (
@@ -8937,6 +8935,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   const guardarChipsWeb = (orden, ocultos) => setColumnasClientes((prev) => ({ ...prev, chips: { orden, ocultos } }));
   const arrastreChipRef = useRef(null);
   const [chipSobre, setChipSobre] = useState(null);
+  const [menuChipWeb, setMenuChipWeb] = useState(null);
   const soltarChip = (destino) => {
     const origen = arrastreChipRef.current;
     arrastreChipRef.current = null;
@@ -9245,36 +9244,101 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               todos: baseChipsWeb.filter((c) => !clienteExcluido(c)).length,
               ...conteoChipsWeb,
             };
+            const GRUPOS_WEB = {
+              cerrados: {
+                titulo: "Cerrados",
+                opciones: [
+                  { k: "cancelados", t: "✕ Cancelados", n: cuentas.cancelados, on: chipWebActivo === "cancelados", al: () => elegirChipWeb("cancelados") },
+                  { k: "penalizado", t: "🚫 Penalizados", n: cuentas.penalizado, on: chipWebActivo === "penalizado", al: () => elegirChipWeb("penalizado") },
+                ],
+              },
+              factura1: {
+                titulo: "1ra factura",
+                opciones: [
+                  { k: "pago1", t: "✓ Pagó", on: filtroEstado === "pago1", al: () => { setChipGrupo("todos"); setFiltroEstado(filtroEstado === "pago1" ? "" : "pago1"); } },
+                  { k: "nopago1", t: "⏱ Aún no la paga", on: filtroEstado === "nopago1", al: () => { setChipGrupo("todos"); setFiltroEstado(filtroEstado === "nopago1" ? "" : "nopago1"); } },
+                ],
+              },
+            };
+            const grupoActivo = (g) => g.opciones.find((o) => o.on);
             return chipsOrdenWeb
-              .filter((k) => !chipsOcultosWeb.includes(k) || chipWebActivo === k || filtroEstado === k)
-              .filter((k) => k === "pago1" || k === "nopago1" || k === "todos" || cuentas[k] > 0 || chipWebActivo === k)
+              .filter((k) => {
+                const g = GRUPOS_WEB[k];
+                const activo = g ? !!grupoActivo(g) : chipWebActivo === k;
+                if (chipsOcultosWeb.includes(k) && !activo) return false;
+                if (g) return k === "factura1" || activo || g.opciones.some((o) => o.n > 0);
+                return k === "todos" || cuentas[k] > 0 || activo;
+              })
               .map((k) => {
+                const g = GRUPOS_WEB[k];
+                const arrastre = {
+                  draggable: true,
+                  onDragStart: (e) => { arrastreChipRef.current = k; setMenuChipWeb(null); try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", k); } catch (er) {} },
+                  onDragOver: (e) => { e.preventDefault(); if (arrastreChipRef.current && chipSobre !== k) setChipSobre(k); },
+                  onDragLeave: () => setChipSobre((v) => (v === k ? null : v)),
+                  onDrop: (e) => { e.preventDefault(); soltarChip(k); },
+                  onDragEnd: () => { arrastreChipRef.current = null; setChipSobre(null); },
+                  title: "Arrastra para cambiar el orden",
+                };
+                const estiloChip = (on) => ({
+                  ...(on ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" }),
+                  ...(chipSobre === k ? { boxShadow: "-3px 0 0 0 #0072CE" } : {}),
+                });
+                if (g) {
+                  const act = grupoActivo(g);
+                  const total = g.opciones.reduce((a, o) => a + (o.n || 0), 0);
+                  const abierto = menuChipWeb === k;
+                  return (
+                    <span key={k} className="relative inline-flex" {...arrastre}>
+                      <button
+                        type="button"
+                        onClick={() => setMenuChipWeb(abierto ? null : k)}
+                        aria-haspopup="menu"
+                        aria-expanded={abierto}
+                        className="rounded-full px-3 py-1.5 text-xs font-bold border whitespace-nowrap cursor-grab"
+                        style={ estiloChip(!!act) }
+                      >
+                        {act ? g.titulo + ": " + act.t : g.titulo + (k === "cerrados" ? " · " + total : "")} ▾
+                      </button>
+                      {abierto && (
+                        <>
+                          <div className="fixed inset-0 z-30" onClick={() => setMenuChipWeb(null)}></div>
+                          <div role="menu" className="absolute left-0 top-full mt-1 z-40 bg-white rounded-lg border shadow-lg p-1.5 flex flex-col gap-1 min-w-[190px]" style={ { borderColor: "#DFE5EF" } }>
+                            {g.opciones.map((o) => (
+                              <button
+                                key={o.k}
+                                type="button"
+                                role="menuitem"
+                                onClick={() => { o.al(); setMenuChipWeb(null); } }
+                                className="text-left text-xs font-bold rounded-md px-3 py-2 flex items-center justify-between gap-3"
+                                style={ o.on ? { background: "#001E62", color: "#fff" } : { color: "#001E62", background: "#F3F6FB" } }
+                              >
+                                <span>{o.on ? "✓ " : ""}{o.t}</span>
+                                {o.n !== undefined && <span>{o.n}</span>}
+                              </button>
+                            ))}
+                            {act && (
+                              <button type="button" onClick={() => { act.al(); setMenuChipWeb(null); } } className="text-left text-xs font-medium px-3 py-1.5" style={ { color: "#B45309" } }>✕ Quitar filtro</button>
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </span>
+                  );
+                }
                 const t = CHIPS_WEB_BASE.find((x) => x[0] === k)[1];
-                const esFactura = k === "pago1" || k === "nopago1";
-                const on = esFactura ? filtroEstado === k : chipWebActivo === k;
+                const on = chipWebActivo === k;
                 return (
                   <button
                     key={k}
                     type="button"
-                    draggable
-                    onDragStart={(e) => { arrastreChipRef.current = k; try { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", k); } catch (er) {} }}
-                    onDragOver={(e) => { e.preventDefault(); if (arrastreChipRef.current && chipSobre !== k) setChipSobre(k); }}
-                    onDragLeave={() => setChipSobre((v) => (v === k ? null : v))}
-                    onDrop={(e) => { e.preventDefault(); soltarChip(k); }}
-                    onDragEnd={() => { arrastreChipRef.current = null; setChipSobre(null); }}
-                    onClick={() => {
-                      if (esFactura) { setChipGrupo("todos"); setFiltroEstado(on ? "" : k); }
-                      else elegirChipWeb(k === "todos" ? chipWebActivo : k);
-                    }}
+                    {...arrastre}
+                    onClick={() => elegirChipWeb(k === "todos" ? chipWebActivo : k)}
                     aria-pressed={on}
-                    title="Arrastra para cambiar el orden"
                     className="rounded-full px-3 py-1.5 text-xs font-bold border whitespace-nowrap cursor-grab"
-                    style={ {
-                      ...(on ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" }),
-                      ...(chipSobre === k ? { boxShadow: "-3px 0 0 0 #0072CE" } : {}),
-                    } }
+                    style={ estiloChip(on) }
                   >
-                    {on && k !== "todos" ? "✕ " : ""}{t}{esFactura || cuentas[k] === undefined ? "" : " · " + cuentas[k]}
+                    {on && k !== "todos" ? "✕ " : ""}{t}{" · " + cuentas[k]}
                   </button>
                 );
               });
