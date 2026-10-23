@@ -1863,6 +1863,59 @@ function RangoFechasInput({ desde, hasta, onChange, className, style, placeholde
   );
 }
 
+// Botón de calendario compacto: abre el selector de rango sin ocupar espacio.
+function RangoFechasIcono({ desde, hasta, onChange }) {
+  const inputRef = useRef(null);
+  const fpRef = useRef(null);
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  useEffect(() => {
+    if (!inputRef.current || !window.flatpickr) return;
+    fpRef.current = window.flatpickr(inputRef.current, {
+      mode: "range",
+      dateFormat: "Y-m-d",
+      locale: window.flatpickr.l10ns && window.flatpickr.l10ns.es ? "es" : undefined,
+      defaultDate: [desde, hasta].filter(Boolean),
+      onChange: (sel) => {
+        if (sel.length === 2) onChangeRef.current(fechaLocalISO(sel[0]), fechaLocalISO(sel[1]));
+        else if (sel.length === 0) onChangeRef.current("", "");
+      },
+    });
+    return () => { if (fpRef.current) fpRef.current.destroy(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (fpRef.current) fpRef.current.setDate([desde, hasta].filter(Boolean), false);
+  }, [desde, hasta]);
+  const activo = !!(desde || hasta);
+  const corto = (f) => (f ? fmtFechaDia(f).replace(/^\S+\s/, "") : "");
+  return (
+    <span className="relative inline-flex items-center">
+      <input ref={inputRef} type="text" readOnly tabIndex={-1} aria-hidden="true" className="absolute left-0 top-full w-0 h-0 opacity-0 pointer-events-none" />
+      <button
+        type="button"
+        onClick={() => fpRef.current && fpRef.current.open()}
+        title="Filtrar por fecha de instalación"
+        aria-label="Filtrar por fecha de instalación"
+        className="rounded-full px-3 py-1.5 text-xs font-bold border whitespace-nowrap"
+        style={ activo ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+      >
+        📅{activo ? " " + corto(desde) + (hasta && hasta !== desde ? " – " + corto(hasta) : "") : ""}
+      </button>
+      {activo && (
+        <button
+          type="button"
+          onClick={() => onChangeRef.current("", "")}
+          aria-label="Quitar rango de fechas"
+          title="Quitar rango de fechas"
+          className="ml-1 text-xs font-bold px-1.5"
+          style={ { color: "#001E62" } }
+        >✕</button>
+      )}
+    </span>
+  );
+}
+
 // ---------- Componente principal ----------
 // Resumen de facturas ya emitidas (hasta hoy) y cuántas de esas están pagadas.
 function facturasResumen(c) {
@@ -9095,7 +9148,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         <button
           type="button"
           onClick={() => setFiltrosAbiertos((v) => !v)}
-          className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
+          className="md:hidden text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
           style={ {
             borderColor: filtrosActivos > 0 ? "#0072CE" : "#DFE5EF",
             color: filtrosActivos > 0 ? "#0072CE" : "#374151",
@@ -9115,7 +9168,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               setFechaDesde("");
               setFechaHasta("");
             } }
-            className="text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
+            className="md:hidden text-xs font-medium px-3 py-1.5 rounded-md border flex items-center gap-1.5"
             style={ { borderColor: "#F3E3C3", color: "#B45309", background: "#FFF3DC" } }
           >
             ✕ Limpiar filtros
@@ -9153,19 +9206,61 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               </button>
             );
           })}
+          <span className="mx-1 self-stretch w-px" style={ { background: "#DFE5EF" } } aria-hidden="true"></span>
+          {[
+            ["pago1", "✓ Pagó 1ra factura"],
+            ["nopago1", "⏱ Aún no la paga"],
+          ].map(([k, t]) => {
+            const on = filtroEstado === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => { setChipGrupo("todos"); setFiltroEstado(on ? "" : k); } }
+                aria-pressed={on}
+                className="rounded-full px-3 py-1.5 text-xs font-bold border whitespace-nowrap"
+                style={ on ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+              >
+                {on ? "✕ " : ""}{t}
+              </button>
+            );
+          })}
+          <select
+            value={filtroPlan}
+            onChange={(e) => setFiltroPlan(e.target.value)}
+            aria-label="Tipo de plan"
+            className="rounded-full px-3 py-1.5 text-xs font-bold border outline-none cursor-pointer"
+            style={ filtroPlan ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+          >
+            <option value="">Plan: todos</option>
+            {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t === "SINGLE" ? "Plan: Single" : "Plan: Doble"}</option>)}
+          </select>
+          <RangoFechasIcono desde={fechaDesde} hasta={fechaHasta} onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } } />
+          {(filtrosActivos > 0 || chipGrupo === "faltaAbono") && (
+            <button
+              type="button"
+              onClick={() => { setFiltroEstado(""); setFiltroInstalacion(""); setChipGrupo("todos"); setFiltroPlan(""); setFechaDesde(""); setFechaHasta(""); } }
+              className="text-xs font-bold px-2 py-1.5"
+              style={ { color: "#B45309" } }
+            >
+              ✕ Limpiar
+            </button>
+          )}
         </div>
         <button
           type="button"
           onClick={() => setMostrarSelectorColumnas(true)}
-          className="hidden md:flex text-xs font-medium px-3 py-1.5 rounded-md border items-center gap-1.5"
-          style={ { borderColor: "#DFE5EF", color: "#374151" } }
+          title={`Columnas visibles (${columnasAMostrar.length})`}
+          aria-label="Elegir columnas visibles"
+          className="hidden md:inline-flex ml-auto items-center text-xs px-2 py-1.5 rounded-md"
+          style={ { color: "#5A6680" } }
         >
-          🧱 Columnas ({columnasAMostrar.length})
+          ⚙ Columnas
         </button>
       </div>
 
       {filtrosAbiertos && (
-        <div className="mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
+        <div className="md:hidden mb-4 bg-white rounded-lg border border-gray-200 shadow-sm p-4 flex flex-col gap-4">
           <div className="rounded-md p-3" style={ { background: rangoActivo ? "#E3EDFA" : "#F3F6FB" } }>
             <div className="flex items-center justify-between mb-2 flex-wrap gap-1">
               <span className="text-xs font-semibold" style={ { color: "#374151" } }>Rango de fechas (instalación)</span>
