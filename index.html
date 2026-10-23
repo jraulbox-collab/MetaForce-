@@ -8834,6 +8834,29 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     return arr;
   }, [visiblesOrdenados, filtroEstado, filtroInstalacion, filtroPlan, rangoActivo, fechaDesde, fechaHasta]);
   const filtrosActivos = [filtroEstado, filtroInstalacion, filtroPlan, rangoActivo].filter(Boolean).length;
+  // Filtros rápidos de la web (siempre visibles). Cada chip activa un solo filtro a la vez.
+  const baseChipsWeb = visiblesOrdenados.filter((c) => !c.penalizado);
+  const conteoChipsWeb = {
+    porInstalar: baseChipsWeb.filter((c) => !c.fechaInstalacion).length,
+    instalados: baseChipsWeb.filter((c) => !!c.fechaInstalacion).length,
+    faltaAbono: baseChipsWeb.filter(abonoPendiente).length,
+    nocuenta: baseChipsWeb.filter((c) => pasaFiltroFactura(c, "nocuenta")).length,
+    penalizado: visiblesOrdenados.filter((c) => c.penalizado).length,
+  };
+  const chipWebActivo =
+    chipGrupo === "faltaAbono" ? "faltaAbono"
+    : filtroInstalacion === "pendientes" ? "porInstalar"
+    : filtroInstalacion === "instalados" ? "instalados"
+    : filtroEstado === "nocuenta" ? "nocuenta"
+    : filtroEstado === "penalizado" ? "penalizado"
+    : "todos";
+  const elegirChipWeb = (k) => {
+    const nuevo = chipWebActivo === k ? "todos" : k;
+    setChipGrupo(nuevo === "faltaAbono" ? "faltaAbono" : "todos");
+    setFiltroInstalacion(nuevo === "porInstalar" ? "pendientes" : nuevo === "instalados" ? "instalados" : "");
+    setFiltroEstado(nuevo === "nocuenta" || nuevo === "penalizado" ? nuevo : (filtroEstado === "pago1" || filtroEstado === "nopago1") && nuevo === "todos" ? filtroEstado : "");
+  };
+  const filtrosPanelActivos = [filtroEstado === "pago1" || filtroEstado === "nopago1", filtroPlan, rangoActivo].filter(Boolean).length;
   const statsClientes = useMemo(() => {
     // Los penalizados y cancelados sin 1ra factura pagada no cuentan: solo se muestran como referencia.
     const cuentan = visiblesFinal.filter((c) => !clienteExcluido(c));
@@ -9079,7 +9102,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             background: filtrosActivos > 0 ? "#E3EDFA" : "white",
           } }
         >
-          🔍 Filtros{filtrosActivos > 0 ? ` (${filtrosActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
+          🔍 {filtrosAbiertos ? "Menos filtros" : "Más filtros"}{filtrosPanelActivos > 0 ? ` (${filtrosPanelActivos})` : ""} {filtrosAbiertos ? "▲" : "▼"}
         </button>
         {filtrosActivos > 0 && (
           <button
@@ -9087,6 +9110,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             onClick={() => {
               setFiltroEstado("");
               setFiltroInstalacion("");
+              setChipGrupo("todos");
               setFiltroPlan("");
               setFechaDesde("");
               setFechaHasta("");
@@ -9106,17 +9130,30 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
           </div>
         )}
-        {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && (
-          <button
-            type="button"
-            onClick={() => setChipGrupo(chipGrupo === "faltaAbono" ? "todos" : "faltaAbono")}
-            aria-pressed={chipGrupo === "faltaAbono"}
-            className="hidden md:flex text-xs font-bold px-3 py-1.5 rounded-md border items-center gap-1.5"
-            style={ chipGrupo === "faltaAbono" ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
-          >
-            {chipGrupo === "faltaAbono" ? "✕ " : "⚠ "}Falta abono ({listaAbono.length})
-          </button>
-        )}
+        <div className="hidden md:flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filtros rápidos">
+          {[
+            ["todos", "Todos", visiblesOrdenados.filter((c) => !c.penalizado).length],
+            ["porInstalar", "⏳ Por instalar", conteoChipsWeb.porInstalar],
+            ["instalados", "✓ Instalados", conteoChipsWeb.instalados],
+            ["faltaAbono", "⚠ Falta abono", conteoChipsWeb.faltaAbono],
+            ["nocuenta", "⛔ No cuenta", conteoChipsWeb.nocuenta],
+            ["penalizado", "🚫 Penalizados", conteoChipsWeb.penalizado],
+          ].filter(([k, , n]) => k === "todos" || n > 0 || chipWebActivo === k).map(([k, t, n]) => {
+            const on = chipWebActivo === k;
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => (k === "todos" ? elegirChipWeb(chipWebActivo) : elegirChipWeb(k))}
+                aria-pressed={on}
+                className="rounded-full px-3 py-1.5 text-xs font-bold border whitespace-nowrap"
+                style={ on ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+              >
+                {on && k !== "todos" ? "✕ " : ""}{t} · {n}
+              </button>
+            );
+          })}
+        </div>
         <button
           type="button"
           onClick={() => setMostrarSelectorColumnas(true)}
@@ -9171,27 +9208,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               </select>
             </FiltroCampo>
 
-            <div className="hidden md:block"><FiltroCampo label="Instalación">
-              <select
-                value={filtroInstalacion}
-                onChange={(e) => setFiltroInstalacion(e.target.value)}
-                className="w-full text-xs px-2 py-1.5 rounded-md border outline-none"
-                style={ { borderColor: "#DFE5EF" } }
-              >
-                <option value="">Todos</option>
-                <option value="instalados">Instalados</option>
-                <option value="pendientes">Pendientes de instalación</option>
-              </select>
-            </FiltroCampo></div>
-
             <div className="col-span-2 sm:col-span-3">
               <div className="text-xs font-medium mb-1.5" style={ { color: "#5A6680" } }>1ra factura</div>
               <div className="flex flex-wrap gap-1.5">
                 {[
                   ["pago1", "✓ Pagó"],
                   ["nopago1", "Aún no la paga"],
-                  ["nocuenta", "⛔ No cuenta"],
-                  ["penalizado", "🚫 Penalizados"],
                 ].map(([k, t]) => (
                   <button
                     key={k}
