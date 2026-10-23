@@ -8894,11 +8894,13 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     porInstalar: baseChipsWeb.filter((c) => !c.fechaInstalacion && !clienteExcluido(c)).length,
     instalados: baseChipsWeb.filter((c) => !!c.fechaInstalacion).length,
     faltaAbono: baseChipsWeb.filter(abonoPendiente).length,
+    cancelados: baseChipsWeb.filter((c) => !!c.cancelado && clienteExcluido(c)).length,
     nocuenta: baseChipsWeb.filter((c) => pasaFiltroFactura(c, "nocuenta")).length,
     penalizado: visiblesOrdenados.filter((c) => c.penalizado).length,
   };
   const chipWebActivo =
     chipGrupo === "faltaAbono" ? "faltaAbono"
+    : chipGrupo === "cancelados" ? "cancelados"
     : filtroInstalacion === "pendientes" ? "porInstalar"
     : filtroInstalacion === "instalados" ? "instalados"
     : filtroEstado === "nocuenta" ? "nocuenta"
@@ -8906,7 +8908,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     : "todos";
   const elegirChipWeb = (k) => {
     const nuevo = chipWebActivo === k ? "todos" : k;
-    setChipGrupo(nuevo === "faltaAbono" ? "faltaAbono" : "todos");
+    setChipGrupo(nuevo === "faltaAbono" || nuevo === "cancelados" ? nuevo : "todos");
     setFiltroInstalacion(nuevo === "porInstalar" ? "pendientes" : nuevo === "instalados" ? "instalados" : "");
     setFiltroEstado(nuevo === "nocuenta" || nuevo === "penalizado" ? nuevo : (filtroEstado === "pago1" || filtroEstado === "nopago1") && nuevo === "todos" ? filtroEstado : "");
   };
@@ -8934,6 +8936,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       const lb = plazoAbono(b);
       return (la ? la.getTime() : Infinity) - (lb ? lb.getTime() : Infinity);
     });
+  // "Todos" en la web no incluye cancelados ni penalizados (tienen su propio chip).
+  const filasWeb =
+    chipGrupo === "faltaAbono" ? listaAbono
+    : chipGrupo === "cancelados" ? visiblesFinal.filter((c) => !!c.cancelado && clienteExcluido(c))
+    : filtroEstado === "penalizado" || filtroEstado === "nocuenta" ? visiblesFinal
+    : visiblesFinal.filter((c) => !clienteExcluido(c));
   const chip = (k, t, n) => (
     <button
       key={k}
@@ -9185,11 +9193,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         )}
         <div className="hidden md:flex items-center gap-1.5 flex-wrap" role="group" aria-label="Filtros rápidos">
           {[
-            ["todos", "Todos", visiblesOrdenados.filter((c) => !c.penalizado).length],
+            ["todos", "Todos", baseChipsWeb.filter((c) => !clienteExcluido(c)).length],
             ["porInstalar", "⏳ Por instalar", conteoChipsWeb.porInstalar],
             ["instalados", "✓ Instalados", conteoChipsWeb.instalados],
             ["faltaAbono", "⚠ Falta abono", conteoChipsWeb.faltaAbono],
             ["nocuenta", "⛔ No cuenta", conteoChipsWeb.nocuenta],
+            ["cancelados", "✕ Cancelados", conteoChipsWeb.cancelados],
             ["penalizado", "🚫 Penalizados", conteoChipsWeb.penalizado],
           ].filter(([k, , n]) => k === "todos" || n > 0 || chipWebActivo === k).map(([k, t, n]) => {
             const on = chipWebActivo === k;
@@ -9514,7 +9523,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               </tr>
             </thead>
             <tbody>
-              {(chipGrupo === "faltaAbono" ? listaAbono : visiblesFinal).map((c) => (
+              {filasWeb.map((c) => (
                 <tr key={c.id} className="border-t" style={ { borderColor: "#F0F0EF", opacity: clienteCuentaParaComision(c) ? 1 : 0.5 } }>
                   {columnasAMostrar.map((key) => (
                     <td key={key} className="px-4 py-3">{renderCeldaCliente(c, key)}</td>
