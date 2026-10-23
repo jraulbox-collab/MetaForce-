@@ -1249,6 +1249,7 @@ const COLUMNAS_CLIENTES = [
   { key: "monto", label: "Monto mensual", sortable: true },
   { key: "ciclo", label: "Ciclo", sortable: true },
   { key: "instalacion", label: "Instalación", sortable: true },
+  { key: "abono", label: "Abono", sortable: true },
   { key: "ingreso", label: "Fecha de ingreso", sortable: true },
   { key: "periodo", label: "Período", sortable: true },
   { key: "seguimiento", label: "Seguimiento", sortable: false },
@@ -1270,6 +1271,11 @@ function valorOrdenColumna(c, key) {
       return Number(c.cicloFacturacion) || 0;
     case "instalacion":
       return c.fechaInstalacion || "";
+    case "abono": {
+      if (c.fechaInstalacion || c.cancelado || c.penalizado) return 9.2e15;
+      if (abonoPendiente(c)) { const p = plazoAbono(c); return p ? p.getTime() : 9e15; }
+      return c.abonoInicial === false ? 9e15 : 9.1e15;
+    }
     case "ingreso":
       return c.creadoEn || "";
     case "periodo":
@@ -2544,8 +2550,16 @@ function App() {
           if (parsed && Array.isArray(parsed.orden) && parsed.visibles) {
             const ordenValido = parsed.orden.filter((k) => COLUMNAS_CLIENTES_KEYS.includes(k));
             const faltantes = COLUMNAS_CLIENTES_KEYS.filter((k) => !ordenValido.includes(k));
+            const ordenFinal = [...ordenValido, ...faltantes];
+            if (faltantes.includes("abono")) {
+              // Columna nueva: queda justo después de Instalación, no al final de la tabla.
+              const sinAbono = ordenFinal.filter((k) => k !== "abono");
+              const i = sinAbono.indexOf("instalacion");
+              sinAbono.splice(i >= 0 ? i + 1 : sinAbono.length, 0, "abono");
+              ordenFinal.splice(0, ordenFinal.length, ...sinAbono);
+            }
             setColumnasClientes({
-              orden: [...ordenValido, ...faltantes],
+              orden: ordenFinal,
               visibles: { ...Object.fromEntries(COLUMNAS_CLIENTES_KEYS.map((k) => [k, true])), ...parsed.visibles },
             });
           }
@@ -8691,7 +8705,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           return <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#EEF0F4", color: "#5A6680" } }>{c.penalizado ? "✕ PENALIZADO" : "✕ CANCELADO"}</span>;
         }
         return c.fechaInstalacion ? (
-          <span className="font-mono text-xs">{fmtFechaDia(c.fechaInstalacion)}</span>
+          <span className="inline-flex flex-col items-start gap-1">
+            <span className="font-mono text-xs">{fmtFechaDia(c.fechaInstalacion)}</span>
+            {!c.cancelado && !c.penalizado && !clienteCuentaParaComision(c) && (
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap" style={ { background: "#FFF3DC", color: "#B45309" } }>⛔ No cuenta</span>
+            )}
+          </span>
         ) : (
           <span className="inline-flex flex-col items-start gap-1">
             <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#B45309", color: "white" } }>
@@ -8761,6 +8780,13 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </div>
         );
       }
+      case "abono":
+        if (c.fechaInstalacion || c.cancelado || c.penalizado) return <span className="text-xs" style={ { color: "#C9D2E3" } }>—</span>;
+        return c.abonoInicial === false ? (
+          <EtiquetaAbono cliente={c} onClick={onMarcarAbono ? () => onMarcarAbono(c.id, true) : undefined} />
+        ) : (
+          <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5 whitespace-nowrap" style={ { background: "#EAF0FB", color: "#001E62" } }>✓ Abono recibido</span>
+        );
       case "obs":
         return c.observaciones && c.observaciones.trim() ? (
           <span title={c.observaciones}>📝</span>
@@ -9077,6 +9103,17 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
           </div>
         )}
+        {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && (
+          <button
+            type="button"
+            onClick={() => setChipGrupo(chipGrupo === "faltaAbono" ? "todos" : "faltaAbono")}
+            aria-pressed={chipGrupo === "faltaAbono"}
+            className="hidden md:flex text-xs font-bold px-3 py-1.5 rounded-md border items-center gap-1.5"
+            style={ chipGrupo === "faltaAbono" ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" } }
+          >
+            {chipGrupo === "faltaAbono" ? "✕ " : "⚠ "}Falta abono ({listaAbono.length})
+          </button>
+        )}
         <button
           type="button"
           onClick={() => setMostrarSelectorColumnas(true)}
@@ -9357,7 +9394,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               </tr>
             </thead>
             <tbody>
-              {visiblesFinal.map((c) => (
+              {(chipGrupo === "faltaAbono" ? listaAbono : visiblesFinal).map((c) => (
                 <tr key={c.id} className="border-t" style={ { borderColor: "#F0F0EF", opacity: clienteCuentaParaComision(c) ? 1 : 0.5 } }>
                   {columnasAMostrar.map((key) => (
                     <td key={key} className="px-4 py-3">{renderCeldaCliente(c, key)}</td>
