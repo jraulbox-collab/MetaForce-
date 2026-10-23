@@ -1297,10 +1297,11 @@ function diffCliente(antes, despues) {
 }
 const planLabel = (c) => {
   if (!c.planTipo || !c.velocidad) return "";
+  const tec = c.tecnologia ? ` · ${c.tecnologia}` : "";
   if (c.planTipo === "DOBLE") {
-    return `${c.planTipo} ${c.velocidad}${c.planTV ? " + " + c.planTV : ""}`;
+    return `${c.planTipo} ${c.velocidad}${c.planTV ? " + " + c.planTV : ""}${tec}`;
   }
-  return `${c.planTipo} ${c.velocidad}`;
+  return `${c.planTipo} ${c.velocidad}${tec}`;
 };
 const planLabelMensaje = (c) => {
   if (!c.planTipo || !c.velocidad) return "";
@@ -1313,7 +1314,8 @@ const planResumen = (c) => {
   const nombre = c.planTipo === "SINGLE" ? "Single" : "Doble";
   const vel = c.velocidad ? ` ${c.velocidad}` : "";
   const tv = c.planTipo === "DOBLE" && c.planTV ? ` + ${c.planTV}` : "";
-  return `${nombre}${vel}${tv}`;
+  const tec = c.tecnologia ? ` · ${c.tecnologia}` : "";
+  return `${nombre}${vel}${tv}${tec}`;
 };
 const cicloCorto = (c) => (c.cicloFacturacion ? `Ciclo ${c.cicloFacturacion}` : "—");
 
@@ -1511,7 +1513,16 @@ function leerOrdenInstalacionTigo(texto) {
     voz1: tomar(/Preferencia de Contacto Voz 1\s*:[ \t]*([^\n]*)/i),
     voz2: tomar(/Preferencia de Contacto Voz 2\s*:[ \t]*([^\n]*)/i),
     correo: tomar(/Preferencia de Contacto Correo\s*:[ \t]*([^\s]*)/i).toLowerCase(),
+    tecnologia: leerTecnologiaTigo(t),
   };
+}
+// FTTH (fibra) o HFC (coaxial): viene en "ID de Servicio", en el subtipo o en el tipo de orden.
+function leerTecnologiaTigo(t) {
+  const m =
+    String(t || "").match(/ID de Servicio\s*:[ \t]*(FTTH|HFC)\b/i) ||
+    String(t || "").match(/Subtipo de orden\s*:[ \t]*[^\n]*?(FTTH|HFC)/i) ||
+    String(t || "").match(/Tipo de orden\s*:[ \t]*I?(FTTH|HFC)\b/i);
+  return m ? m[1].toUpperCase() : "";
 }
 
 // Bloque de texto que se guarda en Observaciones (los datos que no tienen campo propio en la ficha).
@@ -1784,6 +1795,7 @@ const emptyForm = () => ({
   planTipo: "",
   velocidad: "",
   planTV: "",
+  tecnologia: "",
   cuentaTigo: "",
   montoMensual: "",
   fechaInstalacion: fechaLocalISO(new Date()),
@@ -3275,6 +3287,7 @@ function App() {
       planTipo: c.planTipo,
       velocidad: c.velocidad,
       planTV: c.planTV,
+      tecnologia: c.tecnologia || "",
       cuentaTigo: c.cuentaTigo || "",
       montoMensual: c.montoMensual,
       fechaInstalacion: c.fechaInstalacion,
@@ -3605,6 +3618,7 @@ function App() {
       ...antes,
       instalacionProgramada: d.fecha,
       franjaInstalacion: d.franja || "",
+      tecnologia: d.tecnologia || antes.tecnologia || "",
       observaciones: aplicarBloqueObservaciones(antes.observaciones, bloqueObservacionTigo(d)),
     };
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
@@ -9884,6 +9898,7 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
           {fila("Fecha de instalación", fmtFechaDia(datos.fecha))}
           {datos.franjas.length === 1 && fila("Horario", franjaCorta(datos.franjas[0]))}
           {datos.franjas.length === 0 && fila("Horario", "No venía en el texto")}
+          {fila("Tecnología", datos.tecnologia)}
           {fila("Barrio", tituloEs(datos.barrio))}
           {fila("Número de cuenta", datos.cuenta)}
           {fila("Teléfonos de contacto", [datos.voz1, datos.voz2].filter(Boolean).join(" y "))}
@@ -13280,6 +13295,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                 fechaInstalacion: "",
                 instalacionProgramada: d.fecha,
                 franjaInstalacion: d.franja || "",
+                tecnologia: d.tecnologia || f.tecnologia || "",
                 observaciones: aplicarBloqueObservaciones(f.observaciones, bloqueObservacionTigo(d)),
               }))
             }
@@ -13426,6 +13442,13 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
               <select required value={form.velocidad} onChange={set("velocidad")} className={inputClass} style={inputStyle}>
                 <option value="">Seleccionar…</option>
                 {VELOCIDADES.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </Field>
+            <Field label="Tecnología">
+              <select value={form.tecnologia || ""} onChange={set("tecnologia")} className={inputClass} style={inputStyle}>
+                <option value="">Sin definir</option>
+                <option value="FTTH">FTTH (fibra)</option>
+                <option value="HFC">HFC (coaxial)</option>
               </select>
             </Field>
             <Field label="Monto mensual recurrente *">
