@@ -629,9 +629,86 @@ function fechaLimitePrimeraFactura(periodoInstalacion) {
 // miraba FULL TIGO para su bono del 90% de clientes.
 const TIPOS_CLIENTE_MOVIL = [
   { value: "pospago", label: "Plan Pospago" },
-  { value: "convergencia", label: "Convergencia" },
+  { value: "convergencia", label: "Convergencia Pura" },
+  { value: "matchdigital", label: "Match Digital" },
   { value: "fulltigo", label: "FULL TIGO" },
 ];
+// Datos extra que se guardan al pegar el texto de Tigo (todos opcionales).
+const DATOS_EXTRA_MOVIL = ["correo", "telefonoAdicional", "direccion", "barrio", "corregimiento", "planNombre", "sim", "estadoOrden", "titularCedula", "titularCorreo", "titularTelefono", "matchConfirmado", "matchFecha"];
+function datosExtraDe(c) {
+  const o = {};
+  DATOS_EXTRA_MOVIL.forEach((k) => { if (c && c[k] !== undefined && c[k] !== null && c[k] !== "") o[k] = c[k]; });
+  return o;
+}
+// Lee el texto de una orden Móvil de Tigo (pantalla "Información del Cliente").
+function leerOrdenMovilTigo(texto) {
+  const t = String(texto || "").replace(/\r/g, "");
+  const out = {};
+  const tras = (etq) => {
+    const m = t.match(new RegExp("(?:^|\\n)\\s*" + etq + "\\s*(?:\\n|\\t|:)\\s*([^\\n\\t]+)", "i"));
+    return m ? m[1].trim() : "";
+  };
+  const fmtTel = (s) => {
+    const d = String(s || "").replace(/\D/g, "");
+    return d.length === 8 ? d.slice(0, 4) + "-" + d.slice(4) : d;
+  };
+  const nom = tras("Nombre");
+  const ape = tras("Apellido");
+  if (nom || ape) out.nombre = (nom + " " + ape).trim().replace(/\s+/g, " ").toUpperCase();
+  const cuerpoCliente = t.split(/MATCH\s+DIGITAL/i)[0];
+  const correo = cuerpoCliente.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+  if (correo) out.correo = correo[0].toLowerCase();
+  const tel1 = tras("Tel[eé]fono\\s*1");
+  const tel2 = tras("Tel[eé]fono\\s*2");
+  const dir = tras("Direcci[oó]n");
+  if (dir) {
+    out.direccion = dir;
+    const m = dir.match(/^(.*?)\s*\(\s*(?:CORREG(?:IMIENTO)?\.?)\s*(?:DE\s+)?(.*?)\s*\)\s*$/i);
+    if (m) { out.barrio = m[1].trim().toUpperCase(); out.corregimiento = m[2].trim().toUpperCase(); }
+    else out.barrio = dir.trim().toUpperCase();
+  }
+  const est = tras("Estado");
+  if (est) out.estadoOrden = est;
+  // Fila de la línea móvil: oferta, tipo de venta, SIM (18-20 dígitos) y número.
+  const fila = t.match(/([^\n\t]*?B\/\.?\s*\d+[^\n\t]*?)\s+(PRE\s*a\s*POS|POS\s*a\s*POS|PORTABILIDAD[A-Z ]*|L[IÍ]NEA NUEVA|[A-Z]{3}\s*a\s*[A-Z]{3})\s+(\d{18,20})\s+(\d{8})/i);
+  let linea = "";
+  if (fila) {
+    out.planNombre = fila[1].trim();
+    out.tipoVenta = fila[2].replace(/\s+/g, " ").trim().toUpperCase();
+    out.sim = fila[3];
+    linea = fila[4];
+    out.esPortabilidad = /PORT/i.test(out.tipoVenta);
+  }
+  const tel1d = String(tel1).replace(/\D/g, "");
+  out.telefono = fmtTel(linea || tel1d);
+  const extra = tel2 ? tel2 : (tel1d && linea && tel1d !== linea ? tel1d : "");
+  if (extra) out.telefonoAdicional = fmtTel(extra);
+  // Precio: lo que de verdad paga el cliente (con descuento).
+  let precio = null;
+  const d = t.match(/Descuento\s*B\/\.?\s*([\d.,]+)[\s\S]*?Total\s*B\/\.?\s*([\d.,]+)/i);
+  if (d) { out.descuento = Number(d[1].replace(/,/g, "")); precio = Number(d[2].replace(/,/g, "")); }
+  else { const all = [...t.matchAll(/Total\s*B\/\.?\s*([\d.,]+)/gi)]; if (all.length) precio = Number(all[all.length - 1][1].replace(/,/g, "")); }
+  if (precio != null && !isNaN(precio)) out.montoPlan = precio;
+  const lista = t.match(/Servicios Adicionales:?\s*\n?\s*\d+\s*B\/\.?\s*([\d.,]+)/i);
+  if (lista) out.precioLista = Number(lista[1].replace(/,/g, ""));
+  // Match Digital: datos del titular del Hogar.
+  const mi = t.search(/MATCH\s+DIGITAL/i);
+  if (mi >= 0) {
+    out.tipo = "matchdigital";
+    const resto = t.slice(mi);
+    const f = resto.match(/([0-9A-Za-z][0-9A-Za-z-]{4,})\s+([^\s@]+@[^\s@]+\.[^\s@]+)\s+(\d{7,8})\s+([^\n]+)/);
+    if (f) {
+      out.titularCedula = f[1];
+      out.titularCorreo = f[2].toLowerCase();
+      out.titularTelefono = fmtTel(f[3]);
+      const e = f[4].trim();
+      out.estadoMatchTexto = e;
+      out.matchConfirmado = !/pendiente/i.test(e) && /confirmad|aceptad|aprobad/i.test(e);
+    } else out.matchConfirmado = false;
+  }
+  return out;
+}
+
 function tipoClienteMovil(c) {
   return c.tipo || (c.fullTigo ? "fulltigo" : "convergencia");
 }
@@ -2959,6 +3036,7 @@ function App() {
   function agregarConvergencia(nombre, telefono, tipoCliente, montoPlan, fechaActivacion, extra) {
     const pagada = !!extra && extra.f1_estado === "pagada";
     const nueva = {
+      ...(extra && extra.datos ? extra.datos : {}),
       id: uid(),
       nombre,
       telefono,
@@ -10521,6 +10599,38 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const [f1Pagada, setF1Pagada] = useState(false);
   const [cicloManual, setCicloManual] = useState("");
   const [cicloDesbloqueado, setCicloDesbloqueado] = useState(false);
+  const [datosExtra, setDatosExtra] = useState({});
+  const [pegarAbierto, setPegarAbierto] = useState(false);
+  const [textoPegado, setTextoPegado] = useState("");
+  const [lecturaTigo, setLecturaTigo] = useState(null);
+  const [errorPegado, setErrorPegado] = useState("");
+  const setExtra = (k, v) => setDatosExtra((prev) => ({ ...prev, [k]: v }));
+  function leerTextoPegado() {
+    const d = leerOrdenMovilTigo(textoPegado);
+    if (!d.telefono && !d.nombre) {
+      setLecturaTigo(null);
+      setErrorPegado("No encontré datos del cliente. Pega el texto completo de la orden de Tigo.");
+      return;
+    }
+    setErrorPegado("");
+    setLecturaTigo(d);
+  }
+  function aplicarLecturaTigo() {
+    const d = lecturaTigo;
+    if (!d) return;
+    if (d.nombre) setNombre(d.nombre);
+    if (d.telefono) setTelefono(d.telefono);
+    if (d.montoPlan != null) setMontoPlan(String(d.montoPlan));
+    if (d.tipo) setTipo(d.tipo);
+    if (d.esPortabilidad !== undefined) setEsPortabilidad(!!d.esPortabilidad);
+    const nuevo = {};
+    DATOS_EXTRA_MOVIL.forEach((k) => { if (d[k] !== undefined && d[k] !== "") nuevo[k] = d[k]; });
+    if (d.tipo === "matchdigital") nuevo.matchFecha = fechaLocalISO(new Date());
+    setDatosExtra((prev) => ({ ...prev, ...nuevo }));
+    setLecturaTigo(null);
+    setTextoPegado("");
+    setPegarAbierto(false);
+  }
   const [lineaCopiada, setLineaCopiada] = useState(null);
   function copiarLinea(clave, numero) {
     const limpio = String(numero || "").replace(/\D/g, "");
@@ -10555,6 +10665,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setF1Pagada(aEditar.f1_estado === "pagada");
         setCicloManual(aEditar.cicloManual ? String(aEditar.cicloManual) : "");
         setCicloDesbloqueado(!!aEditar.cicloManual);
+        setDatosExtra(datosExtraDe(aEditar));
         setEditingId(aEditar.id);
         vieneDePrecierre.current = true;
         destinoVolver.current = prefill.volverA || "precierre";
@@ -10570,6 +10681,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         setF1Pagada(false);
         setCicloManual("");
         setCicloDesbloqueado(false);
+        setDatosExtra({});
         vieneDePrecierre.current = true;
         destinoVolver.current = "precierre";
       }
@@ -10599,6 +10711,11 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setF1Pagada(false);
     setCicloManual("");
     setCicloDesbloqueado(false);
+    setDatosExtra({});
+    setPegarAbierto(false);
+    setTextoPegado("");
+    setLecturaTigo(null);
+    setErrorPegado("");
     setEditingId(null);
   }
 
@@ -10618,6 +10735,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         fechaActivacion,
         esPortabilidad,
         cicloManual: cicloManualEfectivo ? Number(cicloManualEfectivo) : null,
+        ...datosExtra,
         ...fijarFactura(editando, f1Pagada),
       });
     } else {
@@ -10626,6 +10744,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         esPortabilidad,
         cicloManual: cicloManualEfectivo ? Number(cicloManualEfectivo) : null,
         f1_estado: f1Pagada ? "pagada" : "",
+        datos: datosExtra,
       });
     }
     limpiarForm();
@@ -10645,6 +10764,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setF1Pagada(c.f1_estado === "pagada");
     setCicloManual(c.cicloManual ? String(c.cicloManual) : "");
     setCicloDesbloqueado(!!c.cicloManual);
+    setDatosExtra(datosExtraDe(c));
     setEditingId(c.id);
     setFormAbierto(true);
   }
@@ -10703,6 +10823,75 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
             </button>
           </div>
           <form onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
+            <div className="col-span-2 rounded-md" style={ { background: "#F3F6FB" } }>
+              {!pegarAbierto ? (
+                <button
+                  type="button"
+                  onClick={() => setPegarAbierto(true)}
+                  className="w-full text-sm font-bold px-3 py-2.5 text-left"
+                  style={ { color: "#001E62", minHeight: 40 } }
+                >
+                  📋 Pegar texto de Tigo
+                </button>
+              ) : (
+                <div className="p-3 flex flex-col gap-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-bold" style={ { color: "#001E62" } }>Pegar texto de Tigo</span>
+                    <button type="button" onClick={() => { setPegarAbierto(false); setLecturaTigo(null); setErrorPegado(""); } } className="text-sm" style={ { color: "#5A6680" } } aria-label="Cerrar">✕</button>
+                  </div>
+                  {!lecturaTigo && (
+                    <>
+                      <textarea
+                        value={textoPegado}
+                        onChange={(e) => setTextoPegado(e.target.value)}
+                        rows={5}
+                        placeholder="Pega aquí todo el texto de la orden (Información del Cliente…)"
+                        className={campoCls}
+                        style={ { borderColor: "#DFE5EF", fontSize: 14 } }
+                      />
+                      {errorPegado && <div className="text-xs font-semibold" style={ { color: "#B45309" } }>⚠ {errorPegado}</div>}
+                      <button
+                        type="button"
+                        onClick={leerTextoPegado}
+                        disabled={!textoPegado.trim()}
+                        className="text-sm font-bold px-4 py-2.5 rounded-md text-white disabled:opacity-40"
+                        style={ { background: "#001E62", minHeight: 40 } }
+                      >
+                        Leer texto
+                      </button>
+                    </>
+                  )}
+                  {lecturaTigo && (
+                    <>
+                      <div className="text-xs font-bold" style={ { color: "#5A6680" } }>Esto voy a guardar:</div>
+                      <div className="rounded-md p-2.5 text-sm flex flex-col gap-1 bg-white" style={ { border: "1px solid #DFE5EF" } }>
+                        {[
+                          ["Cliente", lecturaTigo.nombre],
+                          ["Celular", lecturaTigo.telefono],
+                          ["Teléfono adicional", lecturaTigo.telefonoAdicional],
+                          ["Correo", lecturaTigo.correo],
+                          ["Zona", [lecturaTigo.barrio, lecturaTigo.corregimiento].filter(Boolean).join(" · ")],
+                          ["Plan", lecturaTigo.planNombre],
+                          ["Cobra el cliente", lecturaTigo.montoPlan != null ? fmtMonto(lecturaTigo.montoPlan) + (lecturaTigo.precioLista ? " (lista " + fmtMonto(lecturaTigo.precioLista) + ")" : "") : ""],
+                          ["Tipo de venta", lecturaTigo.tipoVenta],
+                          ["Portabilidad", lecturaTigo.esPortabilidad === undefined ? "" : lecturaTigo.esPortabilidad ? "Sí" : "No"],
+                          ["Tipo de cliente", lecturaTigo.tipo === "matchdigital" ? "Match Digital" : ""],
+                          ["Titular del Hogar", lecturaTigo.titularTelefono ? [lecturaTigo.titularTelefono, lecturaTigo.titularCorreo].filter(Boolean).join(" · ") : ""],
+                          ["Estado del match", lecturaTigo.estadoMatchTexto],
+                          ["Estado de la orden", lecturaTigo.estadoOrden],
+                        ].filter(([, v]) => v).map(([k, v]) => (
+                          <div key={k} className="flex gap-2"><span className="shrink-0" style={ { color: "#5A6680", minWidth: 110 } }>{k}</span><span className="font-semibold break-all">{v}</span></div>
+                        ))}
+                      </div>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={aplicarLecturaTigo} className="flex-1 text-sm font-bold px-4 py-2.5 rounded-md text-white" style={ { background: "#001E62", minHeight: 40 } }>Usar estos datos</button>
+                        <button type="button" onClick={() => setLecturaTigo(null)} className="text-sm font-medium px-4 py-2.5 rounded-md border" style={ { borderColor: "#DFE5EF", minHeight: 40 } }>Volver</button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
             <div className="col-span-2">
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>Nombre</label>
               <input
@@ -10750,6 +10939,22 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
               />
             </div>
             <div>
+              <label className={etiquetaCls} style={ { color: "#5A6680" } }>Teléfono adicional</label>
+              <input type="tel" inputMode="tel" value={datosExtra.telefonoAdicional || ""} onChange={(e) => setExtra("telefonoAdicional", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#5A6680" } }>Correo</label>
+              <input type="email" value={datosExtra.correo || ""} onChange={(e) => setExtra("correo", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#5A6680" } }>Barrio</label>
+              <input value={datosExtra.barrio || ""} onChange={(e) => setExtra("barrio", e.target.value.toUpperCase())} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+            </div>
+            <div>
+              <label className={etiquetaCls} style={ { color: "#5A6680" } }>Corregimiento</label>
+              <input value={datosExtra.corregimiento || ""} onChange={(e) => setExtra("corregimiento", e.target.value.toUpperCase())} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+            </div>
+            <div>
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>Tipo</label>
               <select
                 value={tipo}
@@ -10794,6 +10999,32 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                     {fmtMonto(m)}
                   </button>
                 ))}
+              </div>
+            )}
+            {tipo === "matchdigital" && (
+              <div className="col-span-2 rounded-md p-3 grid grid-cols-2 gap-3" style={ { background: "#F3F6FB", border: "1px solid #C9D2E3" } }>
+                <div className="col-span-2 text-sm font-bold" style={ { color: "#001E62" } }>Titular del Hogar (comparte el beneficio)</div>
+                <div>
+                  <label className={etiquetaCls} style={ { color: "#5A6680" } }>Teléfono del titular</label>
+                  <input type="tel" inputMode="tel" value={datosExtra.titularTelefono || ""} onChange={(e) => setExtra("titularTelefono", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+                </div>
+                <div>
+                  <label className={etiquetaCls} style={ { color: "#5A6680" } }>Correo del titular</label>
+                  <input type="email" value={datosExtra.titularCorreo || ""} onChange={(e) => setExtra("titularCorreo", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+                </div>
+                <div className="col-span-2">
+                  <label className={etiquetaCls} style={ { color: "#5A6680" } }>Cédula del titular (solo informativa)</label>
+                  <input value={datosExtra.titularCedula || ""} onChange={(e) => setExtra("titularCedula", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+                </div>
+                <label className="col-span-2 flex items-center gap-2 text-sm cursor-pointer">
+                  <input type="checkbox" checked={!!datosExtra.matchConfirmado} onChange={(e) => setExtra("matchConfirmado", e.target.checked)} className="w-4 h-4" />
+                  <span>✓ El titular ya confirmó el match <span className="text-xs" style={ { color: "#5A6680" } }>(tiene 5 días desde la orden)</span></span>
+                </label>
+              </div>
+            )}
+            {(datosExtra.planNombre || datosExtra.estadoOrden) && (
+              <div className="col-span-2 text-xs" style={ { color: "#5A6680" } }>
+                {[datosExtra.planNombre, datosExtra.estadoOrden ? "Orden: " + datosExtra.estadoOrden : ""].filter(Boolean).join(" · ")}
               </div>
             )}
             <div>
