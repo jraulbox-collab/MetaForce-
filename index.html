@@ -8695,7 +8695,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </div>
         );
       case "plan":
-        return planResumen(c);
+        return <span className="whitespace-nowrap">{planResumen(c)}</span>;
       case "monto":
         return <span className="font-mono text-xs">{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>;
       case "ciclo":
@@ -8713,16 +8713,19 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </span>
         ) : (
           <span className="inline-flex flex-col items-start gap-1">
-            <span className="text-xs font-bold px-2 py-1 rounded-full" style={ { background: "#B45309", color: "white" } }>
-              ⚠️ PENDIENTE POR INSTALAR
+            <span className="text-xs font-bold px-2 py-1 rounded-full whitespace-nowrap" style={ { background: "#B45309", color: "white" } }>
+              ⏳ Por instalar
             </span>
             {c.instalacionProgramada && (
               <span
-                className="text-xs font-medium"
+                className="text-xs font-medium leading-tight"
                 style={ { color: c.instalacionProgramada < fechaLocalISO(new Date()) ? "#B91C1C" : "#001E62" } }
               >
-                {c.instalacionProgramada < fechaLocalISO(new Date()) ? "Venció: " : "Instalación: "}
-                {fmtFechaDia(c.instalacionProgramada)}{c.franjaInstalacion ? " · " + franjaCorta(c.franjaInstalacion) : ""}
+                {c.instalacionProgramada < fechaLocalISO(new Date()) ? "Venció · " : ""}
+                <span className="whitespace-nowrap">{fmtFechaDia(c.instalacionProgramada)}</span>
+                {c.franjaInstalacion && (
+                  <span className="block whitespace-nowrap">{franjaCorta(c.franjaInstalacion).replace(/:00/g, "").replace(" - ", "–")}</span>
+                )}
               </span>
             )}
           </span>
