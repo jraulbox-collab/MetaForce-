@@ -712,6 +712,35 @@ function leerOrdenMovilTigo(texto) {
 function tipoClienteMovil(c) {
   return c.tipo || (c.fullTigo ? "fulltigo" : "convergencia");
 }
+// ---------- Match Digital: el titular del Hogar tiene 5 días para aprobar ----------
+const DIAS_PLAZO_MATCH = 5;
+function matchLimiteISO(c) {
+  const base = c.matchFecha || String(c.creadoEn || "").slice(0, 10);
+  return base ? addDays(base, DIAS_PLAZO_MATCH) : "";
+}
+// null si no aplica (no es Match Digital o ya confirmó). Si no, el estado del plazo.
+function matchInfo(c) {
+  if (!c || c.tipo !== "matchdigital" || c.matchConfirmado) return null;
+  const lim = matchLimiteISO(c);
+  if (!lim) return { nivel: "pendiente", texto: "⏳ Match pendiente", dias: null, lim };
+  const d = daysFromToday(lim);
+  if (d < 0) return { nivel: "vencido", texto: "⚠ Match vencido · sin descuento · reenviar correo", dias: d, lim };
+  const cuando = d === 0 ? "vence hoy" : d === 1 ? "queda 1 día" : `quedan ${d} días`;
+  return { nivel: d <= 1 ? "urgente" : "pendiente", texto: `⏳ Match pendiente · ${cuando}`, dias: d, lim };
+}
+// Mensaje para el titular del Hogar (solo mientras el plazo siga vigente).
+function textoMatchTitular(c) {
+  const i = matchInfo(c);
+  if (!i || i.nivel === "vencido") return "";
+  const fecha = i.lim ? fmtFechaInstalacionLarga(i.lim) : "";
+  return `${saludoSegunHora()}. Le saluda José Severino, ejecutivo de ventas de Tigo.
+
+Le informo que Tigo le envió un correo electrónico y un mensaje de texto para que apruebe el beneficio que le permitirá a *${tituloEs(c.nombre || "")}* obtener un descuento en el plan móvil de la línea *${c.telefono || ""}*.
+
+Hasta el momento, la aprobación está pendiente. Por favor, revise su correo (incluida la carpeta de spam) o su mensaje de texto y presione «Aceptar» para completar el proceso.
+${fecha ? `\n📅 Tiene hasta el *${fecha}* para aprobarlo.\n` : ""}
+¡Muchas gracias por su colaboración!`;
+}
 function etiquetaTipoMovil(t) {
   return (TIPOS_CLIENTE_MOVIL.find((x) => x.value === t) || {}).label || t;
 }
@@ -5267,6 +5296,39 @@ function LineaAbonoPendiente({ clientes, conSeparador, onVer }) {
   );
 }
 
+// Línea del Dashboard: matches digitales que el titular del Hogar aún no aprueba.
+function LineaMatchPendiente({ convergencias, conSeparador, onVer }) {
+  const lista = (convergencias || [])
+    .filter((c) => matchInfo(c))
+    .sort((a, b) => (matchInfo(a).dias === null ? 99 : matchInfo(a).dias) - (matchInfo(b).dias === null ? 99 : matchInfo(b).dias));
+  if (lista.length === 0) return null;
+  const vencidos = lista.filter((c) => matchInfo(c).nivel === "vencido");
+  const vigentes = lista.filter((c) => matchInfo(c).nivel !== "vencido");
+  const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
+  const titulo = vencidos.length > 0
+    ? `${plural(vencidos.length, "match vencido", "matches vencidos")} · sin descuento`
+    : plural(vigentes.length, "match por confirmar", "matches por confirmar");
+  const primero = vencidos.length > 0 ? vencidos[0] : vigentes[0];
+  const detalle = vencidos.length > 0
+    ? `Reenviar correo: ${tituloEs(vencidos[0].nombre || "")}${vigentes.length > 0 ? " · " + plural(vigentes.length, "más por confirmar", "más por confirmar") : ""}`
+    : `Más urgente: ${tituloEs(primero.nombre || "")} · ${matchInfo(primero).texto.replace("⏳ Match pendiente · ", "")}`;
+  return (
+    <button
+      type="button"
+      onClick={() => onVer(primero)}
+      className="w-full text-left flex items-center gap-3 px-4 py-3"
+      style={ { background: "transparent", color: "#fff", border: 0, borderTop: conSeparador ? "1px solid rgba(255,255,255,.25)" : 0 } }
+    >
+      <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">{vencidos.length > 0 ? "⚠" : "⏳"}</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold">{titulo}</span>
+        <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{detalle}</span>
+      </span>
+      <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+    </button>
+  );
+}
+
 // Bloque "Abono inicial" de la ficha de un cliente Hogar: solo dice si ya hizo el abono o no.
 function BloqueAbonoInicial({ cliente, onMarcar }) {
   const recibido = cliente.abonoInicial !== false;
@@ -6689,7 +6751,16 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const nFac = enRiesgoHoy.length;
         const hayCobros = !((nRec === 0 && nFac === 0) || !onIrACobros);
         const hayAbono = clientes.some(abonoPendiente) && !!onVerClientes;
-        if (!hayCobros && !hayAbono) return null;
+        const hayMatch = (convergencias || []).some((c) => matchInfo(c)) && !!onVerClientes;
+        if (!hayCobros && !hayAbono && !hayMatch) return null;
+        const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
+        const lineaMatch = (sep) => hayMatch ? (
+          <LineaMatchPendiente
+            convergencias={convergencias}
+            conSeparador={sep}
+            onVer={(c) => onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", chipMovil: "matchPendiente" })}
+          />
+        ) : null;
         const plural = (n, s, p) => `${n} ${n === 1 ? s : p}`;
         const titulo = nRec > 0 ? `${plural(nRec, "recordatorio por enviar", "recordatorios por enviar")}` : `${plural(nFac, "factura por cobrar", "facturas por cobrar")}`;
         const partes = [];
@@ -6697,6 +6768,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         if (nFac > 0 && rescateDiasRestantes !== null) partes.push(rescateDiasRestantes <= 0 ? "vence hoy" : rescateDiasRestantes === 1 ? "queda 1 día" : `quedan ${rescateDiasRestantes} días`);
         return (
           <div className="mb-4 rounded-xl overflow-hidden" style={ { background: "#001E62", color: "#fff" } }>
+            {matchVencido && lineaMatch(false)}
             {hayCobros && (
               <button
                 type="button"
@@ -6715,10 +6787,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             {hayAbono && (
               <LineaAbonoPendiente
                 clientes={clientes}
-                conSeparador={hayCobros}
+                conSeparador={hayCobros || matchVencido}
                 onVer={() => onVerClientes({ chipGrupo: "faltaAbono", todosLosMeses: true })}
               />
             )}
+            {!matchVencido && lineaMatch(hayCobros || hayAbono)}
           </div>
         );
       })()}
@@ -10587,6 +10660,7 @@ function BloqueOtraLista({ icono, titulo, filas, onAbrir }) {
 function pasaChipMovil(c, chip) {
   if (chip === "todos") return true;
   if (chip === "portabilidad") return !!c.esPortabilidad;
+  if (chip === "matchPendiente") return !!matchInfo(c);
   if (!esquemaNuevo(periodoDelMovil(c))) return false;
   const pagada = c.f1_estado === "pagada";
   if (chip === "pagadas") return pagada;
@@ -11188,6 +11262,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           ["todos", "Todos", n("todos"), false],
           ["sinPagar", "⚠ Sin pagar 1ra factura", n("sinPagar"), true],
           ["pagadas", "✓ Pagadas", n("pagadas"), false],
+          ["matchPendiente", "⏳ Match pendiente", n("matchPendiente"), true],
           ["portabilidad", "Portabilidad", n("portabilidad"), true],
           ["noCuenta", "⛔ No cuenta", n("noCuenta"), true],
         ];
@@ -11282,6 +11357,46 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                             </span>
                           )}
                         </div>
+                        {(() => {
+                          const mi = matchInfo(c);
+                          if (!mi) return null;
+                          const venc = mi.nivel === "vencido";
+                          const msg = textoMatchTitular(c);
+                          const telT = c.titularTelefono ? telefonoWhatsapp(c.titularTelefono) : "";
+                          return (
+                            <div className="flex flex-wrap items-center gap-1.5 mt-2">
+                              <span
+                                className="text-xs font-bold px-3 py-1.5 rounded-full"
+                                style={ venc
+                                  ? { background: "#B45309", color: "#fff", minHeight: 34 }
+                                  : { background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309", minHeight: 34 } }
+                              >
+                                {mi.texto}
+                              </span>
+                              {!venc && telT && msg && (
+                                <a
+                                  href={`https://wa.me/${telT}?text=${encodeURIComponent(msg)}`}
+                                  className="inline-flex items-center text-xs font-bold px-3 py-1.5 rounded-full"
+                                  style={ { background: "#FFFFFF", color: "#001E62", border: "1.5px solid #001E62", minHeight: 34 } }
+                                  title="Recordarle al titular que apruebe el beneficio"
+                                >
+                                  💬 Recordar al titular
+                                </a>
+                              )}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!window.confirm(`¿Confirmas que el titular ya aprobó el match de ${c.nombre}?`)) return;
+                                  onEditar(c.id, { matchConfirmado: true });
+                                } }
+                                className="text-xs font-bold px-3 py-1.5 rounded-full"
+                                style={ { background: "#fff", color: "#001E62", border: "1.5px solid #DFE5EF", minHeight: 34 } }
+                              >
+                                ✓ Ya confirmó
+                              </button>
+                            </div>
+                          );
+                        })()}
                         {(() => {
                           const fch = movilFechasPrimeraFactura(c);
                           return (
