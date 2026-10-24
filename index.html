@@ -5926,13 +5926,13 @@ function tipoMensajeVenta(n) {
 }
 // Resumen de lo que se le ofrece o se le pide, para verlo sin abrir el mensaje.
 function ofertaVenta(n, f) {
-  if (n.tipo === "referido") return "Ofertas de internet. Le dices que un conocido suyo te pasó su número.";
+  if (n.tipo === "referido") return "Ofertas de internet";
   if (n.ronda === "referido") {
     const conMovil = n.tipo === "movil" || (n.tipo === "ficha" && f.tieneMovil);
-    return conMovil ? "Le pides un contacto que gaste mucho en tarjetas o necesite un plan barato de internet." : "Le pides un contacto que se esté mudando o quiera cambiar su internet.";
+    return conMovil ? "Pedir un referido: recargas o internet" : "Pedir un referido: mudanza o cambio de internet";
   }
-  if (n.tipo === "movil") return "Le preguntas si tiene internet en casa y con qué compañía; ofreces las ofertas de internet de Tigo.";
-  return `Plan de celular a ${PRECIO_BENEFICIO_MOVIL} al mes, data y minutos ilimitados a Tigo, sin pagar nada por adelantado.`;
+  if (n.tipo === "movil") return "Preguntar por su internet";
+  return `Plan móvil ${PRECIO_BENEFICIO_MOVIL}`;
 }
 const FILTROS_VENTAS = [
   { k: "todos", icono: "💬", txt: "Todos" },
