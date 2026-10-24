@@ -2487,7 +2487,12 @@ function App() {
     } catch (e) {}
   };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
-  const [seccionMensajes, setSeccionMensajes] = useState("cobros");
+  const [seccionMensajes, setSeccionMensajes] = useState(() => {
+    try { return localStorage.getItem("antichurn_seccion_mensajes") === "ventas" ? "ventas" : "cobros"; } catch (e) { return "cobros"; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("antichurn_seccion_mensajes", seccionMensajes); } catch (e) {}
+  }, [seccionMensajes]);
   function aplicarCambioVenta(vmActual, k, cambio) {
     const vm = { ...(vmActual || {}) };
     if (cambio === null) delete vm[k];
