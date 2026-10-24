@@ -5530,13 +5530,15 @@ No tiene que pagar nada por adelantado.
 Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
 }
 function mensajeVentaContacto(c) {
-  return `${saludoSegunHora()}. Soy José Severino, asesor de Tigo.
+  return `${saludoSegunHora()}. Soy José Severino, asesor de Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
 
-${tituloEs(c.nombre || "")} contrató internet con nosotros y con su cuenta usted puede adquirir el beneficio de un plan de celular a ${PRECIO_BENEFICIO_MOVIL}, con data y minutos ilimitados a Tigo y 5 GB para compartir.
+Con esa cuenta, usted puede tener un plan de celular por ${PRECIO_BENEFICIO_MOVIL} al mes, con data y minutos ilimitados a Tigo.
 
-Si usted gasta mucho en tarjetas, le puede interesar. No tiene que pagar nada por adelantado.
+Si hoy gasta en tarjetas de recarga, seguramente le sale más caro. Y si conoce a alguien más que gaste en recargas, también puede darle ese beneficio.
 
-¿Su línea actual es de Tigo o de Más Móvil?`;
+No tiene que pagar nada por adelantado.
+
+Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
 }
 // Calcula qué clientes y números tocan hoy. Sin anotaciones: se apoya en lo que ya está guardado.
 function calcularVentasHoy(clientes, convergencias, ahoraMs) {
