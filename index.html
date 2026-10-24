@@ -4158,11 +4158,12 @@ function App() {
               convergencias={convergencias}
               onAbrir={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() })}
               onDeshacer={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: undefined } : null)}
-              onAgregarReferido={(id, tel, nombre) => {
-                const nuevo = { id: uid(), tel, nombre, creadoEn: new Date().toISOString() };
+              onAgregarReferido={(id, lista) => {
+                const ahoraISO = new Date().toISOString();
+                const nuevos = lista.map((x) => ({ id: uid(), tel: x.tel, nombre: x.nombre || "", creadoEn: ahoraISO }));
                 const mov = convergencias.find((m) => m.id === id);
-                if (mov) editarConvergencia(id, { referidos: [...(mov.referidos || []), nuevo] });
-                else actualizarClientes((prev) => prev.map((c) => (c.id === id ? { ...c, referidos: [...(c.referidos || []), nuevo] } : c)));
+                if (mov) editarConvergencia(id, { referidos: [...(mov.referidos || []), ...nuevos] });
+                else actualizarClientes((prev) => prev.map((c) => (c.id === id ? { ...c, referidos: [...(c.referidos || []), ...nuevos] } : c)));
               } }
               onSaltar={(id, k, saltos, ronda) => cambiarVentaMsg(id, k, ronda === "movil" ? { intSaltoDia: fechaLocalISO(new Date()), intSaltos: saltos + 1, intDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR } : { refSaltoDia: fechaLocalISO(new Date()), refSaltos: saltos + 1, refDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR })}
               onNoEscribir={(id, k) => cambiarVentaMsg(id, k, { noEscribir: true })}
@@ -5798,9 +5799,32 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   return { filas, seguimiento, referidos: { guardados: refGuardados, contrataron: refContrataron }, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
 }
 
-function FormReferido({ existe, onGuardar, onCancelar }) {
+// Lee una lista pegada (un contacto por línea): "6123-4567", "Pedro 6123-4567" o "6123-4567 Pedro".
+function leerListaReferidos(texto, existe) {
+  const validos = [];
+  const sinLeer = [];
+  const repetidos = [];
+  const vistos = new Set();
+  String(texto || "").split(/\n|;/).forEach((linea) => {
+    const t = linea.trim();
+    if (!t) return;
+    const m = t.match(/(?:\+?507[\s-]*)?(\d[\d\s-]{6,}\d)/);
+    const dig = m ? m[0].replace(/\D/g, "").replace(/^507(?=\d{8}$)/, "") : "";
+    if (dig.length !== 8) { sinLeer.push(t); return; }
+    const k = dig;
+    if (vistos.has(k) || existe(k)) { repetidos.push(dig.slice(0, 4) + "-" + dig.slice(4)); return; }
+    vistos.add(k);
+    const nombre = t.replace(m[0], " ").replace(/[,:\-–·|]+/g, " ").replace(/\s+/g, " ").trim();
+    validos.push({ tel: dig.slice(0, 4) + "-" + dig.slice(4), nombre });
+  });
+  return { validos, sinLeer, repetidos };
+}
+
+function FormReferido({ existe, onGuardar, onGuardarVarios, onCancelar }) {
+  const [modo, setModo] = useState("uno");
   const [tel, setTel] = useState("");
   const [nom, setNom] = useState("");
+  const [lista, setLista] = useState("");
   const [err, setErr] = useState("");
   const guardar = () => {
     const digitos = tel.replace(/\D/g, "");
@@ -5808,15 +5832,40 @@ function FormReferido({ existe, onGuardar, onCancelar }) {
     if (existe(d8(tel))) { setErr("Ese número ya está en tu lista."); return; }
     onGuardar(tel.trim(), nom.trim());
   };
+  const leido = modo === "varios" ? leerListaReferidos(lista, existe) : null;
+  const guardarVarios = () => {
+    if (!leido || leido.validos.length === 0) { setErr("No encontré ningún número para guardar."); return; }
+    onGuardarVarios(leido.validos);
+  };
   const estiloInput = { width: "100%", height: 40, border: "1.5px solid #9CA3AF", borderRadius: 8, padding: "0 10px", fontSize: 16, background: "#fff", color: "#111827" };
   return (
     <div className="mt-2 rounded-lg p-3" style={ { background: "#F3F6FB", border: "1.5px solid #D5DEEE" } }>
-      <div className="text-xs font-extrabold mb-2" style={ { color: "#001E62" } }>Contacto que te dio</div>
-      <input type="tel" inputMode="tel" value={tel} onChange={(e) => { setTel(e.target.value); setErr(""); } } placeholder="Número" aria-label="Número del contacto" style={ estiloInput } />
-      <input type="text" value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nombre (opcional)" aria-label="Nombre del contacto" style={ { ...estiloInput, marginTop: 8 } } />
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <div className="text-xs font-extrabold" style={ { color: "#001E62" } }>{modo === "uno" ? "Contacto que te dio" : "Pega la lista de contactos"}</div>
+        {onGuardarVarios && (
+          <button type="button" onClick={() => { setModo(modo === "uno" ? "varios" : "uno"); setErr(""); } } className="text-xs font-extrabold underline" style={ { color: "#001E62" } }>{modo === "uno" ? "Pegar varios" : "Solo uno"}</button>
+        )}
+      </div>
+      {modo === "uno" ? (
+        <>
+          <input type="tel" inputMode="tel" value={tel} onChange={(e) => { setTel(e.target.value); setErr(""); } } placeholder="Número" aria-label="Número del contacto" style={ estiloInput } />
+          <input type="text" value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nombre (opcional)" aria-label="Nombre del contacto" style={ { ...estiloInput, marginTop: 8 } } />
+        </>
+      ) : (
+        <>
+          <textarea value={lista} onChange={(e) => { setLista(e.target.value); setErr(""); } } rows={5} placeholder={"Uno por línea:\nPedro 6123-4567\n6234-5678"} aria-label="Lista de contactos" style={ { ...estiloInput, height: "auto", padding: 10 } } />
+          {lista.trim() && leido && (
+            <div className="text-xs mt-2" style={ { color: "#374151" } }>
+              <div className="font-bold" style={ { color: "#0F5A2B" } }>✓ {leido.validos.length} {leido.validos.length === 1 ? "contacto listo" : "contactos listos"}</div>
+              {leido.repetidos.length > 0 && <div className="mt-1">↺ Ya estaban guardados: {leido.repetidos.join(", ")}</div>}
+              {leido.sinLeer.length > 0 && <div className="mt-1 font-bold" style={ { color: "#B45309" } }>⚠️ No pude leer: {leido.sinLeer.join(" | ")}</div>}
+            </div>
+          )}
+        </>
+      )}
       {err && <div className="text-xs font-bold mt-2" style={ { color: "#B42318" } }>⚠️ {err}</div>}
       <div className="flex gap-2 mt-3">
-        <button type="button" onClick={guardar} className="flex-1 text-sm font-extrabold rounded-lg text-white" style={ { height: 40, background: "#001E62" } }>Guardar</button>
+        <button type="button" onClick={modo === "uno" ? guardar : guardarVarios} className="flex-1 text-sm font-extrabold rounded-lg text-white" style={ { height: 40, background: "#001E62" } }>{modo === "uno" ? "Guardar" : `Guardar${leido && leido.validos.length ? " " + leido.validos.length : ""}`}</button>
         <button type="button" onClick={onCancelar} className="text-sm font-bold rounded-lg px-4" style={ { height: 40, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>Cancelar</button>
       </div>
     </div>
@@ -5842,7 +5891,7 @@ const FILTROS_VENTAS = [
 ];
 const LOTE_VENTAS = 10;
 
-function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar }) {
+function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar, onGuardarVarios }) {
   const [abierto, setAbierto] = useState(false);
   const [q, setQ] = useState("");
   const [elegido, setElegido] = useState(null);
@@ -5873,7 +5922,7 @@ function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar }) 
       ) : (
         <>
           <div className="text-sm font-bold mb-1" style={ { color: "#001E62" } }>{tituloEs(elegido.nombre)}</div>
-          <FormReferido existe={existe} onGuardar={(t, nm) => { onGuardar(elegido.id, t, nm); cerrar(); } } onCancelar={cerrar} />
+          <FormReferido existe={existe} onGuardar={(t, nm) => { onGuardar(elegido.id, t, nm); cerrar(); } } onGuardarVarios={(l) => { onGuardarVarios(elegido.id, l); cerrar(); } } onCancelar={cerrar} />
         </>
       )}
     </div>
@@ -5928,10 +5977,11 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
     if ((clientes || []).some((c) => d8(c.telefono) === k || (c.referidos || []).some((r) => d8(r.tel) === k))) return true;
     return (convergencias || []).some((m) => d8(m.telefono) === k || d8(m.whatsapp) === k || (m.referidos || []).some((r) => d8(r.tel) === k));
   };
-  const guardarRef = (idCliente, tel, nom) => {
-    onAgregarReferido(idCliente, tel, nom);
+  const guardarRef = (idCliente, tel, nom) => guardarVarios(idCliente, [{ tel, nombre: nom }]);
+  const guardarVarios = (idCliente, lista) => {
+    onAgregarReferido(idCliente, lista);
     setFormKey(null);
-    setGuardadoMsg("✓ Contacto guardado. Sale en tu lista para escribirle.");
+    setGuardadoMsg(lista.length === 1 ? "✓ Contacto guardado. Sale en tu lista para escribirle." : `✓ ${lista.length} contactos guardados. Salen en tu lista para escribirles.`);
     setTimeout(() => setGuardadoMsg(""), 4000);
   };
   const datos = calcularVentasHoy(clientes, convergencias, ahora);
@@ -6005,6 +6055,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             convergencias={convergencias}
             existe={existe}
             onGuardar={(id, t, nm) => guardarRef(id, t, nm)}
+            onGuardarVarios={(id, l) => guardarVarios(id, l)}
           />
           <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
             {verRefs ? "✓ " : ""}📋 Mis referidos ({totalRefs})
@@ -6031,7 +6082,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             </div>
             {x.tipo !== "ficha" && x.tipo !== "movil" && (
               formKey === `seg-${x.cliente.id}-${x.k}` ? (
-                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(x.cliente.id, t, nm)} onCancelar={() => setFormKey(null)} />
+                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(x.cliente.id, t, nm)} onGuardarVarios={(l) => guardarVarios(x.cliente.id, l)} onCancelar={() => setFormKey(null)} />
               ) : (
                 <button type="button" onClick={() => setFormKey(`seg-${x.cliente.id}-${x.k}`)} className="mt-1.5 text-xs font-extrabold underline" style={ { color: "#001E62" } }>➕ Me dio un contacto</button>
               )
@@ -6109,7 +6160,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             )}
             {n.estado === "abierto" && (n.tipo !== "ficha" || n.ronda === "referido") && (n.tipo !== "movil" || n.ronda === "referido") && (
               formKey === key ? (
-                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(c.id, t, nm)} onCancelar={() => setFormKey(null)} />
+                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(c.id, t, nm)} onGuardarVarios={(l) => guardarVarios(c.id, l)} onCancelar={() => setFormKey(null)} />
               ) : (
                 <button type="button" onClick={() => setFormKey(key)} className="w-full mt-1.5 text-xs font-extrabold rounded-lg py-2.5" style={ { background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>➕ Me dio un contacto</button>
               )
