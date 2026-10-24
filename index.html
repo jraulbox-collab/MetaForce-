@@ -5533,6 +5533,7 @@ const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factur
 const DIAS_PARA_REFERIDOS = 30;       // días después del 1er mensaje a un contacto para pedirle referidos
 const SALTOS_PARA_DESCARTAR = 3;        // "Hoy no" seguidos antes de sacarlo de la lista
 const DIAS_OFERTA_INTERNET_MOVIL = 15; // días después de la 1ra factura pagada para ofrecer internet a un cliente móvil
+const DIAS_REFERIDOS_CLIENTE = 60;      // días después de la 1ra factura pagada para pedirle referidos a un cliente Hogar
 const PRECIO_BENEFICIO_MOVIL = "$20.70 más impuestos";
 const d8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
 function mensajeVentaFicha(c) {
@@ -5565,6 +5566,11 @@ function mensajeVentaReferidos(c) {
 ¿Conoce a alguien que se esté mudando o que quiera cambiarse de compañía de internet? Tengo buenas promociones para esa persona.
 
 ¿Quién se le viene a la mente? Con solo su número, yo me encargo del resto y le escribo de su parte.`;
+}
+function mensajeVentaReferidosCliente(c) {
+  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()}. Soy José Severino. Gracias por confiar en Tigo y en mí.
+
+Mi trabajo crece con las recomendaciones de clientes como usted. ¿Conoce a alguien que se esté mudando o que quiera cambiar su internet? Con solo su número, yo me encargo del resto y le escribo de su parte.`;
 }
 function mensajeVentaInternetMovil(m) {
   return `Hola ${primerNombre(m)}, ${saludoSegunHora().toLowerCase()}. Soy José Severino, su asesor de Tigo.
@@ -5630,10 +5636,19 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
           hechosHoy += 1;
           if (t > ultimaApertura) ultimaApertura = t;
         }
+        // Cliente Hogar: a los 60 días de su 1ra factura se le piden referidos (aunque haya respondido).
+        if (n.tipo === "ficha" && !esHoy) {
+          if (e.refAbiertoEn) {
+            if (fechaLocalISO(new Date(e.refAbiertoEn)) === hoyISO) numeros.push({ ...n, ronda: "referido", estado: "abierto", abiertoEn: e.refAbiertoEn });
+          } else if (!e.refDescartado && c.f1_pagadaEn && -daysFromToday(fechaLocalISO(new Date(c.f1_pagadaEn))) >= DIAS_REFERIDOS_CLIENTE && e.refSaltoDia !== hoyISO) {
+            numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+          }
+        }
         if (e.respondio) {
           if (!e.cerrado) seguimiento.push({ cliente: c, ...n, respondioEn: e.respondioEn || e.abiertoEn });
           return;
         }
+        if (n.tipo === "ficha" && !esHoy) return;
         // Segunda ronda: a los 30 días se le piden referidos al contacto (sin tener que marcar nada).
         if (n.tipo === "contacto") {
           if (e.refAbiertoEn) {
@@ -5854,7 +5869,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       {lista.map(({ f, n }) => {
         const c = f.cliente;
         const key = `vta-${c.id}-${n.k}`;
-        const msg = n.tipo === "movil" ? mensajeVentaInternetMovil(c) : n.tipo === "ficha" ? mensajeVentaFicha(c) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c);
+        const msg = n.tipo === "movil" ? mensajeVentaInternetMovil(c) : n.tipo === "ficha" ? (n.ronda === "referido" ? mensajeVentaReferidosCliente(c) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c);
         const esRef = n.tipo === "referido";
         const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
         const bloqueado = n.frio && (llegoAlTope || esperando);
@@ -5911,7 +5926,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 <button type="button" onClick={() => onDeshacer(c.id, n.k, n.ronda)} className="underline font-extrabold">↩ No lo envié</button>
               </div>
             )}
-            {n.estado === "abierto" && n.tipo !== "ficha" && n.tipo !== "movil" && (
+            {n.estado === "abierto" && n.tipo !== "movil" && (n.tipo !== "ficha" || n.ronda === "referido") && (
               formKey === key ? (
                 <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(c.id, t, nm)} onCancelar={() => setFormKey(null)} />
               ) : (
