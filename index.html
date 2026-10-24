@@ -6187,7 +6187,6 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 <button type="button" onClick={() => (f.esMovil ? onVerMovil && onVerMovil(c) : onVerCliente && onVerCliente(c))} className="text-left text-base font-extrabold" style={ { color: "#001E62" } }>{nombreFila} ›</button>
                 <div className="text-base font-bold font-mono mt-1">{n.tel}</div>
                 <div style={ filaInfo }>{n.etiqueta}{n.frio && !esRef ? " · número nuevo" : ""}</div>
-                <div style={ { ...filaInfo, fontWeight: 700, color: "#001E62" } }>{tipoM ? `${tipoM.icono} ${tipoM.txt}` : ""}</div>
                 <div style={ { ...filaInfo, fontWeight: 700 } }>🎯 {ofertaVenta(n, f)}</div>
                 {esRef && <div style={ filaInfo }>Recomendado por un contacto de {tituloEs(c.nombre || "")}</div>}
                 {!esRef && f.diasDesde !== null && <div style={ filaInfo }>💵 Pagó su 1ra factura {f.diasDesde === 0 ? "hoy" : f.diasDesde === 1 ? "hace 1 día" : `hace ${f.diasDesde} días`}</div>}
