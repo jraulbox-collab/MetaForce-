@@ -5548,6 +5548,9 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     const b = (leerBloqueTigo(c.observaciones).barrio || "").trim().toUpperCase();
     if (b) porBarrio[b] = (porBarrio[b] || 0) + 1;
   });
+  const conocidos = new Set();
+  (clientes || []).forEach((c) => { const k = d8(c.telefono); if (k.length >= 7) conocidos.add(k); });
+  (convergencias || []).forEach((m) => { [m.telefono, m.whatsapp].forEach((t) => { const k = d8(t); if (k.length >= 7) conocidos.add(k); }); });
   let hechosHoy = 0;
   let ultimaApertura = 0;
   const filas = [];
@@ -5559,8 +5562,9 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     const agregar = (tel, tipo, etiqueta) => {
       const k = d8(tel);
       if (k.length < 7 || vistos.has(k)) return;
+      if (tipo === "contacto" && conocidos.has(k)) return; // ya es WhatsApp de otro cliente: se atiende en su propia fila
       vistos.add(k);
-      cand.push({ k, tel: String(tel).trim(), tipo, etiqueta });
+      cand.push({ k, tel: String(tel).trim(), tipo, etiqueta, frio: tipo === "contacto" && !conocidos.has(k) });
     };
     agregar(c.telefono, "ficha", "WhatsApp de su ficha");
     agregar(bloque.voz1, "contacto", "Contacto 1 de Tigo");
@@ -5573,7 +5577,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
       if (e.abiertoEn) {
         const t = new Date(e.abiertoEn).getTime();
         const esHoy = fechaLocalISO(new Date(t)) === hoyISO;
-        if (esHoy) {
+        if (esHoy && n.frio) {
           hechosHoy += 1;
           if (t > ultimaApertura) ultimaApertura = t;
         }
@@ -5608,7 +5612,8 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     if (a.pagada && b.pagada) return b.pagada.localeCompare(a.pagada);
     return a.pagada ? -1 : b.pagada ? 1 : 0;
   });
-  const pendientes = filas.reduce((n, f) => n + f.numeros.filter((x) => x.estado === "pendiente").length, 0);
+  const pendientes = filas.reduce((n, f) => n + f.numeros.filter((x) => x.estado === "pendiente" && x.frio).length, 0);
+  const pendientesCalientes = filas.reduce((n, f) => n + f.numeros.filter((x) => x.estado === "pendiente" && !x.frio).length, 0);
   // ventas del mes por beneficio compartido (Match Digital cuyo titular es un cliente tuyo)
   const mes = hoyISO.slice(0, 7);
   const dueños = {};
@@ -5628,7 +5633,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     porCliente[dueño.id] = { nombre: dueño.nombre, n: ((porCliente[dueño.id] || {}).n || 0) + 1 };
   });
   seguimiento.sort((a, b) => String(a.respondioEn).localeCompare(String(b.respondioEn)));
-  return { filas, seguimiento, hechosHoy, pendientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
+  return { filas, seguimiento, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
 }
 
 function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onVerCliente }) {
@@ -5642,23 +5647,23 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
     return () => clearInterval(t);
   }, [esperando]);
   const llegoAlTope = datos.hechosHoy >= TOPE_DIARIO_VENTAS;
-  // Solo se muestran tantos pendientes como cupo queda hoy.
+  // Aplanamos a una lista de números y los intercalamos: mientras corre la espera de un número frío, mandas los conocidos.
   let cupo = Math.max(0, TOPE_DIARIO_VENTAS - datos.hechosHoy);
-  const filasVisibles = [];
-  datos.filas.forEach((f) => {
-    const nums = f.numeros.filter((n) => {
-      if (n.estado === "abierto") return true;
-      if (cupo > 0) { cupo -= 1; return true; }
-      return false;
-    });
-    if (nums.length > 0) filasVisibles.push({ ...f, numeros: nums });
-  });
-  const mostrados = filasVisibles.reduce((n, f) => n + f.numeros.filter((x) => x.estado === "pendiente").length, 0);
-  const paraManana = Math.max(0, datos.pendientes - mostrados);
-  const primerPendienteKey = (() => {
-    for (const f of filasVisibles) for (const n of f.numeros) if (n.estado === "pendiente") return `vta-${f.cliente.id}-${n.k}`;
-    return null;
-  })();
+  const items = [];
+  datos.filas.forEach((f) => f.numeros.forEach((n) => items.push({ f, n })));
+  const abiertos = items.filter((x) => x.n.estado === "abierto");
+  const pendC = items.filter((x) => x.n.estado === "pendiente" && !x.n.frio);
+  const pendF = items.filter((x) => x.n.estado === "pendiente" && x.n.frio);
+  const pendFVisibles = pendF.slice(0, cupo);
+  const paraManana = pendF.length - pendFVisibles.length;
+  const mezcla = [];
+  for (let i = 0; i < Math.max(pendC.length, pendFVisibles.length); i++) {
+    if (pendFVisibles[i]) mezcla.push(pendFVisibles[i]);
+    if (pendC[i]) mezcla.push(pendC[i]);
+  }
+  const lista = [...abiertos, ...mezcla];
+  const primerPend = (pendC[0] || pendFVisibles[0]);
+  const primerPendienteKey = primerPend ? `vta-${primerPend.f.cliente.id}-${primerPend.n.k}` : null;
   const pct = Math.min(100, Math.round((datos.hechosHoy / TOPE_DIARIO_VENTAS) * 100));
   const iconoWa = (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
@@ -5692,13 +5697,17 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           ))}
         </div>
       )}
-      {filasVisibles.length === 0 && !llegoAlTope && (
+      {lista.length === 0 && !llegoAlTope && (
         <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura.</p>
       )}
-      {filasVisibles.map((f) => {
+      {lista.map(({ f, n }) => {
         const c = f.cliente;
+        const key = `vta-${c.id}-${n.k}`;
+        const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : mensajeVentaContacto(c);
+        const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
+        const bloqueado = n.frio && (llegoAlTope || esperando);
         return (
-          <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#EEF1F6" } }>
+          <div key={key} id={key} className="px-4 py-3 border-t" style={ { borderColor: "#EEF1F6" } }>
             <button type="button" onClick={() => onVerCliente && onVerCliente(c)} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</button>
             <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
               {f.diasDesde === null ? "1ra factura pagada" : f.diasDesde === 0 ? "Pagó su 1ra factura hoy" : `Pagó su 1ra factura hace ${f.diasDesde} ${f.diasDesde === 1 ? "día" : "días"}`}
@@ -5708,71 +5717,61 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>📍 Zona con {f.zona} clientes tuyos</span>
               </div>
             )}
-            {f.numeros.map((n) => {
-              const key = `vta-${c.id}-${n.k}`;
-              const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : mensajeVentaContacto(c);
-              const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
-              const bloqueado = llegoAlTope || esperando;
-              return (
-                <div key={key} id={key} className="mt-2">
-                  <div className="flex items-center gap-2">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm font-bold font-mono">{n.tel}</div>
-                      <div className="text-[11px]" style={ { color: "#5A6680" } }>{n.etiqueta}</div>
-                    </div>
-                    {n.estado === "pendiente" && (
-                      bloqueado ? (
-                        <span className="shrink-0 inline-flex items-center text-xs font-bold px-3 rounded-lg" style={ { height: 34, color: "#5A6680", background: "#F3F6FB", border: "1.5px dashed #9CA3AF" } }>
-                          {llegoAlTope ? "Hasta mañana" : `Espera ${espera}s`}
-                        </span>
-                      ) : (
-                        <a
-                          href={href}
-                          onClick={() => onAbrir(c.id, n.k)}
-                          className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 rounded-lg"
-                          style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
-                        >
-                          {iconoWa}Enviar
-                        </a>
-                      )
-                    )}
-                  </div>
-                  {n.estado === "pendiente" && (
-                    <button
-                      type="button"
-                      onClick={() => { if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
-                      className="text-[11px] font-semibold underline mt-1"
-                      style={ { color: "#5A6680" } }
-                    >
-                      ✕ No escribirle más
-                    </button>
-                  )}
-                  {n.estado === "abierto" && (
-                    <div className="mt-1.5 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-bold" style={ { background: "#EAF0FB", color: "#001E62" } }>
-                      <span>✓ WhatsApp abierto {new Date(n.abiertoEn).toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" })}</span>
-                      <button type="button" onClick={() => onRespondio(c.id, n.k)} className="ml-auto font-extrabold px-2.5 rounded-lg" style={ { height: 30, background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>🔥 Respondió</button>
-                      <button type="button" onClick={() => onDeshacer(c.id, n.k)} className="underline font-extrabold">↩ No lo envié</button>
-                    </div>
-                  )}
-                  {n.estado === "abierto" && primerPendienteKey && (
-                    <button
-                      type="button"
-                      onClick={() => { const el = document.getElementById(primerPendienteKey); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" }); } }
-                      className="w-full mt-1.5 text-xs font-extrabold rounded-lg py-2.5 text-white"
-                      style={ { background: "#001E62" } }
-                    >
-                      Siguiente →
-                    </button>
-                  )}
-                </div>
-              );
-            })}
+            <div className="mt-2 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-mono">{n.tel}</div>
+                <div className="text-[11px]" style={ { color: "#5A6680" } }>{n.etiqueta}{n.frio ? " · nuevo" : ""}</div>
+              </div>
+              {n.estado === "pendiente" && (
+                bloqueado ? (
+                  <span className="shrink-0 inline-flex items-center text-xs font-bold px-3 rounded-lg" style={ { height: 34, color: "#5A6680", background: "#F3F6FB", border: "1.5px dashed #9CA3AF" } }>
+                    {llegoAlTope ? "Hasta mañana" : `Espera ${espera}s`}
+                  </span>
+                ) : (
+                  <a
+                    href={href}
+                    onClick={() => onAbrir(c.id, n.k)}
+                    className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 rounded-lg"
+                    style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
+                  >
+                    {iconoWa}Enviar
+                  </a>
+                )
+              )}
+            </div>
+            {n.estado === "pendiente" && (
+              <button
+                type="button"
+                onClick={() => { if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
+                className="text-[11px] font-semibold underline mt-1"
+                style={ { color: "#5A6680" } }
+              >
+                ✕ No escribirle más
+              </button>
+            )}
+            {n.estado === "abierto" && (
+              <div className="mt-1.5 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-bold" style={ { background: "#EAF0FB", color: "#001E62" } }>
+                <span>✓ WhatsApp abierto {new Date(n.abiertoEn).toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" })}</span>
+                <button type="button" onClick={() => onRespondio(c.id, n.k)} className="ml-auto font-extrabold px-2.5 rounded-lg" style={ { height: 30, background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>🔥 Respondió</button>
+                <button type="button" onClick={() => onDeshacer(c.id, n.k)} className="underline font-extrabold">↩ No lo envié</button>
+              </div>
+            )}
+            {n.estado === "abierto" && primerPendienteKey && (
+              <button
+                type="button"
+                onClick={() => { const el = document.getElementById(primerPendienteKey); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" }); } }
+                className="w-full mt-1.5 text-xs font-extrabold rounded-lg py-2.5 text-white"
+                style={ { background: "#001E62" } }
+              >
+                Siguiente →
+              </button>
+            )}
           </div>
         );
       })}
       {paraManana > 0 && (
         <div className="px-4 py-2.5 text-center text-xs font-bold border-t" style={ { color: "#0B4A99", borderColor: "#EEF1F6" } }>
-          Quedan {paraManana} para mañana · tope diario {TOPE_DIARIO_VENTAS}
+          Quedan {paraManana} nuevos para mañana · tope diario {TOPE_DIARIO_VENTAS} (solo números nuevos)
         </div>
       )}
       <div className="px-4 py-3 border-t" style={ { background: "#F3F6FB", borderColor: "#EEF1F6" } }>
@@ -7071,7 +7070,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayAbono = clientes.some(abonoPendiente) && !!onVerClientes;
         const hayMatch = (convergencias || []).some((c) => matchInfo(c)) && !!onVerClientes;
         const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
-        const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) : 0;
+        const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) + vh.pendientesCalientes : 0;
         const nSeg = vh ? vh.seguimiento.length : 0;
         const hayVentas = nVentas > 0 || nSeg > 0;
         if (!hayCobros && !hayAbono && !hayMatch && !hayVentas) return null;
