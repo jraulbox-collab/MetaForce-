@@ -6117,7 +6117,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   const totalRefs = datos.referidos.guardados;
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
-      <button
+      {!cola && <button
         type="button"
         onClick={() => setAgregando(true)}
         className="fixed z-40 flex items-center justify-center gap-1.5 text-white text-sm font-extrabold px-4"
@@ -6125,7 +6125,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
         aria-label="Agregar referido"
       >
         ➕ Referido
-      </button>
+      </button>}
       {agregando && (
         <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } } onClick={(e) => { if (e.target === e.currentTarget) setAgregando(false); } }>
           <div className="w-full bg-white p-4 overflow-auto" style={ { maxHeight: "85%", borderTopLeftRadius: 16, borderTopRightRadius: 16, maxWidth: 560 } }>
@@ -6177,7 +6177,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
         )}
       </div>
       {cola && itemCola && (
-        <div className="fixed left-0 right-0 z-[60] p-3" style={ { top: 0, paddingTop: "calc(12px + env(safe-area-inset-top))", background: "#001E62", boxShadow: "0 4px 16px rgba(0,0,0,.3)" } }>
+        <div className="fixed z-[60] p-3" style={ { left: 10, right: 10, bottom: "calc(92px + env(safe-area-inset-bottom))", borderRadius: 16, background: "#001E62", boxShadow: "0 -4px 18px rgba(0,0,0,.35)", border: "1px solid #3A55A0" } }>
           <div className="text-sm font-extrabold text-white">
             Enviando {idxCola + 1} de {cola.length} · quedan {cola.length - idxCola - 1}
           </div>
@@ -6359,6 +6359,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             : "Todavía ninguno. Se guardan con el botón ➕ Agregar referido."}
         </div>
       </div>
+      {cola && itemCola && <div style={ { height: 240 } } aria-hidden="true"></div>}
     </div>
   );
 }
