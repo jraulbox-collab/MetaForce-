@@ -4149,6 +4149,8 @@ function App() {
               onAbrir={(id, k) => cambiarVentaMsg(id, k, { abiertoEn: new Date().toISOString() })}
               onDeshacer={(id, k) => cambiarVentaMsg(id, k, null)}
               onNoEscribir={(id, k) => cambiarVentaMsg(id, k, { noEscribir: true })}
+              onRespondio={(id, k) => cambiarVentaMsg(id, k, { respondio: true, respondioEn: new Date().toISOString(), cerrado: false })}
+              onCerrar={(id, k) => cambiarVentaMsg(id, k, { cerrado: true })}
               onVerCliente={(c) => { setOrigenDetalle("alertas"); setClienteDetalleId(c.id); navegarA("detalle"); } }
             />
           )}
@@ -5547,6 +5549,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   let hechosHoy = 0;
   let ultimaApertura = 0;
   const filas = [];
+  const seguimiento = [];
   lista.forEach((c) => {
     const bloque = leerBloqueTigo(c.observaciones);
     const vistos = new Set();
@@ -5567,11 +5570,16 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
       if (e.noEscribir) return;
       if (e.abiertoEn) {
         const t = new Date(e.abiertoEn).getTime();
-        if (fechaLocalISO(new Date(t)) === hoyISO) {
+        const esHoy = fechaLocalISO(new Date(t)) === hoyISO;
+        if (esHoy) {
           hechosHoy += 1;
           if (t > ultimaApertura) ultimaApertura = t;
-          numeros.push({ ...n, estado: "abierto", abiertoEn: e.abiertoEn });
         }
+        if (e.respondio) {
+          if (!e.cerrado) seguimiento.push({ cliente: c, ...n, respondioEn: e.respondioEn || e.abiertoEn });
+          return;
+        }
+        if (esHoy) numeros.push({ ...n, estado: "abierto", abiertoEn: e.abiertoEn });
         return; // ya se le escribió antes
       }
       numeros.push({ ...n, estado: "pendiente" });
@@ -5617,10 +5625,11 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     totalMatch += 1;
     porCliente[dueño.id] = { nombre: dueño.nombre, n: ((porCliente[dueño.id] || {}).n || 0) + 1 };
   });
-  return { filas, hechosHoy, pendientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
+  seguimiento.sort((a, b) => String(a.respondioEn).localeCompare(String(b.respondioEn)));
+  return { filas, seguimiento, hechosHoy, pendientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
 }
 
-function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onVerCliente }) {
+function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onVerCliente }) {
   const [ahora, setAhora] = useState(Date.now());
   const datos = calcularVentasHoy(clientes, convergencias, ahora);
   const espera = Math.max(0, ESPERA_ENTRE_MENSAJES_S - Math.floor((ahora - datos.ultimaApertura) / 1000));
@@ -5665,6 +5674,21 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       </div>
       {llegoAlTope && (
         <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo por hoy. El resto sigue mañana.</div>
+      )}
+      {datos.seguimiento.length > 0 && (
+        <div className="px-4 py-3" style={ { background: "#FFF3DC", borderBottom: "1px solid #F0D9AE" } }>
+          <div className="text-sm font-extrabold" style={ { color: "#B45309" } }>🔥 Respondieron · falta cerrar ({datos.seguimiento.length})</div>
+          {datos.seguimiento.map((x) => (
+            <div key={`seg-${x.cliente.id}-${x.k}`} className="mt-2 flex items-center gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="text-sm font-bold font-mono">{x.tel}</div>
+                <div className="text-[11px]" style={ { color: "#5A6680" } }>{x.tipo === "ficha" ? "Cliente" : "Contacto de"} {tituloEs(x.cliente.nombre || "")}</div>
+              </div>
+              <a href={`https://wa.me/${telefonoWhatsapp(x.tel)}`} className="shrink-0 inline-flex items-center text-xs font-extrabold px-3 rounded-lg" style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }>Abrir chat</a>
+              <button type="button" onClick={() => onCerrar(x.cliente.id, x.k)} className="shrink-0 text-xs font-extrabold px-3 rounded-lg" style={ { height: 34, color: "#0F5A2B", background: "#E3F5EA", border: "1.5px solid #0F5A2B" } }>✓ Listo</button>
+            </div>
+          ))}
+        </div>
       )}
       {filasVisibles.length === 0 && !llegoAlTope && (
         <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura.</p>
@@ -5724,7 +5748,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                   {n.estado === "abierto" && (
                     <div className="mt-1.5 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-bold" style={ { background: "#EAF0FB", color: "#001E62" } }>
                       <span>✓ WhatsApp abierto {new Date(n.abiertoEn).toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" })}</span>
-                      <button type="button" onClick={() => onDeshacer(c.id, n.k)} className="ml-auto underline font-extrabold">↩ No lo envié</button>
+                      <button type="button" onClick={() => onRespondio(c.id, n.k)} className="ml-auto font-extrabold px-2.5 rounded-lg" style={ { height: 30, background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>🔥 Respondió</button>
+                      <button type="button" onClick={() => onDeshacer(c.id, n.k)} className="underline font-extrabold">↩ No lo envié</button>
                     </div>
                   )}
                   {n.estado === "abierto" && primerPendienteKey && (
@@ -7045,7 +7070,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayMatch = (convergencias || []).some((c) => matchInfo(c)) && !!onVerClientes;
         const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
         const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) : 0;
-        const hayVentas = nVentas > 0;
+        const nSeg = vh ? vh.seguimiento.length : 0;
+        const hayVentas = nVentas > 0 || nSeg > 0;
         if (!hayCobros && !hayAbono && !hayMatch && !hayVentas) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
@@ -7094,7 +7120,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch) ? "1px solid rgba(255,255,255,.18)" : 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
-                <span className="min-w-0 flex-1 text-sm font-bold">{nVentas} para escribir hoy</span>
+                <span className="min-w-0 flex-1 text-sm font-bold">{[nVentas > 0 ? `${nVentas} para escribir hoy` : "", nSeg > 0 ? `🔥 ${nSeg} por cerrar` : ""].filter(Boolean).join(" · ")}</span>
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
             )}
