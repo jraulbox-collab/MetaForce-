@@ -3963,7 +3963,7 @@ function App() {
         </div>
       )}
 
-      {tab !== "nuevo" && (
+      {tab !== "nuevo" && !(tab === "alertas" && seccionMensajes === "ventas") && (
         <button
           onClick={() => setMostrarSelectorNuevo(true)}
           className="md:hidden fixed z-40 flex items-center justify-center text-white mf-fab"
@@ -5977,10 +5977,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
       <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-bold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</span>
-          <span className="text-xs font-semibold" style={ { color: "#5A6680" } }>{datos.hechosHoy} de {TOPE_DIARIO_VENTAS} nuevos hoy</span>
-        </div>
+        <div className="text-base font-extrabold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</div>
+        <div className="text-xs font-semibold mt-1" style={ { color: "#5A6680" } }>Números nuevos hoy: {datos.hechosHoy} de {TOPE_DIARIO_VENTAS}</div>
         <div className="mt-2 rounded-full overflow-hidden" style={ { height: 8, background: "#E3EDFA" } } role="progressbar" aria-valuenow={datos.hechosHoy} aria-valuemin={0} aria-valuemax={TOPE_DIARIO_VENTAS}>
           <div style={ { width: pct + "%", height: "100%", background: "#001E62" } }></div>
         </div>
@@ -6058,7 +6056,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           <div key={key} id={key} className="px-4 py-3 border-t" style={ { borderColor: "#EEF1F6" } }>
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
-                <button type="button" onClick={() => (f.esMovil ? onVerMovil && onVerMovil(c) : onVerCliente && onVerCliente(c))} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{esRef ? (n.nombreRef ? tituloEs(n.nombreRef) : "Referido nuevo") : tituloEs(c.nombre || "")}</button>
+                <button type="button" onClick={() => (f.esMovil ? onVerMovil && onVerMovil(c) : onVerCliente && onVerCliente(c))} className="text-left text-sm font-extrabold" style={ { color: "#001E62" } }>{esRef ? (n.nombreRef ? tituloEs(n.nombreRef) : "Referido nuevo") : tituloEs(c.nombre || "")}</button>
                 <div className="text-sm font-bold font-mono mt-0.5">{n.tel}</div>
                 <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>
                   {tipoM ? `${tipoM.icono} ${tipoM.txt}` : ""}{esRef ? ` · de un contacto de ${tituloEs(c.nombre || "")}` : f.diasDesde !== null ? ` · 1ra factura hace ${f.diasDesde} d` : ""}{n.frio && !esRef ? " · nuevo" : ""}
