@@ -5548,26 +5548,26 @@ const DIAS_REFERIDOS_CLIENTE = 60;      // días después de la 1ra factura paga
 const PRECIO_BENEFICIO_MOVIL = "$20.70 más impuestos";
 const d8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
 function mensajeVentaFicha(c) {
-  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()}. Soy José Severino, su asesor de Tigo.
+  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()}. Soy José Severino, su asesor de ventas en Tigo.
 
-Por ser cliente de internet con nosotros, usted puede tener un plan de celular por ${PRECIO_BENEFICIO_MOVIL} al mes, con data y minutos ilimitados a Tigo.
+Por tener su plan de internet con nosotros, usted puede tener un plan de celular con *precio especial*, con data ilimitada, minutos ilimitados a Tigo y 250 minutos a otros operadores.
 
-Si hoy gasta en tarjetas de recarga, seguramente le sale más caro.
+Si hoy gasta en tarjetas de recarga, seguramente le sale más caro así.
 
-Y ese mismo beneficio se lo puede dar a un familiar, amigo o vecino.
+Ese mismo beneficio se lo puede dar a algún familiar o persona cercana a usted.
 
-No tiene que pagar nada por adelantado.
+No tendrían que pagar nada por adelantado para activar el plan.
 
 Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
 }
 function mensajeVentaContacto(c) {
-  return `${saludoSegunHora()}. Soy José Severino, asesor de Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
+  return `${saludoSegunHora()}. Soy José Severino, asesor de ventas en Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
 
-Con esa cuenta, usted puede tener un plan de celular por ${PRECIO_BENEFICIO_MOVIL} al mes, con data y minutos ilimitados a Tigo.
+Por tener ${primerNombre(c)} su plan de internet con nosotros, usted puede tener un plan de celular con *precio especial*, con data ilimitada, minutos ilimitados a Tigo y 250 minutos a otros operadores.
 
-Si hoy gasta en tarjetas de recarga, seguramente le sale más caro. Y si conoce a alguien más que gaste en recargas, también puede darle ese beneficio.
+Si hoy gasta en tarjetas de recarga, seguramente le sale más caro así. Y si conoce a alguien más que gaste en recargas, también puede darle ese beneficio.
 
-No tiene que pagar nada por adelantado.
+No tendrían que pagar nada por adelantado para activar el plan.
 
 Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
 }
@@ -5937,7 +5937,7 @@ function ofertaVenta(n, f) {
     return conMovil ? "Pedir un referido: recargas o internet" : "Pedir un referido: mudanza o cambio de internet";
   }
   if (n.tipo === "movil") return "Preguntar por su internet";
-  return `Plan móvil ${PRECIO_BENEFICIO_MOVIL}`;
+  return "Plan móvil: precio especial";
 }
 const FILTROS_VENTAS = [
   { k: "todos", icono: "💬", txt: "Todos" },
