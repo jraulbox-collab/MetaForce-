@@ -5823,10 +5823,107 @@ function FormReferido({ existe, onGuardar, onCancelar }) {
   );
 }
 
+// Tipo de mensaje de una fila (para los filtros del panel)
+function tipoMensajeVenta(n) {
+  if (n.tipo === "referido") return "nuevos";
+  if (n.ronda === "referido") return "pedir";
+  if (n.tipo === "movil") return "internet";
+  if (n.tipo === "contacto") return "contactos";
+  return "plan";
+}
+const FILTROS_VENTAS = [
+  { k: "todos", icono: "💬", txt: "Todos" },
+  { k: "nuevos", icono: "🙋", txt: "Referidos nuevos" },
+  { k: "plan", icono: "📱", txt: "Plan móvil" },
+  { k: "contactos", icono: "👥", txt: "Contactos" },
+  { k: "internet", icono: "🏠", txt: "Internet" },
+  { k: "pedir", icono: "🤝", txt: "Pedir referidos" },
+  { k: "respondieron", icono: "🔥", txt: "Respondieron" },
+];
+const LOTE_VENTAS = 10;
+
+function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [q, setQ] = useState("");
+  const [elegido, setElegido] = useState(null);
+  const gente = useMemo(() => [
+    ...(clientes || []).map((c) => ({ id: c.id, nombre: c.nombre || "" })),
+    ...(convergencias || []).map((m) => ({ id: m.id, nombre: m.nombre || "" })),
+  ], [clientes, convergencias]);
+  const norm = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  const coincide = q.trim().length >= 2 ? gente.filter((g) => norm(g.nombre).includes(norm(q.trim()))).slice(0, 6) : [];
+  const cerrar = () => { setAbierto(false); setQ(""); setElegido(null); };
+  if (!abierto) {
+    return (
+      <button type="button" onClick={() => setAbierto(true)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>➕ Agregar referido</button>
+    );
+  }
+  return (
+    <div className="w-full rounded-lg p-3 mt-2" style={ { background: "#F3F6FB", border: "1.5px solid #D5DEEE" } }>
+      <div className="text-xs font-extrabold mb-2" style={ { color: "#001E62" } }>¿Quién te dio el contacto?</div>
+      {!elegido ? (
+        <>
+          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Escribe su nombre" aria-label="Buscar cliente" style={ { width: "100%", height: 40, border: "1.5px solid #9CA3AF", borderRadius: 8, padding: "0 10px", fontSize: 16, background: "#fff", color: "#111827" } } />
+          {coincide.map((g) => (
+            <button key={g.id} type="button" onClick={() => setElegido(g)} className="block w-full text-left text-sm font-bold py-2 px-2 mt-1 rounded-lg" style={ { background: "#fff", color: "#001E62", border: "1px solid #D5DEEE" } }>{tituloEs(g.nombre)}</button>
+          ))}
+          {q.trim().length >= 2 && coincide.length === 0 && <div className="text-xs mt-2" style={ { color: "#5A6680" } }>No encontré a nadie con ese nombre.</div>}
+          <button type="button" onClick={cerrar} className="mt-2 text-xs font-bold underline" style={ { color: "#5A6680" } }>Cancelar</button>
+        </>
+      ) : (
+        <>
+          <div className="text-sm font-bold mb-1" style={ { color: "#001E62" } }>{tituloEs(elegido.nombre)}</div>
+          <FormReferido existe={existe} onGuardar={(t, nm) => { onGuardar(elegido.id, t, nm); cerrar(); } } onCancelar={cerrar} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function ListaMisReferidos({ clientes, convergencias }) {
+  const telACliente = new Map();
+  (clientes || []).forEach((c) => { const k = d8(c.telefono); if (k.length >= 7) telACliente.set(k, c.id); });
+  const telMovil = new Set();
+  (convergencias || []).forEach((m) => { [m.telefono, m.whatsapp].forEach((t) => { const k = d8(t); if (k.length >= 7) telMovil.add(k); }); });
+  const filas = [];
+  const agregar = (dador, r) => {
+    const k = d8(r.tel);
+    const e = (dador.ventaMsg || {})[k] || {};
+    let estado = "Por enviar";
+    let orden = 1;
+    if ((telACliente.has(k) && telACliente.get(k) !== dador.id) || (telMovil.has(k) && d8(dador.telefono) !== k && d8(dador.whatsapp) !== k)) { estado = "✓ Ya es cliente"; orden = 4; }
+    else if (e.respondio) { estado = e.cerrado ? "Respondió · cerrado" : "🔥 Respondió"; orden = e.cerrado ? 3 : 0; }
+    else if (e.abiertoEn) { estado = `Enviado ${new Date(e.abiertoEn).toLocaleDateString("es-PA", { day: "numeric", month: "short" })}`; orden = 2; }
+    else if (e.noEscribir) { estado = "No escribirle más"; orden = 5; }
+    filas.push({ id: r.id || k, nombre: r.nombre || "", tel: r.tel, dador: dador.nombre || "", estado, orden });
+  };
+  (clientes || []).forEach((c) => (c.referidos || []).forEach((r) => agregar(c, r)));
+  (convergencias || []).forEach((m) => (m.referidos || []).forEach((r) => agregar(m, r)));
+  filas.sort((x, y) => x.orden - y.orden);
+  if (filas.length === 0) return <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>Todavía no has guardado referidos.</p>;
+  return (
+    <div>
+      {filas.map((f) => (
+        <div key={f.id} className="px-4 py-2.5 border-t flex items-center gap-2" style={ { borderColor: "#EEF1F6" } }>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-bold" style={ { color: "#001E62" } }>{f.nombre ? tituloEs(f.nombre) : f.tel}</div>
+            <div className="text-[11px]" style={ { color: "#5A6680" } }>{f.nombre ? `${f.tel} · ` : ""}Lo dio {tituloEs(f.dador)}</div>
+          </div>
+          <span className="shrink-0 text-[11px] font-extrabold px-2 py-1 rounded-lg" style={ { background: "#EAF0FB", color: "#001E62" } }>{f.estado}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
   const [formKey, setFormKey] = useState(null);
+  const [menuKey, setMenuKey] = useState(null);
   const [guardadoMsg, setGuardadoMsg] = useState("");
+  const [filtro, setFiltro] = useState("todos");
+  const [visibles, setVisibles] = useState(LOTE_VENTAS);
+  const [verRefs, setVerRefs] = useState(false);
   const existe = (k) => {
     if ((clientes || []).some((c) => d8(c.telefono) === k || (c.referidos || []).some((r) => d8(r.tel) === k))) return true;
     return (convergencias || []).some((m) => d8(m.telefono) === k || d8(m.whatsapp) === k || (m.referidos || []).some((r) => d8(r.tel) === k));
@@ -5846,8 +5943,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
     return () => clearInterval(t);
   }, [esperando]);
   const llegoAlTope = datos.hechosHoy >= TOPE_DIARIO_VENTAS;
-  // Aplanamos a una lista de números y los intercalamos: mientras corre la espera de un número frío, mandas los conocidos.
-  let cupo = Math.max(0, TOPE_DIARIO_VENTAS - datos.hechosHoy);
+  // Aplanamos a una lista de números y los intercalamos: mientras corre la espera de un número nuevo, mandas los conocidos.
+  const cupo = Math.max(0, TOPE_DIARIO_VENTAS - datos.hechosHoy);
   const items = [];
   datos.filas.forEach((f) => f.numeros.forEach((n) => items.push({ f, n })));
   const abiertos = items.filter((x) => x.n.estado === "abierto");
@@ -5860,29 +5957,68 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
     if (pendFVisibles[i]) mezcla.push(pendFVisibles[i]);
     if (pendC[i]) mezcla.push(pendC[i]);
   }
-  const lista = [...abiertos, ...mezcla];
-  const primerPend = (pendC[0] || pendFVisibles[0]);
+  // Los referidos nuevos van primero: son los que más responden y se enfrían rápido.
+  const pendientes = [...mezcla.filter((x) => x.n.tipo === "referido"), ...mezcla.filter((x) => x.n.tipo !== "referido")];
+  const cuenta = { todos: pendientes.length, respondieron: datos.seguimiento.length, nuevos: 0, plan: 0, contactos: 0, internet: 0, pedir: 0 };
+  pendientes.forEach((x) => { cuenta[tipoMensajeVenta(x.n)] += 1; });
+  const pasa = (x) => filtro === "todos" || filtro === tipoMensajeVenta(x.n);
+  const abiertosF = filtro === "respondieron" ? [] : abiertos.filter(pasa);
+  const pendF2 = filtro === "respondieron" ? [] : pendientes.filter(pasa);
+  const mostrar = pendF2.slice(0, visibles);
+  const restantes = pendF2.length - mostrar.length;
+  const lista = [...abiertosF, ...mostrar];
+  const primerPend = mostrar[0];
   const primerPendienteKey = primerPend ? `vta-${primerPend.f.cliente.id}-${primerPend.n.k}` : null;
   const pct = Math.min(100, Math.round((datos.hechosHoy / TOPE_DIARIO_VENTAS) * 100));
   const iconoWa = (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
   );
+  const totalRefs = datos.referidos.guardados;
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
       <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-sm font-bold" style={ { color: "#001E62" } }>💬 Para escribir hoy</span>
-          <span className="text-xs font-semibold" style={ { color: "#5A6680" } }>{datos.hechosHoy} de {TOPE_DIARIO_VENTAS} escritos hoy</span>
+          <span className="text-sm font-bold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</span>
+          <span className="text-xs font-semibold" style={ { color: "#5A6680" } }>{datos.hechosHoy} de {TOPE_DIARIO_VENTAS} nuevos hoy</span>
         </div>
         <div className="mt-2 rounded-full overflow-hidden" style={ { height: 8, background: "#E3EDFA" } } role="progressbar" aria-valuenow={datos.hechosHoy} aria-valuemin={0} aria-valuemax={TOPE_DIARIO_VENTAS}>
           <div style={ { width: pct + "%", height: "100%", background: "#001E62" } }></div>
         </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          {FILTROS_VENTAS.filter((f) => f.k === "todos" || f.k === filtro || cuenta[f.k] > 0).map((f) => {
+            const sel = filtro === f.k;
+            return (
+              <button
+                key={f.k}
+                type="button"
+                aria-pressed={sel}
+                onClick={() => { setFiltro(f.k); setVisibles(LOTE_VENTAS); }}
+                className="text-xs font-extrabold rounded-full px-3"
+                style={ { height: 32, background: sel ? "#001E62" : "#fff", color: sel ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }
+              >
+                {sel ? "✓ " : ""}{f.icono} {f.txt} ({cuenta[f.k]})
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          <AgregarReferidoGeneral
+            clientes={clientes}
+            convergencias={convergencias}
+            existe={existe}
+            onGuardar={(id, t, nm) => guardarRef(id, t, nm)}
+          />
+          <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
+            {verRefs ? "✓ " : ""}📋 Mis referidos ({totalRefs})
+          </button>
+        </div>
       </div>
+      {verRefs && <ListaMisReferidos clientes={clientes} convergencias={convergencias} />}
       {llegoAlTope && (
-        <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo por hoy. El resto sigue mañana.</div>
+        <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo con los nuevos de hoy. Los conocidos puedes seguir.</div>
       )}
       {guardadoMsg && <div className="px-4 py-2.5 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>{guardadoMsg}</div>}
-      {datos.seguimiento.length > 0 && (
+      {(filtro === "todos" || filtro === "respondieron") && datos.seguimiento.length > 0 && (
         <div className="px-4 py-3" style={ { background: "#FFF3DC", borderBottom: "1px solid #F0D9AE" } }>
           <div className="text-sm font-extrabold" style={ { color: "#B45309" } }>🔥 Respondieron · falta cerrar ({datos.seguimiento.length})</div>
           {datos.seguimiento.map((x) => (
@@ -5906,8 +6042,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           ))}
         </div>
       )}
-      {lista.length === 0 && !llegoAlTope && (
-        <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura.</p>
+      {lista.length === 0 && filtro !== "respondieron" && (
+        <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtro === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
       )}
       {lista.map(({ f, n }) => {
         const c = f.cliente;
@@ -5916,51 +6052,55 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
         const esRef = n.tipo === "referido";
         const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
         const bloqueado = n.frio && (llegoAlTope || esperando);
+        const tipoM = FILTROS_VENTAS.find((x) => x.k === tipoMensajeVenta(n));
+        const puedeSaltar = n.estado === "pendiente" && (n.ronda === "referido" || n.ronda === "movil");
         return (
           <div key={key} id={key} className="px-4 py-3 border-t" style={ { borderColor: "#EEF1F6" } }>
-            <button type="button" onClick={() => (f.esMovil ? onVerMovil && onVerMovil(c) : onVerCliente && onVerCliente(c))} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{esRef ? (n.nombreRef ? tituloEs(n.nombreRef) : "Referido nuevo") : tituloEs(c.nombre || "")}</button>
-            <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
-              {esRef ? `Recomendado por un contacto de ${tituloEs(c.nombre || "")}` : f.diasDesde === null ? "1ra factura pagada" : f.diasDesde === 0 ? "Pagó su 1ra factura hoy" : `Pagó su 1ra factura hace ${f.diasDesde} ${f.diasDesde === 1 ? "día" : "días"}`}
-            </div>
-            {f.zona >= 3 && !esRef && (
-              <div className="mt-1.5">
-                <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>📍 Zona con {f.zona} clientes tuyos</span>
-              </div>
-            )}
-            <div className="mt-2 flex items-center gap-2">
+            <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold font-mono">{n.tel}</div>
-                <div className="text-[11px]" style={ { color: "#5A6680" } }>{n.etiqueta}{n.ronda === "referido" ? " · pedir referidos" : n.ronda === "movil" ? " · ofrecer internet" : n.frio ? " · nuevo" : ""}</div>
+                <button type="button" onClick={() => (f.esMovil ? onVerMovil && onVerMovil(c) : onVerCliente && onVerCliente(c))} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{esRef ? (n.nombreRef ? tituloEs(n.nombreRef) : "Referido nuevo") : tituloEs(c.nombre || "")}</button>
+                <div className="text-sm font-bold font-mono mt-0.5">{n.tel}</div>
+                <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>
+                  {tipoM ? `${tipoM.icono} ${tipoM.txt}` : ""}{esRef ? ` · de un contacto de ${tituloEs(c.nombre || "")}` : f.diasDesde !== null ? ` · 1ra factura hace ${f.diasDesde} d` : ""}{n.frio && !esRef ? " · nuevo" : ""}
+                </div>
+                {f.zona >= 3 && !esRef && (
+                  <span className="inline-block mt-1 text-[11px] font-bold px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>📍 Zona con {f.zona} clientes tuyos</span>
+                )}
               </div>
               {n.estado === "pendiente" && (
-                bloqueado ? (
-                  <span className="shrink-0 inline-flex items-center text-xs font-bold px-3 rounded-lg" style={ { height: 34, color: "#5A6680", background: "#F3F6FB", border: "1.5px dashed #9CA3AF" } }>
-                    {llegoAlTope ? "Hasta mañana" : `Espera ${espera}s`}
-                  </span>
-                ) : (
-                  <a
-                    href={href}
-                    onClick={() => onAbrir(c.id, n.k, n.ronda)}
-                    className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 rounded-lg"
-                    style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
-                  >
-                    {iconoWa}Enviar
-                  </a>
-                )
+                <div className="shrink-0 flex flex-col items-end gap-1">
+                  {bloqueado ? (
+                    <span className="inline-flex items-center text-xs font-bold px-3 rounded-lg" style={ { height: 36, color: "#5A6680", background: "#F3F6FB", border: "1.5px dashed #9CA3AF" } }>
+                      {llegoAlTope ? "Hasta mañana" : `Espera ${espera}s`}
+                    </span>
+                  ) : (
+                    <a
+                      href={href}
+                      onClick={() => onAbrir(c.id, n.k, n.ronda)}
+                      className="inline-flex items-center gap-1.5 text-xs font-extrabold px-3 rounded-lg"
+                      style={ { height: 36, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
+                    >
+                      {iconoWa}Enviar
+                    </a>
+                  )}
+                  <button type="button" onClick={() => setMenuKey(menuKey === key ? null : key)} aria-expanded={menuKey === key} className="text-[11px] font-bold underline" style={ { color: "#5A6680" } }>Más ▾</button>
+                </div>
               )}
             </div>
-            {n.estado === "pendiente" && (n.ronda === "referido" || n.ronda === "movil") && (
-              <button type="button" onClick={() => onSaltar(c.id, n.k, n.saltos || 0, n.ronda)} className="text-[11px] font-extrabold underline mt-1 mr-4" style={ { color: "#001E62" } }>Hoy no</button>
-            )}
-            {n.estado === "pendiente" && (
-              <button
-                type="button"
-                onClick={() => { if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
-                className="text-[11px] font-semibold underline mt-1"
-                style={ { color: "#5A6680" } }
-              >
-                ✕ No escribirle más
-              </button>
+            {n.estado === "pendiente" && menuKey === key && (
+              <div className="mt-2 flex flex-wrap gap-3">
+                {puedeSaltar && (
+                  <button type="button" onClick={() => { setMenuKey(null); onSaltar(c.id, n.k, n.saltos || 0, n.ronda); } } className="text-xs font-extrabold underline" style={ { color: "#001E62" } }>Hoy no</button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setMenuKey(null); if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
+                  className="text-xs font-bold underline"
+                  style={ { color: "#5A6680" } }
+                >
+                  ✕ No escribirle más
+                </button>
+              </div>
             )}
             {n.estado === "abierto" && (
               <div className="mt-1.5 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-bold" style={ { background: "#EAF0FB", color: "#001E62" } }>
@@ -5989,6 +6129,13 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           </div>
         );
       })}
+      {restantes > 0 && (
+        <div className="px-4 py-3 border-t text-center" style={ { borderColor: "#EEF1F6" } }>
+          <button type="button" onClick={() => setVisibles((v) => v + LOTE_VENTAS)} className="text-sm font-extrabold rounded-lg px-4" style={ { height: 40, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
+            Ver {Math.min(LOTE_VENTAS, restantes)} más · quedan {restantes}
+          </button>
+        </div>
+      )}
       {paraManana > 0 && (
         <div className="px-4 py-2.5 text-center text-xs font-bold border-t" style={ { color: "#0B4A99", borderColor: "#EEF1F6" } }>
           Quedan {paraManana} nuevos para mañana · tope diario {TOPE_DIARIO_VENTAS} (solo números nuevos)
@@ -6005,7 +6152,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
         <div className="text-xs mt-1" style={ { color: "#374151" } }>
           {datos.referidos.guardados > 0
             ? <><b style={ { color: "#001E62" } }>{datos.referidos.guardados}</b> guardados · <b style={ { color: "#001E62" } }>{datos.referidos.contrataron}</b> ya {datos.referidos.contrataron === 1 ? "es cliente" : "son clientes"}</>
-            : "Todavía ninguno. Se guardan con el botón ➕ Me dio un contacto."}
+            : "Todavía ninguno. Se guardan con el botón ➕ Agregar referido."}
         </div>
       </div>
     </div>
