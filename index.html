@@ -5940,8 +5940,7 @@ const FILTROS_VENTAS = [
 ];
 const LOTE_VENTAS = 10;
 
-function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar, onGuardarVarios }) {
-  const [abierto, setAbierto] = useState(false);
+function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar, onGuardarVarios, onCerrar }) {
   const [q, setQ] = useState("");
   const [elegido, setElegido] = useState(null);
   const gente = useMemo(() => [
@@ -5950,14 +5949,9 @@ function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar, on
   ], [clientes, convergencias]);
   const norm = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
   const coincide = q.trim().length >= 2 ? gente.filter((g) => norm(g.nombre).includes(norm(q.trim()))).slice(0, 6) : [];
-  const cerrar = () => { setAbierto(false); setQ(""); setElegido(null); };
-  if (!abierto) {
-    return (
-      <button type="button" onClick={() => setAbierto(true)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>➕ Agregar referido</button>
-    );
-  }
+  const cerrar = () => { setQ(""); setElegido(null); onCerrar(); };
   return (
-    <div className="w-full rounded-lg p-3 mt-2" style={ { background: "#F3F6FB", border: "1.5px solid #D5DEEE" } }>
+    <div className="w-full rounded-lg p-3" style={ { background: "#F3F6FB", border: "1.5px solid #D5DEEE" } }>
       <div className="text-xs font-extrabold mb-2" style={ { color: "#001E62" } }>¿Quién te dio el contacto?</div>
       {!elegido ? (
         <>
@@ -6022,6 +6016,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   const [filtro, setFiltro] = useState("todos");
   const [visibles, setVisibles] = useState(LOTE_VENTAS);
   const [verRefs, setVerRefs] = useState(false);
+  const [agregando, setAgregando] = useState(false);
   const existe = (k) => {
     if ((clientes || []).some((c) => d8(c.telefono) === k || (c.referidos || []).some((r) => d8(r.tel) === k))) return true;
     return (convergencias || []).some((m) => d8(m.telefono) === k || d8(m.whatsapp) === k || (m.referidos || []).some((r) => d8(r.tel) === k));
@@ -6060,9 +6055,10 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   const pendientes = [...mezcla.filter((x) => x.n.tipo === "referido"), ...mezcla.filter((x) => x.n.tipo !== "referido")];
   const cuenta = { todos: pendientes.length, respondieron: datos.seguimiento.length, nuevos: 0, plan: 0, contactos: 0, internet: 0, pedir: 0 };
   pendientes.forEach((x) => { cuenta[tipoMensajeVenta(x.n)] += 1; });
-  const pasa = (x) => filtro === "todos" || filtro === tipoMensajeVenta(x.n);
-  const abiertosF = filtro === "respondieron" ? [] : abiertos.filter(pasa);
-  const pendF2 = filtro === "respondieron" ? [] : pendientes.filter(pasa);
+  const filtroEf = filtro !== "todos" && !(cuenta[filtro] > 0) ? "todos" : filtro;
+  const pasa = (x) => filtroEf === "todos" || filtroEf === tipoMensajeVenta(x.n);
+  const abiertosF = filtroEf === "respondieron" ? [] : abiertos.filter(pasa);
+  const pendF2 = filtroEf === "respondieron" ? [] : pendientes.filter(pasa);
   const mostrar = pendF2.slice(0, visibles);
   const restantes = pendF2.length - mostrar.length;
   const lista = [...abiertosF, ...mostrar];
@@ -6075,6 +6071,29 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   const totalRefs = datos.referidos.guardados;
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
+      <button
+        type="button"
+        onClick={() => setAgregando(true)}
+        className="fixed z-40 flex items-center justify-center gap-1.5 text-white text-sm font-extrabold px-4"
+        style={ { right: 16, bottom: "calc(86px + env(safe-area-inset-bottom))", height: 48, borderRadius: 24, background: "#001E62", boxShadow: "0 4px 14px rgba(0,30,98,0.3)", border: 0 } }
+        aria-label="Agregar referido"
+      >
+        ➕ Referido
+      </button>
+      {agregando && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } } onClick={(e) => { if (e.target === e.currentTarget) setAgregando(false); } }>
+          <div className="w-full bg-white p-4 overflow-auto" style={ { maxHeight: "85%", borderTopLeftRadius: 16, borderTopRightRadius: 16, maxWidth: 560 } }>
+            <AgregarReferidoGeneral
+              clientes={clientes}
+              convergencias={convergencias}
+              existe={existe}
+              onGuardar={(id, t, nm) => { guardarRef(id, t, nm); setAgregando(false); } }
+              onGuardarVarios={(id, l) => { guardarVarios(id, l); setAgregando(false); } }
+              onCerrar={() => setAgregando(false)}
+            />
+          </div>
+        </div>
+      )}
       <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
         <div className="text-base font-extrabold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</div>
         <div className="text-xs font-semibold mt-1" style={ { color: "#5A6680" } }>Números nuevos hoy: {datos.hechosHoy} de {TOPE_DIARIO_VENTAS}</div>
@@ -6082,8 +6101,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           <div style={ { width: pct + "%", height: "100%", background: "#001E62" } }></div>
         </div>
         <div className="flex flex-wrap gap-2 mt-3">
-          {FILTROS_VENTAS.filter((f) => f.k === "todos" || f.k === filtro || cuenta[f.k] > 0).map((f) => {
-            const sel = filtro === f.k;
+          {FILTROS_VENTAS.filter((f) => f.k === "todos" || cuenta[f.k] > 0).map((f) => {
+            const sel = filtroEf === f.k;
             return (
               <button
                 key={f.k}
@@ -6098,25 +6117,20 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             );
           })}
         </div>
-        <div className="flex flex-wrap items-center gap-2 mt-3">
-          <AgregarReferidoGeneral
-            clientes={clientes}
-            convergencias={convergencias}
-            existe={existe}
-            onGuardar={(id, t, nm) => guardarRef(id, t, nm)}
-            onGuardarVarios={(id, l) => guardarVarios(id, l)}
-          />
-          <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
-            {verRefs ? "✓ " : ""}📋 Mis referidos ({totalRefs})
-          </button>
-        </div>
+        {totalRefs > 0 && (
+          <div className="mt-3">
+            <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
+              {verRefs ? "✓ " : ""}📋 Mis referidos ({totalRefs})
+            </button>
+          </div>
+        )}
       </div>
       {verRefs && <ListaMisReferidos clientes={clientes} convergencias={convergencias} />}
       {llegoAlTope && (
         <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo con los nuevos de hoy. Los conocidos puedes seguir.</div>
       )}
       {guardadoMsg && <div className="px-4 py-2.5 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>{guardadoMsg}</div>}
-      {(filtro === "todos" || filtro === "respondieron") && datos.seguimiento.length > 0 && (
+      {(filtroEf === "todos" || filtroEf === "respondieron") && datos.seguimiento.length > 0 && (
         <div className="px-4 py-3" style={ { background: "#FFF3DC", borderBottom: "1px solid #F0D9AE" } }>
           <div className="text-sm font-extrabold" style={ { color: "#B45309" } }>🔥 Respondieron · falta cerrar ({datos.seguimiento.length})</div>
           {datos.seguimiento.map((x) => (
@@ -6140,8 +6154,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           ))}
         </div>
       )}
-      {lista.length === 0 && filtro !== "respondieron" && (
-        <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtro === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
+      {lista.length === 0 && filtroEf !== "respondieron" && (
+        <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtroEf === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
       )}
       {lista.map(({ f, n }) => {
         const c = f.cliente;
