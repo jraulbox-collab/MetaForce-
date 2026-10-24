@@ -5092,7 +5092,7 @@ function diasDeVentaPeriodo(periodoKey, hoy) {
 }
 
 // Tarjetas del Dashboard que se pueden ordenar. La de comisión nunca se esconde.
-const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "instalaciones", "planes", "dia", "historial"];
+const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "instalaciones", "planes", "dia", "ventas", "historial"];
 function ordenDashboardNormal(cfg) {
   const o = cfg && Array.isArray(cfg.orden) ? cfg.orden.filter((id, i, a) => ORDEN_DASHBOARD_BASE.includes(id) && a.indexOf(id) === i) : [];
   // Una tarjeta que todavía no estaba guardada se coloca justo después de la que le
@@ -5834,8 +5834,13 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     const k = d8(r.tel);
     if (telACliente.has(k) || (telMovil.has(k) && d8(m.telefono) !== k && d8(m.whatsapp) !== k)) refContrataron += 1;
   }));
+  const mesISO = hoyISO.slice(0, 7);
+  let enviadosMes = 0;
+  const contarMes = (vm) => Object.values(vm || {}).forEach((e) => [e.abiertoEn, e.refAbiertoEn].forEach((t) => { if (t && fechaLocalISO(new Date(t)).slice(0, 7) === mesISO) enviadosMes += 1; }));
+  (clientes || []).forEach((c) => contarMes(c.ventaMsg));
+  (convergencias || []).forEach((m) => contarMes(m.ventaMsg));
   seguimiento.sort((a, b) => String(a.respondioEn).localeCompare(String(b.respondioEn)));
-  return { filas, seguimiento, referidos: { guardados: refGuardados, contrataron: refContrataron }, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
+  return { filas, seguimiento, enviadosMes, referidos: { guardados: refGuardados, contrataron: refContrataron }, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
 }
 
 // Lee una lista pegada (un contacto por línea): "6123-4567", "Pedro 6123-4567" o "6123-4567 Pedro".
@@ -8456,6 +8461,30 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           )}
         </div>
       ))}
+
+      {onIrAVentas && bloqueOrd("ventas", "Ventas por mensajes", (() => {
+        const vh = calcularVentasHoy(clientes, convergencias, Date.now());
+        const dato = (num, txt) => (
+          <div className="min-w-0">
+            <div className="text-2xl font-extrabold tabular-nums" style={ { color: "#001E62" } }>{num}</div>
+            <div className="text-xs" style={ { color: "#5A6680" } }>{txt}</div>
+          </div>
+        );
+        return (
+          <button type="button" onClick={onIrAVentas} className="block w-full text-left bg-white rounded-lg border border-gray-200 shadow-sm p-5">
+            <div className="flex items-center justify-between gap-2 mb-4">
+              <h2 className="font-semibold text-sm">💬 Ventas por mensajes · este mes</h2>
+              <span aria-hidden="true" style={ { color: "#001E62", fontSize: 18 } }>›</span>
+            </div>
+            <div className="grid gap-4" style={ { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }>
+              {dato(vh.enviadosMes, "mensajes enviados")}
+              {dato(vh.seguimiento.length, "🔥 por cerrar")}
+              {dato(`${vh.referidos.guardados} · ${vh.referidos.contrataron}`, "referidos guardados · ya son clientes")}
+              {dato(vh.ventasMes.total, "ventas por beneficio compartido")}
+            </div>
+          </button>
+        );
+      })())}
 
       {bloqueOrd("historial", "Historial de comisión", (
       <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5">
