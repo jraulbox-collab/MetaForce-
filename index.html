@@ -4153,6 +4153,7 @@ function App() {
               convergencias={convergencias}
               onAbrir={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() })}
               onDeshacer={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: undefined } : null)}
+              onAgregarReferido={(id, tel, nombre) => actualizarClientes((prev) => prev.map((c) => (c.id === id ? { ...c, referidos: [...(c.referidos || []), { id: uid(), tel, nombre, creadoEn: new Date().toISOString() }] } : c)))}
               onSaltar={(id, k, saltos) => cambiarVentaMsg(id, k, { refSaltoDia: fechaLocalISO(new Date()), refSaltos: saltos + 1, refDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR })}
               onNoEscribir={(id, k) => cambiarVentaMsg(id, k, { noEscribir: true })}
               onRespondio={(id, k) => cambiarVentaMsg(id, k, { respondio: true, respondioEn: new Date().toISOString(), cerrado: false })}
@@ -5555,6 +5556,14 @@ function mensajeVentaReferidos(c) {
 
 ¿Quién se le viene a la mente? Con solo su número, yo me encargo del resto y le escribo de su parte.`;
 }
+function mensajeVentaReferido(nombre) {
+  const n = String(nombre || "").trim();
+  const nom = n ? tituloEs(n).split(/\s+/)[0] : "";
+  const saludo = nom ? `Hola ${nom}, ${saludoSegunHora().toLowerCase()}.` : `${saludoSegunHora()}.`;
+  return `${saludo} Soy José Severino, asesor de Tigo. Un conocido suyo me pasó su número porque tengo buenas promociones de internet que le pueden interesar.
+
+¿Se las explico por aquí o prefiere que lo llame?`;
+}
 // Calcula qué clientes y números tocan hoy. Sin anotaciones: se apoya en lo que ya está guardado.
 function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   const hoyISO = fechaLocalISO(new Date(ahoraMs));
@@ -5568,6 +5577,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   const conocidos = new Set();
   (clientes || []).forEach((c) => { const k = d8(c.telefono); if (k.length >= 7) conocidos.add(k); });
   (convergencias || []).forEach((m) => { [m.telefono, m.whatsapp].forEach((t) => { const k = d8(t); if (k.length >= 7) conocidos.add(k); }); });
+  const refGlobal = new Set();
   let hechosHoy = 0;
   let ultimaApertura = 0;
   const filas = [];
@@ -5586,6 +5596,13 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     agregar(c.telefono, "ficha", "WhatsApp de su ficha");
     agregar(bloque.voz1, "contacto", "Contacto 1 de Tigo");
     agregar(bloque.voz2, "contacto", "Contacto 2 de Tigo");
+    (c.referidos || []).forEach((r) => {
+      const k = d8(r.tel);
+      if (k.length < 7 || vistos.has(k) || refGlobal.has(k) || conocidos.has(k)) return; // ya es cliente o ya está en la lista
+      refGlobal.add(k);
+      vistos.add(k);
+      cand.push({ k, tel: String(r.tel).trim(), tipo: "referido", etiqueta: "Referido por un contacto", frio: true, nombreRef: r.nombre || "" });
+    });
     const vm = c.ventaMsg || {};
     const numeros = [];
     cand.forEach((n) => {
@@ -5665,12 +5682,60 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     totalMatch += 1;
     porCliente[dueño.id] = { nombre: dueño.nombre, n: ((porCliente[dueño.id] || {}).n || 0) + 1 };
   });
+  const telACliente = new Map();
+  (clientes || []).forEach((c) => { const k = d8(c.telefono); if (k.length >= 7) telACliente.set(k, c.id); });
+  const telMovil = new Set();
+  (convergencias || []).forEach((m) => { [m.telefono, m.whatsapp].forEach((t) => { const k = d8(t); if (k.length >= 7) telMovil.add(k); }); });
+  let refGuardados = 0;
+  let refContrataron = 0;
+  (clientes || []).forEach((c) => (c.referidos || []).forEach((r) => {
+    refGuardados += 1;
+    const k = d8(r.tel);
+    if ((telACliente.has(k) && telACliente.get(k) !== c.id) || telMovil.has(k)) refContrataron += 1;
+  }));
   seguimiento.sort((a, b) => String(a.respondioEn).localeCompare(String(b.respondioEn)));
-  return { filas, seguimiento, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
+  return { filas, seguimiento, referidos: { guardados: refGuardados, contrataron: refContrataron }, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
 }
 
-function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onVerCliente }) {
+function FormReferido({ existe, onGuardar, onCancelar }) {
+  const [tel, setTel] = useState("");
+  const [nom, setNom] = useState("");
+  const [err, setErr] = useState("");
+  const guardar = () => {
+    const digitos = tel.replace(/\D/g, "");
+    if (digitos.length < 8) { setErr("Revisa el número: faltan dígitos."); return; }
+    if (existe(d8(tel))) { setErr("Ese número ya está en tu lista."); return; }
+    onGuardar(tel.trim(), nom.trim());
+  };
+  const estiloInput = { width: "100%", height: 40, border: "1.5px solid #9CA3AF", borderRadius: 8, padding: "0 10px", fontSize: 16, background: "#fff", color: "#111827" };
+  return (
+    <div className="mt-2 rounded-lg p-3" style={ { background: "#F3F6FB", border: "1.5px solid #D5DEEE" } }>
+      <div className="text-xs font-extrabold mb-2" style={ { color: "#001E62" } }>Contacto que te dio</div>
+      <input type="tel" inputMode="tel" value={tel} onChange={(e) => { setTel(e.target.value); setErr(""); } } placeholder="Número" aria-label="Número del contacto" style={ estiloInput } />
+      <input type="text" value={nom} onChange={(e) => setNom(e.target.value)} placeholder="Nombre (opcional)" aria-label="Nombre del contacto" style={ { ...estiloInput, marginTop: 8 } } />
+      {err && <div className="text-xs font-bold mt-2" style={ { color: "#B42318" } }>⚠️ {err}</div>}
+      <div className="flex gap-2 mt-3">
+        <button type="button" onClick={guardar} className="flex-1 text-sm font-extrabold rounded-lg text-white" style={ { height: 40, background: "#001E62" } }>Guardar</button>
+        <button type="button" onClick={onCancelar} className="text-sm font-bold rounded-lg px-4" style={ { height: 40, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente }) {
   const [ahora, setAhora] = useState(Date.now());
+  const [formKey, setFormKey] = useState(null);
+  const [guardadoMsg, setGuardadoMsg] = useState("");
+  const existe = (k) => {
+    if ((clientes || []).some((c) => d8(c.telefono) === k || (c.referidos || []).some((r) => d8(r.tel) === k))) return true;
+    return (convergencias || []).some((m) => d8(m.telefono) === k || d8(m.whatsapp) === k);
+  };
+  const guardarRef = (idCliente, tel, nom) => {
+    onAgregarReferido(idCliente, tel, nom);
+    setFormKey(null);
+    setGuardadoMsg("✓ Contacto guardado. Sale en tu lista para escribirle.");
+    setTimeout(() => setGuardadoMsg(""), 4000);
+  };
   const datos = calcularVentasHoy(clientes, convergencias, ahora);
   const espera = Math.max(0, ESPERA_ENTRE_MENSAJES_S - Math.floor((ahora - datos.ultimaApertura) / 1000));
   const esperando = datos.ultimaApertura > 0 && espera > 0;
@@ -5715,17 +5780,27 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       {llegoAlTope && (
         <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo por hoy. El resto sigue mañana.</div>
       )}
+      {guardadoMsg && <div className="px-4 py-2.5 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>{guardadoMsg}</div>}
       {datos.seguimiento.length > 0 && (
         <div className="px-4 py-3" style={ { background: "#FFF3DC", borderBottom: "1px solid #F0D9AE" } }>
           <div className="text-sm font-extrabold" style={ { color: "#B45309" } }>🔥 Respondieron · falta cerrar ({datos.seguimiento.length})</div>
           {datos.seguimiento.map((x) => (
-            <div key={`seg-${x.cliente.id}-${x.k}`} className="mt-2 flex items-center gap-2">
+            <div key={`seg-${x.cliente.id}-${x.k}`}>
+            <div className="mt-2 flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold font-mono">{x.tel}</div>
                 <div className="text-[11px]" style={ { color: "#5A6680" } }>{x.tipo === "ficha" ? "Cliente" : "Contacto de"} {tituloEs(x.cliente.nombre || "")}</div>
               </div>
               <a href={`https://wa.me/${telefonoWhatsapp(x.tel)}`} className="shrink-0 inline-flex items-center text-xs font-extrabold px-3 rounded-lg" style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }>Abrir chat</a>
               <button type="button" onClick={() => onCerrar(x.cliente.id, x.k)} className="shrink-0 text-xs font-extrabold px-3 rounded-lg" style={ { height: 34, color: "#0F5A2B", background: "#E3F5EA", border: "1.5px solid #0F5A2B" } }>✓ Listo</button>
+            </div>
+            {x.tipo !== "ficha" && (
+              formKey === `seg-${x.cliente.id}-${x.k}` ? (
+                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(x.cliente.id, t, nm)} onCancelar={() => setFormKey(null)} />
+              ) : (
+                <button type="button" onClick={() => setFormKey(`seg-${x.cliente.id}-${x.k}`)} className="mt-1.5 text-xs font-extrabold underline" style={ { color: "#001E62" } }>➕ Me dio un contacto</button>
+              )
+            )}
             </div>
           ))}
         </div>
@@ -5736,16 +5811,17 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       {lista.map(({ f, n }) => {
         const c = f.cliente;
         const key = `vta-${c.id}-${n.k}`;
-        const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c);
+        const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c);
+        const esRef = n.tipo === "referido";
         const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
         const bloqueado = n.frio && (llegoAlTope || esperando);
         return (
           <div key={key} id={key} className="px-4 py-3 border-t" style={ { borderColor: "#EEF1F6" } }>
-            <button type="button" onClick={() => onVerCliente && onVerCliente(c)} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</button>
+            <button type="button" onClick={() => onVerCliente && onVerCliente(c)} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{esRef ? (n.nombreRef ? tituloEs(n.nombreRef) : "Referido nuevo") : tituloEs(c.nombre || "")}</button>
             <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
-              {f.diasDesde === null ? "1ra factura pagada" : f.diasDesde === 0 ? "Pagó su 1ra factura hoy" : `Pagó su 1ra factura hace ${f.diasDesde} ${f.diasDesde === 1 ? "día" : "días"}`}
+              {esRef ? `Recomendado por un contacto de ${tituloEs(c.nombre || "")}` : f.diasDesde === null ? "1ra factura pagada" : f.diasDesde === 0 ? "Pagó su 1ra factura hoy" : `Pagó su 1ra factura hace ${f.diasDesde} ${f.diasDesde === 1 ? "día" : "días"}`}
             </div>
-            {f.zona >= 3 && (
+            {f.zona >= 3 && !esRef && (
               <div className="mt-1.5">
                 <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>📍 Zona con {f.zona} clientes tuyos</span>
               </div>
@@ -5792,6 +5868,13 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 <button type="button" onClick={() => onDeshacer(c.id, n.k, n.ronda)} className="underline font-extrabold">↩ No lo envié</button>
               </div>
             )}
+            {n.estado === "abierto" && n.tipo !== "ficha" && (
+              formKey === key ? (
+                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(c.id, t, nm)} onCancelar={() => setFormKey(null)} />
+              ) : (
+                <button type="button" onClick={() => setFormKey(key)} className="w-full mt-1.5 text-xs font-extrabold rounded-lg py-2.5" style={ { background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>➕ Me dio un contacto</button>
+              )
+            )}
             {n.estado === "abierto" && primerPendienteKey && (
               <button
                 type="button"
@@ -5816,6 +5899,12 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           {datos.ventasMes.total > 0
             ? <><b style={ { color: "#001E62" } }>{datos.ventasMes.total} {datos.ventasMes.total === 1 ? "venta" : "ventas"}</b> móvil · {datos.ventasMes.clientes.map((x) => `${tituloEs(x.nombre || "")} (${x.n})`).join(", ")}</>
             : "Todavía ninguna. Se suma sola cuando registras un Match Digital cuyo titular es un cliente tuyo."}
+        </div>
+        <div className="text-[11px] font-extrabold uppercase mt-3" style={ { color: "#5A6680", letterSpacing: ".04em" } }>Referidos</div>
+        <div className="text-xs mt-1" style={ { color: "#374151" } }>
+          {datos.referidos.guardados > 0
+            ? <><b style={ { color: "#001E62" } }>{datos.referidos.guardados}</b> guardados · <b style={ { color: "#001E62" } }>{datos.referidos.contrataron}</b> ya {datos.referidos.contrataron === 1 ? "es cliente" : "son clientes"}</>
+            : "Todavía ninguno. Se guardan con el botón ➕ Me dio un contacto."}
         </div>
       </div>
     </div>
