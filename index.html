@@ -6007,7 +6007,6 @@ function ListaMisReferidos({ clientes, convergencias }) {
 function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
   const [formKey, setFormKey] = useState(null);
-  const [menuKey, setMenuKey] = useState(null);
   const [msgKey, setMsgKey] = useState(null);
   const [guardadoMsg, setGuardadoMsg] = useState("");
   const [filtro, setFiltro] = useState("todos");
@@ -6180,7 +6179,6 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                       {iconoWa}Enviar
                     </a>
                   )}
-                  <button type="button" onClick={() => setMenuKey(menuKey === key ? null : key)} aria-expanded={menuKey === key} className="text-xs font-bold underline" style={ { color: "#5A6680" } }>Más ▾</button>
                 </div>
               )}
             </div>
@@ -6188,15 +6186,15 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             {msgKey === key && (
               <div className="mt-2 rounded-lg p-3 text-sm" style={ { background: "#F3F6FB", border: "1px solid #D5DEEE", whiteSpace: "pre-wrap", color: "#111827" } }>{msg}</div>
             )}
-            {n.estado === "pendiente" && menuKey === key && (
+            {n.estado === "pendiente" && (
               <div className="mt-2 flex flex-wrap gap-4">
                 {puedeSaltar && (
-                  <button type="button" onClick={() => { setMenuKey(null); onSaltar(c.id, n.k, n.saltos || 0, n.ronda); } } className="text-sm font-extrabold underline" style={ { color: "#001E62" } }>Hoy no</button>
+                  <button type="button" onClick={() => onSaltar(c.id, n.k, n.saltos || 0, n.ronda)} className="text-xs font-extrabold underline" style={ { color: "#001E62" } }>Hoy no</button>
                 )}
                 <button
                   type="button"
-                  onClick={() => { setMenuKey(null); if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
-                  className="text-sm font-bold underline"
+                  onClick={() => { if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
+                  className="text-xs font-semibold underline"
                   style={ { color: "#5A6680" } }
                 >
                   ✕ No escribirle más
