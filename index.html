@@ -2492,7 +2492,12 @@ function App() {
     actualizarClientes((prev) => prev.map((c) => {
       if (c.id !== idCliente) return c;
       const vm = { ...(c.ventaMsg || {}) };
-      if (cambio === null) delete vm[k]; else vm[k] = { ...(vm[k] || {}), ...cambio };
+      if (cambio === null) delete vm[k];
+      else {
+        const nuevo = { ...(vm[k] || {}), ...cambio };
+        Object.keys(nuevo).forEach((x) => { if (nuevo[x] === undefined) delete nuevo[x]; });
+        vm[k] = nuevo;
+      }
       return { ...c, ventaMsg: vm };
     }));
   }
@@ -4146,8 +4151,9 @@ function App() {
             <PanelVentasHoy
               clientes={clientesActivos}
               convergencias={convergencias}
-              onAbrir={(id, k) => cambiarVentaMsg(id, k, { abiertoEn: new Date().toISOString() })}
-              onDeshacer={(id, k) => cambiarVentaMsg(id, k, null)}
+              onAbrir={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() })}
+              onDeshacer={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: undefined } : null)}
+              onSaltar={(id, k, saltos) => cambiarVentaMsg(id, k, { refSaltoDia: fechaLocalISO(new Date()), refSaltos: saltos + 1, refDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR })}
               onNoEscribir={(id, k) => cambiarVentaMsg(id, k, { noEscribir: true })}
               onRespondio={(id, k) => cambiarVentaMsg(id, k, { respondio: true, respondioEn: new Date().toISOString(), cerrado: false })}
               onCerrar={(id, k) => cambiarVentaMsg(id, k, { cerrado: true })}
@@ -5514,6 +5520,8 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
 const TOPE_DIARIO_VENTAS = 20;          // mensajes de venta por día (protege tu número de WhatsApp)
 const ESPERA_ENTRE_MENSAJES_S = 60;     // segundos entre un mensaje y el siguiente
 const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factura
+const DIAS_PARA_REFERIDOS = 30;       // días después del 1er mensaje a un contacto para pedirle referidos
+const SALTOS_PARA_DESCARTAR = 3;        // "Hoy no" seguidos antes de sacarlo de la lista
 const PRECIO_BENEFICIO_MOVIL = "$20.70 más impuestos";
 const d8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
 function mensajeVentaFicha(c) {
@@ -5539,6 +5547,13 @@ Si hoy gasta en tarjetas de recarga, seguramente le sale más caro. Y si conoce 
 No tiene que pagar nada por adelantado.
 
 Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
+}
+function mensajeVentaReferidos(c) {
+  return `${saludoSegunHora()}. Soy José Severino, asesor de Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
+
+¿Conoce a alguien que se esté mudando o que quiera cambiarse de compañía de internet? Tengo buenas promociones para esa persona.
+
+¿Quién se le viene a la mente? Con solo su número, yo me encargo del resto y le escribo de su parte.`;
 }
 // Calcula qué clientes y números tocan hoy. Sin anotaciones: se apoya en lo que ya está guardado.
 function calcularVentasHoy(clientes, convergencias, ahoraMs) {
@@ -5586,6 +5601,22 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
         if (e.respondio) {
           if (!e.cerrado) seguimiento.push({ cliente: c, ...n, respondioEn: e.respondioEn || e.abiertoEn });
           return;
+        }
+        // Segunda ronda: a los 30 días se le piden referidos al contacto (sin tener que marcar nada).
+        if (n.tipo === "contacto") {
+          if (e.refAbiertoEn) {
+            const tr = new Date(e.refAbiertoEn).getTime();
+            if (fechaLocalISO(new Date(tr)) === hoyISO) {
+              if (n.frio) { hechosHoy += 1; if (tr > ultimaApertura) ultimaApertura = tr; }
+              numeros.push({ ...n, ronda: "referido", estado: "abierto", abiertoEn: e.refAbiertoEn });
+            }
+            return;
+          }
+          const dias = -daysFromToday(fechaLocalISO(new Date(e.abiertoEn)));
+          if (!e.refDescartado && dias >= DIAS_PARA_REFERIDOS) {
+            if (e.refSaltoDia !== hoyISO) numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+            return;
+          }
         }
         if (esHoy) numeros.push({ ...n, estado: "abierto", abiertoEn: e.abiertoEn });
         return; // ya se le escribió antes
@@ -5638,7 +5669,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   return { filas, seguimiento, hechosHoy, pendientes, pendientesCalientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
 }
 
-function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onVerCliente }) {
+function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onVerCliente }) {
   const [ahora, setAhora] = useState(Date.now());
   const datos = calcularVentasHoy(clientes, convergencias, ahora);
   const espera = Math.max(0, ESPERA_ENTRE_MENSAJES_S - Math.floor((ahora - datos.ultimaApertura) / 1000));
@@ -5705,7 +5736,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       {lista.map(({ f, n }) => {
         const c = f.cliente;
         const key = `vta-${c.id}-${n.k}`;
-        const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : mensajeVentaContacto(c);
+        const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c);
         const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
         const bloqueado = n.frio && (llegoAlTope || esperando);
         return (
@@ -5722,7 +5753,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             <div className="mt-2 flex items-center gap-2">
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-bold font-mono">{n.tel}</div>
-                <div className="text-[11px]" style={ { color: "#5A6680" } }>{n.etiqueta}{n.frio ? " · nuevo" : ""}</div>
+                <div className="text-[11px]" style={ { color: "#5A6680" } }>{n.etiqueta}{n.ronda === "referido" ? " · pedir referidos" : n.frio ? " · nuevo" : ""}</div>
               </div>
               {n.estado === "pendiente" && (
                 bloqueado ? (
@@ -5732,7 +5763,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 ) : (
                   <a
                     href={href}
-                    onClick={() => onAbrir(c.id, n.k)}
+                    onClick={() => onAbrir(c.id, n.k, n.ronda)}
                     className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 rounded-lg"
                     style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
                   >
@@ -5741,6 +5772,9 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 )
               )}
             </div>
+            {n.estado === "pendiente" && n.ronda === "referido" && (
+              <button type="button" onClick={() => onSaltar(c.id, n.k, n.saltos || 0)} className="text-[11px] font-extrabold underline mt-1 mr-4" style={ { color: "#001E62" } }>Hoy no</button>
+            )}
             {n.estado === "pendiente" && (
               <button
                 type="button"
@@ -5755,7 +5789,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
               <div className="mt-1.5 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-bold" style={ { background: "#EAF0FB", color: "#001E62" } }>
                 <span>✓ WhatsApp abierto {new Date(n.abiertoEn).toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" })}</span>
                 <button type="button" onClick={() => onRespondio(c.id, n.k)} className="ml-auto font-extrabold px-2.5 rounded-lg" style={ { height: 30, background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>🔥 Respondió</button>
-                <button type="button" onClick={() => onDeshacer(c.id, n.k)} className="underline font-extrabold">↩ No lo envié</button>
+                <button type="button" onClick={() => onDeshacer(c.id, n.k, n.ronda)} className="underline font-extrabold">↩ No lo envié</button>
               </div>
             )}
             {n.estado === "abierto" && primerPendienteKey && (
