@@ -2487,6 +2487,15 @@ function App() {
     } catch (e) {}
   };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
+  const [seccionMensajes, setSeccionMensajes] = useState("cobros");
+  function cambiarVentaMsg(idCliente, k, cambio) {
+    actualizarClientes((prev) => prev.map((c) => {
+      if (c.id !== idCliente) return c;
+      const vm = { ...(c.ventaMsg || {}) };
+      if (cambio === null) delete vm[k]; else vm[k] = { ...(vm[k] || {}), ...cambio };
+      return { ...c, ventaMsg: vm };
+    }));
+  }
   const MINUTOS_PARA_DASHBOARD = 5;
   const TABS_PERSISTIBLES = ["dashboard", "clientes", "alertas", "precierre", "historial"];
   const [tab, setTab] = useState(() => {
@@ -3722,7 +3731,7 @@ function App() {
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: "chart" },
     { key: "clientes", label: "Clientes", icon: "users" },
-    { key: "alertas", label: "Cobros", icon: "cash", badge: stats.alHoy },
+    { key: "alertas", label: "Mensajes", icon: "cash", badge: stats.alHoy },
     { key: "precierre", label: "Precierre", icon: "receipt" },
     { key: "historial", label: "Historial", icon: "clock" },
   ];
@@ -3906,7 +3915,7 @@ function App() {
         {[
           { key: "dashboard", label: "Inicio", icon: "home" },
           { key: "clientes", label: "Clientes", icon: "users" },
-          { key: "alertas", label: "Cobros", icon: "cash", badge: stats.alHoy },
+          { key: "alertas", label: "Mensajes", icon: "cash", badge: stats.alHoy },
         ].map((item) => (
           <button
             key={item.key}
@@ -4040,7 +4049,8 @@ function App() {
             copiedSubKey={copiedSubKey}
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
-            onIrACobros={() => setTab("alertas")}
+            onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
+            onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               navegarA("clientes");
@@ -4117,6 +4127,33 @@ function App() {
         )}
         {tab === "alertas" && (
           <React.Fragment>
+          <div className="flex gap-2 mb-4" role="tablist">
+            {[["cobros", "💵 Cobros"], ["ventas", "💬 Ventas"]].map(([k, t]) => (
+              <button
+                key={k}
+                type="button"
+                role="tab"
+                aria-selected={seccionMensajes === k}
+                onClick={() => setSeccionMensajes(k)}
+                className="flex-1 text-sm font-extrabold rounded-lg py-2.5"
+                style={ seccionMensajes === k ? { background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } : { background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+          {seccionMensajes === "ventas" && (
+            <PanelVentasHoy
+              clientes={clientesActivos}
+              convergencias={convergencias}
+              onAbrir={(id, k) => cambiarVentaMsg(id, k, { abiertoEn: new Date().toISOString() })}
+              onDeshacer={(id, k) => cambiarVentaMsg(id, k, null)}
+              onNoEscribir={(id, k) => cambiarVentaMsg(id, k, { noEscribir: true })}
+              onVerCliente={(c) => { setOrigenDetalle("alertas"); setClienteDetalleId(c.id); navegarA("detalle"); } }
+            />
+          )}
+          {seccionMensajes === "cobros" && (
+          <React.Fragment>
           <Dashboard
             umbralProrrateo={umbralProrrateo}
             vista="cobros"
@@ -4167,6 +4204,8 @@ function App() {
             filtroTipo={filtroTipoAlertas}
             setFiltroTipo={setFiltroTipoAlertas}
           />
+          </React.Fragment>
+          )}
           </React.Fragment>
         )}
         {tab === "precierre" && (
@@ -5469,7 +5508,259 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onVerCliente }) {
+// ---------- Ventas por WhatsApp: "Para escribir hoy" ----------
+const TOPE_DIARIO_VENTAS = 20;          // mensajes de venta por día (protege tu número de WhatsApp)
+const ESPERA_ENTRE_MENSAJES_S = 60;     // segundos entre un mensaje y el siguiente
+const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factura
+const PRECIO_BENEFICIO_MOVIL = "$20.70 + impuestos";
+const d8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
+function mensajeVentaFicha(c) {
+  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()}. Soy José Severino, su asesor de Tigo.
+
+Si usted o alguien de su casa gasta en tarjetas de recarga cada mes, con su cuenta de internet puede pasarse a un plan de celular por solo ${PRECIO_BENEFICIO_MOVIL} al mes, con data y minutos ilimitados a Tigo. Casi siempre sale más barato que meter tarjeta.
+
+Y ese mismo beneficio se lo puede dar a un familiar, amigo o vecino que gaste en recargas.
+
+No tiene que pagar nada por adelantado.
+
+Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
+}
+function mensajeVentaContacto(c) {
+  return `${saludoSegunHora()}. Soy José Severino, asesor de Tigo.
+
+${tituloEs(c.nombre || "")} contrató internet con nosotros y con su cuenta usted puede adquirir el beneficio de un plan de celular a ${PRECIO_BENEFICIO_MOVIL}, con data y minutos ilimitados a Tigo y 5 GB para compartir.
+
+Si usted gasta mucho en tarjetas, le puede interesar. No tiene que pagar nada por adelantado.
+
+¿Su línea actual es de Tigo o de Más Móvil?`;
+}
+// Calcula qué clientes y números tocan hoy. Sin anotaciones: se apoya en lo que ya está guardado.
+function calcularVentasHoy(clientes, convergencias, ahoraMs) {
+  const hoyISO = fechaLocalISO(new Date(ahoraMs));
+  const lista = (clientes || []).filter((c) => !c.cancelado && !c.penalizado && c.fechaInstalacion && c.f1_estado === "pagada");
+  // clientes por barrio (para "zona con N clientes tuyos")
+  const porBarrio = {};
+  (clientes || []).forEach((c) => {
+    const b = (leerBloqueTigo(c.observaciones).barrio || "").trim().toUpperCase();
+    if (b) porBarrio[b] = (porBarrio[b] || 0) + 1;
+  });
+  let hechosHoy = 0;
+  let ultimaApertura = 0;
+  const filas = [];
+  lista.forEach((c) => {
+    const bloque = leerBloqueTigo(c.observaciones);
+    const vistos = new Set();
+    const cand = [];
+    const agregar = (tel, tipo, etiqueta) => {
+      const k = d8(tel);
+      if (k.length < 7 || vistos.has(k)) return;
+      vistos.add(k);
+      cand.push({ k, tel: String(tel).trim(), tipo, etiqueta });
+    };
+    agregar(c.telefono, "ficha", "WhatsApp de su ficha");
+    agregar(bloque.voz1, "contacto", "Contacto 1 de Tigo");
+    agregar(bloque.voz2, "contacto", "Contacto 2 de Tigo");
+    const vm = c.ventaMsg || {};
+    const numeros = [];
+    cand.forEach((n) => {
+      const e = vm[n.k] || {};
+      if (e.noEscribir) return;
+      if (e.abiertoEn) {
+        const t = new Date(e.abiertoEn).getTime();
+        if (fechaLocalISO(new Date(t)) === hoyISO) {
+          hechosHoy += 1;
+          if (t > ultimaApertura) ultimaApertura = t;
+          numeros.push({ ...n, estado: "abierto", abiertoEn: e.abiertoEn });
+        }
+        return; // ya se le escribió antes
+      }
+      numeros.push({ ...n, estado: "pendiente" });
+    });
+    if (numeros.length === 0) return;
+    // ¿ya pasaron los días de espera desde que pagó la 1ra factura?
+    const pagada = c.f1_pagadaEn ? fechaLocalISO(new Date(c.f1_pagadaEn)) : "";
+    const diasDesde = pagada ? -daysFromToday(pagada) : null;
+    const tieneAbierto = numeros.some((n) => n.estado === "abierto");
+    if (!tieneAbierto && diasDesde !== null && diasDesde < DIAS_ESPERA_VENTA) return;
+    const barrio = (bloque.barrio || "").trim().toUpperCase();
+    filas.push({
+      cliente: c,
+      numeros,
+      diasDesde,
+      zona: barrio ? porBarrio[barrio] || 0 : 0,
+      pagada,
+    });
+  });
+  filas.sort((a, b) => {
+    const za = a.zona >= 3 ? a.zona : 0;
+    const zb = b.zona >= 3 ? b.zona : 0;
+    if (zb !== za) return zb - za;
+    if (a.pagada && b.pagada) return b.pagada.localeCompare(a.pagada);
+    return a.pagada ? -1 : b.pagada ? 1 : 0;
+  });
+  const pendientes = filas.reduce((n, f) => n + f.numeros.filter((x) => x.estado === "pendiente").length, 0);
+  // ventas del mes por beneficio compartido (Match Digital cuyo titular es un cliente tuyo)
+  const mes = hoyISO.slice(0, 7);
+  const dueños = {};
+  (clientes || []).forEach((c) => {
+    const b = leerBloqueTigo(c.observaciones);
+    [c.telefono, b.voz1, b.voz2].forEach((t) => { const k = d8(t); if (k.length >= 7 && !dueños[k]) dueños[k] = c; });
+  });
+  const porCliente = {};
+  let totalMatch = 0;
+  (convergencias || []).forEach((m) => {
+    if (m.tipo !== "matchdigital" || !m.titularTelefono) return;
+    const f = String(m.matchFecha || m.creadoEn || "").slice(0, 7);
+    if (f !== mes) return;
+    const dueño = dueños[d8(m.titularTelefono)];
+    if (!dueño) return;
+    totalMatch += 1;
+    porCliente[dueño.id] = { nombre: dueño.nombre, n: ((porCliente[dueño.id] || {}).n || 0) + 1 };
+  });
+  return { filas, hechosHoy, pendientes, ultimaApertura, ventasMes: { total: totalMatch, clientes: Object.values(porCliente) } };
+}
+
+function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onVerCliente }) {
+  const [ahora, setAhora] = useState(Date.now());
+  const datos = calcularVentasHoy(clientes, convergencias, ahora);
+  const espera = Math.max(0, ESPERA_ENTRE_MENSAJES_S - Math.floor((ahora - datos.ultimaApertura) / 1000));
+  const esperando = datos.ultimaApertura > 0 && espera > 0;
+  useEffect(() => {
+    if (!esperando) return;
+    const t = setInterval(() => setAhora(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [esperando]);
+  const llegoAlTope = datos.hechosHoy >= TOPE_DIARIO_VENTAS;
+  // Solo se muestran tantos pendientes como cupo queda hoy.
+  let cupo = Math.max(0, TOPE_DIARIO_VENTAS - datos.hechosHoy);
+  const filasVisibles = [];
+  datos.filas.forEach((f) => {
+    const nums = f.numeros.filter((n) => {
+      if (n.estado === "abierto") return true;
+      if (cupo > 0) { cupo -= 1; return true; }
+      return false;
+    });
+    if (nums.length > 0) filasVisibles.push({ ...f, numeros: nums });
+  });
+  const mostrados = filasVisibles.reduce((n, f) => n + f.numeros.filter((x) => x.estado === "pendiente").length, 0);
+  const paraManana = Math.max(0, datos.pendientes - mostrados);
+  const primerPendienteKey = (() => {
+    for (const f of filasVisibles) for (const n of f.numeros) if (n.estado === "pendiente") return `vta-${f.cliente.id}-${n.k}`;
+    return null;
+  })();
+  const pct = Math.min(100, Math.round((datos.hechosHoy / TOPE_DIARIO_VENTAS) * 100));
+  const iconoWa = (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z" /></svg>
+  );
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
+      <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-sm font-bold" style={ { color: "#001E62" } }>💬 Para escribir hoy</span>
+          <span className="text-xs font-semibold" style={ { color: "#5A6680" } }>{datos.hechosHoy} de {TOPE_DIARIO_VENTAS} escritos hoy</span>
+        </div>
+        <div className="mt-2 rounded-full overflow-hidden" style={ { height: 8, background: "#E3EDFA" } } role="progressbar" aria-valuenow={datos.hechosHoy} aria-valuemin={0} aria-valuemax={TOPE_DIARIO_VENTAS}>
+          <div style={ { width: pct + "%", height: "100%", background: "#001E62" } }></div>
+        </div>
+      </div>
+      {llegoAlTope && (
+        <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo por hoy. El resto sigue mañana.</div>
+      )}
+      {filasVisibles.length === 0 && !llegoAlTope && (
+        <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura.</p>
+      )}
+      {filasVisibles.map((f) => {
+        const c = f.cliente;
+        return (
+          <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#EEF1F6" } }>
+            <button type="button" onClick={() => onVerCliente && onVerCliente(c)} className="text-left text-base font-extrabold underline" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</button>
+            <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
+              {f.diasDesde === null ? "1ra factura pagada" : f.diasDesde === 0 ? "Pagó su 1ra factura hoy" : `Pagó su 1ra factura hace ${f.diasDesde} ${f.diasDesde === 1 ? "día" : "días"}`}
+            </div>
+            {f.zona >= 3 && (
+              <div className="mt-1.5">
+                <span className="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>📍 Zona con {f.zona} clientes tuyos</span>
+              </div>
+            )}
+            {f.numeros.map((n) => {
+              const key = `vta-${c.id}-${n.k}`;
+              const msg = n.tipo === "ficha" ? mensajeVentaFicha(c) : mensajeVentaContacto(c);
+              const href = `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(msg)}`;
+              const bloqueado = llegoAlTope || esperando;
+              return (
+                <div key={key} id={key} className="mt-2">
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-bold font-mono">{n.tel}</div>
+                      <div className="text-[11px]" style={ { color: "#5A6680" } }>{n.etiqueta}</div>
+                    </div>
+                    {n.estado === "pendiente" && (
+                      bloqueado ? (
+                        <span className="shrink-0 inline-flex items-center text-xs font-bold px-3 rounded-lg" style={ { height: 34, color: "#5A6680", background: "#F3F6FB", border: "1.5px dashed #9CA3AF" } }>
+                          {llegoAlTope ? "Hasta mañana" : `Espera ${espera}s`}
+                        </span>
+                      ) : (
+                        <a
+                          href={href}
+                          onClick={() => onAbrir(c.id, n.k)}
+                          className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold px-3 rounded-lg"
+                          style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
+                        >
+                          {iconoWa}Enviar
+                        </a>
+                      )
+                    )}
+                  </div>
+                  {n.estado === "pendiente" && (
+                    <button
+                      type="button"
+                      onClick={() => { if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
+                      className="text-[11px] font-semibold underline mt-1"
+                      style={ { color: "#5A6680" } }
+                    >
+                      ✕ No escribirle más
+                    </button>
+                  )}
+                  {n.estado === "abierto" && (
+                    <div className="mt-1.5 rounded-lg px-3 py-2 flex items-center gap-2 text-xs font-bold" style={ { background: "#EAF0FB", color: "#001E62" } }>
+                      <span>✓ WhatsApp abierto {new Date(n.abiertoEn).toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" })}</span>
+                      <button type="button" onClick={() => onDeshacer(c.id, n.k)} className="ml-auto underline font-extrabold">↩ No lo envié</button>
+                    </div>
+                  )}
+                  {n.estado === "abierto" && primerPendienteKey && (
+                    <button
+                      type="button"
+                      onClick={() => { const el = document.getElementById(primerPendienteKey); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth", block: "center" }); } }
+                      className="w-full mt-1.5 text-xs font-extrabold rounded-lg py-2.5 text-white"
+                      style={ { background: "#001E62" } }
+                    >
+                      Siguiente →
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })}
+      {paraManana > 0 && (
+        <div className="px-4 py-2.5 text-center text-xs font-bold border-t" style={ { color: "#0B4A99", borderColor: "#EEF1F6" } }>
+          Quedan {paraManana} para mañana · tope diario {TOPE_DIARIO_VENTAS}
+        </div>
+      )}
+      <div className="px-4 py-3 border-t" style={ { background: "#F3F6FB", borderColor: "#EEF1F6" } }>
+        <div className="text-[11px] font-extrabold uppercase" style={ { color: "#5A6680", letterSpacing: ".04em" } }>Este mes, por beneficio compartido</div>
+        <div className="text-xs mt-1" style={ { color: "#374151" } }>
+          {datos.ventasMes.total > 0
+            ? <><b style={ { color: "#001E62" } }>{datos.ventasMes.total} {datos.ventasMes.total === 1 ? "venta" : "ventas"}</b> móvil · {datos.ventasMes.clientes.map((x) => `${tituloEs(x.nombre || "")} (${x.n})`).join(", ")}</>
+            : "Todavía ninguna. Se suma sola cuando registras un Match Digital cuyo titular es un cliente tuyo."}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAVentas, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -6752,7 +7043,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayCobros = !((nRec === 0 && nFac === 0) || !onIrACobros);
         const hayAbono = clientes.some(abonoPendiente) && !!onVerClientes;
         const hayMatch = (convergencias || []).some((c) => matchInfo(c)) && !!onVerClientes;
-        if (!hayCobros && !hayAbono && !hayMatch) return null;
+        const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
+        const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) : 0;
+        const hayVentas = nVentas > 0;
+        if (!hayCobros && !hayAbono && !hayMatch && !hayVentas) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
           <LineaMatchPendiente
@@ -6792,6 +7086,18 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               />
             )}
             {!matchVencido && lineaMatch(hayCobros || hayAbono)}
+            {hayVentas && (
+              <button
+                type="button"
+                onClick={onIrAVentas}
+                className="w-full text-left flex items-center gap-3 px-4 py-3"
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+              >
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
+                <span className="min-w-0 flex-1 text-sm font-bold">{nVentas} para escribir hoy</span>
+                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+              </button>
+            )}
           </div>
         );
       })()}
