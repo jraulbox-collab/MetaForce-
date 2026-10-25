@@ -4630,7 +4630,7 @@ function consejoVenta(base, defecto) {
     metaClientesHogar: base.metaHogar,
     clientesMovil: base.clientesMovil + m,
     metaClientesMovil: base.metaMovil,
-    ingresosDelPeriodo: base.ingresos + (h ? defecto.hogar : 0) + (m ? defecto.movil : 0),
+    ingresosDelPeriodo: base.ingresos + h * defecto.hogar + m * defecto.movil,
     metaIngresos: base.metaIngresos,
     cantidadBonoMovil: base.bonos,
     cantidadBonoPendiente: 0,
@@ -4641,28 +4641,40 @@ function consejoVenta(base, defecto) {
   const gM = r(0, 1).total - ahora.total;
   const pct = ahora.pctClientesPonderado;
   const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pct + 1e-9);
-  let falta = null;
-  if (sig) {
-    const dif = sig.min - pct;
-    const ptsH = base.metaHogar ? (PESO_CLIENTES_HOGAR * 100) / base.metaHogar : 0;
-    const ptsM = base.metaMovil ? (PESO_CLIENTES_MOVIL * 100) / base.metaMovil : 0;
-    falta = {
-      min: sig.min,
-      monto: sig.monto,
-      hogar: ptsH ? Math.ceil(dif / ptsH - 1e-9) : null,
-      movil: ptsM ? Math.ceil(dif / ptsM - 1e-9) : null,
-    };
-  }
+  // Cuántos clientes de cada tipo hacen falta para cruzar al siguiente escalón de base, y cuánto
+  // se gana al cruzarlo. La comisión sube por escalones, no por cada venta.
+  const hastaEscalon = (esHogar) => {
+    if (!sig) return null;
+    for (let n = 1; n <= 60; n++) {
+      const x = esHogar ? r(n, 0) : r(0, n);
+      if (x.montoBase > ahora.montoBase) return { n, gana: x.total - ahora.total };
+    }
+    return null;
+  };
+  const eH = hastaEscalon(true);
+  const eM = hastaEscalon(false);
+  const falta = sig ? { min: sig.min, monto: sig.monto, hogar: eH ? eH.n : null, movil: eM ? eM.n : null, ganaHogar: eH ? eH.gana : 0, ganaMovil: eM ? eM.gana : 0 } : null;
   const mejor = Math.abs(gH - gM) < 0.5 ? null : gM > gH ? "movil" : "hogar";
-  return { gH, gM, mejor, falta, tope: !sig, pct };
+  return { gH, gM, mejor, falta, tope: !sig, pct, cruzaH: !!(eH && eH.n === 1), cruzaM: !!(eM && eM.n === 1) };
 }
 // Línea corta del consejo (para las tarjetas). Devuelve null si no hay nada útil que decir.
 function textoConsejoVenta(c) {
   if (!c) return null;
   if (c.tope) return "💡 Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.";
-  if (!c.mejor) return null;
-  const g = c.mejor === "movil" ? c.gM : c.gH;
-  return `💡 Te conviene vender: ${c.mejor === "movil" ? "📱 Móvil" : "🏠 Hogar"} (+${fmtMiles(g, 0)} c/u)`;
+  const f = c.falta;
+  if (!f) return null;
+  if (c.cruzaH || c.cruzaM) {
+    const hogar = c.cruzaH && (!c.cruzaM || f.ganaHogar >= f.ganaMovil);
+    const g = hogar ? f.ganaHogar : f.ganaMovil;
+    return `💡 1 ${hogar ? "🏠 Hogar" : "📱 Móvil"} más y subes de escalón: +${fmtMiles(g, 0)}`;
+  }
+  const opciones = [];
+  if (f.hogar) opciones.push({ n: f.hogar, tipo: "🏠 Hogar", g: f.ganaHogar });
+  if (f.movil) opciones.push({ n: f.movil, tipo: "📱 Móvil", g: f.ganaMovil });
+  if (!opciones.length) return null;
+  opciones.sort((x, y) => x.n - y.n || y.g - x.g);
+  const o = opciones[0];
+  return `💡 A ${o.n} ${o.tipo} del siguiente escalón: +${fmtMiles(o.g, 0)}`;
 }
 
 function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
@@ -4716,7 +4728,17 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
     });
   }
   const ahora = useMemo(() => calcular([]), []);
-  const consejo = useMemo(() => consejoVenta(base, defecto), []);
+  // El consejo se recalcula con lo que ya simulaste: cada venta que agregas cambia el punto de partida.
+  const consejo = useMemo(() => {
+    let h = base.clientesHogar, m = base.clientesMovil, ing = base.ingresos, bo = base.bonos;
+    filas.forEach((f) => {
+      const n = Math.max(0, Number(f.cantidad) || 0);
+      ing += n * (Number(f.monto) || 0);
+      if (f.tipo === "hogar") h += n;
+      else { m += n; if (f.portabilidad) bo += n; }
+    });
+    return consejoVenta({ ...base, clientesHogar: h, clientesMovil: m, ingresos: ing, bonos: bo }, defecto);
+  }, [filas]);
   const con = calcular(filas);
   const dif = con.total - ahora.total;
   const cruzaTramo = con.montoBase !== ahora.montoBase;
@@ -4740,27 +4762,27 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
 
         {consejo && (
           <div className="rounded-lg border p-3 mb-3" style={ { borderColor: "#DFE5EF" } }>
-            <div className="text-sm font-bold mb-1.5">¿Qué me conviene vender?</div>
+            <div className="text-sm font-bold mb-1.5">{filas.length ? "Con lo que simulas, ¿qué sigue?" : "¿Qué me conviene vender?"}</div>
             {consejo.tope ? (
               <div className="text-sm" style={ { lineHeight: 1.4 } }>Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.</div>
             ) : (
               <div className="text-sm">
                 <div className="flex items-baseline justify-between py-0.5">
-                  <span>🏠 Siguiente Hogar</span>
+                  <span>🏠 Siguiente Hogar{consejo.cruzaH ? " · sube de escalón" : ""}</span>
                   <span className="font-bold tabular-nums">+{fmtMiles(consejo.gH, 0)}{consejo.mejor === "hogar" ? "  ← mejor" : ""}</span>
                 </div>
                 <div className="flex items-baseline justify-between py-0.5">
-                  <span>📱 Siguiente Móvil</span>
+                  <span>📱 Siguiente Móvil{consejo.cruzaM ? " · sube de escalón" : ""}</span>
                   <span className="font-bold tabular-nums">+{fmtMiles(consejo.gM, 0)}{consejo.mejor === "movil" ? "  ← mejor" : ""}</span>
                 </div>
               </div>
             )}
             {consejo.falta && (
               <div className="text-sm mt-1.5" style={ { lineHeight: 1.4 } }>
-                📈 Para subir al tramo de {consejo.falta.min}% ({fmtMiles(consejo.falta.monto, 0)} de base) te faltan {consejo.falta.movil != null ? `${consejo.falta.movil} Móvil` : ""}{consejo.falta.movil != null && consejo.falta.hogar != null ? " o " : ""}{consejo.falta.hogar != null ? `${consejo.falta.hogar} Hogar` : ""}.
+                📈 Para subir al tramo de {consejo.falta.min}% ({fmtMiles(consejo.falta.monto, 0)} de base) te faltan {consejo.falta.movil != null ? `${consejo.falta.movil} Móvil (+${fmtMiles(consejo.falta.ganaMovil, 0)})` : ""}{consejo.falta.movil != null && consejo.falta.hogar != null ? " o " : ""}{consejo.falta.hogar != null ? `${consejo.falta.hogar} Hogar (+${fmtMiles(consejo.falta.ganaHogar, 0)})` : ""}.
               </div>
             )}
-            <div className="text-[11px] mt-1.5" style={ { color: "#5A6680" } }>Calculado con plan de {fmtMiles(defecto.hogar, 0)} en Hogar y {fmtMiles(defecto.movil, 0)} en Móvil (promedio de este período), sin bono de portabilidad.</div>
+            <div className="text-[11px] mt-1.5" style={ { color: "#5A6680" } }>Calculado con plan de {fmtMiles(defecto.hogar, 0)} en Hogar y {fmtMiles(defecto.movil, 0)} en Móvil (promedio de este período), sin bono de portabilidad{filas.length ? ", ya contando lo que simulaste" : ""}.</div>
           </div>
         )}
 
@@ -8847,7 +8869,7 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
       <div className={tarjetaCls}>
       <div className="relative">
         <div className="flex items-center justify-between gap-2">
-          <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{modoDias === "ing" ? "Ingresos por día" : "Instalaciones por día"}</h2>
+          <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>{modoDias === "ing" ? "Cadencia" : "Cadencia de instalaciones"}</h2>
           <button
             type="button"
             aria-haspopup="true"
@@ -8916,7 +8938,7 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
         return (
           <>
             <div ref={scrollRef} onScroll={(e) => setScrollInfo({ c: claveVista, x: e.currentTarget.scrollLeft })} className="overflow-x-auto" style={ { WebkitOverflowScrolling: "touch", borderBottom: "1px solid #DFE5EF" } }>
-              <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label={modoDias === "ing" ? "Ingresos por día" : "Instalaciones por día"} style={ { display: "block" } }>
+              <svg width={wP} height={hP} viewBox={ "0 0 " + wP + " " + hP } role="img" aria-label={modoDias === "ing" ? "Cadencia" : "Cadencia de instalaciones"} style={ { display: "block" } }>
                 <defs>
                   <pattern id={uid + "pn"} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" fill="#fff" /><line x1="0" y1="0" x2="0" y2="4" stroke="#9CA3AF" strokeWidth="1.5" /></pattern>
                 </defs>
