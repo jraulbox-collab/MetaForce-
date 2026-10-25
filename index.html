@@ -655,6 +655,9 @@ function leerOrdenMovilTigo(texto) {
   const nom = tras("Nombre");
   const ape = tras("Apellido");
   if (nom || ape) out.nombre = (nom + " " + ape).trim().replace(/\s+/g, " ").toUpperCase();
+  out.avisos = [];
+  if (!nom) out.avisos.push("No encontré el nombre de pila (línea «Nombre»). Revisa el nombre antes de guardar.");
+  if (!ape) out.avisos.push("No encontré los apellidos (línea «Apellido»). Revisa el nombre antes de guardar.");
   const cuerpoCliente = t.split(/MATCH\s+DIGITAL/i)[0];
   const correo = cuerpoCliente.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
   if (correo) out.correo = correo[0].toLowerCase();
@@ -679,6 +682,7 @@ function leerOrdenMovilTigo(texto) {
     linea = fila[4];
     out.esPortabilidad = /PORT/i.test(out.tipoVenta);
   }
+  if (!fila) out.avisos.push("No encontré la fila del plan y la SIM. Copia el texto completo de la orden, hasta la parte de «Móvil».");
   const tel1d = String(tel1).replace(/\D/g, "");
   out.telefono = fmtTel(linea || tel1d);
   const extra = tel2 ? tel2 : (tel1d && linea && tel1d !== linea ? tel1d : "");
@@ -3046,6 +3050,19 @@ function App() {
   }
 
   // Desde "Verificar órdenes" (móviles): cambia solo la fecha de activación (queda en el Historial).
+  function corregirNombreDesdeOrden(id, nombre, esMovil) {
+    const nuevo = String(nombre || "").trim();
+    if (!id || !nuevo) return;
+    if (esMovil) {
+      editarConvergencia(id, { nombre: nuevo });
+      return;
+    }
+    const antes = clientes.find((c) => c.id === id);
+    if (!antes) return;
+    const despues = { ...antes, nombre: nuevo };
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: id });
+  }
   function cambiarFechaActivacionMovilDesdeOrden(id, fechaISO) {
     if (!id || !fechaISO) return;
     editarConvergencia(id, { fechaActivacion: fechaISO });
@@ -4254,6 +4271,7 @@ function App() {
             convergencias={convergencias}
             onAgregarMovil={irANuevoMovilDesdeOrden}
             onCambiarFechaMovil={cambiarFechaActivacionMovilDesdeOrden}
+            onCorregirNombre={corregirNombreDesdeOrden}
           />
         )}
         {tab === "historial" && (
@@ -11888,6 +11906,9 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                   )}
                   {lecturaTigo && (
                     <>
+                      {(lecturaTigo.avisos || []).map((a, i) => (
+                        <div key={i} className="rounded-md p-2.5 text-sm font-bold" style={ { background: "#FFF3DC", color: "#7A3E00", border: "1.5px solid #B45309" } }>⚠ {a}</div>
+                      ))}
                       <div className="text-xs font-bold" style={ { color: "#5A6680" } }>Esto voy a guardar:</div>
                       <div className="rounded-md p-2.5 text-sm flex flex-col gap-1 bg-white" style={ { border: "1px solid #DFE5EF" } }>
                         {[
@@ -12911,7 +12932,7 @@ function avisoRangoPrecierre(desde, hasta) {
   if (completo && h.getMonth() === d.getMonth() && h.getFullYear() === d.getFullYear()) return null;
   return "El rango no abarca un mes calendario completo (del 1 al 30 o 31).";
 }
-function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, onAbrirMovil, verif, setVerif, onAgregarOrden, onCambiarFecha, onCorregirPlan, onAplicarDatosTigo, onAgregarMovil, onCambiarFechaMovil }) {
+function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, onAbrirCliente, onAbrirMovil, verif, setVerif, onAgregarOrden, onCambiarFecha, onCorregirPlan, onAplicarDatosTigo, onAgregarMovil, onCambiarFechaMovil, onCorregirNombre }) {
   const [editando, setEditando] = useState(!estado.aplicado);
   const resultado = useMemo(
     () => (estado.aplicado ? calcularPrecierre(clientes, estado.aplicado.texto, estado.aplicado.desde, estado.aplicado.hasta) : null),
@@ -12977,6 +12998,7 @@ function PrecierreTab({ clientes, convergencias, estado, setEstado, onIrNuevo, o
           convergencias={convergencias}
           onAgregarMovil={onAgregarMovil}
           onCambiarFechaMovil={onCambiarFechaMovil}
+          onCorregirNombre={onCorregirNombre}
         />
       ) : (
       <React.Fragment>
@@ -13814,7 +13836,7 @@ function textoDiasEnProceso(f) {
   return d + " días en proceso";
 }
 
-function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar, onAbrirCliente, onAbrirMovil, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil }) {
+function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar, onAbrirCliente, onAbrirMovil, onCambiarFecha, onAgregarMovil, onCambiarFechaMovil, onCorregirNombre }) {
   const [editando, setEditando] = useState(!verif.aplicado);
   const [grupo, setGrupo] = useState(null);
   const [verNoVerif, setVerNoVerif] = useState(false);
@@ -14144,6 +14166,9 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   nombre={fila.nombre}
                   sub={"Parecido en tu app: " + cliente.nombre + (cliente.fechaInstalacion ? " · instalado " + fmtFechaDia(cliente.fechaInstalacion) : " · pendiente")}
                 >
+                  <button onClick={() => onCorregirNombre && onCorregirNombre(cliente.id, fila.nombre, false)} className="font-bold px-4 text-white" style={estiloPrimarioOrden}>
+                    ✅ Es el mismo
+                  </button>
                   <button onClick={() => onAbrirCliente(cliente)} className="font-bold px-4" style={estiloBoton}>
                     Abrir cliente
                   </button>
@@ -14209,6 +14234,12 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                   nombre={fila.nombre}
                   sub={"Parecido en tus Clientes Móvil: " + cliente.nombre + " · activada " + fmtFechaDia(fechaActivacionMovil(cliente))}
                 >
+                  <button onClick={() => onCorregirNombre && onCorregirNombre(cliente.id, fila.nombre, true)} className="font-bold px-4 text-white" style={estiloPrimarioOrden}>
+                    ✅ Es el mismo
+                  </button>
+                  <button onClick={() => onAbrirMovil && onAbrirMovil(cliente.id)} className="font-bold px-4" style={estiloBoton}>
+                    Abrir cliente
+                  </button>
                   <button onClick={() => descartarParecido(key)} className="font-bold px-4" style={estiloBoton}>
                     No es el mismo
                   </button>
