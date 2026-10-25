@@ -5194,6 +5194,27 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
   const bloque = { marginTop: 14, borderRadius: 10, border: "1px solid #C9DBF3", background: "#F7FAFE", padding: 12 };
   const barra = { position: "relative", height: 10, borderRadius: 5, background: C.cell, margin: "12px 0 6px" };
   const leyenda = { display: "flex", justifyContent: "space-between", fontSize: 11, color: C.mu };
+  // Escalera de escalones: los 8 tramos sobre una barra que se llena hasta tu % de clientes.
+  // ✓ = ya lo pasaste, ● = estás aquí, → (borde punteado) = el siguiente.
+  const posEsc = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
+  const escalera = (
+    <div style={ { position: "relative", height: 58, margin: "10px 14px 6px" } } role="img" aria-label={"Escalera de escalones. Llevas " + pc.toFixed(1) + " por ciento de clientes."}>
+      <div style={ { position: "absolute", left: 0, right: 0, top: 21, height: 8, borderRadius: 4, background: C.cell } } />
+      <div style={ { position: "absolute", left: 0, top: 21, height: 8, borderRadius: 4, background: C.navy, width: posEsc(pc) + "%" } } />
+      {TABLA_POSICION_NUEVA.map((t) => {
+        const lograda = pc + 1e-9 >= t.min;
+        const esAct = tramoActual && t.min === tramoActual.min;
+        const esSig = tramoSig && t.min === tramoSig.min;
+        return (
+          <div key={t.min} style={ { position: "absolute", top: 0, width: 38, marginLeft: -19, textAlign: "center", left: posEsc(t.min) + "%" } }>
+            <div style={ { fontSize: 10, fontWeight: 700, color: C.mu, height: 14, lineHeight: "14px" } }>{t.max === Infinity ? t.min + "+" : t.min}</div>
+            <div style={ { width: 16, height: 16, boxSizing: "border-box", borderRadius: "50%", margin: "3px auto 0", border: "2px " + (esSig ? "dashed " + C.blue : "solid " + C.navy), background: lograda ? C.navy : "#fff", color: "#fff", fontSize: 9, lineHeight: "12px", fontWeight: 700 } }>{esAct ? "●" : lograda ? "✓" : ""}</div>
+            <div style={ { fontSize: 10, fontWeight: 700, color: esSig ? C.blue : C.navy, marginTop: 4, whiteSpace: "nowrap" } }>{abrev(t.monto)}{esSig ? " →" : ""}</div>
+          </div>
+        );
+      })}
+    </div>
+  );
   const resumen = { listStyle: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", fontSize: 13, color: C.mu };
   const caja2 = { marginTop: 12, borderTop: "1px solid " + C.bd, paddingTop: 11 };
   const fila = { display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, padding: "5px 0", fontSize: 13 };
@@ -5237,11 +5258,8 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
         {tramoSig ? (
           <React.Fragment>
             <div style={ { fontSize: 13, fontWeight: 600 } }>Próximo escalón: base de {fmtMiles(tramoSig.monto, 0)} ({"+" + fmtMiles(tramoSig.monto - base, 0)})</div>
-            <div style={barra}>
-              <i style={ { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 5, background: C.navy, width: Math.min(100, (pc / tramoSig.min) * 100) + "%" } } />
-              <u style={ { position: "absolute", top: -3, bottom: -3, right: 0, width: 0, borderLeft: "2px dashed " + C.blue } } />
-            </div>
-            <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Escalón en {tramoSig.min}%</span></div>
+            {escalera}
+            <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Siguiente escalón en {tramoSig.min}%</span></div>
             {nH > 0 && (
               <div style={ { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } }>
                 <span style={ { fontSize: 12, padding: "5px 10px", borderRadius: 999, background: C.cell } }>Falta{nH === 1 ? "" : "n"} {nH} hogar</span>
@@ -5250,7 +5268,10 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
             )}
           </React.Fragment>
         ) : (
-          <div style={ { fontSize: 13 } }>★ <b>Tramo máximo</b> alcanzado ({fmtMiles(base, 0)} de base). Cada ingreso extra sube el acelerador.</div>
+          <React.Fragment>
+            {escalera}
+            <div style={ { fontSize: 13, marginTop: 6 } }>★ <b>Tramo máximo</b> alcanzado ({fmtMiles(base, 0)} de base). Cada ingreso extra sube el acelerador.</div>
+          </React.Fragment>
         )}
       </div>
 
@@ -5277,32 +5298,6 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
       {acel && (
         <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: C.pn } }>✓ Bono de ingresos activado: superas la meta y se suman +10 puntos.</div>
       )}
-
-      <details style={caja2}>
-        <summary style={resumen}><span>Ver todos los tramos</span><span>▾</span></summary>
-        <div style={ { display: "grid", gridTemplateColumns: "repeat(8, minmax(0,1fr))", gap: 3, marginTop: 10 } }>
-          {TABLA_POSICION_NUEVA.map((t) => {
-            const esAct = tramoActual && t.min === tramoActual.min;
-            const sup = tramoActual && t.min < tramoActual.min;
-            const esSig = tramoSig && t.min === tramoSig.min;
-            const estilo = esAct
-              ? { background: C.navy, color: "#fff", border: "1.5px solid " + C.navy }
-              : sup
-              ? { background: C.cell, color: C.navy, border: "1.5px solid " + C.bd }
-              : esSig
-              ? { color: C.blue, border: "1.5px dashed " + C.blue }
-              : { color: C.mu, border: "1.5px solid " + C.bd };
-            return (
-              <div key={t.min} style={ { textAlign: "center", borderRadius: 7, padding: "5px 0 4px", fontSize: 10, lineHeight: 1.25, ...estilo } }>
-                <b style={ { display: "block", fontSize: 11 } }>{abrev(t.monto)}</b>
-                {t.max === Infinity ? t.min + "+" : t.min}
-                <br />
-                {sup ? "✓" : esAct ? "●" : esSig ? "→" : " "}
-              </div>
-            );
-          })}
-        </div>
-      </details>
 
       <details style={caja2}>
         <summary style={resumen}><span>Ver detalle del cálculo</span><span>▾</span></summary>
