@@ -11060,7 +11060,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       type="button"
       onClick={onClick}
       className="shrink-0 rounded-full font-bold border whitespace-nowrap"
-      style={ Object.assign({ minHeight: 40, padding: "0 14px", fontSize: 14 }, activo ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" }, extra || {}) }
+      style={ Object.assign({ minHeight: 40, padding: "0 14px", fontSize: 14, order: activo ? -1 : 0 }, activo ? { background: "#001E62", color: "#fff", borderColor: "#001E62" } : { background: "#fff", color: "#001E62", borderColor: "#DFE5EF" }, extra || {}) }
     >
       {activo && quitable && !String(texto).startsWith("✓") ? "✓ " : ""}{texto}{activo && quitable ? " ✕" : ""}
     </button>
@@ -11101,7 +11101,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </div>
         </div>
         <div className="flex items-center gap-2 mt-2 overflow-x-auto" style={ { scrollbarWidth: "none", paddingBottom: 2 } }>
-          {chipM(false, "📅 " + (rangoActivo ? cortoF(fechaDesde) + (fechaHasta && fechaHasta !== fechaDesde ? " – " + cortoF(fechaHasta) : "") : labelMesM) + (mesPanelAbierto ? " ▴" : " ▾"), () => { setMesPanelAbierto((v) => !v); setMasPanelAbierto(false); setGrupoAbierto(null); }, false, { borderColor: "#0072CE", color: "#0072CE", background: rangoActivo ? "#E3EDFA" : "#fff" })}
+          {chipM(false, "📅 " + (rangoActivo ? cortoF(fechaDesde) + (fechaHasta && fechaHasta !== fechaDesde ? " – " + cortoF(fechaHasta) : "") : labelMesM) + (mesPanelAbierto ? " ▴" : " ▾"), () => { setMesPanelAbierto((v) => !v); setMasPanelAbierto(false); setGrupoAbierto(null); }, false, { order: -2, borderColor: "#0072CE", color: "#0072CE", background: rangoActivo ? "#E3EDFA" : "#fff" })}
           {subVista === "movil" && (() => {
             const delMesM = (clientesMovil || []).filter((c) => periodoComision(fechaActivacionMovil(c)) === mesActivoEfectivo);
             const nM = (k) => delMesM.filter((c) => pasaChipMovil(c, k)).length;
@@ -11120,7 +11120,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               {conteoG.cancelados > 0 && chipM(chipGrupo === "cancelados", "Cancelados " + conteoG.cancelados, () => setChipGrupo(chipGrupo === "cancelados" ? "todos" : "cancelados"), true)}
             </React.Fragment>
           )}
-          {chipM(masPanelAbierto || filtrosAbiertos, "⋯ Más" + (filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""), () => { setMasPanelAbierto((v) => !v); setMesPanelAbierto(false); setGrupoAbierto(null); }, false)}
+          {chipM(masPanelAbierto || filtrosAbiertos, "⋯ Más" + (filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""), () => { setMasPanelAbierto((v) => !v); setMesPanelAbierto(false); setGrupoAbierto(null); }, false, { order: 1 })}
         </div>
         {grupoAbierto === "fact" && (
           <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
