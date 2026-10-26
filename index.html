@@ -686,7 +686,7 @@ const TIPOS_CLIENTE_MOVIL = [
   { value: "fulltigo", label: "FULL TIGO" },
 ];
 // Datos extra que se guardan al pegar el texto de Tigo (todos opcionales).
-const DATOS_EXTRA_MOVIL = ["correo", "telefonoAdicional", "telefonoAdicional2", "direccion", "barrio", "corregimiento", "planNombre", "sim", "estadoOrden", "titularCedula", "titularCorreo", "titularTelefono", "matchConfirmado", "matchFecha"];
+const DATOS_EXTRA_MOVIL = ["correo", "telefonoAdicional", "telefonoAdicional2", "numeroOrden", "direccion", "barrio", "corregimiento", "planNombre", "sim", "estadoOrden", "titularCedula", "titularCorreo", "titularTelefono", "matchConfirmado", "matchFecha"];
 function datosExtraDe(c) {
   const o = {};
   DATOS_EXTRA_MOVIL.forEach((k) => { if (c && c[k] !== undefined && c[k] !== null && c[k] !== "") o[k] = c[k]; });
@@ -718,12 +718,20 @@ function leerOrdenMovilTigo(texto) {
   const dir = tras("Direcci[oó]n");
   if (dir) {
     out.direccion = dir;
+    // Solo se guarda el barrio. Formatos: «BARRIO (CORREG. DE X)» y «CORREG. DE X-BARRIO».
     const m = dir.match(/^(.*?)\s*\(\s*(?:CORREG(?:IMIENTO)?\.?)\s*(?:DE\s+)?(.*?)\s*\)\s*$/i);
-    if (m) { out.barrio = m[1].trim().toUpperCase(); out.corregimiento = m[2].trim().toUpperCase(); }
+    const m2 = dir.match(/^\s*CORREG(?:IMIENTO)?\.?\s*(?:DE\s+)?[^-]*?\s*-\s*(.+)$/i);
+    if (m) out.barrio = m[1].trim().toUpperCase();
+    else if (m2) out.barrio = m2[1].trim().toUpperCase();
     else out.barrio = dir.trim().toUpperCase();
   }
   const est = tras("Estado");
   if (est) out.estadoOrden = est;
+  if (/procesando/i.test(est)) out.avisos.push("La orden aún está en «Procesando». Si no quieres agregarla todavía, espera a que diga completada.");
+  const ord = t.match(/(?:^|\n)\s*Orden\s*:\s*(\d+)/i);
+  if (ord) out.numeroOrden = ord[1];
+  // Sin fila de Match Digital, lo normal es una Convergencia Pura (el Plan Pospago se elige a mano).
+  out.tipo = "convergencia";
   // Fila de la línea móvil: oferta, tipo de venta, SIM (18-20 dígitos) y número.
   const fila = t.match(/([^\n\t]*?B\/\.?\s*\d+[^\n\t]*?)\s+(PRE\s*a\s*POS|POS\s*a\s*POS|PORTABILIDAD[A-Z ]*|L[IÍ]NEA NUEVA|[A-Z]{3}\s*a\s*[A-Z]{3})\s+(\d{18,20})\s+(\d{8})/i);
   let linea = "";
@@ -13082,18 +13090,24 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                           ["Teléfono adicional", lecturaTigo.telefonoAdicional],
                           ["Teléfono adicional 2", lecturaTigo.telefonoAdicional2],
                           ["Correo", lecturaTigo.correo],
-                          ["Zona", [lecturaTigo.barrio, lecturaTigo.corregimiento].filter(Boolean).join(" · ")],
+                          ["Barrio", lecturaTigo.barrio],
+                          ["Número de orden", lecturaTigo.numeroOrden],
                           ["Plan", lecturaTigo.planNombre],
                           ["Cobra el cliente", lecturaTigo.montoPlan != null ? fmtMonto(lecturaTigo.montoPlan) + (lecturaTigo.precioLista ? " (lista " + fmtMonto(lecturaTigo.precioLista) + ")" : "") : ""],
                           ["Tipo de venta", lecturaTigo.tipoVenta],
                           ["Portabilidad", lecturaTigo.esPortabilidad === undefined ? "" : lecturaTigo.esPortabilidad ? "Sí" : "No"],
-                          ["Tipo de cliente", lecturaTigo.tipo === "matchdigital" ? "Match Digital" : ""],
+                          ["Tipo de cliente", lecturaTigo.tipo ? etiquetaTipoMovil(lecturaTigo.tipo) : ""],
                           ["Titular del Hogar", lecturaTigo.titularTelefono ? [lecturaTigo.titularTelefono, lecturaTigo.titularCorreo].filter(Boolean).join(" · ") : ""],
                           ["Estado del match", lecturaTigo.estadoMatchTexto],
                           ["Estado de la orden", lecturaTigo.estadoOrden],
                         ].filter(([, v]) => v).map(([k, v]) => (
                           <div key={k} className="flex gap-2"><span className="shrink-0" style={ { color: "#5A6680", minWidth: 110 } }>{k}</span><span className="font-semibold break-all">{v}</span></div>
                         ))}
+                      </div>
+                      <div className="rounded-md p-2.5 flex items-center flex-wrap gap-2" style={ { background: "#EAF0FB", border: "1.5px solid #001E62" } }>
+                        <span className="text-sm font-bold" style={ { color: "#001E62" } }>📅 Activado el</span>
+                        <input type="date" value={fechaActivacion} onChange={(e) => setFechaActivacion(e.target.value)} className="text-sm font-semibold px-2 py-1.5 rounded-md border" style={ { borderColor: "#001E62", minHeight: 38 } } />
+                        <span className="text-xs w-full" style={ { color: "#3D4A66" } }>El texto no trae la fecha. Si no es hoy, cámbiala: de ella sale el ciclo de facturación.</span>
                       </div>
                       <div className="flex gap-2">
                         <button type="button" onClick={aplicarLecturaTigo} className="flex-1 text-sm font-bold px-4 py-2.5 rounded-md text-white" style={ { background: "#001E62", minHeight: 40 } }>Usar estos datos</button>
