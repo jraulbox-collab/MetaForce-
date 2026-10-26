@@ -2602,6 +2602,7 @@ function App() {
   const [editingId, setEditingId] = useState(null);
   const [search, setSearch] = useState("");
   const [searchAlertas, setSearchAlertas] = useState("");
+  const [lotesMsj, setLotesMsj] = useState({ cobros: 10, instalacion: 10 });
   const [filtroTipoAlertas, setFiltroTipoAlertas] = useState("");
   const [copiedKey, setCopiedKey] = useState(null);
   // Cliente al que acabas de abrirle WhatsApp con la info de instalación: al volver se pregunta si la enviaste.
@@ -3832,6 +3833,8 @@ function App() {
   const alertasCobroVis = alertasPorCliente.filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
   const alertasMovilVis = alertasMovilPendientes(convergencias).filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
   const instalacionesVis = tab === "alertas" ? clientesActivos.filter((c) => instalacionPorAvisar(c) && !estaPospuesto("inst-" + c.id)) : [];
+  const qMsj = searchAlertas.trim().toLowerCase();
+  const instalacionesBus = qMsj ? instalacionesVis.filter((c) => String(c.nombre || "").toLowerCase().includes(qMsj) || String(c.telefono || "").includes(qMsj)) : instalacionesVis;
   const conteoMsj = (() => {
     if (tab !== "alertas") return null;
     const nCobros = alertasCobroVis.length + alertasMovilVis.length;
@@ -3867,7 +3870,7 @@ function App() {
     const enComision = (a, mov) => (mov ? a.cliente.f1_estado !== "pagada" && movilCuentaParaComision(a.cliente) : a.cliente.f1_estado !== "pagada" && clienteCuentaParaComision(a.cliente));
     const cobros = [...alertasCobroVis.map((a) => ({ a, mov: false })), ...alertasMovilVis.map((a) => ({ a, mov: true }))];
     cobros.sort((x, y) => (enComision(x.a, x.mov) ? 0 : 1) - (enComision(y.a, y.mov) ? 0 : 1));
-    cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + a.milestone.tag }));
+    cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + (mov ? a.milestone.tag : a.milestone.label) }));
     [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada).localeCompare(String(y.instalacionProgramada)))
       .forEach((c) => items.push({ t: "in", id: c.id, link: whatsappLink(c, { texto: textoInstalacion(c) }), nombre: c.nombre, et: "🔧 Info de instalación" }));
     const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
@@ -3879,6 +3882,12 @@ function App() {
     setResumenCadena(null);
     guardarCadena({ items, i: 0, env: 0, sal: 0 });
     window.location.href = items[0].link;
+  }
+  // Un solo mensaje: abre WhatsApp y al volver pregunta "¿Lo enviaste?" (sin Siguiente ni Saltar).
+  function enviarUno(item) {
+    setResumenCadena(null);
+    guardarCadena({ items: [item], i: 0, env: 0, sal: 0 });
+    window.location.href = item.link;
   }
   function marcarItemCadena(it) {
     if (it.t === "ch") marcarEnviadoSeguro(it.id, it.key, "cadena");
@@ -3895,7 +3904,7 @@ function App() {
     const i = c.i + 1;
     if (i >= c.items.length) {
       guardarCadena(null);
-      setResumenCadena({ total: c.items.length, env });
+      if (c.items.length > 1) setResumenCadena({ total: c.items.length, env });
       return;
     }
     guardarCadena({ ...c, i, env, sal });
@@ -4178,13 +4187,26 @@ function App() {
 
       {cadena && cadena.items[cadena.i] && (
         <div className="fixed z-50 left-3 right-3 rounded-xl p-3" style={ { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } }>
-          <div className="text-sm font-bold text-white">Enviando {cadena.i + 1} de {cadena.items.length}: {tituloEs(cadena.items[cadena.i].nombre || "")}</div>
-          <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[cadena.i].et} · Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</div>
-          <div className="flex gap-2 mt-2 items-stretch">
-            <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
-            <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No, saltar</button>
-            <button type="button" onClick={() => avanzarCadena(true)} className="text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0 } }>Sí, siguiente</button>
-          </div>
+          {cadena.items.length === 1 ? (
+            <React.Fragment>
+              <div className="text-sm font-bold text-white">¿Enviaste el mensaje a {tituloEs(cadena.items[0].nombre || "").split(" ").slice(0, 2).join(" ")}?</div>
+              <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[0].et} · Se abrió WhatsApp con el mensaje.</div>
+              <div className="flex gap-2 mt-2 items-stretch">
+                <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No todavía</button>
+                <button type="button" onClick={() => avanzarCadena(true)} className="text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0 } }>✓ Sí, lo envié</button>
+              </div>
+            </React.Fragment>
+          ) : (
+            <React.Fragment>
+              <div className="text-sm font-bold text-white">Enviando {cadena.i + 1} de {cadena.items.length}: {tituloEs(cadena.items[cadena.i].nombre || "")}</div>
+              <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[cadena.i].et} · Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</div>
+              <div className="flex gap-2 mt-2 items-stretch">
+                <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
+                <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No, saltar</button>
+                <button type="button" onClick={() => avanzarCadena(true)} className="text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0 } }>Sí, siguiente</button>
+              </div>
+            </React.Fragment>
+          )}
         </div>
       )}
       {barraEscondida && !barraOculta && ORDEN_SWIPE.includes(tab) && (
@@ -4455,6 +4477,17 @@ function App() {
             ))}
           </div>
           )}
+          {conteoMsj.total > 0 && (
+            <input
+              type="search"
+              value={searchAlertas}
+              onChange={(e) => { setSearchAlertas(e.target.value); setLotesMsj({ cobros: 10, instalacion: 10 }); } }
+              placeholder="🔍 Buscar cliente…"
+              aria-label="Buscar cliente"
+              className="w-full rounded-xl px-3 mb-4"
+              style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", fontSize: 16 } }
+            />
+          )}
           {pospuestosActivos.length > 0 && (
             <details className="mb-4 rounded-lg bg-white" style={ { border: "1px solid #DFE5EF" } }>
               <summary className="px-4 py-3 text-sm font-bold cursor-pointer" style={ { color: "#5A6680", minHeight: 44 } }>⏰ Pospuestos ({pospuestosActivos.length})</summary>
@@ -4472,6 +4505,10 @@ function App() {
           {(seccionMensajes === "ventas" || seccionMensajes === "todos") && (
             <div style={ { order: 2 } }>
             <PanelVentasHoy
+              resumen={seccionMensajes === "todos" && !searchAlertas.trim()}
+              busqueda={searchAlertas}
+              onVerTodos={() => { setSeccionMensajes("ventas"); window.scrollTo({ top: 0 }); } }
+              onEnviarUno={enviarUno}
               clientes={clientesActivos}
               convergencias={convergencias}
               onAbrir={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() })}
@@ -4496,7 +4533,7 @@ function App() {
             </div>
           )}
           {seccionMensajes === "instalacion" && (
-            <BloqueInstalacionHoy lista={instalacionesVis} onEnviar={enviarInfoInstalacion} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} />
+            <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
           )}
           {["todos", "comision", "cobros"].includes(seccionMensajes) && (
           <div style={ { order: 1 } }>
@@ -4526,11 +4563,16 @@ function App() {
             } }
           />
           {seccionMensajes === "todos" && (
-            <BloqueInstalacionHoy lista={instalacionesVis} onEnviar={enviarInfoInstalacion} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} />
+            <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
           )}
           {["todos", "cobros"].includes(seccionMensajes) && (
           <AlertasTab
             onPosponer={posponerMensaje}
+            modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()}
+            limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.cobros}
+            onVerTodos={() => { setSeccionMensajes("cobros"); window.scrollTo({ top: 0 }); } }
+            onVerMas={() => setLotesMsj((p) => ({ ...p, cobros: p.cobros + 10 }))}
+            onEnviarUno={enviarUno}
             alertasHoy={alertasCobroVis}
             alertasMovil={alertasMovilVis}
             onMarcarMovil={marcarMovilEnviadoSeguro}
@@ -5855,46 +5897,77 @@ function LineaAbonoPendiente({ clientes, conSeparador, onVer }) {
 }
 
 // Mensajes → Instalación: clientes con instalación programada sin info enviada.
-function BloqueInstalacionHoy({ lista, onEnviar, onMarcar, onPosponer }) {
+function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite, modoResumen, onVerTodos, onVerMas }) {
   const [posAbierto, setPosAbierto] = useState(null);
+  const [abierta, setAbierta] = useState(null);
   const hoy = fechaLocalISO(new Date());
   const ordenada = [...lista].sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
   if (ordenada.length === 0) return null;
+  const visibles = typeof limite === "number" ? ordenada.slice(0, limite) : ordenada;
+  const restantes = ordenada.length - visibles.length;
   return (
-    <div className="mb-4">
-      <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>🔧 Info de instalación por enviar ({ordenada.length})</h2>
-      {ordenada.map((c) => {
+    <div className="mb-2">
+      <div className="text-[13px] font-extrabold uppercase mt-4 mb-2 mx-0.5" style={ { color: "#001E62", letterSpacing: ".04em" } }>🔧 Info de instalación ({ordenada.length})</div>
+      {visibles.map((c) => {
         const f = c.instalacionProgramada;
         const vencida = f < hoy;
         const cuando = vencida ? "⚠ Ya venció" : f === hoy ? "📅 Se instala hoy" : f === addDays(hoy, 1) ? "📅 Se instala mañana" : "📅 " + fmtFechaDia(f);
+        const abre = abierta === c.id;
         return (
-          <div key={c.id} className="bg-white rounded-lg border mb-3 p-3" style={ { borderColor: "#DFE5EF", borderLeft: vencida ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
-            <div className="text-base font-semibold" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</div>
-            <div className="text-sm font-semibold mt-0.5" style={ { color: vencida || f === hoy ? "#9B1C1C" : "#9A4A06" } }>{cuando}</div>
-            <div className="flex items-stretch gap-1.5 mt-3">
-              <button type="button" onClick={() => onEnviar(c)} className="flex-1 text-[13px] font-bold px-2 rounded-md" style={ { background: "#1FA855", color: "#fff", minHeight: 46 } }>💬 WhatsApp</button>
+          <div key={c.id} className="bg-white rounded-xl border mb-2 overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: vencida ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
+            <div role="button" tabIndex={0} onClick={() => setAbierta(abre ? null : c.id)} aria-expanded={abre} className="flex items-center gap-2.5 cursor-pointer" style={ { minHeight: 60, padding: "8px 8px 8px 12px" } }>
+              <div className="flex-1 min-w-0">
+                <div className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</div>
+                <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>🔧 Info de instalación · <span style={ { fontWeight: 700, color: vencida || f === hoy ? "#9B1C1C" : "#9A4A06" } }>{cuando}</span></div>
+              </div>
               <button
                 type="button"
-                onClick={() => { if (window.confirm("¿Confirmas que ya enviaste la info de instalación?")) onMarcar(c.id); } }
-                className="text-[13px] font-semibold px-3 rounded-md"
-                style={ { background: "#001E62", color: "#fff", minHeight: 46, whiteSpace: "nowrap" } }
+                aria-label={"Enviar por WhatsApp a " + tituloEs(c.nombre || "")}
+                onClick={(e) => { e.stopPropagation(); onEnviarUno({ t: "in", id: c.id, link: whatsappLink(c, { texto: textoInstalacion(c) }), nombre: c.nombre, et: "🔧 Info de instalación" }); } }
+                className="flex items-center justify-center shrink-0 rounded-xl"
+                style={ { width: 48, height: 48, background: "#1FA855", color: "#fff", fontSize: 22, border: 0 } }
               >
-                ✓ Enviado
+                💬
               </button>
             </div>
-            <div className="mt-2">
-              <button type="button" onClick={() => setPosAbierto((v) => (v === c.id ? null : c.id))} className="text-sm font-bold underline" style={ { color: "#5A6680", minHeight: 36 } }>⏰ Posponer</button>
-              {posAbierto === c.id && (
-                <div className="flex flex-wrap gap-2 mt-1">
-                  {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
-                    <button key={t} type="button" onClick={() => { onPosponer("inst-" + c.id, d, tituloEs(c.nombre || "")); setPosAbierto(null); } } className="text-sm font-bold rounded-full px-3" style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }>{t}</button>
-                  ))}
+            {abre && (
+              <div className="px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
+                <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>{textoInstalacion(c)}</div>
+                <div className="flex items-stretch gap-1.5 mt-3">
+                  <button
+                    type="button"
+                    onClick={() => { if (window.confirm("¿Confirmas que ya enviaste la info de instalación?")) onMarcar(c.id); } }
+                    className="flex-1 text-[13px] font-semibold px-2 rounded-md"
+                    style={ { background: "#001E62", color: "#fff", minHeight: 46, whiteSpace: "nowrap" } }
+                  >
+                    ✓ Enviado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPosAbierto((v) => (v === c.id ? null : c.id))}
+                    className="flex-1 text-[13px] font-semibold px-2 rounded-md"
+                    style={ { background: "#fff", color: "#001E62", border: "2px solid #001E62", minHeight: 46, whiteSpace: "nowrap" } }
+                  >
+                    ⏰ Posponer
+                  </button>
                 </div>
-              )}
-            </div>
+                {posAbierto === c.id && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
+                      <button key={t} type="button" onClick={() => { onPosponer("inst-" + c.id, d, tituloEs(c.nombre || "")); setPosAbierto(null); } } className="text-sm font-bold rounded-full px-3" style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }>{t}</button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })}
+      {restantes > 0 && (
+        <button type="button" onClick={modoResumen ? onVerTodos : onVerMas} className="w-full mb-2 text-sm font-extrabold rounded-xl" style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
+          {modoResumen ? `Ver los ${ordenada.length} de Instalación ›` : `Ver ${Math.min(10, restantes)} más · quedan ${restantes}`}
+        </button>
+      )}
     </div>
   );
 }
@@ -6580,7 +6653,7 @@ function ListaMisReferidos({ clientes, convergencias }) {
 // Texto del mensaje de venta de un número (lo usan el panel de Ventas y el envío en cadena de Mensajes).
 const mensajeVentaDe = (n, c, f) => (n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
 
-function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
+function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
   const [formKey, setFormKey] = useState(null);
   const [msgKey, setMsgKey] = useState(null);
@@ -6629,9 +6702,12 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   pendientes.forEach((x) => { cuenta[tipoMensajeVenta(x.n)] += 1; });
   const filtroEf = filtro !== "todos" && !(cuenta[filtro] > 0) ? "todos" : filtro;
   const pasa = (x) => filtroEf === "todos" || filtroEf === tipoMensajeVenta(x.n);
-  const abiertosF = filtroEf === "respondieron" ? [] : abiertos.filter(pasa);
-  const pendF2 = filtroEf === "respondieron" ? [] : pendientes.filter(pasa);
-  const mostrar = pendF2.slice(0, visibles);
+  const qBus = (busqueda || "").trim().toLowerCase();
+  const pasaBus = (x) => !qBus || String(x.f.cliente.nombre || "").toLowerCase().includes(qBus) || String(x.n.nombreRef || "").toLowerCase().includes(qBus) || String(x.n.tel || "").includes(qBus);
+  const abiertosF = filtroEf === "respondieron" ? [] : abiertos.filter(pasa).filter(pasaBus);
+  const pendF2 = filtroEf === "respondieron" ? [] : pendientes.filter(pasa).filter(pasaBus);
+  const mostrar = pendF2.slice(0, resumen ? 3 : visibles);
+  const sinCabecera = resumen || !!qBus;
   const restantes = pendF2.length - mostrar.length;
   const lista = [...abiertosF, ...mostrar];
   const primerPend = mostrar[0];
@@ -6679,7 +6755,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   const totalRefs = datos.referidos.guardados;
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
-      {!cola && <button
+      {!cola && !sinCabecera && <button
         type="button"
         onClick={() => setAgregando(true)}
         className="fixed z-40 flex items-center justify-center gap-1.5 text-white text-sm font-extrabold px-4"
@@ -6702,6 +6778,10 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           </div>
         </div>
       )}
+      {sinCabecera && pendF2.length + abiertosF.length > 0 && (
+        <div className="px-4 pt-3 pb-1 text-[13px] font-extrabold uppercase" style={ { color: "#001E62", letterSpacing: ".04em" } }>💬 Ventas ({pendF2.length})</div>
+      )}
+      {!sinCabecera && (
       <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
         <div className="text-base font-extrabold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</div>
         <div className="text-xs font-semibold mt-1" style={ { color: "#5A6680" } }>Números nuevos hoy: {datos.hechosHoy}</div>
@@ -6735,6 +6815,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           </div>
         )}
       </div>
+      )}
       {cola && itemCola && (
         <div className="fixed z-[60] p-3" style={ { left: 10, right: 10, bottom: "calc(92px + env(safe-area-inset-bottom))", borderRadius: 16, background: "#001E62", boxShadow: "0 -4px 18px rgba(0,0,0,.35)", border: "1px solid #3A55A0" } }>
           <div className="text-sm font-extrabold text-white">
@@ -6792,7 +6873,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           ))}
         </div>
       )}
-      {lista.length === 0 && filtroEf !== "respondieron" && (
+      {!sinCabecera && lista.length === 0 && filtroEf !== "respondieron" && (
         <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtroEf === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
       )}
       {lista.map(({ f, n }) => {
@@ -6816,6 +6897,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 <div className="text-base font-bold font-mono mt-1">{n.tel}</div>
                 <div style={ filaInfo }>{n.etiqueta}{n.frio && !esRef ? " · número nuevo" : ""}</div>
                 <div style={ { ...filaInfo, fontWeight: 700 } }>🎯 {ofertaVenta(n, f)}</div>
+                {msgKey === key && (<React.Fragment>
                 {esRef && <div style={ filaInfo }>Recomendado por un contacto de {tituloEs(c.nombre || "")}</div>}
                 {!esRef && f.diasDesde !== null && <div style={ filaInfo }>💵 Pagó su 1ra factura {f.diasDesde === 0 ? "hoy" : f.diasDesde === 1 ? "hace 1 día" : `hace ${f.diasDesde} días`}</div>}
                 {!esRef && f.plan && <div style={ filaInfo }>📶 {f.plan}</div>}
@@ -6824,6 +6906,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 {f.tieneMovil && !esRef && <div style={ { ...filaInfo, fontWeight: 700, color: "#0F5A2B" } }>✓ Ya tiene móvil contigo</div>}
                 {!esRef && n.estado === "pendiente" && <div style={ filaInfo }>✉️ {n.ultimoISO ? `Último mensaje: ${fechaLocalISO(new Date(n.ultimoISO)) === fechaLocalISO(new Date()) ? "hoy" : (() => { const d = -daysFromToday(fechaLocalISO(new Date(n.ultimoISO))); return d === 1 ? "hace 1 día" : `hace ${d} días`; })()}` : "Sin mensajes todavía"}</div>}
                 {otrosNums.length > 0 && <div style={ filaInfo }>También: {otrosNums.map((o) => `${o.etiqueta} (${o.estado})`).join(" · ")}</div>}
+                </React.Fragment>)}
               </div>
               {n.estado === "pendiente" && (
                 <div className="shrink-0 flex flex-col items-end gap-2">
@@ -6834,7 +6917,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                   ) : (
                     <a
                       href={href}
-                      onClick={() => onAbrir(c.id, n.k, n.ronda)}
+                      onClick={(e) => { if (onEnviarUno) { e.preventDefault(); onEnviarUno({ t: "v", id: c.id, k: n.k, ronda: n.ronda, link: href, nombre: nombreFila, et: "💬 Venta" }); } else onAbrir(c.id, n.k, n.ronda); } }
                       className="inline-flex items-center gap-1.5 text-sm font-extrabold px-4 rounded-lg"
                       style={ { height: 40, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }
                     >
@@ -6844,11 +6927,11 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
                 </div>
               )}
             </div>
-            <button type="button" onClick={() => setMsgKey(msgKey === key ? null : key)} aria-expanded={msgKey === key} className="mt-2 text-xs font-extrabold underline" style={ { color: "#001E62" } }>{msgKey === key ? "Ocultar mensaje ▴" : "Ver mensaje ▾"}</button>
+            <button type="button" onClick={() => setMsgKey(msgKey === key ? null : key)} aria-expanded={msgKey === key} className="mt-2 text-xs font-extrabold underline" style={ { color: "#001E62" } }>{msgKey === key ? "Ocultar detalles ▴" : "Ver detalles y mensaje ▾"}</button>
             {msgKey === key && (
               <div className="mt-2 rounded-lg p-3 text-sm" style={ { background: "#F3F6FB", border: "1px solid #D5DEEE", whiteSpace: "pre-wrap", color: "#111827" } }>{msg}</div>
             )}
-            {n.estado === "pendiente" && (
+            {n.estado === "pendiente" && msgKey === key && (
               <div className="mt-2 flex flex-wrap gap-4">
                 {puedeSaltar && (
                   <button type="button" onClick={() => onSaltar(c.id, n.k, n.saltos || 0, n.ronda)} className="text-xs font-extrabold underline" style={ { color: "#001E62" } }>Hoy no</button>
@@ -6894,8 +6977,8 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       })}
       {restantes > 0 && (
         <div className="px-4 py-3 border-t text-center" style={ { borderColor: "#EEF1F6" } }>
-          <button type="button" onClick={() => setVisibles((v) => v + LOTE_VENTAS)} className="text-sm font-extrabold rounded-lg px-4" style={ { height: 40, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
-            Ver {Math.min(LOTE_VENTAS, restantes)} más · quedan {restantes}
+          <button type="button" onClick={() => (resumen ? onVerTodos() : setVisibles((v) => v + LOTE_VENTAS))} className="w-full text-sm font-extrabold rounded-lg px-4" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
+            {resumen ? `Ver los ${pendF2.length} de Ventas ›` : `Ver ${Math.min(LOTE_VENTAS, restantes)} más · quedan ${restantes}`}
           </button>
         </div>
       )}
@@ -6904,6 +6987,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
           Quedan {paraManana} nuevos para mañana
         </div>
       )}
+      {!sinCabecera && (
       <div className="px-4 py-3 border-t" style={ { background: "#F3F6FB", borderColor: "#EEF1F6" } }>
         <div className="text-[11px] font-extrabold uppercase" style={ { color: "#5A6680", letterSpacing: ".04em" } }>Este mes, por beneficio compartido</div>
         <div className="text-xs mt-1" style={ { color: "#374151" } }>
@@ -6918,6 +7002,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
             : "Todavía ninguno. Se guardan con el botón ➕ Agregar referido."}
         </div>
       </div>
+      )}
       {cola && itemCola && <div style={ { height: 240 } } aria-hidden="true"></div>}
     </div>
   );
@@ -9716,7 +9801,7 @@ function HistorialComisionChart({ data, periodoActivo, periodoActual, onSelect, 
   );
 }
 
-function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer, limite, modoResumen, onVerTodos, onVerMas, onEnviarUno }) {
   const [posAbierto, setPosAbierto] = useState(null);
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
@@ -9811,9 +9896,12 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
     { type: "toque2", titulo: "🔔 Recordatorio de abono" },
     { type: "toque1", titulo: "👋 Bienvenida (pedir abono)" },
   ];
+  const ordenFlat = GRUPOS.flatMap((g) => alertasFiltradas.filter(({ milestone }) => milestone.type === g.type));
+  const visiblesLista = typeof limite === "number" ? ordenFlat.slice(0, limite) : ordenFlat;
+  const restantes = ordenFlat.length - visiblesLista.length;
   const gruposConDatos = GRUPOS.map((g) => ({
     ...g,
-    items: alertasFiltradas.filter(({ milestone }) => milestone.type === g.type),
+    items: visiblesLista.filter(({ milestone }) => milestone.type === g.type),
   })).filter((g) => g.items.length > 0);
 
   function toggleExpandido(id) {
@@ -9844,6 +9932,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   return (
     <div>
       
+      {!modoResumen && (
       <div className="bg-white rounded-xl border overflow-hidden mb-4" style={ { borderColor: "#DFE5EF" } }>
         <div className="px-4 py-3.5" style={ { borderBottom: "1px solid #DFE5EF" } }>
           <div className="text-sm font-bold" style={ { color: "#001E62" } }>
@@ -9911,6 +10000,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
           </div>
         )}
       </div>
+      )}
 
       {colaEnvio && (
         <div
@@ -9967,7 +10057,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
         </div>
       )}
 
-      {listaAbierta && alertasHoy.length > 0 && TIPOS_ALERTA.filter((m) => conteosPorTipo[m.type]).length > 1 && (
+      {!modoResumen && listaAbierta && alertasHoy.length > 0 && TIPOS_ALERTA.filter((m) => conteosPorTipo[m.type]).length > 1 && (
         <div className="flex flex-col gap-3 mb-6">
           <div className="flex items-center gap-2 flex-wrap">
             <button
@@ -10005,191 +10095,200 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
           <p className="text-sm" style={ { color: "#5A6680" } }>No hay recordatorios que coincidan con la búsqueda o el filtro.</p>
         </div>
       ) : (
-        <div className="flex flex-col gap-6">
-          {gruposConDatos.map((grupo) => (
-            <div key={grupo.type}>
-              <h2 className="text-xs font-semibold mb-2" style={ { color: "#5A6680" } }>
-                {grupo.titulo} ({grupo.items.length})
-              </h2>
-              <div className="flex flex-col gap-3">
-                {grupo.items.map(({ cliente, factura, milestone, esMovil, fechas }) => {
-                  const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
-                  return (
-                    <div key={cliente.id} className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
-                      <div className="p-3">
-                        <div className="flex items-center gap-2" style={ { minWidth: 0 } }>
-                          <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
-                          {esMovil ? (
-                            <button
-                              onClick={() => onVerMovil(cliente)}
-                              className="font-semibold text-base text-left hover:underline truncate"
-                              style={ { color: "#001E62", minWidth: 0 } }
-                            >
-                              {cliente.nombre}
-                            </button>
-                          ) : (
-                            <button
-                              onClick={() => onVerDetalle(cliente)}
-                              className="font-semibold text-base text-left hover:underline truncate"
-                              style={ { color: "#001E62", minWidth: 0 } }
-                            >
-                              {cliente.nombre}
-                            </button>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                          <span className="font-mono text-xs font-semibold px-2 py-0.5 rounded" style={ { background: "#DCE9FB", color: "#0B4A99" } }>
-                            {milestone.tag}
-                          </span>
-                          <span className="text-sm font-semibold" style={ { color: daysFromToday(milestone.triggerDate) === 0 ? "#9B1C1C" : "#9A4A06" } }>{diasTexto(milestone.triggerDate)}</span>
-                        </div>
-                        <div className="text-sm mt-1" style={ { color: "#3D4A66" } }>
-                          {esMovil
-                            ? `${cliente.telefono} act: ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
-                            : `${cliente.telefono} · ${cliente.plan} · ${ORDINAL[factura.n]} factura`}
-                          {!esMovil && (
-                            <button
-                              onClick={() => onCopiarSuscriptor(cliente)}
-                              className="ml-2 text-sm font-semibold underline"
-                              style={ { color: "#0B4A99" } }
-                            >
-                              {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
-                            </button>
-                          )}
-                        </div>
-                        {expandidos.has(cliente.id) && (
-                          <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>
-                            {milestone.texto}
+        <div>
+          {modoResumen && (
+            <div className="text-[13px] font-extrabold uppercase mt-4 mb-2 mx-0.5" style={ { color: "#001E62", letterSpacing: ".04em" } }>💵 Cobros ({ordenFlat.length})</div>
+          )}
+          <div className="flex flex-col gap-4">
+            {gruposConDatos.map((grupo) => (
+              <div key={grupo.type}>
+                {!modoResumen && (
+                  <h2 className="text-xs font-semibold mb-2" style={ { color: "#5A6680" } }>
+                    {grupo.titulo} ({grupo.items.length})
+                  </h2>
+                )}
+                <div className="flex flex-col gap-2">
+                  {grupo.items.map(({ cliente, factura, milestone, esMovil, fechas }) => {
+                    const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
+                    const dias = daysFromToday(milestone.triggerDate);
+                    const atrasada = dias < 0;
+                    const abierta = expandidos.has(cliente.id);
+                    return (
+                      <div key={cliente.id} className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: atrasada ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          onClick={() => toggleExpandido(cliente.id)}
+                          aria-expanded={abierta}
+                          className="flex items-center gap-2.5 cursor-pointer"
+                          style={ { minHeight: 60, padding: "8px 8px 8px 12px" } }
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
+                              <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(cliente.nombre || "")}</span>
+                            </div>
+                            <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>
+                              {esMovil ? milestone.tag : `${milestone.tag} ${milestone.label}`} · <span style={ { fontWeight: 700, color: atrasada || dias === 0 ? "#9B1C1C" : "#9A4A06" } }>{atrasada ? "⚠ " : dias === 0 ? "📅 " : ""}{diasTexto(milestone.triggerDate)}</span>
+                            </div>
                           </div>
-                        )}
-                        <div className="flex items-stretch gap-1.5 mt-3" style={ { flexWrap: "nowrap" } }>
                           <a
                             href={whatsappLink(cliente, milestone)}
-                            className="flex-1 flex items-center justify-center text-[13px] font-bold px-2 rounded-md text-center"
-                            style={ { background: "#1FA855", color: "#FFFFFF", minHeight: 46, minWidth: 0, lineHeight: 1.1 } }
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              onEnviarUno({ t: esMovil ? "cm" : "ch", id: cliente.id, key: milestone.key, link: whatsappLink(cliente, milestone), nombre: cliente.nombre, et: "💵 Cobro · " + (esMovil ? milestone.tag : milestone.label) });
+                            } }
+                            aria-label={"Enviar por WhatsApp a " + tituloEs(cliente.nombre || "")}
+                            className="flex items-center justify-center shrink-0 rounded-xl"
+                            style={ { width: 48, height: 48, background: "#1FA855", color: "#fff", fontSize: 22 } }
                           >
-                            Enviar por WhatsApp
+                            💬
                           </a>
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => toggleExpandido(cliente.id)}
-                            className="flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer flex-shrink-0"
-                            style={ { background: "#FFFFFF", color: "#001E62", border: "2px solid #001E62", minHeight: 46, whiteSpace: "nowrap" } }
-                          >
-                            {expandidos.has(cliente.id) ? "Ocultar" : "Ver"}
-                          </div>
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
-                                if (esMovil) onMarcarMovil(cliente.id, milestone.key);
-                                else onMarcar(cliente.id, milestone.key);
-                              }
-                            } }
-                            className="flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer flex-shrink-0"
-                            style={ { background: "#001E62", color: "#FFFFFF", minHeight: 46, whiteSpace: "nowrap" } }
-                          >
-                            ✓ Enviado
-                          </div>
-                          <div
-                            role="button"
-                            tabIndex={0}
-                            onClick={() => {
-                              if (esMovil) {
-                                if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoMovil(cliente.id);
-                              } else {
-                                const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
-                                if (window.confirm(saldo
-                                  ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
-                                  : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
-                                  onPagoRealizado(cliente.id, factura.n);
-                                }
-                              }
-                            } }
-                            className="flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer flex-shrink-0"
-                            style={ { background: "#FFFFFF", color: "#0B4A99", border: "2px solid #0B4A99", minHeight: 46, whiteSpace: "nowrap" } }
-                          >
-                            $ Pagó
-                          </div>
                         </div>
-                        <div className="mt-2">
-                          <button
-                            type="button"
-                            onClick={() => setPosAbierto((v) => (v === cliente.id ? null : cliente.id))}
-                            className="text-sm font-bold underline"
-                            style={ { color: "#5A6680", minHeight: 36 } }
-                          >
-                            ⏰ Posponer
-                          </button>
-                          {posAbierto === cliente.id && (
-                            <div className="flex flex-wrap gap-2 mt-1">
-                              {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
+                        {abierta && (
+                          <div className="px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
+                            <div className="text-sm mt-2" style={ { color: "#3D4A66" } }>
+                              {esMovil
+                                ? `${cliente.telefono} act: ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
+                                : `${cliente.telefono} · ${cliente.plan} · ${ORDINAL[factura.n]} factura`}
+                              {!esMovil && (
                                 <button
-                                  key={t}
-                                  type="button"
-                                  onClick={() => { onPosponer("cobro-" + cliente.id + "-" + milestone.key, d, cliente.nombre); setPosAbierto(null); } }
-                                  className="text-sm font-bold rounded-full px-3"
-                                  style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }
+                                  onClick={() => onCopiarSuscriptor(cliente)}
+                                  className="ml-2 text-sm font-semibold underline"
+                                  style={ { color: "#0B4A99" } }
                                 >
-                                  {t}
+                                  {copiedSubKey === cliente.id ? "Copiado ✓" : "Copiar N° suscriptor"}
                                 </button>
-                              ))}
+                              )}
                             </div>
-                          )}
-                        </div>
-
-                        {extras.length > 0 && (
-                          <div className="mt-3 pt-3" style={ { borderTop: "1px dashed #DFE5EF" } }>
-                            <button
-                              onClick={() => toggleExtras(cliente.id)}
-                              className="text-xs font-medium"
-                              style={ { color: "#B45309" } }
-                            >
-                              {extrasAbiertos.has(cliente.id)
-                                ? "Ocultar otras alertas de este cliente"
-                                : `+ ${extras.length} alerta${extras.length === 1 ? "" : "s"} más de este cliente`}
-                            </button>
-                            {extrasAbiertos.has(cliente.id) && (
-                              <div className="flex flex-col gap-2 mt-2">
-                                {extras.map((ex) => (
-                                  <div
-                                    key={ex.milestone.key}
-                                    className="flex items-center justify-between gap-2 rounded-md border p-2 flex-wrap"
-                                    style={ { borderColor: "#DFE5EF", background: "#FAFAF9" } }
+                            <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>
+                              {milestone.texto}
+                            </div>
+                            <div className="flex items-stretch gap-1.5 mt-3" style={ { flexWrap: "nowrap" } }>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
+                                    if (esMovil) onMarcarMovil(cliente.id, milestone.key);
+                                    else onMarcar(cliente.id, milestone.key);
+                                  }
+                                } }
+                                className="flex-1 flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer"
+                                style={ { background: "#001E62", color: "#FFFFFF", minHeight: 46, whiteSpace: "nowrap" } }
+                              >
+                                ✓ Enviado
+                              </div>
+                              <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  if (esMovil) {
+                                    if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoMovil(cliente.id);
+                                  } else {
+                                    const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
+                                    if (window.confirm(saldo
+                                      ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
+                                      : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
+                                      onPagoRealizado(cliente.id, factura.n);
+                                    }
+                                  }
+                                } }
+                                className="flex-1 flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer"
+                                style={ { background: "#FFFFFF", color: "#0B4A99", border: "2px solid #0B4A99", minHeight: 46, whiteSpace: "nowrap" } }
+                              >
+                                $ Pagó
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPosAbierto((v) => (v === cliente.id ? null : cliente.id))}
+                                className="flex-1 flex items-center justify-center text-[13px] font-semibold px-2 rounded-md"
+                                style={ { background: "#FFFFFF", color: "#001E62", border: "2px solid #001E62", minHeight: 46, whiteSpace: "nowrap" } }
+                              >
+                                ⏰ Posponer
+                              </button>
+                            </div>
+                            {posAbierto === cliente.id && (
+                              <div className="flex flex-wrap gap-2 mt-2">
+                                {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
+                                  <button
+                                    key={t}
+                                    type="button"
+                                    onClick={() => { onPosponer("cobro-" + cliente.id + "-" + milestone.key, d, cliente.nombre); setPosAbierto(null); } }
+                                    className="text-sm font-bold rounded-full px-3"
+                                    style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }
                                   >
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: ex.milestone.bg, color: ex.milestone.color } }>
-                                        {ex.milestone.tag}
-                                      </span>
-                                      <span className="text-xs" style={ { color: "#5A6680" } }>{ORDINAL[ex.factura.n]} factura · {ex.milestone.label}</span>
-                                      <span className="text-xs font-medium" style={ { color: ex.milestone.color } }>{diasTexto(ex.milestone.triggerDate)}</span>
-                                    </div>
-                                    <button
-                                      onClick={() => {
-                                        if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
-                                          onMarcar(ex.cliente.id, ex.milestone.key);
-                                        }
-                                      } }
-                                      className="text-xs font-medium px-2 py-1 rounded-md border"
-                                      style={ { borderColor: "#DFE5EF", color: "#374151" } }
-                                    >
-                                      Marcar como enviado
-                                    </button>
-                                  </div>
+                                    {t}
+                                  </button>
                                 ))}
+                              </div>
+                            )}
+                            <div className="mt-2">
+                              <button onClick={() => (esMovil ? onVerMovil(cliente) : onVerDetalle(cliente))} className="text-sm font-semibold underline" style={ { color: "#0B4A99", minHeight: 36 } }>Abrir ficha del cliente</button>
+                            </div>
+                            {extras.length > 0 && (
+                              <div className="mt-2 pt-3" style={ { borderTop: "1px dashed #DFE5EF" } }>
+                                <button
+                                  onClick={() => toggleExtras(cliente.id)}
+                                  className="text-xs font-medium"
+                                  style={ { color: "#B45309" } }
+                                >
+                                  {extrasAbiertos.has(cliente.id)
+                                    ? "Ocultar otras alertas de este cliente"
+                                    : `+ ${extras.length} alerta${extras.length === 1 ? "" : "s"} más de este cliente`}
+                                </button>
+                                {extrasAbiertos.has(cliente.id) && (
+                                  <div className="flex flex-col gap-2 mt-2">
+                                    {extras.map((ex) => (
+                                      <div
+                                        key={ex.milestone.key}
+                                        className="flex items-center justify-between gap-2 rounded-md border p-2 flex-wrap"
+                                        style={ { borderColor: "#DFE5EF", background: "#FAFAF9" } }
+                                      >
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                          <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: ex.milestone.bg, color: ex.milestone.color } }>
+                                            {ex.milestone.tag}
+                                          </span>
+                                          <span className="text-xs" style={ { color: "#5A6680" } }>{ORDINAL[ex.factura.n]} factura · {ex.milestone.label}</span>
+                                          <span className="text-xs font-medium" style={ { color: ex.milestone.color } }>{diasTexto(ex.milestone.triggerDate)}</span>
+                                        </div>
+                                        <button
+                                          onClick={() => {
+                                            if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
+                                              onMarcar(ex.cliente.id, ex.milestone.key);
+                                            }
+                                          } }
+                                          className="text-xs font-medium px-2 py-1 rounded-md border"
+                                          style={ { borderColor: "#DFE5EF", color: "#374151" } }
+                                        >
+                                          Marcar como enviado
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
                         )}
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
+          </div>
+          {restantes > 0 && (
+            <button
+              type="button"
+              onClick={modoResumen ? onVerTodos : onVerMas}
+              className="w-full mt-3 text-sm font-extrabold rounded-xl"
+              style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }
+            >
+              {modoResumen ? `Ver los ${ordenFlat.length} de Cobros ›` : `Ver ${Math.min(10, restantes)} más · quedan ${restantes}`}
+            </button>
+          )}
         </div>
       )}
     </div>
