@@ -3806,6 +3806,7 @@ function App() {
 
   // Barra inferior del celular: se esconde al bajar, reaparece al subir un poco, y se oculta en el formulario de cliente.
   const barraOculta = tab === "nuevo";
+  const [barraEscondida, setBarraEscondida] = useState(false);
   const avisoGuardado = !enLinea
     ? "Sin conexión — se guardará al reconectar"
     : estadoGuardado === "error"
@@ -3822,7 +3823,6 @@ function App() {
     setTab(key);
   }
   // ---- Barra de abajo que se esconde al bajar y vuelve al subir; deslizar de lado cambia de pestaña ----
-  const [barraEscondida, setBarraEscondida] = useState(false);
   const [slide, setSlide] = useState(null);
   const ORDEN_SWIPE = ["dashboard", "clientes", "alertas", "precierre"];
   const deslizarRef = useRef(null);
