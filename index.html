@@ -11076,6 +11076,9 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     Object.keys(m).sort().forEach((k) => out.push([k, formatoPlan(k), m[k]]));
     return out;
   })();
+  const planesEsp = planesOpc.filter(([k]) => !TIPOS_PLAN.includes(k));
+  const factOpts = [nPago1 > 0 ? ["pago1", "✓ Pagó", nPago1] : null, nNoPago1 > 0 ? ["nopago1", "⏱ Aún no la paga", nNoPago1] : null].filter(Boolean);
+  const pendOpts = [listaAbono.length > 0 ? ["faltaAbono", "⚠ Falta abono", listaAbono.length] : null, listaInfo.length > 0 ? ["faltaInfo", "📩 Falta info", listaInfo.length] : null].filter(Boolean);
   const esFact = filtroEstado === "pago1" || filtroEstado === "nopago1";
   const esPend = chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo";
   const alternarEstado = (k) => { setChipGrupo("todos"); setFiltroEstado(filtroEstado === k ? "" : k); };
@@ -11114,9 +11117,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             <React.Fragment>
               {(conteoG.porInstalar > 0 || chipGrupo === "porInstalar") && chipM(chipGrupo === "porInstalar", "Por instalar " + conteoG.porInstalar, () => setChipGrupo(chipGrupo === "porInstalar" ? "todos" : "porInstalar"), true)}
               {(conteoG.instalados > 0 || chipGrupo === "instalados") && chipM(chipGrupo === "instalados", "Instalados " + conteoG.instalados, () => setChipGrupo(chipGrupo === "instalados" ? "todos" : "instalados"), true)}
-              {(nPago1 > 0 || nNoPago1 > 0 || esFact) && chipM(esFact, esFact ? (filtroEstado === "pago1" ? "💵 ✓ Pagó" : "💵 ⏱ Aún no la paga") : "💵 1ra factura ▾", () => { if (esFact) { setFiltroEstado(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "fact" ? null : "fact"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
-              {(planesOpc.length > 0 || filtroPlan) && chipM(!!filtroPlan, filtroPlan ? "📶 " + (TIPOS_PLAN.includes(filtroPlan) ? (filtroPlan === "SINGLE" ? "Single" : "Doble") : formatoPlan(filtroPlan)) : "📶 Plan ▾", () => { if (filtroPlan) { setFiltroPlan(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "plan" ? null : "plan"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
-              {(listaAbono.length + listaInfo.length > 0 || esPend) && chipM(esPend, esPend ? (chipGrupo === "faltaAbono" ? "⚠ Falta abono" : "📩 Falta info") : "📩 Pendientes " + (listaAbono.length + listaInfo.length) + " ▾", () => { if (esPend) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "pend" ? null : "pend"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
+              {esFact || factOpts.length >= 2
+                ? chipM(esFact, esFact ? (filtroEstado === "pago1" ? "💵 ✓ Pagó" : "💵 ⏱ Aún no la paga") : "💵 1ra factura ▾", () => { if (esFact) { setFiltroEstado(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "fact" ? null : "fact"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
+                : factOpts.length === 1 && chipM(false, "💵 " + factOpts[0][1] + " " + factOpts[0][2], () => alternarEstado(factOpts[0][0]), true)}
+              {filtroPlan || planesEsp.length >= 2
+                ? chipM(!!filtroPlan, filtroPlan ? "📶 " + (TIPOS_PLAN.includes(filtroPlan) ? (filtroPlan === "SINGLE" ? "Single" : "Doble") : formatoPlan(filtroPlan)) : "📶 Plan ▾", () => { if (filtroPlan) { setFiltroPlan(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "plan" ? null : "plan"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
+                : planesEsp.length === 1 && chipM(false, "📶 " + planesEsp[0][1] + " " + planesEsp[0][2], () => setFiltroPlan(planesEsp[0][0]), true)}
+              {esPend || pendOpts.length >= 2
+                ? chipM(esPend, esPend ? (chipGrupo === "faltaAbono" ? "⚠ Falta abono" : "📩 Falta info") : "📩 Pendientes " + (listaAbono.length + listaInfo.length) + " ▾", () => { if (esPend) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "pend" ? null : "pend"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
+                : pendOpts.length === 1 && chipM(false, pendOpts[0][1] + " " + pendOpts[0][2], () => { setFiltroEstado(""); setChipGrupo(pendOpts[0][0]); }, true)}
               {conteoG.cancelados > 0 && chipM(chipGrupo === "cancelados", "Cancelados " + conteoG.cancelados, () => setChipGrupo(chipGrupo === "cancelados" ? "todos" : "cancelados"), true)}
             </React.Fragment>
           )}
