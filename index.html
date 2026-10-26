@@ -6731,6 +6731,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     return candidato ? candidato.p : null;
   }, [periodoActual]);
   const [rescateAbierto, setRescateAbierto] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.rescateAbierto : false));
+  const [tarjetaComAbierta, setTarjetaComAbierta] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.tarjetaComAbierta : false));
+  memoriaCobros.tarjetaComAbierta = tarjetaComAbierta;
   const [rescateSeleccion, setRescateSeleccion] = useState(() => (memoriaCobros.retorno ? { ...memoriaCobros.rescateSeleccion } : {}));
   memoriaCobros.rescateAbierto = rescateAbierto;
   memoriaCobros.rescateSeleccion = rescateSeleccion;
@@ -7677,25 +7679,44 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       {/* Sección 1: facturas pendientes que hay que cobrar para que cuenten en la comisión */}
       <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>1 · Facturas pendientes</h2>
       <div className="rounded-xl overflow-hidden border mb-8 bg-white" style={ { borderColor: "#DFE5EF" } }>
-      {periodoRescateActivo && comisionConfirmadaHoy.completo && (
-        <div className="px-4 pt-3">
-          <div className="text-xs" style={ { color: "#5A6680" } }>
-            {mesLabel(periodoRescateActivo).split(" ")[0]} → cobras en {mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0]}
-          </div>
-          <div className="flex items-end justify-between gap-3 mt-2">
-            <div>
-              <div className="text-xs" style={ { color: "#5A6680" } }>Confirmado</div>
-              <div className="font-mono" style={ { fontSize: 32, fontWeight: 700, lineHeight: 1.1, color: "#001E62" } }>{fmtMonto(comisionConfirmadaHoy.total)}</div>
+      {periodoRescateActivo && comisionConfirmadaHoy.completo && (() => {
+        const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0];
+        const nPendCom = rescateEnPlazo.length + movilesPendientesHoy.length;
+        const totalCiclo = clientesDelPeriodoHoy.length + (esNuevoHoy ? convergenciasPeriodoHoy.length : 0);
+        const nPagaron = clientesConfirmadosHoy.length + (esNuevoHoy ? convergenciasPeriodoHoy.filter((c) => c.f1_estado === "pagada").length : 0);
+        const nFaltan = Math.max(0, totalCiclo - nPagaron);
+        return (
+          <button
+            type="button"
+            onClick={() => setTarjetaComAbierta((v) => !v)}
+            aria-expanded={tarjetaComAbierta}
+            className="w-full text-left px-4 pt-3 pb-3"
+            style={ { background: "#fff" } }
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-extrabold" style={ { color: "#001E62" } }>💰 Asegurar comisión de {mesPago}</span>
+              <span className="text-sm" style={ { color: "#001E62", transform: tarjetaComAbierta ? "rotate(180deg)" : "none", transition: "transform .2s" } } aria-hidden="true">▾</span>
             </div>
-            {enRiesgoHoy.length > 0 && comisionMaximaHoy.completo && (
-              <div className="text-right">
-                <div className="text-xs" style={ { color: "#5A6680" } }>Hasta, si pagan {enRiesgoHoy.length === 1 ? "el pendiente" : `los ${enRiesgoHoy.length}`}</div>
-                <div className="font-mono" style={ { fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: "#B45309" } }>{fmtMonto(comisionMaximaHoy.total)}</div>
+            <div className="flex items-end justify-between gap-3 mt-2">
+              <div>
+                <div className="text-xs" style={ { color: "#5A6680" } }>Confirmado</div>
+                <div className="font-mono" style={ { fontSize: 32, fontWeight: 700, lineHeight: 1.1, color: "#001E62" } }>{fmtMonto(comisionConfirmadaHoy.total)}</div>
               </div>
-            )}
-          </div>
-        </div>
-      )}
+              {nPendCom > 0 && comisionMaximaHoy.completo && (
+                <div className="text-right">
+                  <div className="text-xs" style={ { color: "#5A6680" } }>Hasta, si pagan {nPendCom === 1 ? "el pendiente" : `los ${nPendCom}`}</div>
+                  <div className="font-mono" style={ { fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: "#B45309" } }>{fmtMonto(comisionMaximaHoy.total)}</div>
+                </div>
+              )}
+            </div>
+            <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
+              {nFaltan > 0 ? `${nPagaron} de ${totalCiclo} clientes ya pagaron · faltan ${nFaltan}` : `✓ ${totalCiclo} de ${totalCiclo} clientes ya pagaron`}
+            </div>
+          </button>
+        );
+      })()}
+      {(tarjetaComAbierta || !(periodoRescateActivo && comisionConfirmadaHoy.completo)) && (
+      <div style={ { borderTop: periodoRescateActivo && comisionConfirmadaHoy.completo ? "1px solid #DFE5EF" : "none" } }>
       <div className="px-4 py-3">
         {enRiesgoHoy.length > 0 ? (
           <>
@@ -7771,29 +7792,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           : `Asegurar comisión de ${mesPago} · confirmado ${fmtMonto(comisionConfirmadaHoy.total)}`;
         return (
           <div style={ { borderTop: "1px solid #DFE5EF" } }>
-            <button
-              type="button"
-              onClick={() => setRescateAbierto((v) => !v)}
-              className="w-full flex items-center justify-between gap-2 text-left px-4 py-3"
-              style={ { background: fondoBanner } }
-            >
-              <span
-                className="text-xs truncate"
-                style={ { color: colorTexto, fontWeight: urgente ? 700 : 500, textDecoration: urgente ? "underline" : "none" } }
-              >
-                {textoResumen}
-                {hayPendientes &&
-                  rescateDiasRestantes !== null &&
-                  (rescateDiasRestantes <= 0
-                    ? " · hoy"
-                    : rescateDiasRestantes <= 3
-                    ? ` · ${rescateDiasRestantes}d ⚠️`
-                    : ` · ${rescateDiasRestantes}d`)}
-              </span>
-              <span className="text-xs shrink-0" style={ { color: colorTexto } }>{rescateAbierto ? "▲" : "▼"}</span>
-            </button>
 
-          {rescateAbierto && (
+          {(
             <div className="bg-white border-t border-gray-200 p-4">
               <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
                 Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca los clientes pendientes y mira cuánto sube.
@@ -7981,6 +7981,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           </div>
         );
       })()}
+      </div>
+      )}
       </div>
     </div>
   );
