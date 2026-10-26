@@ -4222,7 +4222,7 @@ function App() {
             <div style={ { lineHeight: 1.1, pointerEvents: "none" } }>
               <div style={ { fontSize: 10, letterSpacing: "0.08em", fontWeight: 600, color: "#A9B8D6" } }>METAFORCE CRM</div>
               <div className="text-white font-bold truncate" style={ { fontSize: 18 } }>
-                {mesLabel(periodoDash)} ▾{periodoDash === periodoActualApp && <span style={ { fontSize: 12, fontWeight: 500, color: "#A9B8D6" } }> · actual</span>}
+                {mesLabel(periodoDash).replace(new RegExp("\\s*" + new Date().getFullYear() + "$"), "")} ▾{periodoDash === periodoActualApp && <span style={ { fontSize: 12, fontWeight: 500, color: "#A9B8D6" } }> · actual</span>}
               </div>
             </div>
             <select
