@@ -3987,7 +3987,7 @@ function App() {
   }, []);
   useEffect(() => { setBarraEscondida(false); }, [tab]);
   useEffect(() => {
-    let sx = 0, sy = 0, t0 = 0, ok = false;
+    let sx = 0, sy = 0, t0 = 0, ok = false, lado = "";
     function conMovimientoLateral(el) {
       while (el && el !== document.body) {
         if (el.nodeType === 1) {
@@ -4003,7 +4003,13 @@ function App() {
       ok = false;
       if (e.touches.length !== 1) return;
       const t = e.touches[0];
-      if (t.clientX < 25 || t.clientX > window.innerWidth - 25) return; // el borde es del gesto de atrás de Safari
+      // Solo se cambia de pestaña si el dedo EMPIEZA cerca de un borde (entre 24 y 80 px):
+      // el borde mismo es del gesto de "atrás" de Safari, y el centro es para desplazarte sin querer.
+      const w = window.innerWidth;
+      const enIzq = t.clientX >= 24 && t.clientX <= 80;
+      const enDer = t.clientX <= w - 24 && t.clientX >= w - 80;
+      if (!enIzq && !enDer) return;
+      lado = enIzq ? "izq" : "der";
       if (document.querySelector(".fixed.inset-0")) return; // hay una ventana abierta
       if (window.visualViewport && window.visualViewport.scale > 1.01) return;
       if (conMovimientoLateral(e.target)) return;
@@ -4016,6 +4022,8 @@ function App() {
       const dx = t.clientX - sx;
       const dy = t.clientY - sy;
       if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - t0 > 900) return;
+      // Desde el borde izquierdo hacia la derecha = pestaña anterior; desde el derecho hacia la izquierda = siguiente.
+      if ((lado === "izq" && dx < 0) || (lado === "der" && dx > 0)) return;
       if (deslizarRef.current) deslizarRef.current(dx < 0 ? 1 : -1);
     }
     window.addEventListener("touchstart", alTocar, { passive: true });
@@ -10926,7 +10934,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
 
   return (
     <div>
-      <div className="md:hidden mb-3" style={ { paddingTop: 4 } }>
+      <div className="md:hidden mb-3" data-no-swipe="" style={ { paddingTop: 4 } }>
         <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
             <input
