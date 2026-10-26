@@ -5222,143 +5222,152 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
   const peq = { fontStyle: "normal", fontWeight: 400, fontSize: 11, color: C.mu, marginLeft: 6 };
   const tit = { fontSize: 10.5, letterSpacing: "0.06em", textTransform: "uppercase", color: C.mu, margin: "8px 0 2px", fontWeight: 700 };
   const sep = { borderTop: "1px solid " + C.bd, margin: "5px 0" };
+  const cv = consejoVenta(
+    { clientesHogar: hogarN, metaHogar: metaClientesHogar, clientesMovil: movilN, metaMovil: metaClientesMovil, ingresos: ingresosTotal, metaIngresos: metaDinero, bonos: comision.cantidadConvergencias || 0 },
+    { hogar: rpuHogar ? Math.round(rpuHogar) : 38, movil: rpuMovil ? Math.round(rpuMovil) : 20 }
+  );
+  const fv = cv && cv.falta ? cv.falta : null;
+  const ganaEsc = fv ? Math.max(fv.ganaHogar || 0, fv.ganaMovil || 0) : 0;
+  let textoConsejo = null;
+  if (cv && cv.tope) {
+    textoConsejo = "Estás en el tope de clientes. Ahora suman los ingresos: vende planes de más valor.";
+  } else if (fv) {
+    const partes = [];
+    if (fv.hogar) partes.push(fv.hogar + " Hogar (+" + fmtMiles(fv.ganaHogar, 0) + ")");
+    if (fv.movil) partes.push(fv.movil + " Móvil (+" + fmtMiles(fv.ganaMovil, 0) + ")");
+    if (partes.length) textoConsejo = "Falta" + ((fv.hogar > 1) || (fv.movil > 1) ? "n" : "") + " " + partes.join(" o ") + " para subir de escalón.";
+  }
+  const avisoIng = metaDinero && base > 0 && pi != null && pi < 100
+    ? "Tus ingresos van en " + pi.toFixed(0) + "%. Te faltan " + fmtMiles(faltaIng, 0) + " para activar el acelerador (+10%)" +
+      (bonoIng && (bonoIng.cH != null || bonoIng.cM != null)
+        ? ": unos " + [bonoIng.cH != null ? bonoIng.cH + " Hogar" : null, bonoIng.cM != null ? bonoIng.cM + " Móvil" : null].filter(Boolean).join(" o ") + "."
+        : ".")
+    : null;
+  const chip = { fontSize: 12, fontWeight: 700, border: "1px solid #D3DCEC", background: "#EAF1FB", borderRadius: 999, padding: "4px 10px" };
+  const filaBoton = { listStyle: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", minHeight: 52, fontSize: 14, fontWeight: 700, color: C.navy };
   return (
-    <div className="rounded-xl p-5 mb-6" style={ { background: "#fff", color: C.navy, border: "1px solid " + C.bd } }>
-      <div className="flex items-start justify-between gap-2">
-        <div style={ { fontSize: 13, fontWeight: 600, color: C.mu } }>
-          {mesLabel(periodoVisto)} → cobras en {mesLabel(sumarMesClave(periodoVisto, 2))}
+    <div className="rounded-xl mb-6 overflow-hidden" style={ { background: "#fff", color: C.navy, border: "1px solid " + C.bd } }>
+      <div style={ { padding: "18px 18px 16px", borderBottom: "1px solid #E4E8F0" } }>
+        <div className="flex items-center justify-between gap-2">
+          <div style={ { fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.mu } }>Comisión · {mesLabel(periodoVisto).split(" ")[0]}</div>
+          <div style={ { display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, background: "#EAF1FB", borderRadius: 999, padding: "4px 10px" } }>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" /></svg>
+            Cobras en {mesLabel(sumarMesClave(periodoVisto, 2)).split(" ")[0]}
+          </div>
         </div>
-        <button type="button" onClick={onCambiarVista} style={ { background: "transparent", border: 0, color: C.mu, fontSize: 11, textDecoration: "underline", padding: "2px 0", flexShrink: 0 } }>
-          Vista actual
-        </button>
-      </div>
-      <div style={ { fontSize: 36, fontWeight: 700, marginTop: 4, fontVariantNumeric: "tabular-nums" } }>
-        {fmtMiles(comision.total)}<span style={ { fontSize: 13, fontWeight: 400, marginLeft: 8, color: C.mu } }>estimada</span>
-      </div>
-      <div style={ { fontSize: 13, color: C.mu, marginTop: 2 } }>Con {hogarN} hogar y {movilN} móvil</div>
-
-      {base === 0 && (
-        <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: "#FFF3DC", color: "#7A3A06" } }>
-          Aún no llegas al mínimo de cobro ({MINIMO_COBRO}% de clientes). Tu base es $0; por ahora solo cuenta el bono.
+        <div style={ { display: "flex", alignItems: "baseline", gap: 8, marginTop: 10 } }>
+          <div style={ { fontSize: 44, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" } }>{fmtMiles(comision.total)}</div>
+          <div style={ { fontSize: 13, fontWeight: 600, color: C.mu } }>estimada</div>
         </div>
-      )}
-
-      <div style={ { display: "grid", gridTemplateColumns: "minmax(0,1fr) auto minmax(0,1fr) auto minmax(0,1fr)", gap: 6, marginTop: 14, alignItems: "stretch" } }>
-        <div style={caja}><span style={peqTxt}>Base por clientes<br />({pc.toFixed(0)}% de la meta)</span><b style={valTxt}>{fmtMiles(base, 0)}</b></div>
-        <div style={op}>×</div>
-        <div style={ { ...caja, background: pi != null && pi < 100 && base > 0 ? "#FFF3DC" : C.pn } }>
-          <span style={ { ...peqTxt, color: pi != null && pi < 100 && base > 0 ? "#7A3A06" : C.mu } }>Ingresos<br />({pi != null ? pi.toFixed(0) : "—"}% de la meta{acel ? " + 10 pts" : ""})</span>
-          <b style={valTxt}>{base === 0 ? "—" : (comision.factorAcelerador * 100).toFixed(0) + "%"}</b>
+        <div style={ { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 } }>
+          <span style={chip}>Base {fmtMiles(base, 0)}</span>
+          <span style={chip}>{base === 0 ? "Ingresos aún no afectan" : acel ? "✓ Acelerador activo" : pi != null && pi < 100 ? "! Ingresos al " + pi.toFixed(0) + "%" : "Ingresos al " + (pi != null ? pi.toFixed(0) : "—") + "%"}</span>
+          <span style={chip}>+{fmtMiles(comision.bonoConvergencias, 0)} portabilidad</span>
         </div>
-        <div style={op}>+</div>
-        <div style={caja}><span style={peqTxt}>Bono portabilidad<br />({comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA})</span><b style={valTxt}>{fmtMiles(comision.bonoConvergencias, 0)}</b></div>
       </div>
 
-      <div style={bloque}>
-        {tramoSig ? (
-          <React.Fragment>
-            <div style={ { fontSize: 13, fontWeight: 600 } }>Próximo escalón: base de {fmtMiles(tramoSig.monto, 0)} ({"+" + fmtMiles(tramoSig.monto - base, 0)})</div>
-            {escalera}
-            <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Siguiente escalón en {tramoSig.min}%</span></div>
-            {nH > 0 && (
-              <div style={ { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } }>
-                <span style={ { fontSize: 12, padding: "5px 10px", borderRadius: 999, background: C.cell } }>Falta{nH === 1 ? "" : "n"} {nH} hogar</span>
-                <span style={ { fontSize: 12, padding: "5px 10px", borderRadius: 999, background: C.cell } }>o {nM} móvil</span>
+      <div style={ { padding: "14px 16px 8px" } }>
+        {base === 0 && (
+          <div style={ { marginBottom: 12, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: "#FFF3DC", color: "#7A3A06" } }>
+            Aún no llegas al mínimo de cobro ({MINIMO_COBRO}% de clientes). Tu base es $0; por ahora solo cuenta el bono.
+          </div>
+        )}
+
+        <div style={ { borderRadius: 16, border: "1px solid #DDE7F5", background: "#F7FAFE", padding: 14 } }>
+          {tramoSig ? (
+            <React.Fragment>
+              <div style={ { fontSize: 13, fontWeight: 800, lineHeight: 1.35 } }>Próximo escalón: +{fmtMiles(ganaEsc || tramoSig.monto - base, 0)} en tu comisión</div>
+              <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Tu base pasaría de {fmtMiles(base, 0)} a {fmtMiles(tramoSig.monto, 0)}</div>
+              {escalera}
+              <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Siguiente escalón en {tramoSig.min}%</span></div>
+            </React.Fragment>
+          ) : (
+            <React.Fragment>
+              <div style={ { fontSize: 13, fontWeight: 800 } }>★ Tramo máximo alcanzado</div>
+              <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Base de {fmtMiles(base, 0)}. Cada ingreso extra sube el acelerador.</div>
+              {escalera}
+              <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Último escalón</span></div>
+            </React.Fragment>
+          )}
+        </div>
+
+        {(textoConsejo || avisoIng) && (
+          <div style={ { marginTop: 10 } }>
+            {textoConsejo && (
+              <div style={ { display: "flex", alignItems: "center", gap: 8, borderLeft: "4px solid " + C.blue, background: C.cell, borderRadius: 10, padding: "8px 10px" } }>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { flexShrink: 0 } }><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" /></svg>
+                <div style={ { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, lineHeight: 1.35 } }>{textoConsejo}</div>
               </div>
             )}
-          </React.Fragment>
-        ) : (
-          <React.Fragment>
-            {escalera}
-            <div style={ { fontSize: 13, marginTop: 6 } }>★ <b>Tramo máximo</b> alcanzado ({fmtMiles(base, 0)} de base). Cada ingreso extra sube el acelerador.</div>
-          </React.Fragment>
-        )}
-      </div>
-
-      {metaDinero && base > 0 && pi != null && pi < 100 && (
-        <div style={ { ...bloque, marginTop: 10 } }>
-          <div style={ { fontSize: 13, fontWeight: 600 } }>Ingresos: {fmtMiles(ingresosTotal, 0)} de {fmtMiles(metaDinero, 0)}</div>
-          <div style={barra}>
-            <i style={ { position: "absolute", left: 0, top: 0, bottom: 0, borderRadius: 5, background: C.navy, width: Math.min(100, pi) + "%" } } />
-          </div>
-          <div style={leyenda}><span>{pi.toFixed(0)}%</span><span>100%</span></div>
-          <div style={ { fontSize: 12, color: C.mu, marginTop: 2, lineHeight: 1.45 } }>
-            Faltan unos {fmtMiles(faltaIng, 0)} para llegar a la meta y activar el bono de ingresos (+10%).
-            {bonoIng && (bonoIng.cH != null || bonoIng.cM != null) && (
-              <span style={ { display: "block", marginTop: 2 } }>
-                Aprox.{" "}
-                {bonoIng.cH != null && <b style={ { color: C.navy } }>{bonoIng.cH} hogar</b>}
-                {bonoIng.cH != null && bonoIng.cM != null && " o "}
-                {bonoIng.cM != null && <b style={ { color: C.navy } }>{bonoIng.cM} móvil</b>}
-              </span>
+            {avisoIng && (
+              <div style={ { marginTop: textoConsejo ? 6 : 0, borderRadius: 10, border: "1px solid #B45309", background: "#FFF3DC", padding: "6px 10px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11, fontWeight: 600, lineHeight: 1.35 } }>
+                <span style={ { fontWeight: 800, flexShrink: 0 } }>!</span><span>{avisoIng}</span>
+              </div>
             )}
           </div>
-        </div>
-      )}
-      {acel && (
-        <div style={ { marginTop: 10, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: C.pn } }>✓ Bono de ingresos activado: superas la meta y se suman +10 puntos.</div>
-      )}
+        )}
 
-      <details style={caja2}>
-        <summary style={resumen}><span>Ver detalle del cálculo</span><span>▾</span></summary>
-        <div>
-          <div style={tit}>Clientes</div>
-          <div style={fila}><span>Hogar<em style={peq}>{hogarN} de {metaClientesHogar || "—"} · {comision.pctHogar.toFixed(0)}%</em></span><span style={num}>× {PESO_CLIENTES_HOGAR * 100}%</span></div>
-          <div style={fila}><span>Móvil<em style={peq}>{movilN} de {metaClientesMovil || "—"} · {comision.pctMovil.toFixed(0)}%</em></span><span style={num}>× {PESO_CLIENTES_MOVIL * 100}%</span></div>
-          <div style={fila}><span>Total de clientes</span><span style={num}>{pc.toFixed(1)}%</span></div>
-          <div style={fila}><span>{base === 0 ? "Base (bajo el mínimo de " + MINIMO_COBRO + "%)" : "Base del tramo"}</span><span style={num}>{fmtMiles(base)}</span></div>
-          <div style={sep} />
-          <div style={tit}>Ingresos</div>
-          <div style={fila}>
-            <span>Ingresos<em style={peq}>{fmtMiles(ingresosTotal, 0)} de {fmtMiles(metaDinero, 0)} · {pi.toFixed(base === 0 ? 1 : 0)}%{acel && base > 0 ? " + 10 pts" : ""}</em></span>
-            <span style={num}>{base === 0 ? "aún no afecta" : "× " + (comision.factorAcelerador * 100).toFixed(0) + "%"}</span>
-          </div>
-          {base > 0 && <div style={fila}><span>Base × ingresos</span><span style={num}>{fmtMiles(comision.comisionSinBono)}</span></div>}
-          <div style={sep} />
-          <div style={fila}>
-            <span>Bono portabilidad<em style={peq}>{comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA}{comision.bonoPendiente > 0 ? " · " + fmtMonto(comision.bonoPendiente) + " dependen de que paguen su 1ra factura" : ""}</em></span>
-            <span style={num}>+ {fmtMiles(comision.bonoConvergencias)}</span>
-          </div>
-          <div style={sep} />
-          <div style={ { ...fila, fontSize: 14 } }><span style={ { fontWeight: 600 } }>Total estimado</span><span style={num}>{fmtMiles(comision.total)}</span></div>
-        </div>
-      </details>
-
-      <div style={ { marginTop: 12, paddingTop: 12, borderTop: "1px solid " + C.bd } }>
-        {aunEsTemprano ? (
-          <div style={ { fontSize: 13, color: C.mu } }>Aún es temprano para proyectar tu cierre</div>
-        ) : proyeccion ? (
-          <details>
-            <summary style={ { ...resumen, alignItems: "center", color: C.navy } }>
-              <span>Proyección al cierre ▾<span style={ { display: "block", fontSize: 11, color: C.mu } }>Si sigues a este ritmo</span></span>
-              <b style={ { fontSize: 20 } }>~{fmtMiles(proyeccion.comision, 0)}</b>
-            </summary>
-            <div style={ { marginTop: 8, borderRadius: 10, padding: "6px 12px", background: C.pn } }>
-              {[
-                { n: "Clientes hogar", v: "~" + proyeccion.clientes, m: metaClientesHogar, fm: (x) => String(x), vp: proyeccion.clientes },
-                { n: "Clientes móvil", v: "~" + proyeccion.convergencias, m: metaClientesMovil, fm: (x) => String(x), vp: proyeccion.convergencias },
-                { n: "Ingresos", v: "~" + fmtMiles(proyeccion.ingresos, 0), m: metaDinero, fm: (x) => fmtMiles(x, 0), vp: proyeccion.ingresos },
-              ].map((f) => (
-                <div key={f.n} style={fila}>
-                  <span>{f.n}</span>
-                  <span style={num}>{f.v}{f.m ? <em style={peq}>de {f.fm(f.m)} · {Math.round((f.vp / f.m) * 100)}%</em> : null}</span>
-                </div>
-              ))}
+        <details style={ { marginTop: 12, borderTop: "1px solid " + C.bd } }>
+          <summary style={filaBoton}><span>Ver detalle del cálculo</span><span style={ { color: C.mu, fontSize: 14 } }>▾</span></summary>
+          <div style={ { paddingBottom: 8 } }>
+            <div style={tit}>Clientes</div>
+            <div style={fila}><span>Hogar<em style={peq}>{hogarN} de {metaClientesHogar || "—"} · {comision.pctHogar.toFixed(0)}%</em></span><span style={num}>× {PESO_CLIENTES_HOGAR * 100}%</span></div>
+            <div style={fila}><span>Móvil<em style={peq}>{movilN} de {metaClientesMovil || "—"} · {comision.pctMovil.toFixed(0)}%</em></span><span style={num}>× {PESO_CLIENTES_MOVIL * 100}%</span></div>
+            <div style={fila}><span>Total de clientes</span><span style={num}>{pc.toFixed(1)}%</span></div>
+            <div style={fila}><span>{base === 0 ? "Base (bajo el mínimo de " + MINIMO_COBRO + "%)" : "Base del tramo"}</span><span style={num}>{fmtMiles(base)}</span></div>
+            <div style={sep} />
+            <div style={tit}>Ingresos</div>
+            <div style={fila}>
+              <span>Ingresos<em style={peq}>{fmtMiles(ingresosTotal, 0)} de {fmtMiles(metaDinero, 0)} · {pi.toFixed(base === 0 ? 1 : 0)}%{acel && base > 0 ? " + 10 pts" : ""}</em></span>
+              <span style={num}>{base === 0 ? "aún no afecta" : "× " + (comision.factorAcelerador * 100).toFixed(0) + "%"}</span>
             </div>
-          </details>
-        ) : null}
-      </div>
+            {base > 0 && <div style={fila}><span>Base × ingresos</span><span style={num}>{fmtMiles(comision.comisionSinBono)}</span></div>}
+            <div style={sep} />
+            <div style={fila}>
+              <span>Bono portabilidad<em style={peq}>{comision.cantidadConvergencias} × ${BONO_POR_CONVERGENCIA}{comision.bonoPendiente > 0 ? " · " + fmtMonto(comision.bonoPendiente) + " dependen de que paguen su 1ra factura" : ""}</em></span>
+              <span style={num}>+ {fmtMiles(comision.bonoConvergencias)}</span>
+            </div>
+            <div style={sep} />
+            <div style={ { ...fila, fontSize: 14 } }><span style={ { fontWeight: 600 } }>Total estimado</span><span style={num}>{fmtMiles(comision.total)}</span></div>
+          </div>
+        </details>
 
-      {(() => {
-        const t = textoConsejoVenta(consejoVenta(
-          { clientesHogar: hogarN, metaHogar: metaClientesHogar, clientesMovil: movilN, metaMovil: metaClientesMovil, ingresos: ingresosTotal, metaIngresos: metaDinero, bonos: comision.cantidadConvergencias || 0 },
-          { hogar: rpuHogar ? Math.round(rpuHogar) : 38, movil: rpuMovil ? Math.round(rpuMovil) : 20 }
-        ));
-        return t ? <div style={ { marginTop: 12, fontSize: 13, lineHeight: 1.4, color: C.navy } }>{t}</div> : null;
-      })()}
-      <button type="button" onClick={onSimular} style={ { marginTop: 4, background: "transparent", border: 0, padding: "8px 0", color: C.blue, fontSize: 13, textDecoration: "underline" } }>
-        Simular clientes nuevos
-      </button>
+        <div style={ { borderTop: "1px solid " + C.bd } }>
+          {aunEsTemprano ? (
+            <div style={ { fontSize: 13, color: C.mu, padding: "14px 0" } }>Aún es temprano para proyectar tu cierre</div>
+          ) : proyeccion ? (
+            <details>
+              <summary style={ { ...filaBoton, minHeight: 56, gap: 10 } }>
+                <span style={ { flex: 1 } }>Proyección al cierre ▾<span style={ { display: "block", fontSize: 11, fontWeight: 400, color: C.mu } }>Si sigues a este ritmo</span></span>
+                <span style={ { fontSize: 14, fontWeight: 700, color: C.mu } }>~{fmtMiles(proyeccion.comision, 0)}</span>
+              </summary>
+              <div style={ { marginBottom: 8, borderRadius: 10, padding: "6px 12px", background: C.pn } }>
+                {[
+                  { n: "Clientes hogar", v: "~" + proyeccion.clientes, m: metaClientesHogar, fm: (x) => String(x), vp: proyeccion.clientes },
+                  { n: "Clientes móvil", v: "~" + proyeccion.convergencias, m: metaClientesMovil, fm: (x) => String(x), vp: proyeccion.convergencias },
+                  { n: "Ingresos", v: "~" + fmtMiles(proyeccion.ingresos, 0), m: metaDinero, fm: (x) => fmtMiles(x, 0), vp: proyeccion.ingresos },
+                ].map((f) => (
+                  <div key={f.n} style={fila}>
+                    <span>{f.n}</span>
+                    <span style={num}>{f.v}{f.m ? <em style={peq}>de {f.fm(f.m)} · {Math.round((f.vp / f.m) * 100)}%</em> : null}</span>
+                  </div>
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+
+        <div style={ { borderTop: "1px solid " + C.bd, padding: "12px 0 8px" } }>
+          <button
+            type="button"
+            onClick={onSimular}
+            style={ { width: "100%", minHeight: 44, background: "transparent", border: "1px solid #D3DCEC", borderRadius: 12, color: C.navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } }
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8.5 7.5h7M8.5 12h2M13.5 12h2M8.5 16h2M13.5 16h2" /></svg>
+            Simular clientes nuevos
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
