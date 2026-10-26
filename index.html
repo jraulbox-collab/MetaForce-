@@ -1179,6 +1179,10 @@ function clienteExcluido(c) {
 function abonoPendiente(c) {
   return c.abonoInicial === false && !c.fechaInstalacion && !clienteExcluido(c);
 }
+// Cliente con instalación programada al que todavía no se le ha enviado el mensaje con la info.
+function instalacionPorAvisar(c) {
+  return !c.fechaInstalacion && !clienteExcluido(c) && !c.penalizado && !!c.instalacionProgramada && !c.instalacionEnviadaEn && !!String(c.telefono || "").replace(/\D/g, "");
+}
 function plazoAbono(c) {
   if (!c.creadoEn) return null;
   const d = new Date(c.creadoEn);
@@ -2579,6 +2583,10 @@ function App() {
   const [searchAlertas, setSearchAlertas] = useState("");
   const [filtroTipoAlertas, setFiltroTipoAlertas] = useState("");
   const [copiedKey, setCopiedKey] = useState(null);
+  // Cliente al que acabas de abrirle WhatsApp con la info de instalación: al volver se pregunta si la enviaste.
+  const [preguntaInst, setPreguntaInst] = useState(() => {
+    try { return window.sessionStorage.getItem("mf-pregunta-inst") || null; } catch (e) { return null; }
+  });
 
   // Persiste la pestaña activa para que al refrescar la página quede donde
   // estaba, en vez de volver siempre al Dashboard. "detalle" y "nuevo" no se
@@ -3689,6 +3697,7 @@ function App() {
       ...antes,
       instalacionProgramada: d.fecha,
       franjaInstalacion: d.franja || "",
+      ...(d.fecha !== antes.instalacionProgramada ? { instalacionEnviadaEn: "" } : {}),
       tecnologia: d.tecnologia || antes.tecnologia || "",
       observaciones: aplicarBloqueObservaciones(antes.observaciones, bloqueObservacionTigo(d)),
     };
@@ -3700,7 +3709,7 @@ function App() {
   function reprogramarInstalacion(clienteId, fechaISO, franja) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes || !fechaISO) return;
-    const despues = { ...antes, instalacionProgramada: fechaISO, franjaInstalacion: franja || "" };
+    const despues = { ...antes, instalacionProgramada: fechaISO, franjaInstalacion: franja || "", ...(fechaISO !== antes.instalacionProgramada ? { instalacionEnviadaEn: "" } : {}) };
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
@@ -3715,6 +3724,26 @@ function App() {
     const despues = { ...antes, abonoInicial: recibido, abonoFecha: recibido ? new Date().toISOString() : "" };
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+
+  // Marca (o quita la marca de) que ya se le envió al cliente el mensaje con la info de su instalación.
+  function marcarInstalacionEnviada(clienteId, enviado) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes) return;
+    const despues = { ...antes, instalacionEnviadaEn: enviado ? new Date().toISOString() : "" };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+  // Abre WhatsApp con el mensaje de instalación y deja pendiente la pregunta "¿Lo enviaste?".
+  function enviarInfoInstalacion(cliente) {
+    try { window.sessionStorage.setItem("mf-pregunta-inst", cliente.id); } catch (e) {}
+    setPreguntaInst(cliente.id);
+    window.location.href = whatsappLink(cliente, { texto: textoInstalacion(cliente) });
+  }
+  function responderPreguntaInst(enviado) {
+    if (enviado && preguntaInst) marcarInstalacionEnviada(preguntaInst, true);
+    try { window.sessionStorage.removeItem("mf-pregunta-inst"); } catch (e) {}
+    setPreguntaInst(null);
   }
 
   function copiarMensajeInstalacion(cliente) {
@@ -4051,6 +4080,22 @@ function App() {
         </div>
       )}
 
+      {preguntaInst && (() => {
+        const cp = clientes.find((c) => c.id === preguntaInst);
+        if (!cp) return null;
+        return (
+          <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } }>
+            <div className="bg-white w-full max-w-md p-5" style={ { borderRadius: "22px 22px 0 0", paddingBottom: "calc(20px + env(safe-area-inset-bottom))", color: "#001E62" } }>
+              <div className="text-base font-bold">¿Le enviaste la info de instalación?</div>
+              <div className="text-sm mt-1" style={ { color: "#5A6680" } }>{cp.nombre}</div>
+              <div className="flex gap-2 mt-4">
+                <button type="button" onClick={() => responderPreguntaInst(true)} className="flex-1 font-bold rounded-xl text-white" style={ { minHeight: 52, background: "#001E62" } }>✓ Sí, la envié</button>
+                <button type="button" onClick={() => responderPreguntaInst(false)} className="flex-1 font-bold rounded-xl" style={ { minHeight: 52, border: "2px solid #001E62", color: "#001E62", background: "#fff" } }>No todavía</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
       <main className="flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl">
         {!loaded ? (
           <SkeletonCargando />
@@ -4131,6 +4176,7 @@ function App() {
             onEliminarMovil={eliminarConvergencia}
             onVolverAPrecierre={(destino) => volverA(destino || "precierre")}
             onMarcarAbono={marcarAbonoInicial}
+            onEnviarInfoInstalacion={enviarInfoInstalacion}
           />
         )}
         {tab === "detalle" && (
@@ -4155,6 +4201,8 @@ function App() {
             onMarcarInstalado={cambiarFechaInstalacionDesdeOrden}
             onCopiarMensajeInstalacion={copiarMensajeInstalacion}
             onMarcarAbono={marcarAbonoInicial}
+            onEnviarInfoInstalacion={enviarInfoInstalacion}
+            onMarcarInstalacionEnviada={marcarInstalacionEnviada}
           />
         )}
         {tab === "alertas" && (
@@ -5541,6 +5589,30 @@ function LineaAbonoPendiente({ clientes, conSeparador, onVer }) {
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold">{lista.length} {lista.length === 1 ? "abono pendiente" : "abonos pendientes"}</span>
         <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{detalle}</span>
+      </span>
+      <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+    </button>
+  );
+}
+
+// Línea del Dashboard: clientes con instalación programada a los que aún no se les envió la info.
+function LineaInfoInstalacionPendiente({ clientes, conSeparador, onVer }) {
+  const lista = clientes.filter(instalacionPorAvisar).sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
+  if (lista.length === 0) return null;
+  const hoy = fechaLocalISO(new Date());
+  const primero = lista[0];
+  const cuando = primero.instalacionProgramada < hoy ? "ya venció" : primero.instalacionProgramada === hoy ? "se instala hoy" : primero.instalacionProgramada === addDays(hoy, 1) ? "se instala mañana" : "se instala el " + fmtFechaDia(primero.instalacionProgramada);
+  return (
+    <button
+      type="button"
+      onClick={onVer}
+      className="w-full text-left flex items-center gap-3 px-4 py-3"
+      style={ { background: "transparent", color: "#fff", border: 0, borderTop: conSeparador ? "1px solid rgba(255,255,255,.25)" : 0 } }
+    >
+      <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">📩</span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-sm font-bold">{lista.length} {lista.length === 1 ? "cliente sin info de instalación" : "clientes sin info de instalación"}</span>
+        <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>Más urgente: {tituloEs(primero.nombre || "")} · {cuando}</span>
       </span>
       <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
     </button>
@@ -7830,6 +7902,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const nFac = enRiesgoHoy.length;
         const hayCobros = !((nRec === 0 && nFac === 0) || !onIrACobros);
         const hayAbono = clientes.some(abonoPendiente) && !!onVerClientes;
+        const hayInfo = clientes.some(instalacionPorAvisar) && !!onVerClientes;
         const hayMatch = (convergencias || []).some((c) => matchInfo(c)) && !!onVerClientes;
         const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
         const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) + vh.pendientesCalientes : 0;
@@ -7874,7 +7947,14 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 onVer={() => onVerClientes({ chipGrupo: "faltaAbono", todosLosMeses: true })}
               />
             )}
-            {!matchVencido && lineaMatch(hayCobros || hayAbono)}
+            {hayInfo && (
+              <LineaInfoInstalacionPendiente
+                clientes={clientes}
+                conSeparador={hayCobros || matchVencido || hayAbono}
+                onVer={() => onVerClientes({ chipGrupo: "faltaInfo", todosLosMeses: true })}
+              />
+            )}
+            {!matchVencido && lineaMatch(hayCobros || hayAbono || hayInfo)}
             {hayVentas && (
               <button
                 type="button"
@@ -9812,6 +9892,7 @@ const CHIPS_WEB_BASE = [
   ["porInstalar", "⏳ Por instalar"],
   ["instalados", "✓ Instalados"],
   ["faltaAbono", "⚠ Falta abono"],
+  ["faltaInfo", "📩 Falta info"],
   ["nocuenta", "⛔ No cuenta"],
   ["cerrados", "Cerrados ▾"],
   ["factura1", "1ra factura ▾"],
@@ -9928,7 +10009,7 @@ function textoReporteDiario(clientes, convergencias) {
   return `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
 }
 
-function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono }) {
+function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -10231,6 +10312,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     porInstalar: baseChipsWeb.filter((c) => !c.fechaInstalacion && !clienteExcluido(c)).length,
     instalados: baseChipsWeb.filter((c) => !!c.fechaInstalacion).length,
     faltaAbono: baseChipsWeb.filter(abonoPendiente).length,
+    faltaInfo: baseChipsWeb.filter(instalacionPorAvisar).length,
     cancelados: baseChipsWeb.filter((c) => !!c.cancelado && clienteExcluido(c)).length,
     nocuenta: baseChipsWeb.filter((c) => pasaFiltroFactura(c, "nocuenta")).length,
     penalizado: visiblesOrdenados.filter((c) => c.penalizado).length,
@@ -10254,6 +10336,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   };
   const chipWebActivo =
     chipGrupo === "faltaAbono" ? "faltaAbono"
+    : chipGrupo === "faltaInfo" ? "faltaInfo"
     : chipGrupo === "cancelados" ? "cancelados"
     : filtroInstalacion === "pendientes" ? "porInstalar"
     : filtroInstalacion === "instalados" ? "instalados"
@@ -10262,7 +10345,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     : "todos";
   const elegirChipWeb = (k) => {
     const nuevo = chipWebActivo === k ? "todos" : k;
-    setChipGrupo(nuevo === "faltaAbono" || nuevo === "cancelados" ? nuevo : "todos");
+    setChipGrupo(nuevo === "faltaAbono" || nuevo === "faltaInfo" || nuevo === "cancelados" ? nuevo : "todos");
     setFiltroInstalacion(nuevo === "porInstalar" ? "pendientes" : nuevo === "instalados" ? "instalados" : "");
     setFiltroEstado(nuevo === "nocuenta" || nuevo === "penalizado" ? nuevo : (filtroEstado === "pago1" || filtroEstado === "nopago1") && nuevo === "todos" ? filtroEstado : "");
   };
@@ -10290,9 +10373,11 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       const lb = plazoAbono(b);
       return (la ? la.getTime() : Infinity) - (lb ? lb.getTime() : Infinity);
     });
+  const listaInfo = visiblesFinal.filter(instalacionPorAvisar).sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
   // "Todos" en la web no incluye cancelados ni penalizados (tienen su propio chip).
   const filasWeb =
     chipGrupo === "faltaAbono" ? listaAbono
+    : chipGrupo === "faltaInfo" ? listaInfo
     : chipGrupo === "cancelados" ? visiblesFinal.filter((c) => !!c.cancelado && clienteExcluido(c))
     : filtroEstado === "penalizado" || filtroEstado === "nocuenta" ? visiblesFinal
     : visiblesFinal.filter((c) => !clienteExcluido(c));
@@ -10540,6 +10625,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           <div className="md:hidden contents">
             {chip("todos", "Todos", totalCuentan)}
             {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && chip("faltaAbono", "⚠ Falta abono", listaAbono.length)}
+            {(listaInfo.length > 0 || chipGrupo === "faltaInfo") && chip("faltaInfo", "📩 Falta info", listaInfo.length)}
             {chip("porInstalar", "Por instalar", conteoG.porInstalar)}
             {chip("instalados", "Instalados", conteoG.instalados)}
             {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
@@ -10661,7 +10747,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t === "SINGLE" ? "Plan: Single" : "Plan: Doble"}</option>)}
           </select>
           <RangoFechasIcono desde={fechaDesde} hasta={fechaHasta} onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } } />
-          {(filtrosActivos > 0 || chipGrupo === "faltaAbono") && (
+          {(filtrosActivos > 0 || chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo") && (
             <button
               type="button"
               onClick={() => { setFiltroEstado(""); setFiltroInstalacion(""); setChipGrupo("todos"); setFiltroPlan(""); setFechaDesde(""); setFechaHasta(""); } }
@@ -10843,6 +10929,16 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         )}
                       </div>
                     )}
+                    {instalacionPorAvisar(c) && onEnviarInfoInstalacion && (
+                      <button
+                        type="button"
+                        onClick={() => onEnviarInfoInstalacion(c)}
+                        className="w-full mt-2 text-xs font-bold rounded-lg text-white"
+                        style={ { minHeight: 44, background: "#128C4A" } }
+                      >
+                        💬 Enviar info de instalación
+                      </button>
+                    )}
                     <div className="flex items-center gap-2 mt-2.5">
                       <button
                         type="button"
@@ -10891,7 +10987,20 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                       </div>
                     )
                   )}
-                  {GRUPOS.filter((g) => chipGrupo !== "faltaAbono" && (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
+                  {chipGrupo === "faltaInfo" && (
+                    listaInfo.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>Falta enviar info de instalación · {listaInfo.length}</div>
+                        {listaInfo.map(tarjeta)}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", background: "#fff", color: "#5A6680" } }>
+                        ✓ No falta enviar info de instalación a nadie
+                        <button type="button" onClick={() => setChipGrupo("todos")} className="block mx-auto mt-2 text-xs font-bold underline" style={ { color: "#001E62" } }>Ver todos los clientes</button>
+                      </div>
+                    )
+                  )}
+                  {GRUPOS.filter((g) => chipGrupo !== "faltaAbono" && chipGrupo !== "faltaInfo" && (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
                     <div key={g.k} className="flex flex-col gap-2">
                       <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>{g.t} · {conteoG[g.k]}</div>
                       {visiblesFinal.filter((c) => grupoDe(c) === g.k).map(tarjeta)}
@@ -11209,7 +11318,7 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
 
 // Bloque "Instalación" de la ficha de un cliente Hogar pendiente: fecha y horario programados,
 // pegar el texto de Tigo y el mensaje listo para copiar y enviarle al cliente.
-function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono }) {
+function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono, onEnviarInfo, onMarcarEnviada }) {
   const prog = cliente.instalacionProgramada;
   const vencida = !!prog && prog < fechaLocalISO(new Date());
   const hoyISO = fechaLocalISO(new Date());
@@ -11218,6 +11327,9 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
   const abonoRecibido = cliente.abonoInicial !== false;
   const marcada = cliente.abonoFecha ? new Date(cliente.abonoFecha) : null;
   const tieneTel = !!String(cliente.telefono || "").replace(/\D/g, "");
+  const enviadaEn = cliente.instalacionEnviadaEn ? new Date(cliente.instalacionEnviadaEn) : null;
+  const enviada = !!enviadaEn && !isNaN(enviadaEn.getTime());
+  const horaEnv = enviada ? enviadaEn.toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" }) : "";
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 py-3 mb-3">
       <div className="flex items-center justify-between gap-2">
@@ -11245,6 +11357,37 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
           <button type="button" onClick={() => onMarcarAbono(cliente.id, false)} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Quitar</button>
         </div>
       )}
+      {prog && tieneTel && enviada && onMarcarEnviada && (
+        <div className="flex items-center justify-between gap-2 mt-1" style={ { minHeight: 32 } }>
+          <span className="text-[13px] font-semibold" style={ { color: "#001E62" } }>
+            ✓ Info de instalación enviada · {fmtFechaDia(fechaLocalISO(enviadaEn))}, {horaEnv}
+          </span>
+          <button type="button" onClick={() => onMarcarEnviada(cliente.id, false)} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Quitar</button>
+        </div>
+      )}
+      {prog && tieneTel && !enviada && onEnviarInfo && (
+        <div className="mt-2.5 rounded-lg p-3" style={ { background: "#FFF6E3", border: "1px solid #F0D9AE" } }>
+          <div className="text-[13px] font-bold" style={ { color: "#B45309" } }>! Falta enviarle la info de instalación</div>
+          <button
+            type="button"
+            onClick={() => onEnviarInfo(cliente)}
+            className="w-full mt-2 text-sm font-bold rounded-md text-white"
+            style={ { minHeight: 48, background: "#128C4A" } }
+          >
+            💬 Enviar info por WhatsApp
+          </button>
+          <div className="flex gap-2 mt-2">
+            <button type="button" onClick={() => onCopiarMensaje(cliente)} className="flex-1 text-xs font-bold rounded-md" style={ { minHeight: 44, border: "1.5px solid #001E62", color: "#001E62", background: "#fff" } }>
+              {copiado ? "Copiado ✓" : "Copiar mensaje"}
+            </button>
+            {onMarcarEnviada && (
+              <button type="button" onClick={() => onMarcarEnviada(cliente.id, true)} className="flex-1 text-xs font-bold rounded-md" style={ { minHeight: 44, border: "1.5px solid #001E62", color: "#001E62", background: "#fff" } }>
+                Ya se lo envié
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {onMarcarInstalado && fechaInst === null && (
         <div className="flex gap-2 mt-2.5">
           <button
@@ -11267,6 +11410,15 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
             </button>
           )}
         </div>
+      )}
+      {prog && tieneTel && enviada && fechaInst === null && (
+        <a
+          href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`}
+          className="flex items-center justify-center gap-2 w-full mt-2.5 text-sm font-bold rounded-md text-white"
+          style={ { minHeight: 48, background: "#128C4A", textDecoration: "none" } }
+        >
+          💬 Abrir chat con el cliente
+        </a>
       )}
       {onMarcarInstalado && fechaInst !== null && (
         <div className="mt-2.5 rounded-lg p-3" style={ { background: "#F3F6FB" } }>
@@ -11303,29 +11455,33 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
       {prog && verMas && (
         <div className="mt-3 pt-3" style={ { borderTop: "1px solid #EEF2F9" } }>
           <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta="Pegar otro texto de Tigo" />
-          <div className="flex gap-2 mt-2.5">
-            <button
-              type="button"
-              onClick={() => onCopiarMensaje(cliente)}
-              className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white"
-              style={ { background: "#001E62" } }
-            >
-              {copiado ? "Copiado ✓" : "Copiar mensaje"}
-            </button>
-            {tieneTel ? (
-              <a
-                href={whatsappLink(cliente, { texto: textoInstalacion(cliente) })}
-                className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md text-white text-center"
-                style={ { background: "#25D366" } }
+          {enviada && (
+            <div className="flex gap-2 mt-2.5">
+              <button
+                type="button"
+                onClick={() => onCopiarMensaje(cliente)}
+                className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md"
+                style={ { border: "1.5px solid #001E62", color: "#001E62", background: "#fff", minHeight: 44 } }
               >
-                Enviar por WhatsApp
-              </a>
-            ) : (
-              <span className="flex-1 text-xs text-center px-3 py-2.5 rounded-md" style={ { background: "#F3F6FB", color: "#5A6680" } }>
-                Sin WhatsApp en la ficha
-              </span>
-            )}
-          </div>
+                {copiado ? "Copiado ✓" : "Copiar mensaje"}
+              </button>
+              {onEnviarInfo && (
+                <button
+                  type="button"
+                  onClick={() => onEnviarInfo(cliente)}
+                  className="flex-1 text-sm font-medium px-3 py-2.5 rounded-md"
+                  style={ { border: "1.5px solid #001E62", color: "#001E62", background: "#fff", minHeight: 44 } }
+                >
+                  Reenviar mensaje
+                </button>
+              )}
+            </div>
+          )}
+          {!tieneTel && (
+            <div className="text-xs text-center px-3 py-2.5 rounded-md mt-2.5" style={ { background: "#F3F6FB", color: "#5A6680" } }>
+              Sin WhatsApp en la ficha
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -11351,6 +11507,8 @@ function ClienteDetalle({
   historialCambios,
   onGuardarOrden,
   onCopiarMensajeInstalacion,
+  onEnviarInfoInstalacion,
+  onMarcarInstalacionEnviada,
   onMarcarAbono,
   onMarcarInstalado,
 }) {
@@ -11546,6 +11704,8 @@ function ClienteDetalle({
           copiado={copiedKey === cliente.id + "instalacion"}
           onMarcarInstalado={onMarcarInstalado}
           onMarcarAbono={onMarcarAbono}
+          onEnviarInfo={onEnviarInfoInstalacion}
+          onMarcarEnviada={onMarcarInstalacionEnviada}
         />
       )}
 
