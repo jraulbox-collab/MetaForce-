@@ -3842,7 +3842,7 @@ function App() {
     const nInstal = instalacionesVis.length;
     const hoyD = new Date(); hoyD.setHours(0, 0, 0, 0);
     const perCom = [-1, -2].map((d) => sumarMesClave(periodoActualApp, d)).map((pp) => ({ pp, limite: fechaLimitePrimeraFactura(pp) })).filter((x) => x.limite && x.limite >= hoyD).sort((a, b) => a.limite - b.limite)[0];
-    const hayComision = !!perCom && (clientesActivos.some((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) === perCom.pp) || convergencias.some((c) => c.f1_estado !== "pagada" && periodoDelMovil(c) === perCom.pp));
+    const hayComision = !!perCom && (clientesActivos.some((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) === perCom.pp) || (esquemaNuevo(perCom.pp) && convergencias.some((c) => c.f1_estado !== "pagada" && periodoDelMovil(c) === perCom.pp && movilCuentaParaComision(c))));
     return { nCobros, nVentas, nInstal, hayComision, total: nCobros + nVentas + nInstal };
   })();
   // Si estás en un filtro que se quedó sin nada, vuelve solo a "Todos".
@@ -3852,6 +3852,60 @@ function App() {
     if (vacio[seccionMensajes]) setSeccionMensajes("todos");
   }, [conteoMsj && conteoMsj.nCobros, conteoMsj && conteoMsj.nVentas, conteoMsj && conteoMsj.nInstal, conteoMsj && conteoMsj.hayComision, seccionMensajes]);
   const pospuestosActivos = Object.keys(pospuestos).filter((k) => estaPospuesto(k));
+  // ---- Envío en cadena unificado (Cobros + Instalación + Ventas) ----
+  // La cola se guarda en esta pestaña del navegador: si al volver de WhatsApp la app se recarga, sigue donde iba.
+  const [cadena, setCadena] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("mf-cadena") || "null"); } catch (e) { return null; }
+  });
+  const [resumenCadena, setResumenCadena] = useState(null);
+  function guardarCadena(c) {
+    setCadena(c);
+    try { if (c) sessionStorage.setItem("mf-cadena", JSON.stringify(c)); else sessionStorage.removeItem("mf-cadena"); } catch (e) {}
+  }
+  function iniciarCadena() {
+    const items = [];
+    const enComision = (a, mov) => (mov ? a.cliente.f1_estado !== "pagada" && movilCuentaParaComision(a.cliente) : a.cliente.f1_estado !== "pagada" && clienteCuentaParaComision(a.cliente));
+    const cobros = [...alertasCobroVis.map((a) => ({ a, mov: false })), ...alertasMovilVis.map((a) => ({ a, mov: true }))];
+    cobros.sort((x, y) => (enComision(x.a, x.mov) ? 0 : 1) - (enComision(y.a, y.mov) ? 0 : 1));
+    cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + a.milestone.tag }));
+    [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada).localeCompare(String(y.instalacionProgramada)))
+      .forEach((c) => items.push({ t: "in", id: c.id, link: whatsappLink(c, { texto: textoInstalacion(c) }), nombre: c.nombre, et: "🔧 Info de instalación" }));
+    const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
+    const pv = [];
+    dv.filas.forEach((f) => f.numeros.forEach((n) => { if (n.estado === "pendiente") pv.push({ f, n }); }));
+    [...pv.filter((x) => x.n.tipo === "referido"), ...pv.filter((x) => x.n.tipo !== "referido")].forEach(({ f, n }) =>
+      items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta" }));
+    if (!items.length) return;
+    setResumenCadena(null);
+    guardarCadena({ items, i: 0, env: 0, sal: 0 });
+    window.location.href = items[0].link;
+  }
+  function marcarItemCadena(it) {
+    if (it.t === "ch") marcarEnviadoSeguro(it.id, it.key, "cadena");
+    else if (it.t === "cm") marcarMovilEnviadoSeguro(it.id, it.key, "cadena");
+    else if (it.t === "in") marcarInstalacionEnviada(it.id, true);
+    else if (it.t === "v") cambiarVentaMsg(it.id, it.k, it.ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() });
+  }
+  function avanzarCadena(marcar) {
+    const c = cadena;
+    if (!c) return;
+    if (marcar) marcarItemCadena(c.items[c.i]);
+    const env = c.env + (marcar ? 1 : 0);
+    const sal = c.sal + (marcar ? 0 : 1);
+    const i = c.i + 1;
+    if (i >= c.items.length) {
+      guardarCadena(null);
+      setResumenCadena({ total: c.items.length, env });
+      return;
+    }
+    guardarCadena({ ...c, i, env, sal });
+    setTimeout(() => { window.location.href = c.items[i].link; }, 350);
+  }
+  function detenerCadena() {
+    if (!cadena) return;
+    setResumenCadena({ total: cadena.items.length, env: cadena.env });
+    guardarCadena(null);
+  }
   function tocarPestana(key) {
     if (tab === key) {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4122,6 +4176,17 @@ function App() {
         ))}
       </nav>
 
+      {cadena && cadena.items[cadena.i] && (
+        <div className="fixed z-50 left-3 right-3 rounded-xl p-3" style={ { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } }>
+          <div className="text-sm font-bold text-white">Enviando {cadena.i + 1} de {cadena.items.length}: {tituloEs(cadena.items[cadena.i].nombre || "")}</div>
+          <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[cadena.i].et} · Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</div>
+          <div className="flex gap-2 mt-2 items-stretch">
+            <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
+            <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No, saltar</button>
+            <button type="button" onClick={() => avanzarCadena(true)} className="text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0 } }>Sí, siguiente</button>
+          </div>
+        </div>
+      )}
       {barraEscondida && !barraOculta && ORDEN_SWIPE.includes(tab) && (
         <div
           className="md:hidden fixed z-40 flex items-center"
@@ -4336,6 +4401,12 @@ function App() {
         )}
         {tab === "alertas" && (
           <React.Fragment>
+          {resumenCadena && (
+            <div className="flex items-center justify-between gap-3 rounded-lg p-4 mb-3 flex-wrap" style={ { background: "#E9F7EF", border: "1px solid #BEE8CE" } }>
+              <p className="text-sm" style={ { color: "#166534" } }>✅ Envío terminado: <span className="font-semibold">{resumenCadena.env} de {resumenCadena.total}</span> mensajes marcados como enviados.</p>
+              <button type="button" onClick={() => setResumenCadena(null)} className="text-sm font-bold" style={ { color: "#166534", minHeight: 40 } }>Cerrar</button>
+            </div>
+          )}
           {(() => {
             const { nCobros, nVentas, nInstal, total } = conteoMsj;
             const filas = [
@@ -4351,23 +4422,19 @@ function App() {
                     {total > 0 ? <React.Fragment>{total} <span style={ { fontSize: 14 } }>{total === 1 ? "mensaje por enviar" : "mensajes por enviar"}</span></React.Fragment> : "✓ Todo al día"}
                   </div>
                 </div>
-                {filas.filter((f) => f.n > 0).map((f) => (
-                  <button
-                    key={f.t}
-                    type="button"
-                    onClick={() => { setSeccionMensajes(f.k); window.scrollTo({ top: 0 }); } }
-                    className="w-full flex items-center gap-3 px-4 text-left"
-                    style={ { minHeight: 52, borderTop: "1px solid #EEF1F7", background: "#fff" } }
-                  >
-                    <span style={ { fontSize: 20 } } aria-hidden="true">{f.ico}</span>
-                    <span className="flex-1 min-w-0">
-                      <span className="block text-sm font-bold" style={ { color: "#001E62" } }>{f.t}</span>
-                      <span className="block text-xs" style={ { color: "#5A6680" } }>{f.sub}</span>
-                    </span>
-                    <span className="text-lg font-extrabold" style={ { color: "#B45309" } }>{f.n}</span>
-                    <span aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
-                  </button>
-                ))}
+                {total > 0 && (
+                  <div className="px-4 pb-4">
+                    <button
+                      type="button"
+                      onClick={iniciarCadena}
+                      disabled={!!cadena}
+                      className="w-full rounded-xl text-white font-extrabold disabled:opacity-50"
+                      style={ { background: "#001E62", minHeight: 52, fontSize: 16 } }
+                    >
+                      ▶ Empezar a enviar ({total})
+                    </button>
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -4383,7 +4450,7 @@ function App() {
                 className="shrink-0 text-sm font-extrabold rounded-full px-3.5"
                 style={ { minHeight: 40, whiteSpace: "nowrap", ...(seccionMensajes === k ? { background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } : { background: "#fff", color: "#001E62", border: "1.5px solid #001E62" }) } }
               >
-                {t}{n !== null && n > 0 ? ` ${n}` : ""}
+                {t}{k !== "todos" && n !== null && n > 0 ? ` ${n}` : ""}
               </button>
             ))}
           </div>
@@ -5792,13 +5859,7 @@ function BloqueInstalacionHoy({ lista, onEnviar, onMarcar, onPosponer }) {
   const [posAbierto, setPosAbierto] = useState(null);
   const hoy = fechaLocalISO(new Date());
   const ordenada = [...lista].sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
-  if (ordenada.length === 0) {
-    return (
-      <div className="bg-white rounded-xl border p-6 text-center mb-4" style={ { borderColor: "#DFE5EF" } }>
-        <div className="text-base font-extrabold" style={ { color: "#15803D" } }>✓ Todos tienen su info de instalación</div>
-      </div>
-    );
-  }
+  if (ordenada.length === 0) return null;
   return (
     <div className="mb-4">
       <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>🔧 Info de instalación por enviar ({ordenada.length})</h2>
@@ -6516,6 +6577,9 @@ function ListaMisReferidos({ clientes, convergencias }) {
   );
 }
 
+// Texto del mensaje de venta de un número (lo usan el panel de Ventas y el envío en cadena de Mensajes).
+const mensajeVentaDe = (n, c, f) => (n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
+
 function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
   const [formKey, setFormKey] = useState(null);
@@ -6573,7 +6637,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
   const primerPend = mostrar[0];
   const primerPendienteKey = primerPend ? `vta-${primerPend.f.cliente.id}-${primerPend.n.k}` : null;
   const pct = Math.min(100, Math.round((datos.hechosHoy / TOPE_DIARIO_VENTAS) * 100));
-  const mensajeDe = (n, c, f) => (n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
+  const mensajeDe = mensajeVentaDe;
   const enlaceDe = (n, c, f) => `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeDe(n, c, f))}`;
   // ---- Envío en cadena: recorre la lista abriendo WhatsApp con cada mensaje ----
   const [cola, setCola] = useState(null);
@@ -7818,7 +7882,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
   const vistaCobros = (
     <div>
-      <h1 className="text-2xl font-semibold mb-4">Cobros</h1>
       {enRiesgoHoy.length > 0 && rescateDiasRestantes !== null && rescateDiasRestantes <= 3 && (
         <div className="rounded-lg p-3 mb-4 text-sm font-semibold" style={ { background: "#FFF3DC", color: "#B45309", border: "1px solid #F3E3C3" } }>
           ⏳ {rescateDiasRestantes <= 0 ? "Hoy vence el plazo" : rescateDiasRestantes === 1 ? "Queda 1 día" : `Quedan ${rescateDiasRestantes} días`} para cobrar {enRiesgoHoy.length === 1 ? "a 1 cliente" : `a ${enRiesgoHoy.length} clientes`}.
@@ -7826,8 +7889,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
 
       {/* Sección 1: facturas pendientes que hay que cobrar para que cuenten en la comisión */}
-      <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>1 · Facturas pendientes</h2>
-      <div className="rounded-xl overflow-hidden border mb-8 bg-white" style={ { borderColor: "#DFE5EF" } }>
+      {(!periodoRescateActivo || rescateCandidatos.length > 0) && (
+      <div className="rounded-xl overflow-hidden border mb-4 bg-white" style={ { borderColor: "#DFE5EF" } }>
       {periodoRescateActivo && comisionConfirmadaHoy.completo && (() => {
         const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0];
         const nPendCom = rescateEnPlazo.length + movilesPendientesHoy.length;
@@ -8133,6 +8196,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       </div>
       )}
       </div>
+      )}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
@@ -9779,7 +9843,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
 
   return (
     <div>
-      <h2 className="text-base font-extrabold mb-2 mt-8" style={ { color: "#001E62" } }>2 · Recordatorios</h2>
+      
       <div className="bg-white rounded-xl border overflow-hidden mb-4" style={ { borderColor: "#DFE5EF" } }>
         <div className="px-4 py-3.5" style={ { borderBottom: "1px solid #DFE5EF" } }>
           <div className="text-sm font-bold" style={ { color: "#001E62" } }>
