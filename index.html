@@ -1630,13 +1630,10 @@ function leerOrdenInstalacionTigo(texto) {
     tecnologia: leerTecnologiaTigo(t),
   };
 }
-// FTTH (fibra) o HFC (coaxial): viene en "ID de Servicio", en el subtipo o en el tipo de orden.
+// FTTH (fibra) o HFC (coaxial). Regla: si el texto de Tigo dice FTTH en cualquier parte, es FTTH;
+// si no lo dice, es HFC (solo se llama con un texto de orden ya leído, así que siempre hay respuesta).
 function leerTecnologiaTigo(t) {
-  const m =
-    String(t || "").match(/ID de Servicio\s*:[ \t]*(FTTH|HFC)\b/i) ||
-    String(t || "").match(/Subtipo de orden\s*:[ \t]*[^\n]*?(FTTH|HFC)/i) ||
-    String(t || "").match(/Tipo de orden\s*:[ \t]*I?(FTTH|HFC)\b/i);
-  return m ? m[1].toUpperCase() : "";
+  return /FTTH/i.test(String(t || "")) ? "FTTH" : "HFC";
 }
 
 // Bloque de texto que se guarda en Observaciones (los datos que no tienen campo propio en la ficha).
