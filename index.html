@@ -11167,7 +11167,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                   className="rounded-full font-bold border"
                   style={ { minHeight: 40, padding: "0 12px", fontSize: 14, borderColor: !rangoActivo && mesActivoEfectivo === m.key ? "#001E62" : "#DFE5EF", background: !rangoActivo && mesActivoEfectivo === m.key ? "#001E62" : "#fff", color: !rangoActivo && mesActivoEfectivo === m.key ? "#fff" : "#001E62" } }
                 >
-                  {m.label}{i === 0 ? " (actual)" : ""}
+                  {m.label.replace(new RegExp("\\s*" + new Date().getFullYear() + "$"), "")}
                 </button>
               ))}
             </div>
@@ -11282,7 +11282,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               color: mesActivoEfectivo === m.key ? "white" : "#374151",
             } }
           >
-            {m.label.toUpperCase()}{i === 0 ? " (actual)" : ""}
+            {m.label.replace(new RegExp("\\s*" + new Date().getFullYear() + "$"), "").toUpperCase()}
           </button>
         ))}
       </div>
