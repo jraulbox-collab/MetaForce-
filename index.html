@@ -10888,7 +10888,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     [clientesMovil, mesActivoEfectivo]
   );
 
-  const labelMesM = (meses.find((m) => m.key === mesActivoEfectivo) || {}).label || "Mes";
+  const labelMesM = (((meses.find((m) => m.key === mesActivoEfectivo) || {}).label) || "Mes").replace(new RegExp("\\s*" + new Date().getFullYear() + "$"), "");
   const cortoF = (f) => (f ? fmtFechaDia(f).replace(/^\S+\s/, "") : "");
   const chipM = (activo, texto, onClick, quitable, extra) => (
     <button
