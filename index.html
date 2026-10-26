@@ -6148,7 +6148,7 @@ function BloqueAbonoInicial({ cliente, onMarcar }) {
 
 // Lista única de "Por instalar" dentro de Avance del período: vencidas, hoy, mañana, más adelante
 // y sin fecha agendada, todo a la vista y ordenado por urgencia.
-function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCopiarMensaje, copiedKey, onVerCliente }) {
+function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCopiarMensaje, copiedKey, onVerCliente, enTarjeta, conSeparador }) {
   const [abierto, setAbierto] = useState(null); // null = automático: se abre solo si hay vencidas
   const hoy = fechaLocalISO(new Date());
   const manana = addDays(hoy, 1);
@@ -6221,25 +6221,25 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
   }
 
   return (
-    <div className="mt-3 rounded-[10px] overflow-hidden" style={ { border: "1px solid #DCE2EE" } }>
+    <div className={enTarjeta ? "overflow-hidden" : "mt-3 rounded-[10px] overflow-hidden"} style={ enTarjeta ? { borderTop: conSeparador ? "1px solid rgba(255,255,255,.18)" : 0 } : { border: "1px solid #DCE2EE" } }>
       <button
         type="button"
         onClick={() => setAbierto(!visible)}
         aria-expanded={visible}
-        className="w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-bold text-left"
-        style={ { background: "#F3F6FB", color: "#001E62", minHeight: 40 } }
+        className={enTarjeta ? "w-full flex items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-left" : "w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-bold text-left"}
+        style={ enTarjeta ? { background: "transparent", color: "#fff", minHeight: 56, border: 0 } : { background: "#F3F6FB", color: "#001E62", minHeight: 40 } }
       >
         <span className="flex items-center gap-1.5 min-w-0">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
           <span className="min-w-0">
             Por instalar · {porInstalar.length}
-            {partes.length > 0 ? <span className="block text-[11.5px] font-semibold" style={ { color: "#5A6680" } }>{partes.join(" · ")}</span> : null}
+            {partes.length > 0 ? <span className={enTarjeta ? "block text-xs font-normal mt-0.5" : "block text-[11.5px] font-semibold"} style={ { color: enTarjeta ? "#B9C4E0" : "#5A6680" } }>{partes.join(" · ")}</span> : null}
           </span>
         </span>
-        <span className="shrink-0" style={ { color: "#5A6680" } }>{visible ? "Ocultar ▴" : "Mostrar ▾"}</span>
+        <span className="shrink-0" style={ { color: enTarjeta ? "#B9C4E0" : "#5A6680", fontSize: enTarjeta ? 13 : undefined, fontWeight: enTarjeta ? 600 : undefined } }>{visible ? "Ocultar ▴" : "Mostrar ▾"}</span>
       </button>
       {visible ? GRUPOS.map((x) => (
-        <div key={x.k}>
+        <div key={x.k} style={ enTarjeta ? { background: "#fff", color: "#001E62" } : undefined }>
           <div className="flex items-center justify-between px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider" style={ x.aviso ? { background: "#FFF3DC", color: "#7A4100", borderTop: "1px solid #DFE5EF" } : { background: "#F8FAFD", color: "#5A6680", borderTop: "1px solid #DFE5EF" } }>
             <span>{x.aviso ? "⚠ " : ""}{x.t}</span>
             <span>{x.l.length}</span>
@@ -8388,7 +8388,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) + vh.pendientesCalientes : 0;
         const nSeg = vh ? vh.seguimiento.length : 0;
         const hayVentas = nVentas > 0 || nSeg > 0;
-        if (!hayCobros && !hayAbono && !hayMatch && !hayVentas) return null;
+        const listaPorInstalar = esActual ? clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado) : [];
+        const hayPorInst = listaPorInstalar.length > 0;
+        if (!hayCobros && !hayAbono && !hayMatch && !hayVentas && !hayPorInst) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
           <LineaMatchPendiente
@@ -8435,12 +8437,24 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               />
             )}
             {!matchVencido && lineaMatch(hayCobros || hayAbono || hayInfo)}
+            {hayPorInst && (
+              <PanelPorInstalar
+                enTarjeta
+                conSeparador={hayCobros || hayAbono || hayInfo || hayMatch}
+                porInstalar={listaPorInstalar}
+                onMarcarInstalado={onMarcarInstalado}
+                onReprogramar={onReprogramarInstalacion}
+                onCopiarMensaje={onCopiarMensajeInstalacion}
+                copiedKey={copiedKey}
+                onVerCliente={onVerCliente}
+              />
+            )}
             {hayVentas && (
               <button
                 type="button"
                 onClick={onIrAVentas}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch || hayInfo || hayPorInst) ? "1px solid rgba(255,255,255,.18)" : 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
                 <span className="min-w-0 flex-1 text-sm font-bold">{[nVentas > 0 ? `${nVentas} para escribir hoy` : "", nSeg > 0 ? `🔥 ${nSeg} por cerrar` : ""].filter(Boolean).join(" · ")}</span>
@@ -9817,16 +9831,6 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
           );
         })}
       </div>
-      {esActual && porInstalar.length > 0 ? (
-        <PanelPorInstalar
-          porInstalar={porInstalar}
-          onMarcarInstalado={onMarcarInstalado}
-          onReprogramar={onReprogramar}
-          onCopiarMensaje={onCopiarMensaje}
-          copiedKey={copiedKey}
-          onVerCliente={onVerCliente}
-        />
-      ) : null}
       {(() => {
         // RPU: lo que deja cada cliente en promedio (ingresos entre clientes). Solo informativo,
         // no entra en la comisión. Total = hogar + móvil juntos, igual que la caja de Ingreso.
