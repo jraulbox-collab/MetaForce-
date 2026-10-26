@@ -2574,16 +2574,23 @@ function App() {
   // Precierre: lo pegado y el rango viven aquí (no dentro de la pestaña) para que no
   // se pierdan al cambiar de pestaña, y se guardan en este celular.
   const [precierre, setPrecierre] = useState(leerPrecierreGuardado);
+  const precierreMarca = useRef(null);
   useEffect(() => {
     try {
-      localStorage.setItem(PRECIERRE_KEY, JSON.stringify(precierre));
+      // La hora se renueva solo cuando cambias algo; abrir la app no alarga el plazo.
+      if (precierreMarca.current === null) precierreMarca.current = leerMarcaGuardada(PRECIERRE_KEY);
+      else precierreMarca.current = Date.now();
+      localStorage.setItem(PRECIERRE_KEY, JSON.stringify({ ...precierre, guardadoEn: precierreMarca.current }));
     } catch (e) {}
   }, [precierre]);
   // Verificar órdenes (dentro de Precierre): lo pegado y el modo se guardan en este celular.
   const [verifOrdenes, setVerifOrdenes] = useState(leerVerifOrdenesGuardado);
+  const verifMarca = useRef(null);
   useEffect(() => {
     try {
-      localStorage.setItem(VERIF_ORDENES_KEY, JSON.stringify(verifOrdenes));
+      if (verifMarca.current === null) verifMarca.current = leerMarcaGuardada(VERIF_ORDENES_KEY);
+      else verifMarca.current = Date.now();
+      localStorage.setItem(VERIF_ORDENES_KEY, JSON.stringify({ ...verifOrdenes, guardadoEn: verifMarca.current }));
     } catch (e) {}
   }, [verifOrdenes]);
   // De dónde se abrió el formulario de cliente, para volver a la misma pantalla al
@@ -13677,6 +13684,19 @@ async function copiarTextoPrecierre(texto) {
 // Lo pegado y el rango del precierre se guardan en este celular para que no se
 // pierdan al cambiar de pestaña o refrescar. Se borran con "Limpiar".
 const PRECIERRE_KEY = "antichurn_precierre";
+// Lo guardado en Precierre dura 1 hora desde el último cambio; después se borra solo.
+const HORAS_VIDA_PRECIERRE = 1;
+function leerMarcaGuardada(clave) {
+  try {
+    const g = JSON.parse(localStorage.getItem(clave) || "null");
+    return g && g.guardadoEn ? g.guardadoEn : Date.now();
+  } catch (e) {
+    return Date.now();
+  }
+}
+function guardadoVencido(g) {
+  return !g || !g.guardadoEn || Date.now() - g.guardadoEn > HORAS_VIDA_PRECIERRE * 3600000;
+}
 function leerPrecierreGuardado() {
   const hoy = fechaLocalISO(new Date());
   const base = { texto: "", desde: hoy.slice(0, 8) + "01", hasta: hoy, aplicado: null };
@@ -13684,6 +13704,7 @@ function leerPrecierreGuardado() {
     const raw = localStorage.getItem(PRECIERRE_KEY);
     if (!raw) return base;
     const g = JSON.parse(raw);
+    if (guardadoVencido(g)) return base;
     return {
       texto: typeof g.texto === "string" ? g.texto : "",
       desde: g.desde || base.desde,
@@ -14402,6 +14423,7 @@ function leerVerifOrdenesGuardado() {
     const raw = localStorage.getItem(VERIF_ORDENES_KEY);
     if (!raw) return base;
     const g = JSON.parse(raw);
+    if (guardadoVencido(g)) return base;
     return {
       modo: g.modo === "ordenes" ? "ordenes" : "precierre",
       texto: typeof g.texto === "string" ? g.texto : "",
