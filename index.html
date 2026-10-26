@@ -2503,8 +2503,22 @@ function App() {
   };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
   const [seccionMensajes, setSeccionMensajes] = useState(() => {
-    try { return localStorage.getItem("antichurn_seccion_mensajes") === "ventas" ? "ventas" : "cobros"; } catch (e) { return "cobros"; }
+    try { const v = localStorage.getItem("antichurn_seccion_mensajes"); return ["todos", "comision", "cobros", "ventas", "instalacion"].includes(v) ? v : "todos"; } catch (e) { return "todos"; }
   });
+  // Mensajes pospuestos: { clave: { hasta: "AAAA-MM-DD", nombre } }. Reaparecen solos al llegar la fecha.
+  const [pospuestos, setPospuestos] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("mf_pospuestos") || "{}") || {}; } catch (e) { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem("mf_pospuestos", JSON.stringify(pospuestos)); } catch (e) {}
+  }, [pospuestos]);
+  const estaPospuesto = (clave) => !!(pospuestos[clave] && pospuestos[clave].hasta > fechaLocalISO(new Date()));
+  function posponerMensaje(clave, dias, nombre) {
+    setPospuestos((prev) => ({ ...prev, [clave]: { hasta: addDays(fechaLocalISO(new Date()), dias), nombre: nombre || "" } }));
+  }
+  function quitarPosponer(clave) {
+    setPospuestos((prev) => { const n = { ...prev }; delete n[clave]; return n; });
+  }
   useEffect(() => {
     try { localStorage.setItem("antichurn_seccion_mensajes", seccionMensajes); } catch (e) {}
   }, [seccionMensajes]);
@@ -3814,6 +3828,21 @@ function App() {
     : "";
   const barraFuera = barraOculta || barraEscondida;
   const bottomFab = barraFuera ? (avisoGuardado ? 72 : 24) : (avisoGuardado ? 150 : 86);
+  // ---- Pendientes de hoy en Mensajes (sin los pospuestos) ----
+  const alertasCobroVis = alertasPorCliente.filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
+  const alertasMovilVis = alertasMovilPendientes(convergencias).filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
+  const instalacionesVis = tab === "alertas" ? clientesActivos.filter((c) => instalacionPorAvisar(c) && !estaPospuesto("inst-" + c.id)) : [];
+  const conteoMsj = (() => {
+    if (tab !== "alertas") return null;
+    const nCobros = alertasCobroVis.length + alertasMovilVis.length;
+    const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
+    const itemsV = [];
+    dv.filas.forEach((f) => f.numeros.forEach((n) => itemsV.push(n)));
+    const nVentas = itemsV.filter((n) => n.estado === "pendiente").length;
+    const nInstal = instalacionesVis.length;
+    return { nCobros, nVentas, nInstal, total: nCobros + nVentas + nInstal };
+  })();
+  const pospuestosActivos = Object.keys(pospuestos).filter((k) => estaPospuesto(k));
   function tocarPestana(key) {
     if (tab === key) {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -4106,7 +4135,7 @@ function App() {
         </div>
       )}
 
-      {tab !== "nuevo" && !(tab === "alertas" && seccionMensajes === "ventas") && (
+      {tab !== "nuevo" && !(tab === "alertas" && (seccionMensajes === "ventas" || seccionMensajes === "todos")) && (
         <button
           onClick={() => setMostrarSelectorNuevo(true)}
           className="md:hidden fixed z-40 flex items-center justify-center text-white mf-fab"
@@ -4299,21 +4328,14 @@ function App() {
         {tab === "alertas" && (
           <React.Fragment>
           {(() => {
-            const nCobros = stats.alHoy;
-            const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
-            const itemsV = [];
-            dv.filas.forEach((f) => f.numeros.forEach((n) => itemsV.push(n)));
-            const cupoV = Math.max(0, TOPE_DIARIO_VENTAS - dv.hechosHoy);
-            const nVentas = itemsV.filter((n) => n.estado === "pendiente" && !n.frio).length + Math.min(itemsV.filter((n) => n.estado === "pendiente" && n.frio).length, cupoV);
-            const nInstal = clientesActivos.filter((c) => instalacionPorAvisar(c)).length;
-            const total = nCobros + nVentas + nInstal;
+            const { nCobros, nVentas, nInstal, total } = conteoMsj;
             const filas = [
-              { ico: "💵", t: "Cobros", n: nCobros, sub: "recordatorios de pago", ir: () => { setSeccionMensajes("cobros"); window.scrollTo({ top: 0 }); } },
-              { ico: "💬", t: "Ventas", n: nVentas, sub: "mensajes para vender", ir: () => { setSeccionMensajes("ventas"); window.scrollTo({ top: 0 }); } },
-              { ico: "🔧", t: "Instalación", n: nInstal, sub: "info de instalación sin enviar", ir: () => { setSaltarAMes({ chipGrupo: "faltaInfo", todosLosMeses: true, token: Date.now() }); navegarA("clientes"); } },
+              { ico: "💵", t: "Cobros", n: nCobros, sub: "recordatorios de pago", k: "cobros" },
+              { ico: "💬", t: "Ventas", n: nVentas, sub: "mensajes para vender", k: "ventas" },
+              { ico: "🔧", t: "Instalación", n: nInstal, sub: "info de instalación sin enviar", k: "instalacion" },
             ];
             return (
-              <div className="bg-white rounded-xl border mb-4 overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
+              <div className="bg-white rounded-xl border mb-3 overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
                 <div className="px-4 pt-3 pb-2">
                   <div className="text-xs font-semibold" style={ { color: "#5A6680" } }>📅 Hoy</div>
                   <div className="font-extrabold" style={ { color: "#001E62", fontSize: 26, lineHeight: 1.15 } }>
@@ -4324,7 +4346,7 @@ function App() {
                   <button
                     key={f.t}
                     type="button"
-                    onClick={f.ir}
+                    onClick={() => { setSeccionMensajes(f.k); window.scrollTo({ top: 0 }); } }
                     className="w-full flex items-center gap-3 px-4 text-left"
                     style={ { minHeight: 52, borderTop: "1px solid #EEF1F7", background: "#fff" } }
                   >
@@ -4340,22 +4362,37 @@ function App() {
               </div>
             );
           })()}
-          <div className="flex gap-2 mb-4" role="tablist">
-            {[["cobros", "💵 Cobros"], ["ventas", "💬 Ventas"]].map(([k, t]) => (
+          <div className="flex gap-2 mb-4 overflow-x-auto" role="tablist" data-no-swipe="" style={ { WebkitOverflowScrolling: "touch" } }>
+            {[["todos", "Todos", conteoMsj.total], ["comision", "💰 Comisión", null], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].map(([k, t, n]) => (
               <button
                 key={k}
                 type="button"
                 role="tab"
                 aria-selected={seccionMensajes === k}
                 onClick={() => setSeccionMensajes(k)}
-                className="flex-1 text-sm font-extrabold rounded-lg py-2.5"
-                style={ seccionMensajes === k ? { background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } : { background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }
+                className="shrink-0 text-sm font-extrabold rounded-full px-3.5"
+                style={ { minHeight: 40, whiteSpace: "nowrap", ...(seccionMensajes === k ? { background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } : { background: "#fff", color: "#001E62", border: "1.5px solid #001E62" }) } }
               >
-                {t}
+                {t}{n !== null && n > 0 ? ` ${n}` : ""}
               </button>
             ))}
           </div>
-          {seccionMensajes === "ventas" && (
+          {pospuestosActivos.length > 0 && (
+            <details className="mb-4 rounded-lg bg-white" style={ { border: "1px solid #DFE5EF" } }>
+              <summary className="px-4 py-3 text-sm font-bold cursor-pointer" style={ { color: "#5A6680", minHeight: 44 } }>⏰ Pospuestos ({pospuestosActivos.length})</summary>
+              <div className="px-4 pb-3">
+                {pospuestosActivos.map((k) => (
+                  <div key={k} className="flex items-center gap-2 py-2" style={ { borderTop: "1px solid #EEF1F7" } }>
+                    <span className="flex-1 min-w-0 text-sm"><b>{pospuestos[k].nombre || "Mensaje"}</b> · vuelve el {fmtFechaDia(pospuestos[k].hasta)}</span>
+                    <button type="button" onClick={() => quitarPosponer(k)} className="text-sm font-bold underline" style={ { color: "#0B4A99", minHeight: 40 } }>Deshacer</button>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+          <div style={ { display: "flex", flexDirection: "column" } }>
+          {(seccionMensajes === "ventas" || seccionMensajes === "todos") && (
+            <div style={ { order: 2 } }>
             <PanelVentasHoy
               clientes={clientesActivos}
               convergencias={convergencias}
@@ -4378,9 +4415,13 @@ function App() {
                 navegarA("clientes");
               } }
             />
+            </div>
           )}
-          {seccionMensajes === "cobros" && (
-          <React.Fragment>
+          {seccionMensajes === "instalacion" && (
+            <BloqueInstalacionHoy lista={instalacionesVis} onEnviar={enviarInfoInstalacion} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} />
+          )}
+          {["todos", "comision", "cobros"].includes(seccionMensajes) && (
+          <div style={ { order: 1 } }>
           <Dashboard
             umbralProrrateo={umbralProrrateo}
             vista="cobros"
@@ -4406,9 +4447,14 @@ function App() {
               navegarA("detalle");
             } }
           />
+          {seccionMensajes === "todos" && (
+            <BloqueInstalacionHoy lista={instalacionesVis} onEnviar={enviarInfoInstalacion} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} />
+          )}
+          {["todos", "cobros"].includes(seccionMensajes) && (
           <AlertasTab
-            alertasHoy={alertasPorCliente}
-            alertasMovil={alertasMovilPendientes(convergencias)}
+            onPosponer={posponerMensaje}
+            alertasHoy={alertasCobroVis}
+            alertasMovil={alertasMovilVis}
             onMarcarMovil={marcarMovilEnviadoSeguro}
             onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
             proximos={recordatoriosProximos(clientesActivos, convergencias, 3)}
@@ -4431,8 +4477,10 @@ function App() {
             filtroTipo={filtroTipoAlertas}
             setFiltroTipo={setFiltroTipoAlertas}
           />
-          </React.Fragment>
           )}
+          </div>
+          )}
+          </div>
           </React.Fragment>
         )}
         {tab === "precierre" && (
@@ -5728,6 +5776,57 @@ function LineaAbonoPendiente({ clientes, conSeparador, onVer }) {
   );
 }
 
+// Mensajes → Instalación: clientes con instalación programada sin info enviada.
+function BloqueInstalacionHoy({ lista, onEnviar, onMarcar, onPosponer }) {
+  const [posAbierto, setPosAbierto] = useState(null);
+  const hoy = fechaLocalISO(new Date());
+  const ordenada = [...lista].sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
+  if (ordenada.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border p-6 text-center mb-4" style={ { borderColor: "#DFE5EF" } }>
+        <div className="text-base font-extrabold" style={ { color: "#15803D" } }>✓ Todos tienen su info de instalación</div>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4">
+      <h2 className="text-base font-extrabold mb-2" style={ { color: "#001E62" } }>🔧 Info de instalación por enviar ({ordenada.length})</h2>
+      {ordenada.map((c) => {
+        const f = c.instalacionProgramada;
+        const vencida = f < hoy;
+        const cuando = vencida ? "⚠ Ya venció" : f === hoy ? "📅 Se instala hoy" : f === addDays(hoy, 1) ? "📅 Se instala mañana" : "📅 " + fmtFechaDia(f);
+        return (
+          <div key={c.id} className="bg-white rounded-lg border mb-3 p-3" style={ { borderColor: "#DFE5EF", borderLeft: vencida ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
+            <div className="text-base font-semibold" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</div>
+            <div className="text-sm font-semibold mt-0.5" style={ { color: vencida || f === hoy ? "#9B1C1C" : "#9A4A06" } }>{cuando}</div>
+            <div className="flex items-stretch gap-1.5 mt-3">
+              <button type="button" onClick={() => onEnviar(c)} className="flex-1 text-[13px] font-bold px-2 rounded-md" style={ { background: "#1FA855", color: "#fff", minHeight: 46 } }>💬 WhatsApp</button>
+              <button
+                type="button"
+                onClick={() => { if (window.confirm("¿Confirmas que ya enviaste la info de instalación?")) onMarcar(c.id); } }
+                className="text-[13px] font-semibold px-3 rounded-md"
+                style={ { background: "#001E62", color: "#fff", minHeight: 46, whiteSpace: "nowrap" } }
+              >
+                ✓ Enviado
+              </button>
+            </div>
+            <div className="mt-2">
+              <button type="button" onClick={() => setPosAbierto((v) => (v === c.id ? null : c.id))} className="text-sm font-bold underline" style={ { color: "#5A6680", minHeight: 36 } }>⏰ Posponer</button>
+              {posAbierto === c.id && (
+                <div className="flex flex-wrap gap-2 mt-1">
+                  {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
+                    <button key={t} type="button" onClick={() => { onPosponer("inst-" + c.id, d, tituloEs(c.nombre || "")); setPosAbierto(null); } } className="text-sm font-bold rounded-full px-3" style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }>{t}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // Línea del Dashboard: clientes con instalación programada a los que aún no se les envió la info.
 function LineaInfoInstalacionPendiente({ clientes, conSeparador, onVer }) {
   const lista = clientes.filter(instalacionPorAvisar).sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
@@ -5926,8 +6025,8 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
 }
 
 // ---------- Ventas por WhatsApp: "Para escribir hoy" ----------
-const TOPE_DIARIO_VENTAS = 20;          // mensajes de venta por día (protege tu número de WhatsApp)
-const ESPERA_ENTRE_MENSAJES_S = 60;     // segundos entre un mensaje y el siguiente
+const TOPE_DIARIO_VENTAS = 100000;          // mensajes de venta por día (protege tu número de WhatsApp)
+const ESPERA_ENTRE_MENSAJES_S = 0;     // segundos entre un mensaje y el siguiente
 const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factura
 const DIAS_PARA_REFERIDOS = 30;       // días después del 1er mensaje a un contacto para pedirle referidos
 const SALTOS_PARA_DESCARTAR = 3;        // "Hoy no" seguidos antes de sacarlo de la lista
@@ -6530,10 +6629,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       )}
       <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
         <div className="text-base font-extrabold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</div>
-        <div className="text-xs font-semibold mt-1" style={ { color: "#5A6680" } }>Números nuevos hoy: {datos.hechosHoy} de {TOPE_DIARIO_VENTAS}</div>
-        <div className="mt-2 rounded-full overflow-hidden" style={ { height: 8, background: "#E3EDFA" } } role="progressbar" aria-valuenow={datos.hechosHoy} aria-valuemin={0} aria-valuemax={TOPE_DIARIO_VENTAS}>
-          <div style={ { width: pct + "%", height: "100%", background: "#001E62" } }></div>
-        </div>
+        <div className="text-xs font-semibold mt-1" style={ { color: "#5A6680" } }>Números nuevos hoy: {datos.hechosHoy}</div>
         <div className="flex flex-wrap gap-2 mt-3">
           {FILTROS_VENTAS.filter((f) => f.k === "todos" || cuenta[f.k] > 0).map((f) => {
             const sel = filtroEf === f.k;
@@ -6730,7 +6826,7 @@ function PanelVentasHoy({ clientes, convergencias, onAbrir, onDeshacer, onNoEscr
       )}
       {paraManana > 0 && (
         <div className="px-4 py-2.5 text-center text-xs font-bold border-t" style={ { color: "#0B4A99", borderColor: "#EEF1F6" } }>
-          Quedan {paraManana} nuevos para mañana · tope diario {TOPE_DIARIO_VENTAS} (solo números nuevos)
+          Quedan {paraManana} nuevos para mañana
         </div>
       )}
       <div className="px-4 py-3 border-t" style={ { background: "#F3F6FB", borderColor: "#EEF1F6" } }>
@@ -9545,7 +9641,8 @@ function HistorialComisionChart({ data, periodoActivo, periodoActual, onSelect, 
   );
 }
 
-function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer }) {
+  const [posAbierto, setPosAbierto] = useState(null);
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
   const TIPO_POR_HITO = { m1: "toque1", m2: "d1", m3: "t3" };
@@ -9941,6 +10038,31 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                           >
                             $ Pagó
                           </div>
+                        </div>
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => setPosAbierto((v) => (v === cliente.id ? null : cliente.id))}
+                            className="text-sm font-bold underline"
+                            style={ { color: "#5A6680", minHeight: 36 } }
+                          >
+                            ⏰ Posponer
+                          </button>
+                          {posAbierto === cliente.id && (
+                            <div className="flex flex-wrap gap-2 mt-1">
+                              {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  onClick={() => { onPosponer("cobro-" + cliente.id + "-" + milestone.key, d, cliente.nombre); setPosAbierto(null); } }
+                                  className="text-sm font-bold rounded-full px-3"
+                                  style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }
+                                >
+                                  {t}
+                                </button>
+                              ))}
+                            </div>
+                          )}
                         </div>
 
                         {extras.length > 0 && (
