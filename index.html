@@ -2136,6 +2136,7 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
   // Hogar: clientes ya instalados dentro del rango.
   const hogar = useMemo(() => {
     return clientes
+      .filter((c) => !c.cancelado && !c.penalizado)
       .filter((c) => enRangoFechas(c.fechaInstalacion, desde, hasta))
       .sort((a, b) => a.fechaInstalacion.localeCompare(b.fechaInstalacion))
       .map((c) => {
@@ -2159,7 +2160,7 @@ function ExportarModal({ clientes, clientesMovil, onCerrar }) {
   // Pendientes de instalación (Hogar sin fecha de instalación): no dependen del rango de fechas.
   const pendientes = useMemo(() => {
     return clientes
-      .filter((c) => !c.fechaInstalacion)
+      .filter((c) => !c.fechaInstalacion && !c.cancelado && !c.penalizado)
       .sort((a, b) => String(a.creadoEn || "").localeCompare(String(b.creadoEn || "")))
       .map((c) => {
         const monto = Number(c.montoMensual);
@@ -10901,6 +10902,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   );
   const nPago1 = baseChipsWeb.filter((c) => !clienteExcluido(c) && pasaFiltroFactura(c, "pago1")).length;
   const nNoPago1 = baseChipsWeb.filter((c) => !clienteExcluido(c) && pasaFiltroFactura(c, "nopago1")).length;
+  const planesOpc = (() => {
+    const base = baseChipsWeb.filter((c) => !clienteExcluido(c));
+    const out = [];
+    TIPOS_PLAN.forEach((t) => { const n = base.filter((c) => c.planTipo === t).length; if (n > 0) out.push([t, (t === "SINGLE" ? "Single" : "Doble") + " (todos)", n]); });
+    const m = {};
+    base.forEach((c) => { const k = clavePlan(c); if (k) m[k] = (m[k] || 0) + 1; });
+    Object.keys(m).sort().forEach((k) => out.push([k, formatoPlan(k), m[k]]));
+    return out;
+  })();
   const esFact = filtroEstado === "pago1" || filtroEstado === "nopago1";
   const esPend = chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo";
   const alternarEstado = (k) => { setChipGrupo("todos"); setFiltroEstado(filtroEstado === k ? "" : k); };
@@ -10942,6 +10952,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               {(conteoG.porInstalar > 0 || chipGrupo === "porInstalar") && chipM(chipGrupo === "porInstalar", "Por instalar " + conteoG.porInstalar, () => setChipGrupo(chipGrupo === "porInstalar" ? "todos" : "porInstalar"), true)}
               {(conteoG.instalados > 0 || chipGrupo === "instalados") && chipM(chipGrupo === "instalados", "Instalados " + conteoG.instalados, () => setChipGrupo(chipGrupo === "instalados" ? "todos" : "instalados"), true)}
               {(nPago1 > 0 || nNoPago1 > 0 || esFact) && chipM(esFact, esFact ? (filtroEstado === "pago1" ? "💵 ✓ Pagó" : "💵 ⏱ Aún no la paga") : "💵 1ra factura ▾", () => { if (esFact) { setFiltroEstado(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "fact" ? null : "fact"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
+              {(planesOpc.length > 0 || filtroPlan) && chipM(!!filtroPlan, filtroPlan ? "📶 " + (TIPOS_PLAN.includes(filtroPlan) ? (filtroPlan === "SINGLE" ? "Single" : "Doble") : formatoPlan(filtroPlan)) : "📶 Plan ▾", () => { if (filtroPlan) { setFiltroPlan(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "plan" ? null : "plan"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
               {(listaAbono.length + listaInfo.length > 0 || esPend) && chipM(esPend, esPend ? (chipGrupo === "faltaAbono" ? "⚠ Falta abono" : "📩 Falta info") : "📩 Pendientes " + (listaAbono.length + listaInfo.length) + " ▾", () => { if (esPend) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "pend" ? null : "pend"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
               {conteoG.cancelados > 0 && chipM(chipGrupo === "cancelados", "Cancelados " + conteoG.cancelados, () => setChipGrupo(chipGrupo === "cancelados" ? "todos" : "cancelados"), true)}
             </React.Fragment>
@@ -10952,6 +10963,13 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             {nPago1 > 0 && <button type="button" onClick={() => { alternarEstado("pago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>✓ Pagó su 1ra factura · {nPago1}</button>}
             {nNoPago1 > 0 && <button type="button" onClick={() => { alternarEstado("nopago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⏱ Aún no la paga · {nNoPago1}</button>}
+          </div>
+        )}
+        {grupoAbierto === "plan" && (
+          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+            {planesOpc.map(([k, t, n]) => (
+              <button key={k} type="button" onClick={() => { setFiltroPlan(k); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>{t} · {n}</button>
+            ))}
           </div>
         )}
         {grupoAbierto === "pend" && (
@@ -10994,9 +11012,6 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         )}
         {masPanelAbierto && (
           <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
-            {subVista === "clientes" && (
-              <button type="button" onClick={() => { setMasPanelAbierto(false); setFiltrosAbiertos(true); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>🔍 Más filtros{filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""}</button>
-            )}
             <button type="button" onClick={() => { setMasPanelAbierto(false); setExportarAbierto(true); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⬇️ Exportar suscriptores</button>
             <button type="button" onClick={() => { setMasPanelAbierto(false); setPapeleraAbierta(true); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>🗑️ Papelera{eliminados.length > 0 ? " (" + eliminados.length + ")" : ""}</button>
             {filtrosActivos > 0 && (
