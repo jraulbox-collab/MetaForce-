@@ -10836,6 +10836,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   const [mesPanelAbierto, setMesPanelAbierto] = useState(false);
   const [masPanelAbierto, setMasPanelAbierto] = useState(false);
   const [grupoAbierto, setGrupoAbierto] = useState(null);
+  const [chipMovilTop, setChipMovilTop] = useState("todos");
   const [menuTarjeta, setMenuTarjeta] = useState(null);
   // Chips del celular (Todos / Falta abono / Por instalar / Instalados / Cancelados): se calculan
   // aquí para poder ponerlos en la misma fila que el botón de Filtros.
@@ -10927,6 +10928,14 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         </div>
         <div className="flex items-center gap-2 mt-2 overflow-x-auto" style={ { scrollbarWidth: "none", paddingBottom: 2 } }>
           {chipM(false, "📅 " + (rangoActivo ? cortoF(fechaDesde) + (fechaHasta && fechaHasta !== fechaDesde ? " – " + cortoF(fechaHasta) : "") : labelMesM) + (mesPanelAbierto ? " ▴" : " ▾"), () => { setMesPanelAbierto((v) => !v); setMasPanelAbierto(false); setGrupoAbierto(null); }, false, { borderColor: "#0072CE", color: "#0072CE", background: rangoActivo ? "#E3EDFA" : "#fff" })}
+          {subVista === "movil" && (() => {
+            const delMesM = (clientesMovil || []).filter((c) => periodoComision(fechaActivacionMovil(c)) === mesActivoEfectivo);
+            const nM = (k) => delMesM.filter((c) => pasaChipMovil(c, k)).length;
+            const lista = [["todos", "Todos", false], ["sinPagar", "⚠ Sin pagar", true], ["pagadas", "✓ Pagadas", true], ["matchPendiente", "⏳ Match", true], ["portabilidad", "Portabilidad", true], ["noCuenta", "⛔ No cuenta", true]];
+            return lista.filter(([k, , oc]) => !oc || nM(k) > 0 || chipMovilTop === k).map(([k, t, oc]) => (
+              <React.Fragment key={k}>{chipM(chipMovilTop === k, t + " " + nM(k), () => setChipMovilTop(oc && chipMovilTop === k ? "todos" : k), oc)}</React.Fragment>
+            ));
+          })()}
           {subVista === "clientes" && visiblesFinal.length > 0 && (
             <React.Fragment>
               {chipM(todoLimpio, "Todos " + totalCuentan, () => limpiarTodoM(), false)}
@@ -11104,6 +11113,8 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           onVerDetalleHogar={onVerDetalle}
           chipInicial={chipMovilSalto}
           onChipAplicado={() => setChipMovilSalto(null)}
+          chipExt={chipMovilTop}
+          setChipExt={setChipMovilTop}
         />
       ) : (
         <>
@@ -12557,8 +12568,10 @@ function pasaChipMovil(c, chip) {
   return true;
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar, chipInicial, onChipAplicado }) {
-  const [chipMovil, setChipMovil] = useState(chipInicial || "todos");
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar, chipInicial, onChipAplicado, chipExt, setChipExt }) {
+  const [chipMovilLocal, setChipMovilLocal] = useState(chipInicial || "todos");
+  const chipMovil = chipExt !== undefined ? chipExt : chipMovilLocal;
+  const setChipMovil = setChipExt || setChipMovilLocal;
   useEffect(() => {
     if (chipInicial) { setChipMovil(chipInicial); if (onChipAplicado) onChipAplicado(); }
   }, [chipInicial]);
@@ -13130,7 +13143,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
         value={busquedaMovil}
         onChange={(e) => setBusquedaMovil(e.target.value)}
         placeholder="Buscar en Hogar y Móvil: nombre, teléfono…"
-        className="w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 bg-white"
+        className="hidden md:block w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 bg-white"
         style={ { borderColor: "#DFE5EF" } }
       />
       {busquedaMovil.trim() && (
@@ -13158,7 +13171,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           ["noCuenta", "⛔ No cuenta", n("noCuenta"), true],
         ];
         return (
-          <div className="flex flex-wrap gap-1.5 mb-3">
+          <div className="hidden md:flex flex-wrap gap-1.5 mb-3">
             {chips.filter(([k, , cant, ocultable]) => !ocultable || cant > 0 || chipMovil === k).map(([k, texto, cant]) => (
               <button
                 key={k}
@@ -13198,12 +13211,12 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 className="w-full px-4 py-3 text-left cursor-default"
               >
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
+                  <span className="hidden md:inline text-sm font-medium">{m.label}{i === 0 ? " (actual)" : ""}</span>
                 </div>
                 <div className="flex items-center justify-between gap-x-3 gap-y-1.5 flex-wrap mt-1">
                   <span className="text-sm font-mono" style={ { color: "#001E62" } }>
-                    {delMes.length} Cliente{delMes.length !== 1 ? "s" : ""} Móvil
-                    {!q && !filtrando && metaMovilMes ? ` · ${delMes.length} de ${metaMovilMes}` : ""}
+                    {delMes.length} móvil{delMes.length !== 1 ? "es" : ""}
+                    {!q && !filtrando && metaMovilMes ? ` · meta ${metaMovilMes}${delMes.length >= metaMovilMes ? " ✓" : ""}` : ""}
                   </span>
                   {resumenMes && (resumenMes.bonoConfirmado > 0 || resumenMes.bonoPendiente > 0) && (
                     <span className="text-xs font-medium px-2 py-0.5 rounded-full" style={ { background: "#EAF0FB", color: "#001E62" } }>
