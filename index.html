@@ -4298,6 +4298,48 @@ function App() {
         )}
         {tab === "alertas" && (
           <React.Fragment>
+          {(() => {
+            const nCobros = stats.alHoy;
+            const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
+            const itemsV = [];
+            dv.filas.forEach((f) => f.numeros.forEach((n) => itemsV.push(n)));
+            const cupoV = Math.max(0, TOPE_DIARIO_VENTAS - dv.hechosHoy);
+            const nVentas = itemsV.filter((n) => n.estado === "pendiente" && !n.frio).length + Math.min(itemsV.filter((n) => n.estado === "pendiente" && n.frio).length, cupoV);
+            const nInstal = clientesActivos.filter((c) => instalacionPorAvisar(c)).length;
+            const total = nCobros + nVentas + nInstal;
+            const filas = [
+              { ico: "💵", t: "Cobros", n: nCobros, sub: "recordatorios de pago", ir: () => { setSeccionMensajes("cobros"); window.scrollTo({ top: 0 }); } },
+              { ico: "💬", t: "Ventas", n: nVentas, sub: "mensajes para vender", ir: () => { setSeccionMensajes("ventas"); window.scrollTo({ top: 0 }); } },
+              { ico: "🔧", t: "Instalación", n: nInstal, sub: "info de instalación sin enviar", ir: () => { setSaltarAMes({ chipGrupo: "faltaInfo", todosLosMeses: true, token: Date.now() }); navegarA("clientes"); } },
+            ];
+            return (
+              <div className="bg-white rounded-xl border mb-4 overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
+                <div className="px-4 pt-3 pb-2">
+                  <div className="text-xs font-semibold" style={ { color: "#5A6680" } }>📅 Hoy</div>
+                  <div className="font-extrabold" style={ { color: "#001E62", fontSize: 26, lineHeight: 1.15 } }>
+                    {total > 0 ? <React.Fragment>{total} <span style={ { fontSize: 14 } }>{total === 1 ? "mensaje por enviar" : "mensajes por enviar"}</span></React.Fragment> : "✓ Todo al día"}
+                  </div>
+                </div>
+                {filas.map((f) => (
+                  <button
+                    key={f.t}
+                    type="button"
+                    onClick={f.ir}
+                    className="w-full flex items-center gap-3 px-4 text-left"
+                    style={ { minHeight: 52, borderTop: "1px solid #EEF1F7", background: "#fff" } }
+                  >
+                    <span style={ { fontSize: 20 } } aria-hidden="true">{f.ico}</span>
+                    <span className="flex-1 min-w-0">
+                      <span className="block text-sm font-bold" style={ { color: "#001E62" } }>{f.t}</span>
+                      <span className="block text-xs" style={ { color: "#5A6680" } }>{f.n > 0 ? f.sub : "✓ nada pendiente"}</span>
+                    </span>
+                    <span className="text-lg font-extrabold" style={ { color: f.n > 0 ? "#B45309" : "#15803D" } }>{f.n > 0 ? f.n : "✓"}</span>
+                    <span aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
+                  </button>
+                ))}
+              </div>
+            );
+          })()}
           <div className="flex gap-2 mb-4" role="tablist">
             {[["cobros", "💵 Cobros"], ["ventas", "💬 Ventas"]].map(([k, t]) => (
               <button
