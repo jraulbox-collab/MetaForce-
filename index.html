@@ -4677,8 +4677,13 @@ function textoConsejoVenta(c) {
   return `💡 A ${o.n} ${o.tipo} del siguiente escalón: +${fmtMiles(o.g, 0)}`;
 }
 
-function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
-  const [filas, setFilas] = useState([]);
+// Simulador de comisión en pantalla completa. Suma clientes Hogar y Móvil que todavía no
+// tienes y muestra al instante cuánto cambiaría tu comisión. No guarda nada: parte siempre de
+// los números reales de hoy. "Más opciones" trae: cobrar una cantidad, cierre a tu ritmo,
+// escalera, cálculo, portabilidad y precios, y comparar dos ideas (A y B).
+function SimuladorComisionModal({ periodoKey, base, defecto, ritmo, onClose }) {
+  const [st, setSt] = useState(() => ({ slot: "A", A: { h: 0, m: 0, p: 0 }, B: { h: 0, m: 0, p: 0 }, ph: defecto.hogar, pm: defecto.movil, target: null, mas: false, sec: null }));
+  const g = (patch) => setSt((prev) => ({ ...prev, ...patch }));
 
   // Atrás del navegador/gesto del iPhone cierra el simulador y deja el Dashboard como estaba.
   useEffect(() => {
@@ -4692,173 +4697,307 @@ function SimuladorComisionModal({ periodoKey, base, defecto, onClose }) {
     try { window.history.back(); } catch (e) { onClose(); }
   }
 
-  function agregar(tipo) {
-    setFilas((prev) => [...prev, { id: uid(), tipo, cantidad: 1, monto: String(tipo === "hogar" ? defecto.hogar : defecto.movil), portabilidad: false }]);
+  const calc = (s) => calcularComisionNueva({
+    clientesHogar: base.clientesHogar + s.h,
+    metaClientesHogar: base.metaHogar,
+    clientesMovil: base.clientesMovil + s.m,
+    metaClientesMovil: base.metaMovil,
+    ingresosDelPeriodo: base.ingresos + s.h * st.ph + s.m * st.pm,
+    metaIngresos: base.metaIngresos,
+    cantidadBonoMovil: base.bonos + s.p,
+    cantidadBonoPendiente: 0,
+  });
+  const slot = st.slot;
+  const s = st[slot];
+  const cero = { h: 0, m: 0, p: 0 };
+  const ahora = calc(cero);
+  const sim = calc(s);
+  const dif = sim.total - ahora.total;
+  const mons = (n) => (n < 0 ? "−" : "+") + fmtMiles(Math.abs(n), 0);
+
+  function cambiar(campo, d) {
+    const nuevo = { ...s, [campo]: Math.max(0, s[campo] + d) };
+    if (nuevo.p > nuevo.m) nuevo.p = nuevo.m;
+    g({ [slot]: nuevo });
   }
-  function cambiar(id, campo, valor) {
-    setFilas((prev) => prev.map((f) => (f.id === id ? { ...f, [campo]: valor } : f)));
-  }
-  function quitar(id) {
-    setFilas((prev) => prev.filter((f) => f.id !== id));
+  const hastaEscalon = (hogar) => {
+    for (let n = 1; n <= 60; n++) {
+      const x = calc(hogar ? { ...s, h: s.h + n } : { ...s, m: s.m + n });
+      if (x.montoBase > sim.montoBase) return { n, gana: x.total - sim.total };
+    }
+    return null;
+  };
+  const eH = hastaEscalon(true);
+  const eM = hastaEscalon(false);
+  const topeMonto = TABLA_POSICION_NUEVA[TABLA_POSICION_NUEVA.length - 1].monto;
+  const tope = sim.montoBase >= topeMonto;
+  let consejoLinea = "";
+  let atajo = null;
+  if (tope) {
+    consejoLinea = "Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.";
+  } else {
+    const cruzaH = eH && eH.n === 1;
+    const cruzaM = eM && eM.n === 1;
+    if (cruzaH || cruzaM) {
+      const hogar = cruzaH && (!cruzaM || eH.gana >= eM.gana);
+      consejoLinea = "1 " + (hogar ? "Hogar" : "Móvil") + " más y subes de escalón: " + mons(hogar ? eH.gana : eM.gana) + ".";
+    } else {
+      let o = null;
+      if (eH && (!eM || eH.n <= eM.n)) o = { n: eH.n, t: "Hogar", g: eH.gana };
+      else if (eM) o = { n: eM.n, t: "Móvil", g: eM.gana };
+      consejoLinea = o ? "Estás a " + o.n + " " + o.t + " del siguiente escalón: " + mons(o.g) + "." : "";
+    }
+    let opc = null;
+    if (eH && (!eM || eH.n < eM.n || (eH.n === eM.n && eH.gana >= eM.gana))) opc = { hogar: true, n: eH.n };
+    else if (eM) opc = { hogar: false, n: eM.n };
+    if (opc) atajo = { txt: "Sumar " + opc.n + (opc.hogar ? " Hogar" : " Móvil") + " y subir de escalón", ir: () => cambiar(opc.hogar ? "h" : "m", opc.n) };
   }
 
-  function calcular(lista) {
-    let hogar = base.clientesHogar;
-    let movil = base.clientesMovil;
-    let ingresos = base.ingresos;
-    let bonos = base.bonos;
-    lista.forEach((f) => {
-      const n = Math.max(0, Number(f.cantidad) || 0);
-      ingresos += n * (Number(f.monto) || 0);
-      if (f.tipo === "hogar") hogar += n;
-      else {
-        movil += n;
-        if (f.portabilidad) bonos += n;
+  const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", cell: "#E3EDFA", page: "#F3F6FB" };
+  const tarjeta = { background: "#fff", border: "1px solid " + C.bd, borderRadius: 16, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 };
+  const btnMenos = { width: 44, height: 44, borderRadius: 12, border: "2px solid " + C.bd, background: C.page, color: C.navy, fontSize: 24, fontWeight: 700, lineHeight: 1, padding: 0 };
+  const btnMas = { width: 48, height: 48, borderRadius: 12, border: 0, background: C.navy, color: "#fff", fontSize: 26, fontWeight: 700, lineHeight: 1, padding: 0 };
+  const btnChico = { width: 44, height: 44, borderRadius: 12, border: "2px solid " + C.bd, background: C.page, color: C.navy, fontSize: 20, fontWeight: 700, padding: 0 };
+  const icoCaja = { width: 40, height: 40, borderRadius: 12, background: C.cell, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.navy };
+  const num = { fontVariantNumeric: "tabular-nums" };
+
+  // ---- Secciones de "Más opciones" ----
+  const seccion = (key, titulo, contenido) => (
+    <div key={key} style={ { background: "#fff", border: "1px solid " + C.bd, borderRadius: 14, padding: "2px 14px" } }>
+      <button type="button" onClick={() => g({ sec: st.sec === key ? null : key })} aria-expanded={st.sec === key} style={ { width: "100%", minHeight: 48, background: "transparent", border: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, color: C.navy, fontSize: 14, fontWeight: 700, padding: 0, textAlign: "left" } }>
+        <span>{titulo}</span><span style={ { fontSize: 18, color: C.mu } }>{st.sec === key ? "−" : "+"}</span>
+      </button>
+      {st.sec === key && contenido}
+    </div>
+  );
+  const ajusteFila = (titulo, sub, valor, onMenos, onMas, etMenos, etMas) => (
+    <div style={ { display: "flex", alignItems: "center", gap: 8 } }>
+      <div style={ { flex: 1, fontSize: 13, fontWeight: 600, lineHeight: 1.3 } }>{titulo}{sub && <div style={ { color: C.mu, fontWeight: 500, fontSize: 11 } }>{sub}</div>}</div>
+      <button type="button" onClick={onMenos} aria-label={etMenos} style={btnChico}>−</button>
+      <div style={ { minWidth: 40, textAlign: "center", fontWeight: 800, ...num } }>{valor}</div>
+      <button type="button" onClick={onMas} aria-label={etMas} style={btnChico}>+</button>
+    </div>
+  );
+
+  // Meta: combinaciones más cortas de Hogar y Móvil para llegar a una cantidad.
+  const T = st.target != null ? st.target : Math.ceil((ahora.total + 150) / 50) * 50;
+  let combos = [];
+  let objTitulo;
+  let objSub;
+  if (st.sec === "meta") {
+    if (T <= ahora.total + 0.5) {
+      objTitulo = "¡Ya lo logras!";
+      objSub = "Hoy llevas " + fmtMiles(ahora.total, 0) + ". Sube la cantidad para ver qué falta.";
+    } else {
+      const lista = [];
+      for (let h = 0; h <= 12; h++) {
+        for (let m = 0; m <= 12; m++) {
+          if (calc({ h, m, p: 0 }).total >= T) { lista.push({ h, m }); break; }
+        }
       }
-    });
-    return calcularComisionNueva({
-      clientesHogar: hogar,
-      metaClientesHogar: base.metaHogar,
-      clientesMovil: movil,
-      metaClientesMovil: base.metaMovil,
-      ingresosDelPeriodo: ingresos,
-      metaIngresos: base.metaIngresos,
-      cantidadBonoMovil: bonos,
-      cantidadBonoPendiente: 0,
-    });
+      const filtradas = lista.filter((a) => !lista.some((b) => b !== a && b.h <= a.h && b.m <= a.m && (b.h < a.h || b.m < a.m)));
+      filtradas.sort((a, b) => (a.h + a.m) - (b.h + b.m));
+      combos = filtradas.slice(0, 3).map((c) => ({ ...c, total: calc({ h: c.h, m: c.m, p: 0 }).total }));
+      objTitulo = combos.length ? "Para llegar a " + fmtMiles(T, 0) + " puedes vender:" : "Esa cantidad está muy lejos";
+      objSub = combos.length ? "Las combinaciones más cortas, con tus planes promedio." : "Baja la cantidad un poco.";
+    }
   }
-  const ahora = useMemo(() => calcular([]), []);
-  // El consejo se recalcula con lo que ya simulaste: cada venta que agregas cambia el punto de partida.
-  const consejo = useMemo(() => {
-    let h = base.clientesHogar, m = base.clientesMovil, ing = base.ingresos, bo = base.bonos;
-    filas.forEach((f) => {
-      const n = Math.max(0, Number(f.cantidad) || 0);
-      ing += n * (Number(f.monto) || 0);
-      if (f.tipo === "hogar") h += n;
-      else { m += n; if (f.portabilidad) bo += n; }
-    });
-    return consejoVenta({ ...base, clientesHogar: h, clientesMovil: m, ingresos: ing, bonos: bo }, defecto);
-  }, [filas]);
-  const con = calcular(filas);
-  const dif = con.total - ahora.total;
-  const cruzaTramo = con.montoBase !== ahora.montoBase;
-  const activaAcel = ahora.ajusteIngreso !== "acelerador" && con.ajusteIngreso === "acelerador";
-  const pierdeAcel = ahora.ajusteIngreso === "acelerador" && con.ajusteIngreso !== "acelerador";
+  // Ritmo: cómo cierras el mes si sigues al paso de hoy.
+  const transc = ritmo && ritmo.transcurridos > 0 ? ritmo.transcurridos : 0;
+  const rem = ritmo ? Math.max(0, ritmo.total - ritmo.transcurridos) : 0;
+  const addH = transc ? Math.round((base.clientesHogar / transc) * rem) : 0;
+  const addM = transc ? Math.round((base.clientesMovil / transc) * rem) : 0;
+  const proy = calc({ h: addH, m: addM, p: 0 });
+  const ritDif = proy.total - ahora.total;
+  // Escalera
+  const posEsc = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
+  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
+  const pcA = ahora.pctClientesPonderado;
+  const pcS = sim.pctClientesPonderado;
+  const ajTxt = sim.ajusteIngreso === "acelerador" ? " (acelerador +10 pts)" : sim.ajusteIngreso === "desacelerador" ? " (desacelerador)" : "";
+  const filaCalc = (k, v) => (
+    <div key={k} style={ { display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: "1px solid #EEF1F6", fontSize: 13 } }>
+      <span style={ { color: "#374151", minWidth: 0 } }>{k}</span><b style={ { textAlign: "right", flexShrink: 0, ...num } }>{v}</b>
+    </div>
+  );
+  const dA = calc(st.A).total - ahora.total;
+  const dB = calc(st.B).total - ahora.total;
+  const slotBtn = (id, dd) => (
+    <button key={id} type="button" onClick={() => g({ slot: id })} aria-pressed={slot === id} style={ { flex: 1, minHeight: 44, padding: "0 10px", borderRadius: 12, fontSize: 13, fontWeight: 800, border: "2px solid " + C.navy, background: slot === id ? C.navy : "#fff", color: slot === id ? "#fff" : C.navy } }>
+      Idea {id} · {mons(dd)}
+    </button>
+  );
 
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-50 flex items-end justify-center font-sans" style={ { background: "rgba(0,0,0,0.45)", color: "#001E62" } } onClick={cerrar}>
-      <div
-        className="bg-white w-full max-w-md p-4 overflow-y-auto"
-        style={ { color: "#001E62", borderRadius: "22px 22px 0 0", maxHeight: "92vh", paddingBottom: "calc(20px + env(safe-area-inset-bottom))" } }
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-2">
+    <div className="fixed inset-0 z-50 flex flex-col font-sans" style={ { background: C.page, color: C.navy } }>
+      <div style={ { flex: "none", background: "#fff", padding: "calc(12px + env(safe-area-inset-top)) 16px 10px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid " + C.bd } }>
+        <button type="button" onClick={cerrar} aria-label="Volver al Dashboard" style={ { width: 44, height: 44, border: 0, background: C.page, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy } }>
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
+        </button>
+        <div style={ { flex: 1, minWidth: 0 } }>
+          <div style={ { fontSize: 17, fontWeight: 800, lineHeight: 1.2 } }>Simulador de comisión</div>
+          <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>{mesLabel(periodoKey)} · cobras en {mesLabel(sumarMesClave(periodoKey, 2)).split(" ")[0].toLowerCase()}</div>
+        </div>
+      </div>
+
+      <div style={ { flex: "none", background: C.navy, color: "#fff", padding: "12px 16px" } }>
+        <div style={ { display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 8 } }>
           <div>
-            <h3 className="font-bold text-lg" style={ { color: "#001E62" } }>Simulador de comisión</h3>
-            <p className="text-xs mb-3" style={ { color: "#5A6680" } }>Suma clientes que todavía no tienes y mira cuánto subiría tu comisión de {mesLabel(periodoKey)}.</p>
+            <div style={ { fontSize: 11, fontWeight: 600, opacity: 0.8 } }>Ahora</div>
+            <div style={ { fontSize: 22, fontWeight: 700, lineHeight: 1.1, ...num } }>{fmtMiles(ahora.total, 0)}</div>
           </div>
-          <button type="button" onClick={cerrar} aria-label="Cerrar" className="shrink-0 text-sm" style={ { color: "#5A6680", minWidth: 44, minHeight: 44 } }>✕</button>
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { marginBottom: 4, opacity: 0.8 } }><path d="M5 12h14M13 6l6 6-6 6" /></svg>
+          <div style={ { textAlign: "right" } }>
+            <div style={ { fontSize: 11, fontWeight: 600, opacity: 0.8 } }>Con tu simulación</div>
+            <div style={ { fontSize: 30, fontWeight: 800, lineHeight: 1.05, ...num } }>{fmtMiles(sim.total, 0)}</div>
+          </div>
+        </div>
+        <div style={ { marginTop: 8, display: "inline-flex", alignItems: "center", gap: 6, background: "#fff", color: C.navy, borderRadius: 999, padding: "5px 12px", fontSize: 13, fontWeight: 800 } }>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={dif > 0.5 ? "M12 19V5M5 12l7-7 7 7" : dif < -0.5 ? "M12 5v14M5 12l7 7 7-7" : "M5 12h14"} /></svg>
+          {Math.abs(dif) < 0.5 ? "Sin cambio todavía" : (dif > 0 ? "Subirías " : "Bajarías ") + fmtMiles(Math.abs(dif), 0)}
+        </div>
+      </div>
+
+      <div style={ { flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 12px calc(28px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10 } }>
+        <div style={tarjeta}>
+          <div style={icoCaja}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" /></svg></div>
+          <div style={ { flex: 1, minWidth: 0 } }>
+            <div style={ { fontSize: 15, fontWeight: 800 } }>Hogar</div>
+            <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Llevas {base.clientesHogar} de {base.metaHogar}{s.h ? " → " + (base.clientesHogar + s.h) + " (" + Math.round(sim.pctHogar) + "%)" : " (" + Math.round(ahora.pctHogar) + "%)"}</div>
+          </div>
+          <div style={ { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 } }>
+            <button type="button" onClick={() => cambiar("h", -1)} aria-label="Quitar un Hogar" style={btnMenos}>−</button>
+            <div style={ { minWidth: 28, textAlign: "center", fontSize: 24, fontWeight: 800 } }>{s.h}</div>
+            <button type="button" onClick={() => cambiar("h", 1)} aria-label="Agregar un Hogar" style={btnMas}>+</button>
+          </div>
         </div>
 
-        {consejo && (
-          <div className="rounded-lg border p-3 mb-3" style={ { borderColor: "#DFE5EF" } }>
-            <div className="text-sm font-bold mb-1.5">{filas.length ? "Con lo que simulas, ¿qué sigue?" : "¿Qué me conviene vender?"}</div>
-            {consejo.tope ? (
-              <div className="text-sm" style={ { lineHeight: 1.4 } }>Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.</div>
-            ) : (
-              <div className="text-sm">
-                <div className="flex items-baseline justify-between py-0.5">
-                  <span>🏠 Siguiente Hogar{consejo.cruzaH ? " · sube de escalón" : ""}</span>
-                  <span className="font-bold tabular-nums">+{fmtMiles(consejo.gH, 0)}{consejo.mejor === "hogar" ? "  ← mejor" : ""}</span>
-                </div>
-                <div className="flex items-baseline justify-between py-0.5">
-                  <span>📱 Siguiente Móvil{consejo.cruzaM ? " · sube de escalón" : ""}</span>
-                  <span className="font-bold tabular-nums">+{fmtMiles(consejo.gM, 0)}{consejo.mejor === "movil" ? "  ← mejor" : ""}</span>
-                </div>
-              </div>
+        <div style={tarjeta}>
+          <div style={icoCaja}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /></svg></div>
+          <div style={ { flex: 1, minWidth: 0 } }>
+            <div style={ { fontSize: 15, fontWeight: 800 } }>Móvil</div>
+            <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Llevas {base.clientesMovil} de {base.metaMovil}{s.m ? " → " + (base.clientesMovil + s.m) + " (" + Math.round(sim.pctMovil) + "%)" : " (" + Math.round(ahora.pctMovil) + "%)"}</div>
+          </div>
+          <div style={ { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 } }>
+            <button type="button" onClick={() => cambiar("m", -1)} aria-label="Quitar un Móvil" style={btnMenos}>−</button>
+            <div style={ { minWidth: 28, textAlign: "center", fontSize: 24, fontWeight: 800 } }>{s.m}</div>
+            <button type="button" onClick={() => cambiar("m", 1)} aria-label="Agregar un Móvil" style={btnMas}>+</button>
+          </div>
+        </div>
+
+        {consejoLinea && (
+          <div style={ { background: C.cell, border: "1px solid #C9DBF3", borderRadius: 16, padding: 14 } }>
+            <div style={ { display: "flex", alignItems: "center", gap: 8 } }>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { flexShrink: 0 } }><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" /></svg>
+              <div style={ { fontSize: 12, fontWeight: 700, color: "#374151" } }>{s.h || s.m ? "Con lo que simulas, lo que sigue" : "Lo que más te conviene vender"}</div>
+            </div>
+            <div style={ { marginTop: 6, fontSize: 16, fontWeight: 800, lineHeight: 1.35 } }>{consejoLinea}</div>
+            {atajo && (
+              <button type="button" onClick={atajo.ir} style={ { marginTop: 12, minHeight: 48, width: "100%", borderRadius: 12, border: 0, background: C.navy, color: "#fff", fontSize: 14, fontWeight: 800 } }>{atajo.txt}</button>
             )}
-            {consejo.falta && (
-              <div className="text-sm mt-1.5" style={ { lineHeight: 1.4 } }>
-                📈 Para subir al tramo de {consejo.falta.min}% ({fmtMiles(consejo.falta.monto, 0)} de base) te faltan {consejo.falta.movil != null ? `${consejo.falta.movil} Móvil (+${fmtMiles(consejo.falta.ganaMovil, 0)})` : ""}{consejo.falta.movil != null && consejo.falta.hogar != null ? " o " : ""}{consejo.falta.hogar != null ? `${consejo.falta.hogar} Hogar (+${fmtMiles(consejo.falta.ganaHogar, 0)})` : ""}.
-              </div>
-            )}
-            <div className="text-[11px] mt-1.5" style={ { color: "#5A6680" } }>Calculado con plan de {fmtMiles(defecto.hogar, 0)} en Hogar y {fmtMiles(defecto.movil, 0)} en Móvil (promedio de este período), sin bono de portabilidad{filas.length ? ", ya contando lo que simulaste" : ""}.</div>
           </div>
         )}
 
-        {filas.length === 0 && <p className="text-sm mb-3" style={ { color: "#5A6680" } }>Agrega un cliente Hogar o Móvil para empezar.</p>}
-        {filas.map((f) => (
-          <div key={f.id} className="rounded-lg border mb-2.5 p-3" style={ { borderColor: "#DFE5EF" } }>
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold px-2.5 py-1 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>{f.tipo === "hogar" ? "🏠 Hogar" : "📱 Móvil"}</span>
-              <button type="button" onClick={() => quitar(f.id)} aria-label="Quitar" style={ { color: "#B45309", fontSize: 18, minWidth: 44, minHeight: 44 } }>✕</button>
-            </div>
-            <div className="flex items-end gap-3 flex-wrap">
-              <div>
-                <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>Cantidad</div>
-                <div className="flex items-center rounded-md overflow-hidden" style={ { border: "2px solid #DFE5EF" } }>
-                  <button type="button" onClick={() => cambiar(f.id, "cantidad", Math.max(1, (Number(f.cantidad) || 1) - 1))} style={ { width: 44, height: 44, background: "#F3F6FB", color: "#001E62", fontSize: 20, fontWeight: 700 } }>−</button>
-                  <span className="text-center font-bold" style={ { minWidth: 34 } }>{f.cantidad}</span>
-                  <button type="button" onClick={() => cambiar(f.id, "cantidad", (Number(f.cantidad) || 0) + 1)} style={ { width: 44, height: 44, background: "#F3F6FB", color: "#001E62", fontSize: 20, fontWeight: 700 } }>+</button>
+        {(s.h > 0 || s.m > 0 || s.p > 0) && (
+          <button type="button" onClick={() => g({ [slot]: cero })} style={ { minHeight: 44, borderRadius: 12, border: "2px solid " + C.bd, background: "#fff", color: C.mu, fontSize: 13, fontWeight: 700 } }>Limpiar lo que simulé</button>
+        )}
+
+        <button type="button" onClick={() => g({ mas: !st.mas, sec: null })} aria-expanded={st.mas} style={ { minHeight: 48, borderRadius: 12, border: "2px solid " + C.navy, background: "#fff", color: C.navy, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } }>
+          {st.mas ? "Menos opciones" : "Más opciones"}
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={st.mas ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"} /></svg>
+        </button>
+
+        {st.mas && (
+          <div style={ { display: "flex", flexDirection: "column", gap: 8 } }>
+            {seccion("meta", "Quiero cobrar una cantidad", (
+              <div style={ { padding: "2px 0 14px" } }>
+                <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.35 } }>Elige cuánto y te digo qué te falta vender.</div>
+                <div style={ { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 10 } }>
+                  <button type="button" onClick={() => g({ target: Math.max(500, T - 50) })} aria-label="Bajar la meta $50" style={ { ...btnMenos, width: 48, height: 48 } }>−</button>
+                  <div style={ { minWidth: 110, textAlign: "center", fontSize: 30, fontWeight: 800, ...num } }>{fmtMiles(T, 0)}</div>
+                  <button type="button" onClick={() => g({ target: T + 50 })} aria-label="Subir la meta $50" style={ { ...btnMas, fontSize: 24 } }>+</button>
                 </div>
+                <div style={ { marginTop: 12, fontSize: 14, fontWeight: 800 } }>{objTitulo}</div>
+                <div style={ { fontSize: 12, color: C.mu, marginTop: 2, lineHeight: 1.35 } }>{objSub}</div>
+                {combos.map((c) => (
+                  <div key={c.h + "-" + c.m} style={ { display: "flex", alignItems: "center", gap: 10, borderTop: "1px solid #EEF1F6", marginTop: 10, paddingTop: 10 } }>
+                    <div style={ { flex: 1, minWidth: 0 } }>
+                      <div style={ { fontSize: 15, fontWeight: 800 } }>{[c.h ? c.h + " Hogar" : null, c.m ? c.m + " Móvil" : null].filter(Boolean).join(" y ")}</div>
+                      <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Cobrarías {fmtMiles(c.total, 0)}</div>
+                    </div>
+                    <button type="button" onClick={() => g({ [slot]: { h: c.h, m: c.m, p: 0 }, sec: null, mas: false })} style={ { minHeight: 44, padding: "0 14px", borderRadius: 12, border: "2px solid " + C.navy, background: "#fff", color: C.navy, fontSize: 13, fontWeight: 800 } }>Probar</button>
+                  </div>
+                ))}
               </div>
-              <div>
-                <div className="text-[11px] mb-1" style={ { color: "#5A6680" } }>{f.tipo === "hogar" ? "Mensualidad c/u" : "Costo del plan c/u"}</div>
-                <div className="flex items-center gap-1 rounded-md px-2.5" style={ { border: "2px solid #DFE5EF", height: 44 } }>
-                  <span>$</span>
-                  <input type="number" inputMode="decimal" min="0" step="0.01" value={f.monto} onChange={(e) => cambiar(f.id, "monto", e.target.value)} className="outline-none font-semibold bg-white" style={ { width: 70, border: 0, color: "#001E62" } } />
+            ))}
+
+            {seccion("ritmo", "Cómo cierro el mes a mi ritmo", (
+              <div style={ { padding: "2px 0 14px" } }>
+                {transc ? (
+                  <React.Fragment>
+                    <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.4 } }>Llevas {ritmo.transcurridos} de {ritmo.total} días de venta. Te quedan {rem}.</div>
+                    <div style={ { fontSize: 13, fontWeight: 700, marginTop: 10, lineHeight: 1.4 } }>Cerrarías con {base.clientesHogar + addH} Hogar y {base.clientesMovil + addM} Móvil.</div>
+                    <div style={ { fontSize: 24, fontWeight: 800, marginTop: 6, ...num } }>{fmtMiles(proy.total, 0)}</div>
+                    <div style={ { fontSize: 12, color: C.mu, marginTop: 2, lineHeight: 1.35 } }>{ritDif >= 0.5 ? mons(ritDif) + " más que hoy (" + fmtMiles(ahora.total, 0) + ")." : "Igual que hoy (" + fmtMiles(ahora.total, 0) + ")."}</div>
+                    <button type="button" onClick={() => g({ [slot]: { h: addH, m: addM, p: 0 }, sec: null, mas: false })} style={ { marginTop: 12, minHeight: 46, width: "100%", borderRadius: 12, border: "2px solid " + C.navy, background: "#fff", color: C.navy, fontSize: 13, fontWeight: 800 } }>Probar esto arriba</button>
+                    <div style={ { fontSize: 11, color: C.mu, marginTop: 8, lineHeight: 1.35 } }>Es un estimado con tu ritmo de hoy, no una promesa.</div>
+                  </React.Fragment>
+                ) : (
+                  <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.4 } }>Aún no hay días de venta para estimar tu ritmo.</div>
+                )}
+              </div>
+            ))}
+
+            {seccion("escalera", "Ver la escalera de escalones", (
+              <div style={ { paddingBottom: 14 } }>
+                <div style={ { position: "relative", height: 78, margin: "4px 10px 0" } }>
+                  <div style={ { position: "absolute", left: 0, right: 0, top: 34, height: 8, borderRadius: 4, background: C.bd } } />
+                  <div style={ { position: "absolute", left: 0, top: 34, height: 8, borderRadius: 4, background: "repeating-linear-gradient(135deg,#0072CE 0 3px,#BFD8F2 3px 6px)", width: Math.max(posEsc(pcS), posEsc(pcA)) + "%" } } />
+                  <div style={ { position: "absolute", left: 0, top: 34, height: 8, borderRadius: 4, background: C.navy, width: posEsc(pcA) + "%" } } />
+                  {TABLA_POSICION_NUEVA.map((t) => (
+                    <div key={t.min} style={ { position: "absolute", top: 6, width: 44, marginLeft: -22, textAlign: "center", left: posEsc(t.min) + "%" } }>
+                      <div style={ { fontSize: 10, fontWeight: 700, color: C.mu, height: 14, lineHeight: "14px" } }>{t.min}</div>
+                      <div style={ { width: 14, height: 14, boxSizing: "border-box", borderRadius: "50%", margin: "6px auto 0", border: "2px solid " + C.navy, background: pcS + 1e-9 >= t.min ? C.navy : "#fff" } } />
+                      <div style={ { fontSize: 10, fontWeight: 700, color: C.navy, marginTop: 4 } }>{abrev(t.monto)}</div>
+                    </div>
+                  ))}
                 </div>
+                <div style={ { display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 6, fontSize: 11, fontWeight: 600, color: "#374151" } }>
+                  <div style={ { display: "flex", alignItems: "center", gap: 6 } }><span style={ { width: 16, height: 8, borderRadius: 4, background: C.navy, display: "inline-block" } } />Hoy {pcA.toFixed(1)}%</div>
+                  <div style={ { display: "flex", alignItems: "center", gap: 6 } }><span style={ { width: 16, height: 8, borderRadius: 4, background: "repeating-linear-gradient(135deg,#0072CE 0 3px,#BFD8F2 3px 6px)", display: "inline-block" } } />Simulado {pcS.toFixed(1)}%</div>
+                </div>
+                <div style={ { fontSize: 11, color: C.mu, marginTop: 6 } }>Arriba el % de clientes, abajo la base que cobras.</div>
               </div>
-            </div>
-            {f.tipo === "movil" && (
-              <label className="flex items-center gap-2 text-sm mt-2" style={ { minHeight: 44 } }>
-                <input type="checkbox" checked={f.portabilidad} onChange={(e) => cambiar(f.id, "portabilidad", e.target.checked)} style={ { width: 22, height: 22 } } />
-                Es portabilidad (bono de ${BONO_POR_CONVERGENCIA} c/u)
-              </label>
-            )}
-          </div>
-        ))}
+            ))}
 
-        <div className="flex gap-2 mt-1 mb-4">
-          <button type="button" onClick={() => agregar("hogar")} className="flex-1 font-bold text-sm rounded-md" style={ { minHeight: 46, border: "2px solid #001E62", color: "#001E62", background: "white" } }>+ Hogar</button>
-          <button type="button" onClick={() => agregar("movil")} className="flex-1 font-bold text-sm rounded-md" style={ { minHeight: 46, border: "2px solid #001E62", color: "#001E62", background: "white" } }>+ Móvil</button>
-        </div>
+            {seccion("calculo", "Cómo sale el cálculo", (
+              <div style={ { paddingBottom: 10 } }>
+                {filaCalc("Clientes (65% Hogar + 35% Móvil)", pcA.toFixed(1) + "% → " + pcS.toFixed(1) + "%")}
+                {filaCalc("Base por escalón", fmtMiles(ahora.montoBase, 0) + " → " + fmtMiles(sim.montoBase, 0))}
+                {filaCalc("Ingresos vs meta de " + fmtMiles(base.metaIngresos, 0), Math.round(ahora.pctIngreso) + "% → " + Math.round(sim.pctIngreso) + "%")}
+                {filaCalc("Factor de ingresos" + ajTxt, "×" + ahora.factorAcelerador.toFixed(2) + " → ×" + sim.factorAcelerador.toFixed(2))}
+                {filaCalc("Bono portabilidad (" + (base.bonos + s.p) + " × $" + BONO_POR_CONVERGENCIA + ")", fmtMiles(ahora.bonoConvergencias, 0) + " → " + fmtMiles(sim.bonoConvergencias, 0))}
+                {filaCalc("Total", fmtMiles(ahora.total, 0) + " → " + fmtMiles(sim.total, 0))}
+              </div>
+            ))}
 
-        <div className="rounded-lg p-3.5" style={ { background: "#F3F6FB" } }>
-          <div className="flex items-end justify-between gap-2">
-            <div>
-              <div className="text-[11px]" style={ { color: "#5A6680" } }>Ahora</div>
-              <div className="text-xl font-bold tabular-nums">{fmtMiles(ahora.total)}</div>
-            </div>
-            <div style={ { color: "#5A6680", fontSize: 20 } }>→</div>
-            <div className="text-right">
-              <div className="text-[11px]" style={ { color: "#5A6680" } }>Con estos clientes</div>
-              <div className="text-xl font-bold tabular-nums" style={ { color: "#0072CE" } }>{fmtMiles(con.total)}</div>
-            </div>
-          </div>
-          <div className="flex items-baseline justify-between mt-2.5 pt-2.5" style={ { borderTop: "1px solid #DFE5EF" } }>
-            <span className="font-bold">{dif < -0.005 ? "Bajarías" : "Subirías"}</span>
-            <span className="text-2xl font-bold tabular-nums">{dif >= 0 ? "+" : "−"}{fmtMiles(Math.abs(dif))}</span>
-          </div>
-          {(cruzaTramo || activaAcel || pierdeAcel) && (
-            <div className="text-sm mt-2.5" style={ { lineHeight: 1.4 } }>
-              {cruzaTramo && <div className="py-1">📈 Pasarías del tramo de <b>{fmtMiles(ahora.montoBase, 0)}</b> al de <b>{fmtMiles(con.montoBase, 0)}</b>.</div>}
-              {activaAcel && <div className="py-1">⚡ Superarías el 100% de ingresos y se activaría el acelerador (+10 puntos).</div>}
-              {pierdeAcel && <div className="py-1">🐢 Dejarías de superar el 100% de ingresos y se perdería el acelerador.</div>}
-            </div>
-          )}
-          {!cruzaTramo && !activaAcel && !pierdeAcel && filas.length > 0 && (
-            <div className="text-sm mt-2.5" style={ { color: "#5A6680" } }>Sigues en el mismo tramo de base ({fmtMiles(con.montoBase, 0)}); la subida viene de ingresos y bonos.</div>
-          )}
-          <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-            Clientes: {con.pctClientesPonderado.toFixed(1)}% de la meta (hogar {con.pctHogar.toFixed(0)}% · móvil {con.pctMovil.toFixed(0)}%) · Ingresos: {con.pctIngreso.toFixed(0)}% de la meta
-          </div>
-        </div>
+            {seccion("ajustes", "Portabilidad y precios de planes", (
+              <div style={ { display: "flex", flexDirection: "column", gap: 8, padding: "2px 0 14px" } }>
+                {ajusteFila("Móvil con portabilidad", "de los " + s.m + " que simulas · bono $" + BONO_POR_CONVERGENCIA + " c/u", s.p, () => cambiar("p", -1), () => { if (s.p < s.m) cambiar("p", 1); }, "Quitar una portabilidad", "Agregar una portabilidad")}
+                {ajusteFila("Plan Hogar", null, fmtMiles(st.ph, 0), () => g({ ph: Math.max(1, st.ph - 1) }), () => g({ ph: st.ph + 1 }), "Bajar plan Hogar", "Subir plan Hogar")}
+                {ajusteFila("Plan Móvil", null, fmtMiles(st.pm, 0), () => g({ pm: Math.max(1, st.pm - 1) }), () => g({ pm: st.pm + 1 }), "Bajar plan Móvil", "Subir plan Móvil")}
+                <div style={ { fontSize: 11, color: C.mu, lineHeight: 1.35 } }>Los planes empiezan en el promedio de tus ventas de este período.</div>
+              </div>
+            ))}
 
-        <div className="flex gap-2 mt-3">
-          <button type="button" onClick={() => setFilas([])} className="flex-1 text-sm font-semibold rounded-md border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#5A6680" } }>Limpiar</button>
-          <button type="button" onClick={cerrar} className="flex-1 text-sm font-bold rounded-md text-white" style={ { minHeight: 44, background: "#001E62" } }>Cerrar</button>
-        </div>
+            {seccion("escen", "Comparar dos ideas (A y B)", (
+              <div style={ { padding: "2px 0 14px" } }>
+                <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.4 } }>Elige A o B y cambia los contadores de arriba. Cada uno guarda lo suyo.</div>
+                <div style={ { display: "flex", gap: 8, marginTop: 10 } }>{slotBtn("A", dA)}{slotBtn("B", dB)}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>,
     document.body
@@ -8077,6 +8216,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 metaIngresos: metaDinero,
                 bonos: resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente,
               } }
+              ritmo={ { transcurridos: cicloInfo.diasTranscurridos, total: cicloInfo.totalDias } }
               defecto={ {
                 hogar: clientesDelPeriodo.length ? Math.round(dineroDelPeriodo / clientesDelPeriodo.length) : 38,
                 movil: convergenciasPeriodo ? Math.round(costoPlanesMovilesPeriodo / convergenciasPeriodo) : 20,
@@ -8364,6 +8504,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                       metaIngresos: metaDinero,
                       bonos: resumenMovilesEsperado.bonoConfirmado + resumenMovilesEsperado.bonoPendiente,
                     } }
+                    ritmo={ { transcurridos: cicloInfo.diasTranscurridos, total: cicloInfo.totalDias } }
                     defecto={ {
                       hogar: clientesDelPeriodo.length ? Math.round(dineroDelPeriodo / clientesDelPeriodo.length) : 38,
                       movil: convergenciasPeriodo ? Math.round(costoPlanesMovilesPeriodo / convergenciasPeriodo) : 20,
