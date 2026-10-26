@@ -520,6 +520,21 @@ function periodoComision(fechaISO) {
 //   ingresado en un período anterior).
 // - Si todavía está pendiente de instalación (sin fecha), cuenta en el período
 //   en que fue ingresado a la app.
+function formatoPlan(k) {
+  return String(k || "")
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => (p === "tv" ? "TV" : p.charAt(0).toUpperCase() + p.slice(1)))
+    .join(" ");
+}
+
+// Clave del plan exacto de un cliente (ej. "SINGLE 200" o "DOBLE 200 + TV"). Es la misma que usa "Planes del período".
+function clavePlan(c) {
+  if (!c.planTipo) return "";
+  return (c.planTipo + " " + (c.velocidad || "") + (c.planTipo === "DOBLE" && c.planTV ? " + " + c.planTV : "")).trim();
+}
+
 function periodoDelCliente(c) {
   if (c.fechaInstalacion) return periodoComision(c.fechaInstalacion);
   if (c.creadoEn) return periodoComision(fechaLocalISO(c.creadoEn));
@@ -7123,14 +7138,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     if (planesDelPeriodo.length < 2) return null;
     return planesDelPeriodo.reduce((mejor, p) => (!mejor || p.dinero / p.n > mejor.dinero / mejor.n ? p : mejor), null);
   }, [planesDelPeriodo]);
-  function formatoPlan(k) {
-    return String(k || "")
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean)
-      .map((p) => (p === "tv" ? "TV" : p.charAt(0).toUpperCase() + p.slice(1)))
-      .join(" ");
-  }
   const modoMejorDia = ordenDashboard && ordenDashboard.mejorDia === "ins" ? "ins" : "ing";
   function cambiarModoMejorDia(k) {
     if (onOrdenDashboard) onOrdenDashboard({ orden: ordenDashboardNormal(ordenDashboard), ocultos: ocultosDashboardNormal(ordenDashboard), mejorDia: k });
@@ -9215,15 +9222,17 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               <button
                 key={p.k}
                 type="button"
-                onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: p.tipo })}
-                className="w-full grid items-center gap-2 py-1.5 text-left"
-                style={ { gridTemplateColumns: "minmax(96px,40%) 1fr 28px" } }
+                onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: p.k })}
+                aria-label={`Ver los ${p.n} clientes del plan ${formatoPlan(p.k)}`}
+                className="w-full grid items-center gap-2 text-left"
+                style={ { gridTemplateColumns: "minmax(96px,40%) 1fr 28px 12px", minHeight: 44 } }
               >
                 <span className="text-xs font-semibold truncate" style={ { color: "#001E62" } }>{formatoPlan(p.k)}</span>
                 <span className="block h-3 rounded-full overflow-hidden" style={ { background: "#E3EDFA", border: "1px solid #C9D9F0" } }>
                   <span className="block h-full" style={ { width: Math.max(6, (p.n / maxPlanN) * 100) + "%", background: "#001E62" } } />
                 </span>
                 <span className="text-xs font-mono font-bold text-right" style={ { color: "#001E62" } }>{p.n}</span>
+                <span aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
               </button>
             ))
           )}
@@ -9932,16 +9941,8 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   return (
     <div>
       
-      {!modoResumen && (
+      {!modoResumen && (alertasHoy.length > 0 || (proximos && proximos.some((d) => d.items.length > 0))) && (
       <div className="bg-white rounded-xl border overflow-hidden mb-4" style={ { borderColor: "#DFE5EF" } }>
-        <div className="px-4 py-3.5" style={ { borderBottom: "1px solid #DFE5EF" } }>
-          <div className="text-sm font-bold" style={ { color: "#001E62" } }>
-            {alertasHoy.length > 0 ? (
-              <React.Fragment><span style={ { color: "#B45309", fontSize: 18 } }>{alertasHoy.length}</span> {alertasHoy.length === 1 ? "recordatorio por enviar" : "recordatorios por enviar"}</React.Fragment>
-            ) : "✓ Sin recordatorios por enviar"}
-          </div>
-          <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Mensaje automático para que paguen su factura</div>
-        </div>
         {proximos && proximos.some((d) => d.items.length > 0) && (
           <div style={ { borderBottom: "1px solid #DFE5EF" } }>
             <div
@@ -10724,7 +10725,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     let arr = filtroEstado ? baseSinPenalizados.filter((c) => pasaFiltroFactura(c, filtroEstado)) : baseSinPenalizados;
     if (filtroInstalacion === "instalados") arr = arr.filter((c) => !!c.fechaInstalacion);
     if (filtroInstalacion === "pendientes") arr = arr.filter((c) => !c.fechaInstalacion && !clienteExcluido(c));
-    if (filtroPlan) arr = arr.filter((c) => c.planTipo === filtroPlan);
+    if (filtroPlan) arr = arr.filter((c) => c.planTipo === filtroPlan || clavePlan(c) === filtroPlan);
     if (rangoActivo) {
       arr = arr.filter((c) => {
         if (!c.fechaInstalacion) return false;
@@ -11176,6 +11177,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           >
             <option value="">Plan: todos</option>
             {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t === "SINGLE" ? "Plan: Single" : "Plan: Doble"}</option>)}
+            {filtroPlan && !TIPOS_PLAN.includes(filtroPlan) && <option value={filtroPlan}>{"Plan: " + formatoPlan(filtroPlan)}</option>}
           </select>
           <RangoFechasIcono desde={fechaDesde} hasta={fechaHasta} onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } } />
           {(filtrosActivos > 0 || chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo") && (
@@ -11242,6 +11244,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               >
                 <option value="">Todos</option>
                 {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t === "SINGLE" ? "Single" : "Doble"}</option>)}
+                {filtroPlan && !TIPOS_PLAN.includes(filtroPlan) && <option value={filtroPlan}>{formatoPlan(filtroPlan)}</option>}
               </select>
             </FiltroCampo>
 
