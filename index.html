@@ -52,6 +52,12 @@
     div[style*="width"][style*="%"] { transition: width .6s ease; }
     .mf-sale { opacity: 0 !important; transform: translateX(28px); transition: opacity .2s ease, transform .2s ease !important; pointer-events: none; }
   }
+  /* Pantalla de inicio */
+  .mf-splash { position: fixed; inset: 0; z-index: 9999; background: #001E62; display: flex; align-items: center; justify-content: center; transition: opacity .35s ease-in; }
+  .mf-splash-sale { opacity: 0; pointer-events: none; }
+  .mf-splash-logo { width: 84px; height: 84px; border-radius: 50%; background: #fff; color: #001E62; font-weight: 800; font-size: 32px; letter-spacing: -0.02em; display: flex; align-items: center; justify-content: center; }
+  @keyframes mfLate { 0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(255,255,255,0); } 50% { transform: scale(1.12); box-shadow: 0 0 0 14px rgba(255,255,255,.12); } }
+  @media (prefers-reduced-motion: no-preference) { .mf-splash-logo { animation: mfLate .55s ease-in-out 2; } }
   /* Espacio entre tarjetas ajustable (Configuración): escala los márgenes de abajo según --mf-gap. */
   .mf-esp .mb-3 { margin-bottom: calc(var(--mf-gap, 16px) * 0.75) !important; }
   .mf-esp .mb-4 { margin-bottom: var(--mf-gap, 16px) !important; }
@@ -16058,7 +16064,22 @@ class CapturadorErrores extends React.Component {
 }
 
 const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<CapturadorErrores><App /></CapturadorErrores>);
+// Pantalla de inicio: el logo MF late dos veces (≈1.1 s) y se desvanece. Sale al abrir y al refrescar.
+function SplashInicio() {
+  const [fase, setFase] = useState("ver");
+  useEffect(() => {
+    const t1 = setTimeout(() => setFase("sale"), 1100);
+    const t2 = setTimeout(() => setFase("fin"), 1500);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+  if (fase === "fin") return null;
+  return (
+    <div className={"mf-splash" + (fase === "sale" ? " mf-splash-sale" : "")} role="status" aria-label="Abriendo MetaForce CRM">
+      <div className="mf-splash-logo">MF</div>
+    </div>
+  );
+}
+root.render(<CapturadorErrores><App /><SplashInicio /></CapturadorErrores>);
 </script>
 </body>
 </html>
