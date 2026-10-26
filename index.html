@@ -10941,14 +10941,13 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           {subVista === "movil" && (() => {
             const delMesM = (clientesMovil || []).filter((c) => periodoComision(fechaActivacionMovil(c)) === mesActivoEfectivo);
             const nM = (k) => delMesM.filter((c) => pasaChipMovil(c, k)).length;
-            const lista = [["todos", "Todos", false], ["sinPagar", "⚠ Sin pagar", true], ["pagadas", "✓ Pagadas", true], ["matchPendiente", "⏳ Match", true], ["portabilidad", "Portabilidad", true], ["noCuenta", "⛔ No cuenta", true]];
+            const lista = [["sinPagar", "⚠ Sin pagar", true], ["pagadas", "✓ Pagadas", true], ["matchPendiente", "⏳ Match", true], ["portabilidad", "Portabilidad", true], ["noCuenta", "⛔ No cuenta", true]];
             return lista.filter(([k, , oc]) => !oc || nM(k) > 0 || chipMovilTop === k).map(([k, t, oc]) => (
               <React.Fragment key={k}>{chipM(chipMovilTop === k, t + " " + nM(k), () => setChipMovilTop(oc && chipMovilTop === k ? "todos" : k), oc)}</React.Fragment>
             ));
           })()}
           {subVista === "clientes" && visiblesFinal.length > 0 && (
             <React.Fragment>
-              {chipM(todoLimpio, "Todos " + totalCuentan, () => limpiarTodoM(), false)}
               {(conteoG.porInstalar > 0 || chipGrupo === "porInstalar") && chipM(chipGrupo === "porInstalar", "Por instalar " + conteoG.porInstalar, () => setChipGrupo(chipGrupo === "porInstalar" ? "todos" : "porInstalar"), true)}
               {(conteoG.instalados > 0 || chipGrupo === "instalados") && chipM(chipGrupo === "instalados", "Instalados " + conteoG.instalados, () => setChipGrupo(chipGrupo === "instalados" ? "todos" : "instalados"), true)}
               {(nPago1 > 0 || nNoPago1 > 0 || esFact) && chipM(esFact, esFact ? (filtroEstado === "pago1" ? "💵 ✓ Pagó" : "💵 ⏱ Aún no la paga") : "💵 1ra factura ▾", () => { if (esFact) { setFiltroEstado(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "fact" ? null : "fact"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
