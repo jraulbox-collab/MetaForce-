@@ -6226,17 +6226,17 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
         type="button"
         onClick={() => setAbierto(!visible)}
         aria-expanded={visible}
-        className={enTarjeta ? "w-full flex items-center justify-between gap-3 px-4 py-3 text-sm font-bold text-left" : "w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-bold text-left"}
+        className={enTarjeta ? "w-full flex items-center justify-between gap-3 px-4 py-3 text-left" : "w-full flex items-center justify-between gap-2 px-3 py-2 text-xs font-bold text-left"}
         style={ enTarjeta ? { background: "transparent", color: "#fff", minHeight: 56, border: 0 } : { background: "#F3F6FB", color: "#001E62", minHeight: 40 } }
       >
-        <span className="flex items-center gap-1.5 min-w-0">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>
+        <span className={enTarjeta ? "flex items-center gap-3 min-w-0 flex-1" : "flex items-center gap-1.5 min-w-0"}>
+          {enTarjeta ? <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔧</span> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>}
           <span className="min-w-0">
-            Por instalar · {porInstalar.length}
+            {enTarjeta ? <span className="block text-sm font-bold">Por instalar · {porInstalar.length}</span> : "Por instalar · " + porInstalar.length}
             {partes.length > 0 ? <span className={enTarjeta ? "block text-xs font-normal mt-0.5" : "block text-[11.5px] font-semibold"} style={ { color: enTarjeta ? "#B9C4E0" : "#5A6680" } }>{partes.join(" · ")}</span> : null}
           </span>
         </span>
-        <span className="shrink-0" style={ { color: enTarjeta ? "#B9C4E0" : "#5A6680", fontSize: enTarjeta ? 13 : undefined, fontWeight: enTarjeta ? 600 : undefined } }>{visible ? "Ocultar ▴" : "Mostrar ▾"}</span>
+        <span className="shrink-0" style={ enTarjeta ? { fontSize: 18, display: "inline-block", transform: visible ? "rotate(-90deg)" : "rotate(90deg)" } : { color: "#5A6680" } } aria-hidden={enTarjeta ? "true" : undefined}>{enTarjeta ? "›" : (visible ? "Ocultar ▴" : "Mostrar ▾")}</span>
       </button>
       {visible ? GRUPOS.map((x) => (
         <div key={x.k} style={ enTarjeta ? { background: "#fff", color: "#001E62" } : undefined }>
