@@ -7178,6 +7178,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     () => clientesDelPeriodo.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0),
     [clientesDelPeriodo]
   );
+  const [rpuAbierto, setRpuAbierto] = useState(false);
   const arpuPeriodo = useMemo(() => {
     if (clientesDelPeriodo.length === 0) return 0;
     return dineroDelPeriodo / clientesDelPeriodo.length;
@@ -9390,6 +9391,34 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         );
       })())}
 
+      {(() => {
+        // ARPU por cliente (informativo, no entra en la comisión nueva). Del período que estás viendo.
+        const hogarInst = clientesDelPeriodo.filter((c) => !!c.fechaInstalacion);
+        const movs = convergenciasDelPeriodo.filter(movilCuentaParaComision);
+        const nH = hogarInst.length;
+        const nM = movs.length;
+        if (nH + nM === 0) return null;
+        const dH = hogarInst.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+        const dM = costoPlanesMovilesPeriodo;
+        const rH = nH > 0 ? dH / nH : null;
+        const rM = nM > 0 ? dM / nM : null;
+        const rT = (dH + dM) / (nH + nM);
+        return (
+          <div className="mb-4 rounded-xl border bg-white overflow-hidden" style={ { order: 99, borderColor: "#DFE5EF" } }>
+            <button type="button" onClick={() => setRpuAbierto((v) => !v)} aria-expanded={rpuAbierto} className="w-full flex items-center justify-between gap-2 px-4 text-left" style={ { minHeight: 48, color: "#001E62" } }>
+              <span className="text-xs font-bold" style={ { color: "#5A6680" } }>📊 ARPU por cliente</span>
+              <span className="text-sm font-bold font-mono">{fmtMonto(rT)} <span style={ { color: "#5A6680", fontWeight: 600 } }>{rpuAbierto ? "▴" : "▾"}</span></span>
+            </button>
+            {rpuAbierto ? (
+              <div className="px-4 pb-3 text-xs" style={ { color: "#5A6680", borderTop: "1px solid #EEF1F7" } }>
+                <div className="flex justify-between py-1.5"><span>🏠 Hogar</span><span className="font-mono" style={ { color: "#001E62" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
+                <div className="flex justify-between py-1.5"><span>📱 Móvil</span><span className="font-mono" style={ { color: "#001E62" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
+
       </div>
       {mostrarSimuladorArpu && (
         <SimuladorArpuModal
@@ -9469,7 +9498,6 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
   const [diaSel, setDiaSel] = useState(memoriaDashboard.retorno && memoriaDashboard.diaPeriodo === periodoKey ? memoriaDashboard.dia : null);
   const [vistaDiaria, setVistaDiaria] = useState(leerVistaDiaria);
   const [menuAbierto, setMenuAbierto] = useState(null);
-  const [rpuAbierto, setRpuAbierto] = useState(false);
   const [detalleOculto, setDetalleOculto] = useState(false);
   const [leyendaAbierta, setLeyendaAbierta] = useState(false);
   const [anchoGraf, setAnchoGraf] = useState(320);
@@ -9831,30 +9859,6 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
           );
         })}
       </div>
-      {(() => {
-        // RPU: lo que deja cada cliente en promedio (ingresos entre clientes). Solo informativo,
-        // no entra en la comisión. Total = hogar + móvil juntos, igual que la caja de Ingreso.
-        const nH = hogarInstalado.length;
-        const nM = moviles.length;
-        if (nH + nM === 0) return null;
-        const rH = nH > 0 ? dineroHogarInstalado / nH : null;
-        const rM = nM > 0 ? dineroMovil / nM : null;
-        const rT = (dineroHogarInstalado + dineroMovil) / (nH + nM);
-        return (
-          <div className="mt-3" style={ { borderTop: "1px solid #E6EAF2" } }>
-            <button type="button" onClick={() => setRpuAbierto((v) => !v)} aria-expanded={rpuAbierto} className="w-full flex items-center justify-between text-xs" style={ { minHeight: 40, color: "#6B7794" } }>
-              <span>RPU por cliente</span>
-              <span>Total {fmtMonto(rT)} {rpuAbierto ? "▴" : "▾"}</span>
-            </button>
-            {rpuAbierto ? (
-              <div className="text-xs pb-1" style={ { color: "#6B7794" } }>
-                <div className="flex justify-between py-1"><span>Hogar</span><span className="font-mono" style={ { color: "#4A5878" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
-                <div className="flex justify-between py-1"><span>Móvil</span><span className="font-mono" style={ { color: "#4A5878" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
-              </div>
-            ) : null}
-          </div>
-        );
-      })()}
 
     </div>
   );
