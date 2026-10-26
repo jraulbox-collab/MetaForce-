@@ -3840,8 +3840,17 @@ function App() {
     dv.filas.forEach((f) => f.numeros.forEach((n) => itemsV.push(n)));
     const nVentas = itemsV.filter((n) => n.estado === "pendiente").length;
     const nInstal = instalacionesVis.length;
-    return { nCobros, nVentas, nInstal, total: nCobros + nVentas + nInstal };
+    const hoyD = new Date(); hoyD.setHours(0, 0, 0, 0);
+    const perCom = [-1, -2].map((d) => sumarMesClave(periodoActualApp, d)).map((pp) => ({ pp, limite: fechaLimitePrimeraFactura(pp) })).filter((x) => x.limite && x.limite >= hoyD).sort((a, b) => a.limite - b.limite)[0];
+    const hayComision = !!perCom && (clientesActivos.some((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) === perCom.pp) || convergencias.some((c) => c.f1_estado !== "pagada" && periodoDelMovil(c) === perCom.pp));
+    return { nCobros, nVentas, nInstal, hayComision, total: nCobros + nVentas + nInstal };
   })();
+  // Si estás en un filtro que se quedó sin nada, vuelve solo a "Todos".
+  useEffect(() => {
+    if (!conteoMsj) return;
+    const vacio = { cobros: conteoMsj.nCobros === 0, ventas: conteoMsj.nVentas === 0, instalacion: conteoMsj.nInstal === 0, comision: !conteoMsj.hayComision };
+    if (vacio[seccionMensajes]) setSeccionMensajes("todos");
+  }, [conteoMsj && conteoMsj.nCobros, conteoMsj && conteoMsj.nVentas, conteoMsj && conteoMsj.nInstal, conteoMsj && conteoMsj.hayComision, seccionMensajes]);
   const pospuestosActivos = Object.keys(pospuestos).filter((k) => estaPospuesto(k));
   function tocarPestana(key) {
     if (tab === key) {
@@ -4342,7 +4351,7 @@ function App() {
                     {total > 0 ? <React.Fragment>{total} <span style={ { fontSize: 14 } }>{total === 1 ? "mensaje por enviar" : "mensajes por enviar"}</span></React.Fragment> : "✓ Todo al día"}
                   </div>
                 </div>
-                {filas.map((f) => (
+                {filas.filter((f) => f.n > 0).map((f) => (
                   <button
                     key={f.t}
                     type="button"
@@ -4353,17 +4362,18 @@ function App() {
                     <span style={ { fontSize: 20 } } aria-hidden="true">{f.ico}</span>
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm font-bold" style={ { color: "#001E62" } }>{f.t}</span>
-                      <span className="block text-xs" style={ { color: "#5A6680" } }>{f.n > 0 ? f.sub : "✓ nada pendiente"}</span>
+                      <span className="block text-xs" style={ { color: "#5A6680" } }>{f.sub}</span>
                     </span>
-                    <span className="text-lg font-extrabold" style={ { color: f.n > 0 ? "#B45309" : "#15803D" } }>{f.n > 0 ? f.n : "✓"}</span>
+                    <span className="text-lg font-extrabold" style={ { color: "#B45309" } }>{f.n}</span>
                     <span aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
                   </button>
                 ))}
               </div>
             );
           })()}
+          {(conteoMsj.total > 0 || conteoMsj.hayComision) && (
           <div className="flex gap-2 mb-4 overflow-x-auto" role="tablist" data-no-swipe="" style={ { WebkitOverflowScrolling: "touch" } }>
-            {[["todos", "Todos", conteoMsj.total], ["comision", "💰 Comisión", null], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].map(([k, t, n]) => (
+            {[["todos", "Todos", conteoMsj.total], ["comision", "💰 Comisión", null], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].filter(([k, , n]) => k === "todos" || (k === "comision" ? conteoMsj.hayComision : n > 0)).map(([k, t, n]) => (
               <button
                 key={k}
                 type="button"
@@ -4377,6 +4387,7 @@ function App() {
               </button>
             ))}
           </div>
+          )}
           {pospuestosActivos.length > 0 && (
             <details className="mb-4 rounded-lg bg-white" style={ { border: "1px solid #DFE5EF" } }>
               <summary className="px-4 py-3 text-sm font-bold cursor-pointer" style={ { color: "#5A6680", minHeight: 44 } }>⏰ Pospuestos ({pospuestosActivos.length})</summary>
