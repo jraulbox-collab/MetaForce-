@@ -8438,10 +8438,22 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               />
             )}
             {!matchVencido && lineaMatch(hayCobros || hayAbono || hayInfo)}
+            {hayVentas && (
+              <button
+                type="button"
+                onClick={onIrAVentas}
+                className="w-full text-left flex items-center gap-3 px-4 py-3"
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch || hayInfo) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+              >
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
+                <span className="min-w-0 flex-1 text-sm font-bold">{[nVentas > 0 ? `${nVentas} para escribir hoy` : "", nSeg > 0 ? `🔥 ${nSeg} por cerrar` : ""].filter(Boolean).join(" · ")}</span>
+                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+              </button>
+            )}
             {hayPorInst && (
               <PanelPorInstalar
                 enTarjeta
-                conSeparador={hayCobros || hayAbono || hayInfo || hayMatch}
+                conSeparador={hayCobros || hayAbono || hayInfo || hayMatch || hayVentas}
                 porInstalar={listaPorInstalar}
                 onMarcarInstalado={onMarcarInstalado}
                 onReprogramar={onReprogramarInstalacion}
@@ -8449,18 +8461,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 copiedKey={copiedKey}
                 onVerCliente={onVerCliente}
               />
-            )}
-            {hayVentas && (
-              <button
-                type="button"
-                onClick={onIrAVentas}
-                className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch || hayInfo || hayPorInst) ? "1px solid rgba(255,255,255,.18)" : 0 } }
-              >
-                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
-                <span className="min-w-0 flex-1 text-sm font-bold">{[nVentas > 0 ? `${nVentas} para escribir hoy` : "", nSeg > 0 ? `🔥 ${nSeg} por cerrar` : ""].filter(Boolean).join(" · ")}</span>
-                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
-              </button>
             )}
           </div>
         );
