@@ -6294,7 +6294,21 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
         </span>
         <span className="shrink-0" style={ enTarjeta ? { fontSize: 18, display: "inline-block", transform: visible ? "rotate(-90deg)" : "rotate(90deg)" } : { color: "#5A6680" } } aria-hidden={enTarjeta ? "true" : undefined}>{enTarjeta ? "›" : (visible ? "Ocultar ▴" : "Mostrar ▾")}</span>
       </button>
-      {visible ? GRUPOS.map((x) => (
+      {visible ? (enTarjeta ? (
+        <div style={ { padding: "0 12px 12px" } }>
+          <div style={ { background: "#fff", borderRadius: 14, overflow: "hidden", border: "2px solid #fff" } }>
+            {GRUPOS.map((x) => (
+            <div key={x.k} style={ enTarjeta ? { background: "#fff", color: "#001E62" } : undefined }>
+              <div className="flex items-center justify-between px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider" style={ x.aviso ? { background: "#FFF3DC", color: "#7A4100", borderTop: "1px solid #DFE5EF" } : { background: "#F8FAFD", color: "#5A6680", borderTop: "1px solid #DFE5EF" } }>
+                <span>{x.aviso ? "⚠ " : ""}{x.t}</span>
+                <span>{x.l.length}</span>
+              </div>
+              {x.l.map((c) => fila(c, x.k))}
+            </div>
+          ))}
+          </div>
+        </div>
+      ) : GRUPOS.map((x) => (
         <div key={x.k} style={ enTarjeta ? { background: "#fff", color: "#001E62" } : undefined }>
           <div className="flex items-center justify-between px-3 py-1 text-[11px] font-extrabold uppercase tracking-wider" style={ x.aviso ? { background: "#FFF3DC", color: "#7A4100", borderTop: "1px solid #DFE5EF" } : { background: "#F8FAFD", color: "#5A6680", borderTop: "1px solid #DFE5EF" } }>
             <span>{x.aviso ? "⚠ " : ""}{x.t}</span>
@@ -6302,7 +6316,7 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
           </div>
           {x.l.map((c) => fila(c, x.k))}
         </div>
-      )) : null}
+      ))) : null}
     </div>
   );
 }
