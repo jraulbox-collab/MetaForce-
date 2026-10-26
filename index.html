@@ -1966,6 +1966,42 @@ function facturaActual(facturas) {
   return facturas[0];
 }
 
+// ---------- Campo de búsqueda con ✕ pegada al final del texto ----------
+// La ✕ aparece justo a la derecha de lo que se está escribiendo (se mide el texto con un
+// duplicado invisible) y borra todo con un toque.
+function CampoBuscar({ value, onChange, placeholder, ariaLabel, wrapperClassName, inputClassName, inputStyle, fontSize = 16, padIzq = 12 }) {
+  const v = value || "";
+  return (
+    <div className={"relative " + (wrapperClassName || "")}>
+      <input
+        type="text"
+        inputMode="search"
+        enterKeyHint="search"
+        autoComplete="off"
+        autoCorrect="off"
+        value={v}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        aria-label={ariaLabel || placeholder}
+        className={inputClassName}
+        style={ { ...(inputStyle || {}), fontSize, fontFamily: "inherit", paddingLeft: padIzq, paddingRight: 44 } }
+      />
+      {v ? (
+        <div aria-hidden="false" style={ { position: "absolute", top: 0, bottom: 0, left: padIzq + 2, right: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" } }>
+          <span style={ { visibility: "hidden", whiteSpace: "pre", fontSize, fontFamily: "inherit", maxWidth: "calc(100% - 44px)", overflow: "hidden", flex: "0 1 auto" } }>{v}</span>
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            aria-label="Borrar búsqueda"
+            title="Borrar búsqueda"
+            style={ { pointerEvents: "auto", flex: "none", width: 36, height: 36, marginLeft: 2, border: 0, borderRadius: 18, background: "#E3EAF5", color: "#001E62", fontSize: 15, fontWeight: 800, lineHeight: "36px", padding: 0 } }
+          >✕</button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 // ---------- Selector de rango de fechas en un solo campo (calendario único) ----------
 // Usa flatpickr en modo "range": el usuario abre un solo calendario y elige
 // primero la fecha inicial y luego la final, sin tener que usar dos campos separados.
@@ -4578,14 +4614,14 @@ function App() {
           </div>
           )}
           {conteoMsj.total > 0 && (
-            <input
-              type="search"
+            <CampoBuscar
               value={searchAlertas}
-              onChange={(e) => { setSearchAlertas(e.target.value); setLotesMsj({ cobros: 10, instalacion: 10 }); } }
+              onChange={(t) => { setSearchAlertas(t); setLotesMsj({ cobros: 10, instalacion: 10 }); } }
               placeholder="🔍 Buscar cliente…"
-              aria-label="Buscar cliente"
-              className="w-full rounded-xl px-3 mb-4"
-              style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", fontSize: 16 } }
+              ariaLabel="Buscar cliente"
+              wrapperClassName="mb-4"
+              inputClassName="w-full rounded-xl"
+              inputStyle={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff" } }
             />
           )}
           {pospuestosActivos.length > 0 && (
@@ -6699,7 +6735,7 @@ function AgregarReferidoGeneral({ clientes, convergencias, existe, onGuardar, on
       <div className="text-xs font-extrabold mb-2" style={ { color: "#001E62" } }>¿Quién te dio el contacto?</div>
       {!elegido ? (
         <>
-          <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Escribe su nombre" aria-label="Buscar cliente" style={ { width: "100%", height: 40, border: "1.5px solid #9CA3AF", borderRadius: 8, padding: "0 10px", fontSize: 16, background: "#fff", color: "#111827" } } />
+          <CampoBuscar value={q} onChange={setQ} placeholder="Escribe su nombre" ariaLabel="Buscar cliente" inputStyle={ { width: "100%", height: 40, border: "1.5px solid #9CA3AF", borderRadius: 8, background: "#fff" } } />
           {coincide.map((g) => (
             <button key={g.id} type="button" onClick={() => setElegido(g)} className="block w-full text-left text-sm font-bold py-2 px-2 mt-1 rounded-lg" style={ { background: "#fff", color: "#001E62", border: "1px solid #D5DEEE" } }>{tituloEs(g.nombre)}</button>
           ))}
@@ -10989,13 +11025,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       <div className="md:hidden mb-3" data-no-swipe="" style={ { paddingTop: 4 } }>
         <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
-            <input
-              type="search"
+            <CampoBuscar
               value={search}
-              onChange={(e) => setSearch(e.target.value)}
+              onChange={setSearch}
               placeholder="🔍 Buscar nombre, teléfono…"
-              className="w-full rounded-xl border outline-none"
-              style={ { borderColor: "#DFE5EF", height: 44, padding: "0 12px", fontSize: 16, background: "#fff" } }
+              inputClassName="w-full rounded-xl border outline-none"
+              inputStyle={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } }
             />
           </div>
           <div className="flex shrink-0 rounded-xl overflow-hidden" style={ { border: "1.5px solid #001E62" } }>
@@ -11229,28 +11264,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       )}
 
 
-      <div className="relative mb-3 hidden md:block">
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Buscar en Hogar y Móvil: nombre, teléfono, suscriptor o plan…"
-          className="w-full px-3 py-2 pr-9 rounded-md border text-sm outline-none"
-          style={ { borderColor: "#DFE5EF" } }
-        />
-        {search && (
-          <button
-            onClick={() => setSearch("")}
-            className="absolute top-1/2 -translate-y-1/2 text-sm font-medium px-1.5"
-            style={ {
-              color: "#9CA3AF",
-              left: `min(calc(0.75rem + ${search.length}ch + 0.3rem), calc(100% - 2.1rem))`,
-            } }
-            title="Limpiar búsqueda"
-          >
-            ✕
-          </button>
-        )}
-      </div>
+      <CampoBuscar
+        value={search}
+        onChange={setSearch}
+        placeholder="Buscar en Hogar y Móvil: nombre, teléfono, suscriptor o plan…"
+        wrapperClassName="mb-3 hidden md:block"
+        inputClassName="w-full py-2 rounded-md border text-sm outline-none"
+        inputStyle={ { borderColor: "#DFE5EF" } }
+        fontSize={14}
+      />
 
       {search.trim() && (
         <BloqueOtraLista
@@ -13219,13 +13241,14 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           onConfirm={() => { onEliminar(confirmarEliminarMovil); if (editingId === confirmarEliminarMovil) cancelEdit(); setConfirmarEliminarMovil(null); } }
         />
       )}
-      <input
-        type="search"
+      <CampoBuscar
         value={busquedaMovil}
-        onChange={(e) => setBusquedaMovil(e.target.value)}
+        onChange={setBusquedaMovil}
         placeholder="Buscar en Hogar y Móvil: nombre, teléfono…"
-        className="hidden md:block w-full px-3 py-2 rounded-md border text-sm outline-none mb-3 bg-white"
-        style={ { borderColor: "#DFE5EF" } }
+        wrapperClassName="hidden md:block mb-3"
+        inputClassName="w-full py-2 rounded-md border text-sm outline-none bg-white"
+        inputStyle={ { borderColor: "#DFE5EF" } }
+        fontSize={14}
       />
       {busquedaMovil.trim() && (
         <BloqueOtraLista
@@ -13604,13 +13627,14 @@ function HistorialTab({ entradas, onDeshacer, clientes = [], onAbrirCliente }) {
             <option value="config">Configuración</option>
             <option value="rescate">Rescates</option>
           </select>
-          <input
-            type="text"
-            placeholder="Buscar..."
+          <CampoBuscar
             value={filtro}
-            onChange={(e) => setFiltro(e.target.value)}
-            className="px-3 py-2 rounded-md border text-sm outline-none w-full sm:w-56"
-            style={ { borderColor: "#DFE5EF" } }
+            onChange={setFiltro}
+            placeholder="Buscar..."
+            wrapperClassName="w-full sm:w-56"
+            inputClassName="py-2 rounded-md border text-sm outline-none w-full"
+            inputStyle={ { borderColor: "#DFE5EF" } }
+            fontSize={14}
           />
         </div>
       </div>
