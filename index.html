@@ -33,6 +33,11 @@
   .h-2\.5.rounded-full:not(.w-2\.5) { height: 12px; }
   .acciones-orden > * { flex: 1 1 auto; min-height: 42px; font-size: 13px !important; font-weight: 600; padding: 0 14px !important; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
   /* ===== Barra de opciones (celular y computadora) ===== */
+  /* Espacio entre tarjetas ajustable (Configuración): escala los márgenes de abajo según --mf-gap. */
+  .mf-esp .mb-3 { margin-bottom: calc(var(--mf-gap, 16px) * 0.75) !important; }
+  .mf-esp .mb-4 { margin-bottom: var(--mf-gap, 16px) !important; }
+  .mf-esp .mb-5 { margin-bottom: calc(var(--mf-gap, 16px) * 1.25) !important; }
+  .mf-esp .mb-6 { margin-bottom: calc(var(--mf-gap, 16px) * 1.5) !important; }
   .mf-nav { transition: transform .25s ease; }
   .mf-nav.mf-nav-oculta { transform: translateY(calc(100% + 34px)); }
   @keyframes mfSlideDer { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
@@ -2574,6 +2579,16 @@ function App() {
   // Precierre: lo pegado y el rango viven aquí (no dentro de la pestaña) para que no
   // se pierdan al cambiar de pestaña, y se guardan en este celular.
   const [precierre, setPrecierre] = useState(leerPrecierreGuardado);
+  // Espacio entre tarjetas (0 a 20 px) por pestaña; se guarda solo en este celular.
+  const [espacios, setEspacios] = useState(() => {
+    const base = { dash: 8, cli: 8, msj: 8 };
+    try {
+      const g = JSON.parse(localStorage.getItem("mf_espacios") || "null");
+      if (g) ["dash", "cli", "msj"].forEach((k) => { const n = Number(g[k]); if (!isNaN(n) && n >= 0 && n <= 20) base[k] = Math.round(n); });
+    } catch (e) {}
+    return base;
+  });
+  useEffect(() => { try { localStorage.setItem("mf_espacios", JSON.stringify(espacios)); } catch (e) {} }, [espacios]);
   const precierreMarca = useRef(null);
   useEffect(() => {
     try {
@@ -4394,7 +4409,10 @@ function App() {
           </div>
         );
       })()}
-      <main className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : "")}>
+      <main
+        className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : "") + (tab === "dashboard" || tab === "clientes" || tab === "alertas" ? " mf-esp" : "")}
+        style={ tab === "dashboard" || tab === "clientes" || tab === "alertas" ? { "--mf-gap": espacios[tab === "dashboard" ? "dash" : tab === "clientes" ? "cli" : "msj"] + "px" } : undefined }
+      >
         {!loaded ? (
           <SkeletonCargando />
         ) : (
@@ -4774,6 +4792,8 @@ function App() {
       )}
       {mostrarConfig && (
         <ConfigModal
+          espacios={espacios}
+          setEspacios={setEspacios}
           onClose={() => setMostrarConfig(false)}
           onDeshacer={deshacerUltimaAccion}
           puedeDeshacer={historial.length > 0}
@@ -15828,7 +15848,7 @@ function ConfirmModal({ onCancel, onConfirm }) {
   );
 }
 
-function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExportar, onImportarClick, umbralProrrateo, setUmbralProrrateo, onCerrarSesion }) {
+function ConfigModal({ espacios, setEspacios, onClose, onDeshacer, puedeDeshacer, onExportar, puedeExportar, onImportarClick, umbralProrrateo, setUmbralProrrateo, onCerrarSesion }) {
   const rowClass = "text-sm font-semibold text-left px-4 py-3.5 rounded-xl flex items-center gap-2 disabled:opacity-40";
   const rowStyle = { color: "#001E62", border: "2px solid #DFE5EF", background: "#fff" };
   return (
@@ -15874,6 +15894,34 @@ function ConfigModal({ onClose, onDeshacer, puedeDeshacer, onExportar, puedeExpo
             />
           </div>
           <p className="text-xs mt-1.5" style={ { color: "#5A6680" } }>A partir de qué % de prorrateo se envía el aviso D+3</p>
+        </div>
+        <div className="py-3 border-t" style={ { borderColor: "#DFE5EF" } }>
+          <div className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Espacio entre tarjetas</div>
+          {(() => {
+            const filas = [["general", "Todas las pestañas"], ["dash", "🏠 Dashboard"], ["cli", "👥 Clientes"], ["msj", "💵 Mensajes"]];
+            const prom = Math.round((espacios.dash + espacios.cli + espacios.msj) / 3);
+            return filas.map(([k, t]) => {
+              const v = k === "general" ? prom : espacios[k];
+              return (
+                <label key={k} className="flex items-center gap-2 py-1.5" style={ { color: "#001E62" } }>
+                  <span className="text-xs font-semibold" style={ { width: 118 } }>{t}</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="20"
+                    step="1"
+                    value={v}
+                    onChange={(e) => { const n = Number(e.target.value); setEspacios(k === "general" ? { dash: n, cli: n, msj: n } : { ...espacios, [k]: n }); } }
+                    className="flex-1"
+                    aria-label={"Espacio entre tarjetas: " + t}
+                    style={ { minHeight: 32 } }
+                  />
+                  <span className="text-xs font-bold font-mono" style={ { width: 38, textAlign: "right" } }>{v} px</span>
+                </label>
+              );
+            });
+          })()}
+          <button type="button" onClick={() => setEspacios({ dash: 8, cli: 8, msj: 8 })} className="text-xs font-semibold underline mt-1" style={ { color: "#0B4A99", minHeight: 36 } }>Restablecer (8 px)</button>
         </div>
         <button
           onClick={onCerrarSesion}
