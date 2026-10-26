@@ -33,6 +33,25 @@
   .h-2\.5.rounded-full:not(.w-2\.5) { height: 12px; }
   .acciones-orden > * { flex: 1 1 auto; min-height: 42px; font-size: 13px !important; font-weight: 600; padding: 0 14px !important; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
   /* ===== Barra de opciones (celular y computadora) ===== */
+  /* ===== Animaciones sutiles (se apagan si el teléfono tiene "Reducir movimiento") ===== */
+  @keyframes mfAbrir { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+  @keyframes mfSube { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+  @keyframes mfFondo { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes mfFade { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes mfLatido { 0% { transform: scale(1); } 40% { transform: scale(1.35); } 100% { transform: scale(1); } }
+  @media (prefers-reduced-motion: no-preference) {
+    button, [role="button"], a { transition: background-color .18s ease, color .18s ease, border-color .18s ease, transform .12s ease, opacity .18s ease; }
+    button:not(:disabled):active, [role="button"]:active, a[href]:active { transform: scale(.97); }
+    .mf-abrir { animation: mfAbrir .2s ease-out; }
+    .mf-fade { animation: mfFade .18s ease-out; }
+    .mf-fade-tab { animation: mfFade .22s ease-out; }
+    .mf-aviso { animation: mfSube .25s ease-out; }
+    .mf-badge { animation: mfLatido .45s ease-out; }
+    .fixed.inset-0 { animation: mfFondo .2s ease-out; }
+    .fixed.inset-0 > div { animation: mfSube .25s cubic-bezier(.2,.8,.2,1); }
+    div[style*="width"][style*="%"] { transition: width .6s ease; }
+    .mf-sale { opacity: 0 !important; transform: translateX(28px); transition: opacity .2s ease, transform .2s ease !important; pointer-events: none; }
+  }
   /* Espacio entre tarjetas ajustable (Configuración): escala los márgenes de abajo según --mf-gap. */
   .mf-esp .mb-3 { margin-bottom: calc(var(--mf-gap, 16px) * 0.75) !important; }
   .mf-esp .mb-4 { margin-bottom: var(--mf-gap, 16px) !important; }
@@ -1966,6 +1985,23 @@ function facturaActual(facturas) {
   return facturas[0];
 }
 
+// Al marcar algo como hecho, la fila se atenúa y se desliza antes de salir de la lista.
+function conSalida(e, fn) {
+  try {
+    const el = e && e.currentTarget && e.currentTarget.closest ? e.currentTarget.closest("[data-fila]") : null;
+    if (el && !(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches)) {
+      el.classList.add("mf-sale");
+      setTimeout(() => {
+        fn();
+        // Si la fila sigue en la lista (por ejemplo, queda otro paso para ese cliente), vuelve a verse.
+        setTimeout(() => { try { el.classList.remove("mf-sale"); } catch (er) {} }, 150);
+      }, 200);
+      return;
+    }
+  } catch (er) {}
+  fn();
+}
+
 // ---------- Campo de búsqueda con ✕ pegada al final del texto ----------
 // La ✕ aparece justo a la derecha de lo que se está escribiendo (se mide el texto con un
 // duplicado invisible) y borra todo con un toque.
@@ -1987,7 +2023,7 @@ function CampoBuscar({ value, onChange, placeholder, ariaLabel, wrapperClassName
         style={ { ...(inputStyle || {}), fontSize, fontFamily: "inherit", paddingLeft: padIzq, paddingRight: 44 } }
       />
       {v ? (
-        <div aria-hidden="false" style={ { position: "absolute", top: 0, bottom: 0, left: padIzq + 2, right: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" } }>
+        <div className="mf-fade" aria-hidden="false" style={ { position: "absolute", top: 0, bottom: 0, left: padIzq + 2, right: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" } }>
           <span style={ { visibility: "hidden", whiteSpace: "pre", fontSize, fontFamily: "inherit", maxWidth: "calc(100% - 44px)", overflow: "hidden", flex: "0 1 auto" } }>{v}</span>
           <button
             type="button"
@@ -4008,6 +4044,16 @@ function App() {
   }
   // ---- Barra de abajo que se esconde al bajar y vuelve al subir; deslizar de lado cambia de pestaña ----
   const [slide, setSlide] = useState(null);
+  const [fadeTab, setFadeTab] = useState(false);
+  const primeraTab = useRef(true);
+  useEffect(() => {
+    if (primeraTab.current) { primeraTab.current = false; return; }
+    if (slide) return;
+    setFadeTab(true);
+    const t = setTimeout(() => setFadeTab(false), 260);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
   const ORDEN_SWIPE = ["dashboard", "clientes", "alertas", "precierre"];
   const TITULOS_TAB = { clientes: "Clientes", alertas: "Mensajes", precierre: "Precierre", historial: "Historial" };
   const NOMBRES_SWIPE = { dashboard: "Dashboard", clientes: "Clientes", alertas: "Mensajes", precierre: "Precierre" };
@@ -4308,7 +4354,7 @@ function App() {
             <span className="mf-tab-ico">
               <IconoBarra name={item.icon} />
               {!!item.badge && (
-                <span className="mf-badge" aria-label={`${item.badge} cobros pendientes`}>
+                <span key={item.badge} className="mf-badge" aria-label={`${item.badge} cobros pendientes`}>
                   {item.badge > 9 ? "9+" : item.badge}
                 </span>
               )}
@@ -4446,7 +4492,7 @@ function App() {
         );
       })()}
       <main
-        className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : "") + (tab === "dashboard" || tab === "clientes" || tab === "alertas" ? " mf-esp" : "")}
+        className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : fadeTab ? " mf-fade-tab" : "") + (tab === "dashboard" || tab === "clientes" || tab === "alertas" ? " mf-esp" : "")}
         style={ tab === "dashboard" || tab === "clientes" || tab === "alertas" ? { "--mf-gap": espacios[tab === "dashboard" ? "dash" : tab === "clientes" ? "cli" : "msj"] + "px" } : undefined }
       >
         {!loaded ? (
@@ -6052,7 +6098,7 @@ function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite
         const cuando = vencida ? "⚠ Ya venció" : f === hoy ? "📅 Se instala hoy" : f === addDays(hoy, 1) ? "📅 Se instala mañana" : "📅 " + fmtFechaDia(f);
         const abre = abierta === c.id;
         return (
-          <div key={c.id} className="bg-white rounded-xl border mb-2 overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: vencida ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
+          <div key={c.id} data-fila="" className="bg-white rounded-xl border mb-2 overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: vencida ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
             <div role="button" tabIndex={0} onClick={() => setAbierta(abre ? null : c.id)} aria-expanded={abre} className="flex items-center gap-2.5 cursor-pointer" style={ { minHeight: 60, padding: "8px 8px 8px 12px" } }>
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</div>
@@ -6069,12 +6115,12 @@ function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite
               </button>
             </div>
             {abre && (
-              <div className="px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
+              <div className="mf-abrir px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
                 <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>{textoInstalacion(c)}</div>
                 <div className="flex items-stretch gap-1.5 mt-3">
                   <button
                     type="button"
-                    onClick={() => { if (window.confirm("¿Confirmas que ya enviaste la info de instalación?")) onMarcar(c.id); } }
+                    onClick={(e) => { if (window.confirm("¿Confirmas que ya enviaste la info de instalación?")) conSalida(e, () => onMarcar(c.id)); } }
                     className="flex-1 text-[13px] font-semibold px-2 rounded-md"
                     style={ { background: "#001E62", color: "#fff", minHeight: 46, whiteSpace: "nowrap" } }
                   >
@@ -6092,7 +6138,7 @@ function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite
                 {posAbierto === c.id && (
                   <div className="flex flex-wrap gap-2 mt-2">
                     {[["Mañana", 1], ["En 3 días", 3], ["El lunes", ((8 - new Date().getDay()) % 7) || 7]].map(([t, d]) => (
-                      <button key={t} type="button" onClick={() => { onPosponer("inst-" + c.id, d, tituloEs(c.nombre || "")); setPosAbierto(null); } } className="text-sm font-bold rounded-full px-3" style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }>{t}</button>
+                      <button key={t} type="button" onClick={(e) => { conSalida(e, () => { onPosponer("inst-" + c.id, d, tituloEs(c.nombre || "")); setPosAbierto(null); }); } } className="text-sm font-bold rounded-full px-3" style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }>{t}</button>
                     ))}
                   </div>
                 )}
@@ -6292,10 +6338,10 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
             {partes.length > 0 ? <span className={enTarjeta ? "block text-xs font-normal mt-0.5" : "block text-[11.5px] font-semibold"} style={ { color: enTarjeta ? "#B9C4E0" : "#5A6680" } }>{partes.join(" · ")}</span> : null}
           </span>
         </span>
-        <span className="shrink-0" style={ enTarjeta ? { fontSize: 18, display: "inline-block", transform: visible ? "rotate(-90deg)" : "rotate(90deg)" } : { color: "#5A6680" } } aria-hidden={enTarjeta ? "true" : undefined}>{enTarjeta ? "›" : (visible ? "Ocultar ▴" : "Mostrar ▾")}</span>
+        <span className="shrink-0" style={ enTarjeta ? { fontSize: 18, display: "inline-block", transform: visible ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .2s ease" } : { color: "#5A6680" } } aria-hidden={enTarjeta ? "true" : undefined}>{enTarjeta ? "›" : (visible ? "Ocultar ▴" : "Mostrar ▾")}</span>
       </button>
       {visible ? (enTarjeta ? (
-        <div style={ { padding: "0 12px 12px" } }>
+        <div className="mf-abrir" style={ { padding: "0 12px 12px" } }>
           <div style={ { background: "#fff", borderRadius: 14, overflow: "hidden", border: "2px solid #fff" } }>
             {GRUPOS.map((x) => (
             <div key={x.k} style={ enTarjeta ? { background: "#fff", color: "#001E62" } : undefined }>
@@ -7079,7 +7125,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
               )}
             </div>
             {msgKey === key && (
-              <div className="px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
+              <div className="mf-abrir px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
                 <div className="text-sm mt-2 font-bold font-mono" style={ { color: "#3D4A66" } }>{n.tel}</div>
                 {esRef && <div style={ filaInfo }>Recomendado por un contacto de {tituloEs(c.nombre || "")}</div>}
                 {!esRef && f.diasDesde !== null && <div style={ filaInfo }>💵 Pagó su 1ra factura {f.diasDesde === 0 ? "hoy" : f.diasDesde === 1 ? "hace 1 día" : `hace ${f.diasDesde} días`}</div>}
@@ -8643,7 +8689,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                     () => setCobroMesAbierto((v) => !v)
                   )}
                   {cobroMesAbierto && (
-              <div className="px-4 pb-4 pt-3" style={ { borderTop: "1px solid #DFE5EF" } }>
+              <div className="mf-abrir px-4 pb-4 pt-3" style={ { borderTop: "1px solid #DFE5EF" } }>
                 <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
                   <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>
                     💰 Lo que cobras en {nombreMes(periodoActual)}
@@ -9480,7 +9526,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               <span className="text-sm font-bold font-mono">{fmtMonto(rT)} <span style={ { color: "#5A6680", fontWeight: 600 } }>{rpuAbierto ? "▴" : "▾"}</span></span>
             </button>
             {rpuAbierto ? (
-              <div className="px-4 pb-3 text-xs" style={ { color: "#5A6680", borderTop: "1px solid #EEF1F7" } }>
+              <div className="mf-abrir px-4 pb-3 text-xs" style={ { color: "#5A6680", borderTop: "1px solid #EEF1F7" } }>
                 <div className="flex justify-between py-1.5"><span>🏠 Hogar</span><span className="font-mono" style={ { color: "#001E62" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
                 <div className="flex justify-between py-1.5"><span>📱 Móvil</span><span className="font-mono" style={ { color: "#001E62" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
               </div>
@@ -10275,7 +10321,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                     const atrasada = dias < 0;
                     const abierta = expandidos.has(cliente.id);
                     return (
-                      <div key={cliente.id} className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: atrasada ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
+                      <div key={cliente.id} data-fila="" className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: atrasada ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
                         <div
                           role="button"
                           tabIndex={0}
@@ -10308,7 +10354,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                           </a>
                         </div>
                         {abierta && (
-                          <div className="px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
+                          <div className="mf-abrir px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
                             <div className="text-sm mt-2" style={ { color: "#3D4A66" } }>
                               {esMovil
                                 ? `${cliente.telefono} act: ${fmtFecha(fechas.activacion)} · ciclo ${String(fechas.ciclo).padStart(2, "0")}`
@@ -10330,10 +10376,12 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                               <div
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => {
+                                onClick={(e) => {
                                   if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
-                                    if (esMovil) onMarcarMovil(cliente.id, milestone.key);
-                                    else onMarcar(cliente.id, milestone.key);
+                                    conSalida(e, () => {
+                                      if (esMovil) onMarcarMovil(cliente.id, milestone.key);
+                                      else onMarcar(cliente.id, milestone.key);
+                                    });
                                   }
                                 } }
                                 className="flex-1 flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer"
@@ -10344,15 +10392,15 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                               <div
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => {
+                                onClick={(e) => {
                                   if (esMovil) {
-                                    if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) onPagoMovil(cliente.id);
+                                    if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) conSalida(e, () => onPagoMovil(cliente.id));
                                   } else {
                                     const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
                                     if (window.confirm(saldo
                                       ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
                                       : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
-                                      onPagoRealizado(cliente.id, factura.n);
+                                      conSalida(e, () => onPagoRealizado(cliente.id, factura.n));
                                     }
                                   }
                                 } }
@@ -10376,7 +10424,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                   <button
                                     key={t}
                                     type="button"
-                                    onClick={() => { onPosponer("cobro-" + cliente.id + "-" + milestone.key, d, cliente.nombre); setPosAbierto(null); } }
+                                    onClick={(e) => { conSalida(e, () => { onPosponer("cobro-" + cliente.id + "-" + milestone.key, d, cliente.nombre); setPosAbierto(null); }); } }
                                     className="text-sm font-bold rounded-full px-3"
                                     style={ { minHeight: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#001E62" } }
                                   >
@@ -11075,26 +11123,26 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           {chipM(masPanelAbierto || filtrosAbiertos, "⋯ Más" + (filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""), () => { setMasPanelAbierto((v) => !v); setMesPanelAbierto(false); setGrupoAbierto(null); }, false)}
         </div>
         {grupoAbierto === "fact" && (
-          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+          <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             {nPago1 > 0 && <button type="button" onClick={() => { alternarEstado("pago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>✓ Pagó su 1ra factura · {nPago1}</button>}
             {nNoPago1 > 0 && <button type="button" onClick={() => { alternarEstado("nopago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⏱ Aún no la paga · {nNoPago1}</button>}
           </div>
         )}
         {grupoAbierto === "plan" && (
-          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+          <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             {planesOpc.map(([k, t, n]) => (
               <button key={k} type="button" onClick={() => { setFiltroPlan(k); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>{t} · {n}</button>
             ))}
           </div>
         )}
         {grupoAbierto === "pend" && (
-          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+          <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             {listaAbono.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaAbono"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⚠ Falta abono · {listaAbono.length}</button>}
             {listaInfo.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaInfo"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>📩 Falta info · {listaInfo.length}</button>}
           </div>
         )}
         {mesPanelAbierto && (
-          <div className="mt-2 bg-white rounded-xl border p-3 flex flex-col gap-3" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+          <div className="mf-abrir mt-2 bg-white rounded-xl border p-3 flex flex-col gap-3" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             <div className="flex flex-wrap gap-2">
               {meses.map((m, i) => (
                 <button
@@ -11126,7 +11174,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </div>
         )}
         {masPanelAbierto && (
-          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+          <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             <button type="button" onClick={() => { setMasPanelAbierto(false); setExportarAbierto(true); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⬇️ Exportar suscriptores</button>
             <button type="button" onClick={() => { setMasPanelAbierto(false); setPapeleraAbierta(true); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>🗑️ Papelera{eliminados.length > 0 ? " (" + eliminados.length + ")" : ""}</button>
             {filtrosActivos > 0 && (
