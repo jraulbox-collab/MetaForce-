@@ -10835,6 +10835,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   const [menuMasAbierto, setMenuMasAbierto] = useState(false);
   const [mesPanelAbierto, setMesPanelAbierto] = useState(false);
   const [masPanelAbierto, setMasPanelAbierto] = useState(false);
+  const [grupoAbierto, setGrupoAbierto] = useState(null);
   const [menuTarjeta, setMenuTarjeta] = useState(null);
   // Chips del celular (Todos / Falta abono / Por instalar / Instalados / Cancelados): se calculan
   // aquí para poder ponerlos en la misma fila que el botón de Filtros.
@@ -10897,6 +10898,10 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       {activo && quitable && !String(texto).startsWith("✓") ? "✓ " : ""}{texto}{activo && quitable ? " ✕" : ""}
     </button>
   );
+  const nPago1 = baseChipsWeb.filter((c) => !clienteExcluido(c) && pasaFiltroFactura(c, "pago1")).length;
+  const nNoPago1 = baseChipsWeb.filter((c) => !clienteExcluido(c) && pasaFiltroFactura(c, "nopago1")).length;
+  const esFact = filtroEstado === "pago1" || filtroEstado === "nopago1";
+  const esPend = chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo";
   const alternarEstado = (k) => { setChipGrupo("todos"); setFiltroEstado(filtroEstado === k ? "" : k); };
   const todoLimpio = chipGrupo === "todos" && !filtroEstado;
   const limpiarTodoM = () => { setFiltroEstado(""); setFiltroInstalacion(""); setChipGrupo("todos"); setFiltroPlan(""); setFechaDesde(""); setFechaHasta(""); };
@@ -10921,21 +10926,31 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </div>
         </div>
         <div className="flex items-center gap-2 mt-2 overflow-x-auto" style={ { scrollbarWidth: "none", paddingBottom: 2 } }>
-          {chipM(false, "📅 " + (rangoActivo ? cortoF(fechaDesde) + (fechaHasta && fechaHasta !== fechaDesde ? " – " + cortoF(fechaHasta) : "") : labelMesM) + (mesPanelAbierto ? " ▴" : " ▾"), () => { setMesPanelAbierto((v) => !v); setMasPanelAbierto(false); }, false, { borderColor: "#0072CE", color: "#0072CE", background: rangoActivo ? "#E3EDFA" : "#fff" })}
+          {chipM(false, "📅 " + (rangoActivo ? cortoF(fechaDesde) + (fechaHasta && fechaHasta !== fechaDesde ? " – " + cortoF(fechaHasta) : "") : labelMesM) + (mesPanelAbierto ? " ▴" : " ▾"), () => { setMesPanelAbierto((v) => !v); setMasPanelAbierto(false); setGrupoAbierto(null); }, false, { borderColor: "#0072CE", color: "#0072CE", background: rangoActivo ? "#E3EDFA" : "#fff" })}
           {subVista === "clientes" && visiblesFinal.length > 0 && (
             <React.Fragment>
               {chipM(todoLimpio, "Todos " + totalCuentan, () => limpiarTodoM(), false)}
-              {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && chipM(chipGrupo === "faltaAbono", "⚠ Falta abono " + listaAbono.length, () => { setFiltroEstado(""); setChipGrupo(chipGrupo === "faltaAbono" ? "todos" : "faltaAbono"); }, true)}
-              {(listaInfo.length > 0 || chipGrupo === "faltaInfo") && chipM(chipGrupo === "faltaInfo", "📩 Falta info " + listaInfo.length, () => { setFiltroEstado(""); setChipGrupo(chipGrupo === "faltaInfo" ? "todos" : "faltaInfo"); }, true)}
-              {chipM(chipGrupo === "porInstalar", "Por instalar " + conteoG.porInstalar, () => setChipGrupo(chipGrupo === "porInstalar" ? "todos" : "porInstalar"), true)}
-              {chipM(chipGrupo === "instalados", "Instalados " + conteoG.instalados, () => setChipGrupo(chipGrupo === "instalados" ? "todos" : "instalados"), true)}
-              {chipM(filtroEstado === "pago1", "✓ Pagó", () => alternarEstado("pago1"), true)}
-              {chipM(filtroEstado === "nopago1", "⏱ Aún no la paga", () => alternarEstado("nopago1"), true)}
+              {(conteoG.porInstalar > 0 || chipGrupo === "porInstalar") && chipM(chipGrupo === "porInstalar", "Por instalar " + conteoG.porInstalar, () => setChipGrupo(chipGrupo === "porInstalar" ? "todos" : "porInstalar"), true)}
+              {(conteoG.instalados > 0 || chipGrupo === "instalados") && chipM(chipGrupo === "instalados", "Instalados " + conteoG.instalados, () => setChipGrupo(chipGrupo === "instalados" ? "todos" : "instalados"), true)}
+              {(nPago1 > 0 || nNoPago1 > 0 || esFact) && chipM(esFact, esFact ? (filtroEstado === "pago1" ? "💵 ✓ Pagó" : "💵 ⏱ Aún no la paga") : "💵 1ra factura ▾", () => { if (esFact) { setFiltroEstado(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "fact" ? null : "fact"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
+              {(listaAbono.length + listaInfo.length > 0 || esPend) && chipM(esPend, esPend ? (chipGrupo === "faltaAbono" ? "⚠ Falta abono" : "📩 Falta info") : "📩 Pendientes " + (listaAbono.length + listaInfo.length) + " ▾", () => { if (esPend) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "pend" ? null : "pend"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)}
               {conteoG.cancelados > 0 && chipM(chipGrupo === "cancelados", "Cancelados " + conteoG.cancelados, () => setChipGrupo(chipGrupo === "cancelados" ? "todos" : "cancelados"), true)}
             </React.Fragment>
           )}
-          {chipM(masPanelAbierto || filtrosAbiertos, "⋯ Más" + (filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""), () => { setMasPanelAbierto((v) => !v); setMesPanelAbierto(false); }, false)}
+          {chipM(masPanelAbierto || filtrosAbiertos, "⋯ Más" + (filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""), () => { setMasPanelAbierto((v) => !v); setMesPanelAbierto(false); setGrupoAbierto(null); }, false)}
         </div>
+        {grupoAbierto === "fact" && (
+          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+            {nPago1 > 0 && <button type="button" onClick={() => { alternarEstado("pago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>✓ Pagó su 1ra factura · {nPago1}</button>}
+            {nNoPago1 > 0 && <button type="button" onClick={() => { alternarEstado("nopago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⏱ Aún no la paga · {nNoPago1}</button>}
+          </div>
+        )}
+        {grupoAbierto === "pend" && (
+          <div className="mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+            {listaAbono.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaAbono"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⚠ Falta abono · {listaAbono.length}</button>}
+            {listaInfo.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaInfo"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>📩 Falta info · {listaInfo.length}</button>}
+          </div>
+        )}
         {mesPanelAbierto && (
           <div className="mt-2 bg-white rounded-xl border p-3 flex flex-col gap-3" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             <div className="flex flex-wrap gap-2">
