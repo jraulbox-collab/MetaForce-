@@ -4233,7 +4233,7 @@ function App() {
               style={ { opacity: 0, fontSize: 16 } }
             >
               {Array.from({ length: 24 }, (_, i) => sumarMesClave(periodoActualApp, -i)).map((key) => (
-                <option key={key} value={key}>{mesLabel(key)}{key === periodoActualApp ? " (actual)" : ""}</option>
+                <option key={key} value={key}>{mesLabel(key).replace(new RegExp("\\s*" + new Date().getFullYear() + "$"), "")}</option>
               ))}
             </select>
           </div>
