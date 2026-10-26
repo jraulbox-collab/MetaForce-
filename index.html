@@ -3958,6 +3958,16 @@ function App() {
   // ---- Barra de abajo que se esconde al bajar y vuelve al subir; deslizar de lado cambia de pestaña ----
   const [slide, setSlide] = useState(null);
   const ORDEN_SWIPE = ["dashboard", "clientes", "alertas", "precierre"];
+  const TITULOS_TAB = { clientes: "Clientes", alertas: "Mensajes", precierre: "Precierre", historial: "Historial" };
+  const NOMBRES_SWIPE = { dashboard: "Dashboard", clientes: "Clientes", alertas: "Mensajes", precierre: "Precierre" };
+  const [pistaSwipe, setPistaSwipe] = useState(null);
+  const pistaRef = useRef(null);
+  pistaRef.current = (dir) => {
+    const i = ORDEN_SWIPE.indexOf(tab);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ORDEN_SWIPE.length) return null;
+    return NOMBRES_SWIPE[ORDEN_SWIPE[j]];
+  };
   const deslizarRef = useRef(null);
   deslizarRef.current = (dir) => {
     const i = ORDEN_SWIPE.indexOf(tab);
@@ -4014,8 +4024,11 @@ function App() {
       if (window.visualViewport && window.visualViewport.scale > 1.01) return;
       if (conMovimientoLateral(e.target)) return;
       sx = t.clientX; sy = t.clientY; t0 = Date.now(); ok = true;
+      const destinoNombre = pistaRef.current ? pistaRef.current(lado === "izq" ? -1 : 1) : null;
+      setPistaSwipe(destinoNombre ? { lado, texto: destinoNombre } : null);
     }
     function alSoltar(e) {
+      setPistaSwipe(null);
       if (!ok) return;
       ok = false;
       const t = e.changedTouches[0];
@@ -4028,7 +4041,9 @@ function App() {
     }
     window.addEventListener("touchstart", alTocar, { passive: true });
     window.addEventListener("touchend", alSoltar, { passive: true });
-    return () => { window.removeEventListener("touchstart", alTocar); window.removeEventListener("touchend", alSoltar); };
+    const alCancelar = () => { ok = false; setPistaSwipe(null); };
+    window.addEventListener("touchcancel", alCancelar, { passive: true });
+    return () => { window.removeEventListener("touchstart", alTocar); window.removeEventListener("touchend", alSoltar); window.removeEventListener("touchcancel", alCancelar); };
   }, []);
   // Botón de actualizar: vuelve a cargar la app (trae la versión más nueva y vuelve a leer
   // tus datos de Supabase). Si se está guardando algo, espera a que termine antes de recargar.
@@ -4062,6 +4077,15 @@ function App() {
 
   return (
     <div className="min-h-screen flex flex-col md:flex-row font-sans" style={ { background: "#F3F6FB", color: "#001E62" } }>
+      {pistaSwipe && (
+        <div
+          aria-hidden="true"
+          className="md:hidden fixed z-50 font-bold rounded-full"
+          style={ { top: "50%", [pistaSwipe.lado === "izq" ? "left" : "right"]: 8, transform: "translateY(-50%)", background: "#001E62", color: "#fff", padding: "10px 14px", fontSize: 15, pointerEvents: "none", boxShadow: "0 4px 14px rgba(0,30,98,.35)" } }
+        >
+          {pistaSwipe.lado === "izq" ? "‹ " + pistaSwipe.texto : pistaSwipe.texto + " ›"}
+        </div>
+      )}
       <div
         className={
           "md:hidden flex items-center gap-2 px-4 py-2 absolute top-0 left-0 right-0 z-30"
@@ -4070,11 +4094,11 @@ function App() {
       >
         <button onClick={() => { setPeriodoDash(periodoActualApp); setTab("dashboard"); }} className="flex items-center gap-2" aria-label="Inicio">
           <div className="rounded-lg flex items-center justify-center font-extrabold" style={ { width: 30, height: 30, background: "#fff", color: "#001E62", fontSize: 14, letterSpacing: "-0.02em" } }>MF</div>
-          {tab !== "dashboard" && tab !== "clientes" && <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>}
-          {tab === "clientes" && (
+          {tab !== "dashboard" && !TITULOS_TAB[tab] && <span className="text-white font-semibold tracking-wide text-lg">MetaForce CRM</span>}
+          {TITULOS_TAB[tab] && (
             <span style={ { lineHeight: 1.1, textAlign: "left" } }>
               <span className="block" style={ { fontSize: 10, letterSpacing: "0.08em", fontWeight: 600, color: "#A9B8D6" } }>METAFORCE CRM</span>
-              <span className="block text-white font-bold" style={ { fontSize: 18 } }>Clientes</span>
+              <span className="block text-white font-bold" style={ { fontSize: 18 } }>{TITULOS_TAB[tab]}</span>
             </span>
           )}
         </button>
