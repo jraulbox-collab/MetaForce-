@@ -33,6 +33,13 @@
   .h-2\.5.rounded-full:not(.w-2\.5) { height: 12px; }
   .acciones-orden > * { flex: 1 1 auto; min-height: 42px; font-size: 13px !important; font-weight: 600; padding: 0 14px !important; border-radius: 12px; display: inline-flex; align-items: center; justify-content: center; }
   /* ===== Barra de opciones (celular y computadora) ===== */
+  .mf-nav { transition: transform .25s ease; }
+  .mf-nav.mf-nav-oculta { transform: translateY(calc(100% + 34px)); }
+  @keyframes mfSlideDer { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
+  @keyframes mfSlideIzq { from { transform: translateX(-32px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .mf-slide-der { animation: mfSlideDer .22s ease-out; }
+  .mf-slide-izq { animation: mfSlideIzq .22s ease-out; }
+  @media (prefers-reduced-motion: reduce) { .mf-slide-der, .mf-slide-izq { animation: none; } }
   .mf-nav { position: fixed; left: 14px; right: 14px; bottom: calc(12px + env(safe-area-inset-bottom)); height: 54px; background: #001E62; border-radius: 27px; box-shadow: 0 8px 20px rgba(0,30,98,0.35); padding: 0 6px; align-items: center; justify-content: space-around; }
   .mf-tab { flex: 1; display: flex; align-items: center; justify-content: center; color: #A9B8D6; font-weight: 500; background: none; border: 0; padding: 0; height: 54px; -webkit-tap-highlight-color: transparent; }
   .mf-tab.on { color: #FFFFFF; font-weight: 700; }
@@ -3804,7 +3811,8 @@ function App() {
     : estadoGuardado === "error"
     ? "Error al guardar — revisa tu conexión"
     : "";
-  const bottomFab = barraOculta ? (avisoGuardado ? 72 : 24) : (avisoGuardado ? 150 : 86);
+  const barraFuera = barraOculta || barraEscondida;
+  const bottomFab = barraFuera ? (avisoGuardado ? 72 : 24) : (avisoGuardado ? 150 : 86);
   function tocarPestana(key) {
     if (tab === key) {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -3813,6 +3821,74 @@ function App() {
     if (key === "dashboard") setPeriodoDash(periodoActualApp);
     setTab(key);
   }
+  // ---- Barra de abajo que se esconde al bajar y vuelve al subir; deslizar de lado cambia de pestaña ----
+  const [barraEscondida, setBarraEscondida] = useState(false);
+  const [slide, setSlide] = useState(null);
+  const ORDEN_SWIPE = ["dashboard", "clientes", "alertas", "precierre"];
+  const deslizarRef = useRef(null);
+  deslizarRef.current = (dir) => {
+    const i = ORDEN_SWIPE.indexOf(tab);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ORDEN_SWIPE.length) return;
+    const destino = ORDEN_SWIPE[j];
+    if (destino === "dashboard") setPeriodoDash(periodoActualApp);
+    setSlide(dir > 0 ? "der" : "izq");
+    setTimeout(() => setSlide(null), 320);
+    // Cambiar de pestaña con el dedo no agrega pasos al historial: "atrás" sigue llevando a donde ibas.
+    navPop.current = true;
+    try { window.history.replaceState({ mf: true, tab: destino, clienteDetalleId: null, origenDetalle: "clientes" }, ""); } catch (e) {}
+    setTab(destino);
+  };
+  useEffect(() => {
+    let ultimo = window.scrollY;
+    function alScroll() {
+      const y = window.scrollY;
+      const d = y - ultimo;
+      if (Math.abs(d) < 6) return;
+      ultimo = y;
+      if (y < 60 || d < 0) setBarraEscondida(false);
+      else setBarraEscondida(true);
+    }
+    window.addEventListener("scroll", alScroll, { passive: true });
+    return () => window.removeEventListener("scroll", alScroll);
+  }, []);
+  useEffect(() => { setBarraEscondida(false); }, [tab]);
+  useEffect(() => {
+    let sx = 0, sy = 0, t0 = 0, ok = false;
+    function conMovimientoLateral(el) {
+      while (el && el !== document.body) {
+        if (el.nodeType === 1) {
+          if (/^(INPUT|SELECT|TEXTAREA)$/.test(el.tagName) || (el.dataset && el.dataset.noSwipe !== undefined)) return true;
+          const cs = window.getComputedStyle(el);
+          if ((cs.overflowX === "auto" || cs.overflowX === "scroll") && el.scrollWidth > el.clientWidth + 2) return true;
+        }
+        el = el.parentElement;
+      }
+      return false;
+    }
+    function alTocar(e) {
+      ok = false;
+      if (e.touches.length !== 1) return;
+      const t = e.touches[0];
+      if (t.clientX < 25 || t.clientX > window.innerWidth - 25) return; // el borde es del gesto de atrás de Safari
+      if (document.querySelector(".fixed.inset-0")) return; // hay una ventana abierta
+      if (window.visualViewport && window.visualViewport.scale > 1.01) return;
+      if (conMovimientoLateral(e.target)) return;
+      sx = t.clientX; sy = t.clientY; t0 = Date.now(); ok = true;
+    }
+    function alSoltar(e) {
+      if (!ok) return;
+      ok = false;
+      const t = e.changedTouches[0];
+      const dx = t.clientX - sx;
+      const dy = t.clientY - sy;
+      if (Math.abs(dx) < 80 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - t0 > 900) return;
+      if (deslizarRef.current) deslizarRef.current(dx < 0 ? 1 : -1);
+    }
+    window.addEventListener("touchstart", alTocar, { passive: true });
+    window.addEventListener("touchend", alSoltar, { passive: true });
+    return () => { window.removeEventListener("touchstart", alTocar); window.removeEventListener("touchend", alSoltar); };
+  }, []);
   // Botón de actualizar: vuelve a cargar la app (trae la versión más nueva y vuelve a leer
   // tus datos de Supabase). Si se está guardando algo, espera a que termine antes de recargar.
   function refrescarApp() {
@@ -3902,6 +3978,16 @@ function App() {
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 11a8.1 8.1 0 0 0-15.5-2M4 5v4h4M4 13a8.1 8.1 0 0 0 15.5 2M20 19v-4h-4" /></svg>
         </button>
+        <button
+          type="button"
+          onClick={() => setMostrarMasMenu(true)}
+          aria-label="Más opciones: Historial y Configuración"
+          title="Más opciones"
+          className="flex items-center justify-center rounded-full shrink-0"
+          style={ { width: 40, height: 40, color: "#fff", background: "transparent", border: 0 } }
+        >
+          <IconoBarra name="menu" size={22} />
+        </button>
       </div>
 
       <aside
@@ -3971,12 +4057,13 @@ function App() {
 
       {/* ---- Navegación móvil: barra fija abajo + botón flotante de agregar ---- */}
       <nav
-        className="md:hidden z-40 flex mf-nav" style={ { display: barraOculta ? "none" : undefined } }
+        className={"md:hidden z-40 flex mf-nav" + (barraEscondida ? " mf-nav-oculta" : "")} style={ { display: barraOculta ? "none" : undefined } }
       >
         {[
           { key: "dashboard", label: "Inicio", icon: "home" },
           { key: "clientes", label: "Clientes", icon: "users" },
           { key: "alertas", label: "Mensajes", icon: "cash", badge: stats.alHoy },
+          { key: "precierre", label: "Precierre", icon: "receipt" },
         ].map((item) => (
           <button
             key={item.key}
@@ -3995,19 +4082,24 @@ function App() {
             {tab === item.key && <span className="mf-tab-lbl">{item.label}</span>}
           </button>
         ))}
-        <button
-          onClick={() => setMostrarMasMenu(true)}
-          className="mf-tab"
-          aria-label="Más"
-        >
-          <span className="mf-tab-ico"><IconoBarra name="menu" /></span>
-        </button>
       </nav>
+
+      {barraEscondida && !barraOculta && ORDEN_SWIPE.includes(tab) && (
+        <div
+          className="md:hidden fixed z-40 flex items-center"
+          style={ { left: "50%", transform: "translateX(-50%)", bottom: "calc(12px + env(safe-area-inset-bottom))", background: "rgba(0,30,98,0.88)", borderRadius: 12, padding: "6px 12px", gap: 8, pointerEvents: "none" } }
+          aria-hidden="true"
+        >
+          {ORDEN_SWIPE.map((k) => (
+            <span key={k} style={ { width: 9, height: 9, borderRadius: "50%", boxSizing: "border-box", border: "1.5px solid #fff", background: tab === k ? "#fff" : "transparent" } } />
+          ))}
+        </div>
+      )}
 
       {!!avisoGuardado && tab !== "nuevo" && (
         <div
           className="md:hidden fixed z-40 mf-aviso"
-          style={ { left: 12, right: 12, bottom: barraOculta ? 12 : "calc(78px + env(safe-area-inset-bottom))" } }
+          style={ { left: 12, right: 12, bottom: barraFuera ? 12 : "calc(78px + env(safe-area-inset-bottom))" } }
           role="status"
         >
           {avisoGuardado}
@@ -4018,7 +4110,7 @@ function App() {
         <button
           onClick={() => setMostrarSelectorNuevo(true)}
           className="md:hidden fixed z-40 flex items-center justify-center text-white mf-fab"
-          style={ { background: "#001E62", right: "16px", bottom: "calc(" + bottomFab + "px + env(safe-area-inset-bottom))", width: 54, height: 54, borderRadius: 16, boxShadow: "0 4px 14px rgba(0,30,98,0.3)", border: 0 } }
+          style={ { background: "#001E62", right: "16px", bottom: "calc(" + bottomFab + "px + env(safe-area-inset-bottom))", width: 54, height: 54, borderRadius: 16, boxShadow: "0 4px 14px rgba(0,30,98,0.3)", border: 0, transition: "bottom .25s ease" } }
           aria-label="Agregar cliente"
         >
           <IconoBarra name="plus" size={28} />
@@ -4047,7 +4139,6 @@ function App() {
             </div>
             <div className="flex flex-col gap-1">
               {[
-                { key: "precierre", label: "Precierre", icon: "receipt" },
                 { key: "historial", label: "Historial", icon: "clock" },
               ].map((item) => (
                 <button
@@ -4096,7 +4187,7 @@ function App() {
           </div>
         );
       })()}
-      <main className="flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl">
+      <main className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : "")}>
         {!loaded ? (
           <SkeletonCargando />
         ) : (
