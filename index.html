@@ -15670,12 +15670,6 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
 
         <SeccionFormulario titulo="Plan y facturación">
           <div className="grid grid-cols-2 gap-3">
-            <Field label="Ciclo de facturación *">
-              <select required value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
-                <option value="">Seleccionar…</option>
-                {CICLOS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
-              </select>
-            </Field>
             <Field label="Tipo de plan *">
               <select
                 required
@@ -15688,6 +15682,53 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                 {TIPOS_PLAN.map((t) => <option key={t} value={t}>{t}</option>)}
               </select>
             </Field>
+            <Field label="Velocidad *">
+              <select required value={form.velocidad} onChange={set("velocidad")} className={inputClass} style={inputStyle}>
+                <option value="">Seleccionar…</option>
+                {VELOCIDADES.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </Field>
+            {form.planTipo === "DOBLE" && (
+              <div className="col-span-2">
+                <Field label="Plan de TV *">
+                  <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
+                    <option value="">Seleccionar…</option>
+                    {TIPOS_TV.map((t) => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </Field>
+              </div>
+            )}
+            <Field label="Tecnología">
+              <select value={form.tecnologia || ""} onChange={set("tecnologia")} className={inputClass} style={inputStyle}>
+                <option value="">Sin definir</option>
+                <option value="FTTH">FTTH (fibra)</option>
+                <option value="HFC">HFC (coaxial)</option>
+              </select>
+            </Field>
+            <Field label="Monto mensual recurrente *">
+              <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
+            </Field>
+            {montosSugeridos.length > 0 && (
+              <div className="col-span-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs" style={ { color: "#5A6680" } }>Sugeridos:</span>
+                {montosSugeridos.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setForm((f) => ({ ...f, montoMensual: String(m) }))}
+                    className="text-xs font-medium px-3 py-1 rounded-full border"
+                    style={
+                      Number(form.montoMensual) === m
+                        ? { background: "#001E62", color: "#fff", borderColor: "#001E62" }
+                        : { background: "#F3F6FB", color: "#374151", borderColor: "#DFE5EF" }
+                    }
+                  >
+                    {fmtMonto(m)}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="col-span-2" style={ { borderTop: "2px solid #DFE5EF" } } aria-hidden="true" />
             <div className="col-span-2">
               <Field label="Fecha de instalación">
                 <input
@@ -15744,52 +15785,14 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                 )}
               </Field>
             </div>
-            <Field label="Velocidad *">
-              <select required value={form.velocidad} onChange={set("velocidad")} className={inputClass} style={inputStyle}>
+            <div className="col-span-2">
+            <Field label="Ciclo de facturación *">
+              <select required value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
                 <option value="">Seleccionar…</option>
-                {VELOCIDADES.map((v) => <option key={v} value={v}>{v}</option>)}
+                {CICLOS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </Field>
-            <Field label="Tecnología">
-              <select value={form.tecnologia || ""} onChange={set("tecnologia")} className={inputClass} style={inputStyle}>
-                <option value="">Sin definir</option>
-                <option value="FTTH">FTTH (fibra)</option>
-                <option value="HFC">HFC (coaxial)</option>
-              </select>
-            </Field>
-            <Field label="Monto mensual recurrente *">
-              <input required type="number" step="0.01" value={form.montoMensual} onChange={set("montoMensual")} className={inputClass} style={inputStyle} />
-            </Field>
-            {montosSugeridos.length > 0 && (
-              <div className="col-span-2 flex flex-wrap items-center gap-1.5">
-                <span className="text-xs" style={ { color: "#5A6680" } }>Sugeridos:</span>
-                {montosSugeridos.map((m) => (
-                  <button
-                    key={m}
-                    type="button"
-                    onClick={() => setForm((f) => ({ ...f, montoMensual: String(m) }))}
-                    className="text-xs font-medium px-3 py-1 rounded-full border"
-                    style={
-                      Number(form.montoMensual) === m
-                        ? { background: "#001E62", color: "#fff", borderColor: "#001E62" }
-                        : { background: "#F3F6FB", color: "#374151", borderColor: "#DFE5EF" }
-                    }
-                  >
-                    {fmtMonto(m)}
-                  </button>
-                ))}
-              </div>
-            )}
-            {form.planTipo === "DOBLE" && (
-              <div className="col-span-2">
-                <Field label="Plan de TV *">
-                  <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
-                    <option value="">Seleccionar…</option>
-                    {TIPOS_TV.map((t) => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                </Field>
-              </div>
-            )}
+            </div>
           </div>
 
           <div className="rounded-lg p-3 mt-4" style={ { background: "#EAF0FB" } }>
