@@ -1493,6 +1493,37 @@ function whatsappLink(cliente, milestone) {
   return `https://wa.me/${telefonoWhatsapp(cliente.telefono)}?text=${encodeURIComponent(milestone.texto)}`;
 }
 
+// ---------- Candado anti-repetición de mensajes ----------
+// Al abrir WhatsApp con un mensaje se anota ahí mismo (en este celular) "abierto a tal hora",
+// sin esperar a que confirmes. Si ese mismo mensaje vuelve a tocarle al mismo cliente, la app
+// pregunta antes de reenviarlo. Tipos: ch (cobro Hogar), cm (cobro móvil), in (instalación), v (venta).
+const APERTURAS_KEY = "mf_aperturas";
+function claveEnvio(it) { return [it.t, it.id, it.key || it.k || "", it.ronda || ""].join("|"); }
+function leerAperturas() {
+  try {
+    const o = JSON.parse(localStorage.getItem(APERTURAS_KEY) || "{}") || {};
+    const lim = Date.now() - 30 * 86400000;
+    Object.keys(o).forEach((k) => { if (new Date(o[k]).getTime() < lim) delete o[k]; });
+    return o;
+  } catch (e) { return {}; }
+}
+function aperturaDe(it) { return leerAperturas()[claveEnvio(it)] || ""; }
+function anotarApertura(it) {
+  try { const o = leerAperturas(); o[claveEnvio(it)] = new Date().toISOString(); localStorage.setItem(APERTURAS_KEY, JSON.stringify(o)); } catch (e) {}
+}
+function quitarApertura(it) {
+  try { const o = leerAperturas(); delete o[claveEnvio(it)]; localStorage.setItem(APERTURAS_KEY, JSON.stringify(o)); } catch (e) {}
+}
+// El mismo enlace pero sin el mensaje escrito: para mirar el chat y ver si ya salió.
+function linkSoloChat(link) { return String(link || "").split("?")[0]; }
+function textoApertura(iso) {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return "";
+  const hora = d.toLocaleTimeString("es-PA", { hour: "numeric", minute: "2-digit" });
+  const dia = fechaLocalISO(d) === fechaLocalISO(new Date()) ? "hoy" : fmtFechaDia(fechaLocalISO(d));
+  return dia + " " + hora;
+}
+
 function calcularPrimeraFactura(fechaInstalacion, cicloDia, montoMensual) {
   if (!fechaInstalacion || !cicloDia) return null;
   const dt = new Date(fechaInstalacion + "T00:00:00");
@@ -4013,6 +4044,30 @@ function App() {
     setCadena(c);
     try { if (c) sessionStorage.setItem("mf-cadena", JSON.stringify(c)); else sessionStorage.removeItem("mf-cadena"); } catch (e) {}
   }
+  // Mensajes que muy posiblemente ya se enviaron (se abrió su chat antes): se revisan aparte.
+  const [revisar, setRevisar] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("mf-revisar") || "[]") || []; } catch (e) { return []; }
+  });
+  function guardarRevisar(l) {
+    setRevisar(l);
+    try { if (l.length) sessionStorage.setItem("mf-revisar", JSON.stringify(l)); else sessionStorage.removeItem("mf-revisar"); } catch (e) {}
+  }
+  // Abre WhatsApp y anota la apertura ANTES de salir de la app.
+  function abrirWhatsapp(it) {
+    anotarApertura(it);
+    registrarEnvio({ tipo: "abrir", clienteId: it.id, nombre: it.nombre || "", key: it.key || it.k || it.t, origen: "app" });
+    window.location.href = it.link;
+  }
+  function revisarSi(it) {
+    marcarItemCadena(it);
+    quitarApertura(it);
+    guardarRevisar(revisar.filter((x) => claveEnvio(x) !== claveEnvio(it)));
+  }
+  function revisarNo(it) {
+    quitarApertura(it);
+    guardarRevisar(revisar.filter((x) => claveEnvio(x) !== claveEnvio(it)));
+    enviarUno(it);
+  }
   function iniciarCadena() {
     const items = [];
     const enComision = (a, mov) => (mov ? a.cliente.f1_estado !== "pagada" && movilCuentaParaComision(a.cliente) : a.cliente.f1_estado !== "pagada" && clienteCuentaParaComision(a.cliente));
@@ -4028,14 +4083,23 @@ function App() {
       items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta" }));
     if (!items.length) return;
     setResumenCadena(null);
-    guardarCadena({ items, i: 0, env: 0, sal: 0 });
-    window.location.href = items[0].link;
+    // Los que ya se abrieron antes no entran a la cadena: se revisan al final.
+    const nuevos = items.filter((it) => !aperturaDe(it));
+    guardarRevisar(items.filter((it) => aperturaDe(it)));
+    if (!nuevos.length) return;
+    guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0 });
+    abrirWhatsapp(nuevos[0]);
   }
   // Un solo mensaje: abre WhatsApp y al volver pregunta "¿Lo enviaste?" (sin Siguiente ni Saltar).
   function enviarUno(item) {
+    // Si ya se abrió antes este mismo mensaje, primero se pregunta si ya salió.
+    if (aperturaDe(item)) {
+      guardarRevisar([item, ...revisar.filter((x) => claveEnvio(x) !== claveEnvio(item))]);
+      return;
+    }
     setResumenCadena(null);
     guardarCadena({ items: [item], i: 0, env: 0, sal: 0 });
-    window.location.href = item.link;
+    abrirWhatsapp(item);
   }
   function marcarItemCadena(it) {
     if (it.t === "ch") marcarEnviadoSeguro(it.id, it.key, "cadena");
@@ -4047,6 +4111,7 @@ function App() {
     const c = cadena;
     if (!c) return;
     if (marcar) marcarItemCadena(c.items[c.i]);
+    else quitarApertura(c.items[c.i]); // dijiste que no se envió: no cuenta como abierto
     const env = c.env + (marcar ? 1 : 0);
     const sal = c.sal + (marcar ? 0 : 1);
     const i = c.i + 1;
@@ -4056,7 +4121,7 @@ function App() {
       return;
     }
     guardarCadena({ ...c, i, env, sal });
-    setTimeout(() => { window.location.href = c.items[i].link; }, 350);
+    setTimeout(() => { abrirWhatsapp(c.items[i]); }, 350);
   }
   function detenerCadena() {
     if (!cadena) return;
@@ -4393,6 +4458,28 @@ function App() {
         ))}
       </nav>
 
+      {!cadena && revisar.length > 0 && (
+        <div className="fixed z-50 left-3 right-3 rounded-xl p-3 overflow-y-auto" style={ { bottom: "calc(12px + env(safe-area-inset-bottom))", maxHeight: "72vh", background: "#fff", border: "2px solid #B45309", boxShadow: "0 6px 24px rgba(0,30,98,0.35)" } } role="dialog" aria-label="Revisar antes de enviar">
+          <div className="flex items-start justify-between gap-2">
+            <div>
+              <div className="text-sm font-extrabold" style={ { color: "#92400E" } }>⚠ Revisar antes de enviar ({revisar.length})</div>
+              <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Ya abrí estos chats antes. Mira si el mensaje ya salió.</div>
+            </div>
+            <button type="button" onClick={() => guardarRevisar([])} className="text-xs font-bold px-2 shrink-0" style={ { minHeight: 36, color: "#001E62" } }>✕ Cerrar</button>
+          </div>
+          {revisar.map((it) => (
+            <div key={claveEnvio(it)} className="mt-3 pt-3" style={ { borderTop: "1px solid #DFE5EF" } }>
+              <div className="text-sm font-bold" style={ { color: "#001E62" } }>{tituloEs(it.nombre || "")}</div>
+              <div className="text-xs" style={ { color: "#5A6680" } }>{it.et} · Abierto {textoApertura(aperturaDe(it))}</div>
+              <div className="flex flex-wrap gap-2 mt-2">
+                <button type="button" onClick={() => { window.location.href = linkSoloChat(it.link); } } className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>👁 Ver el chat</button>
+                <button type="button" onClick={() => revisarSi(it)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } }>✓ Sí, lo envié</button>
+                <button type="button" onClick={() => revisarNo(it)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#92400E", border: "1.5px solid #B45309" } }>↻ No, enviar otra vez</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       {cadena && cadena.items[cadena.i] && (
         <div className="fixed z-50 left-3 right-3 rounded-xl p-3" style={ { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } }>
           {cadena.items.length === 1 ? (
@@ -10087,17 +10174,22 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   const [contadorEnviados, setContadorEnviados] = useState(0);
   const [resumenEnvio, setResumenEnvio] = useState(null); // { total, enviados } al terminar
 
-  function iniciarEnvioEnCadena(lista) {
+  const itemDeAlerta = (a) => ({ t: a.esMovil ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key });
+  function iniciarEnvioEnCadena(lista0) {
+    // Los que ya se abrieron antes se saltan (se revisan tocando su botón de enviar).
+    const lista = lista0.filter((a) => !aperturaDe(itemDeAlerta(a)));
     if (!lista.length) return;
     setColaEnvio(lista);
     setIndiceEnvio(0);
     setContadorEnviados(0);
     setResumenEnvio(null);
+    anotarApertura(itemDeAlerta(lista[0]));
     window.location.href = whatsappLink(lista[0].cliente, lista[0].milestone);
   }
 
   function avanzarEnvio(marcarComoEnviado) {
     const actual = colaEnvio[indiceEnvio];
+    if (!marcarComoEnviado) quitarApertura(itemDeAlerta(actual));
     if (marcarComoEnviado) {
       if (actual.esMovil) onMarcarMovil(actual.cliente.id, actual.milestone.key, "cadena");
       else onMarcar(actual.cliente.id, actual.milestone.key, "cadena");
@@ -10111,6 +10203,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
       setContadorEnviados(nuevosEnviados);
       setIndiceEnvio(siguienteIndice);
       const siguiente = colaEnvio[siguienteIndice];
+      anotarApertura(itemDeAlerta(siguiente));
       window.location.href = whatsappLink(siguiente.cliente, siguiente.milestone);
     }
   }
