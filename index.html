@@ -6572,6 +6572,20 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   let ultimaApertura = 0;
   const filas = [];
   const seguimiento = [];
+  // Un número, un solo mensaje: si el mismo teléfono está en varias fichas (ficha o contactos de
+  // Tigo), solo una lo atiende: la que ya lo tenía anotado como escrito; si ninguna, la primera.
+  const dueno = {};
+  lista.forEach((c) => {
+    const bl = leerBloqueTigo(c.observaciones);
+    [c.telefono, bl.voz1, bl.voz2].forEach((t) => {
+      const k = d8(t);
+      if (k.length < 7) return;
+      const e = (c.ventaMsg || {})[k] || {};
+      const u = [e.abiertoEn, e.refAbiertoEn].filter(Boolean).sort().pop() || "";
+      const d = dueno[k];
+      if (!d || (u && u > d.u)) dueno[k] = { id: c.id, u };
+    });
+  });
   lista.forEach((c) => {
     const bloque = leerBloqueTigo(c.observaciones);
     const vistos = new Set();
@@ -6579,6 +6593,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     const agregar = (tel, tipo, etiqueta) => {
       const k = d8(tel);
       if (k.length < 7 || vistos.has(k)) return;
+      if (dueno[k] && dueno[k].id !== c.id) return; // ese número lo atiende otra ficha
       if (tipo === "contacto" && conocidos.has(k)) return; // ya es WhatsApp de otro cliente: se atiende en su propia fila
       vistos.add(k);
       cand.push({ k, tel: String(tel).trim(), tipo, etiqueta, frio: tipo === "contacto" && !conocidos.has(k) });
