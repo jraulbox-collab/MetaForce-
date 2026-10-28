@@ -7027,7 +7027,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   }
   // Los referidos nuevos van primero: son los que más responden y se enfrían rápido.
   const pendientes = [...mezcla.filter((x) => x.n.tipo === "referido"), ...mezcla.filter((x) => x.n.tipo !== "referido")];
-  const cuenta = { todos: pendientes.length, respondieron: datos.seguimiento.length, nuevos: 0, plan: 0, contactos: 0, internet: 0, pedir: 0 };
+  const cuenta = { todos: pendientes.length, respondieron: 0, nuevos: 0, plan: 0, contactos: 0, internet: 0, pedir: 0 };
   pendientes.forEach((x) => { cuenta[tipoMensajeVenta(x.n)] += 1; });
   const filtroEf = filtro !== "todos" && !(cuenta[filtro] > 0) ? "todos" : filtro;
   const pasa = (x) => filtroEf === "todos" || filtroEf === tipoMensajeVenta(x.n);
@@ -7038,7 +7038,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   const mostrar = pendF2.slice(0, resumen ? 3 : visibles);
   const sinCabecera = resumen || !!qBus;
   const restantes = pendF2.length - mostrar.length;
-  const lista = [...abiertosF, ...mostrar];
+  const lista = [...mostrar]; // los ya abiertos hoy no se muestran: el candado se encarga de no repetirlos
   const primerPend = mostrar[0];
   const primerPendienteKey = primerPend ? `vta-${primerPend.f.cliente.id}-${primerPend.n.k}` : null;
   const pct = Math.min(100, Math.round((datos.hechosHoy / TOPE_DIARIO_VENTAS) * 100));
@@ -7178,30 +7178,6 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
         <div className="px-4 py-3 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>✓ Listo con los nuevos de hoy. Los conocidos puedes seguir.</div>
       )}
       {guardadoMsg && <div className="px-4 py-2.5 text-sm font-bold" style={ { color: "#0F5A2B", background: "#E3F5EA" } }>{guardadoMsg}</div>}
-      {(filtroEf === "todos" || filtroEf === "respondieron") && datos.seguimiento.length > 0 && (
-        <div className="px-4 py-3" style={ { background: "#FFF3DC", borderBottom: "1px solid #F0D9AE" } }>
-          <div className="text-sm font-extrabold" style={ { color: "#B45309" } }>🔥 Respondieron · falta cerrar ({datos.seguimiento.length})</div>
-          {datos.seguimiento.map((x) => (
-            <div key={`seg-${x.cliente.id}-${x.k}`}>
-            <div className="mt-2 flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="text-sm font-bold font-mono">{x.tel}</div>
-                <div className="text-[11px]" style={ { color: "#5A6680" } }>{x.tipo === "ficha" || x.tipo === "movil" ? "Cliente" : "Contacto de"} {tituloEs(x.cliente.nombre || "")}</div>
-              </div>
-              <a href={`https://wa.me/${telefonoWhatsapp(x.tel)}`} className="shrink-0 inline-flex items-center text-xs font-extrabold px-3 rounded-lg" style={ { height: 34, color: "#001E62", background: "#fff", border: "1.5px solid #001E62", textDecoration: "none" } }>Abrir chat</a>
-              <button type="button" onClick={() => onCerrar(x.cliente.id, x.k)} className="shrink-0 text-xs font-extrabold px-3 rounded-lg" style={ { height: 34, color: "#0F5A2B", background: "#E3F5EA", border: "1.5px solid #0F5A2B" } }>✓ Listo</button>
-            </div>
-            {x.tipo !== "ficha" && x.tipo !== "movil" && (
-              formKey === `seg-${x.cliente.id}-${x.k}` ? (
-                <FormReferido existe={existe} onGuardar={(t, nm) => guardarRef(x.cliente.id, t, nm)} onGuardarVarios={(l) => guardarVarios(x.cliente.id, l)} onCancelar={() => setFormKey(null)} />
-              ) : (
-                <button type="button" onClick={() => setFormKey(`seg-${x.cliente.id}-${x.k}`)} className="mt-1.5 text-xs font-extrabold underline" style={ { color: "#001E62" } }>➕ Me dio un contacto</button>
-              )
-            )}
-            </div>
-          ))}
-        </div>
-      )}
       {!sinCabecera && lista.length === 0 && filtroEf !== "respondieron" && (
         <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtroEf === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
       )}
@@ -8636,7 +8612,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayCiclo = sinCiclo.length > 0;
         const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
         const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) + vh.pendientesCalientes : 0;
-        const nSeg = vh ? vh.seguimiento.length : 0;
+        const nSeg = 0; // "por cerrar" ya no se muestra
         const hayVentas = nVentas > 0 || nSeg > 0;
         const listaPorInstalar = esActual ? clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado) : [];
         const hayPorInst = listaPorInstalar.length > 0;
@@ -9647,7 +9623,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             </div>
             <div className="grid gap-4" style={ { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }>
               {dato(vh.enviadosMes, "mensajes enviados")}
-              {dato(vh.seguimiento.length, "🔥 por cerrar")}
               {dato(`${vh.referidos.guardados} · ${vh.referidos.contrataron}`, "referidos guardados · ya son clientes")}
               {dato(vh.ventasMes.total, "ventas por beneficio compartido")}
             </div>
