@@ -1493,6 +1493,16 @@ function whatsappLink(cliente, milestone) {
   return `https://wa.me/${telefonoWhatsapp(cliente.telefono)}?text=${encodeURIComponent(milestone.texto)}`;
 }
 
+// Meses del selector: solo los últimos 4 (más el que estás viendo si es más viejo). La opción
+// "Anteriores…" despliega todos los demás (hasta 24 meses atrás).
+function mesesDelSelector(base, seleccionado, todos) {
+  const todosKeys = Array.from({ length: 24 }, (_, i) => sumarMesClave(base, -i));
+  if (todos) return todosKeys;
+  const k = todosKeys.slice(0, 4);
+  if (seleccionado && !k.includes(seleccionado)) k.push(seleccionado);
+  return k.sort((a, b) => b.localeCompare(a));
+}
+
 // ---------- Candado anti-repetición de mensajes ----------
 // Al abrir WhatsApp con un mensaje se anota ahí mismo (en este celular) "abierto a tal hora",
 // sin esperar a que confirmes. Si ese mismo mensaje vuelve a tocarle al mismo cliente, la app
@@ -2707,6 +2717,7 @@ function App() {
   });
   const [origenDetalle, setOrigenDetalle] = useState("clientes");
   const [periodoDash, setPeriodoDash] = useState(periodoActualApp);
+  const [mesesTodosApp, setMesesTodosApp] = useState(false);
   // Precierre: lo pegado y el rango viven aquí (no dentro de la pestaña) para que no
   // se pierdan al cambiar de pestaña, y se guardan en este celular.
   const [precierre, setPrecierre] = useState(leerPrecierreGuardado);
@@ -4315,14 +4326,19 @@ function App() {
             </div>
             <select
               value={periodoDash}
-              onChange={(e) => setPeriodoDash(e.target.value)}
+              onChange={(e) => {
+                if (e.target.value === "__ant") { setMesesTodosApp(true); return; }
+                setPeriodoDash(e.target.value);
+                setMesesTodosApp(false);
+              } }
               aria-label="Período de ventas"
               className="absolute inset-0 w-full h-full"
               style={ { opacity: 0, fontSize: 16 } }
             >
-              {Array.from({ length: 24 }, (_, i) => sumarMesClave(periodoActualApp, -i)).map((key) => (
+              {mesesDelSelector(periodoActualApp, periodoDash, mesesTodosApp).map((key) => (
                 <option key={key} value={key}>{mesLabel(key).replace(new RegExp("\\s*" + new Date().getFullYear() + "$"), "")}</option>
               ))}
+              {!mesesTodosApp && <option value="__ant">Anteriores…</option>}
             </select>
           </div>
         )}
@@ -7402,6 +7418,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     [clientesDelPeriodo]
   );
   const [rpuAbierto, setRpuAbierto] = useState(false);
+  const [mesesTodos, setMesesTodos] = useState(false);
   const arpuPeriodo = useMemo(() => {
     if (clientesDelPeriodo.length === 0) return 0;
     return dineroDelPeriodo / clientesDelPeriodo.length;
@@ -8960,15 +8977,20 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         </button>
         <select
           value={periodoVisto}
-          onChange={(e) => setPeriodoVisto(e.target.value)}
+          onChange={(e) => {
+            if (e.target.value === "__ant") { setMesesTodos(true); return; }
+            setPeriodoVisto(e.target.value);
+            setMesesTodos(false);
+          } }
           className="text-sm font-medium px-3 py-1.5 rounded-md border"
           style={ { borderColor: "#DFE5EF", color: "#001E62" } }
         >
-          {Array.from({ length: 24 }, (_, i) => sumarMesClave(periodoActual, -i)).map((key) => (
+          {mesesDelSelector(periodoActual, periodoVisto, mesesTodos).map((key) => (
             <option key={key} value={key}>
               Ventas {mesLabel(key)}{key === periodoActual ? " (actual)" : ""}
             </option>
           ))}
+          {!mesesTodos && <option value="__ant">Anteriores…</option>}
         </select>
         <button
           onClick={() => setPeriodoVisto((p) => sumarMesClave(p, 1))}
@@ -9577,6 +9599,34 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{singlesInstalados} Singles ›</button>
             <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{doblesInstalados} Dobles ›</button>
           </div>
+          {(() => {
+        // ARPU por cliente (informativo, no entra en la comisión nueva). Del período que estás viendo.
+        const hogarInst = clientesDelPeriodo.filter((c) => !!c.fechaInstalacion);
+        const movs = convergenciasDelPeriodo.filter(movilCuentaParaComision);
+        const nH = hogarInst.length;
+        const nM = movs.length;
+        if (nH + nM === 0) return null;
+        const dH = hogarInst.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
+        const dM = costoPlanesMovilesPeriodo;
+        const rH = nH > 0 ? dH / nH : null;
+        const rM = nM > 0 ? dM / nM : null;
+        const rT = (dH + dM) / (nH + nM);
+        return (
+          <div className="mt-3" style={ { borderTop: "1px solid #EEF1F7" } }>
+            <button type="button" onClick={() => setRpuAbierto((v) => !v)} aria-expanded={rpuAbierto} className="w-full flex items-center justify-between gap-2 pt-2 text-left" style={ { minHeight: 48, color: "#001E62" } }>
+              <span className="text-xs font-bold" style={ { color: "#5A6680" } }>📊 ARPU por cliente</span>
+              <span className="text-sm font-bold font-mono">{fmtMonto(rT)} <span style={ { color: "#5A6680", fontWeight: 600 } }>{rpuAbierto ? "▴" : "▾"}</span></span>
+            </button>
+            {rpuAbierto ? (
+              <div className="mf-abrir pb-1 text-xs" style={ { color: "#5A6680" } }>
+                <div className="flex justify-between py-1.5"><span>🏠 Hogar</span><span className="font-mono" style={ { color: "#001E62" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
+                <div className="flex justify-between py-1.5"><span>📱 Móvil</span><span className="font-mono" style={ { color: "#001E62" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
+              </div>
+            ) : null}
+          </div>
+        );
+      })()}
+
         </div>
       ))}
 
@@ -9629,34 +9679,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           </button>
         );
       })())}
-
-      {(() => {
-        // ARPU por cliente (informativo, no entra en la comisión nueva). Del período que estás viendo.
-        const hogarInst = clientesDelPeriodo.filter((c) => !!c.fechaInstalacion);
-        const movs = convergenciasDelPeriodo.filter(movilCuentaParaComision);
-        const nH = hogarInst.length;
-        const nM = movs.length;
-        if (nH + nM === 0) return null;
-        const dH = hogarInst.reduce((acc, c) => acc + (Number(c.montoMensual) || 0), 0);
-        const dM = costoPlanesMovilesPeriodo;
-        const rH = nH > 0 ? dH / nH : null;
-        const rM = nM > 0 ? dM / nM : null;
-        const rT = (dH + dM) / (nH + nM);
-        return (
-          <div className="mb-4 rounded-xl border bg-white overflow-hidden" style={ { order: 99, borderColor: "#DFE5EF" } }>
-            <button type="button" onClick={() => setRpuAbierto((v) => !v)} aria-expanded={rpuAbierto} className="w-full flex items-center justify-between gap-2 px-4 text-left" style={ { minHeight: 48, color: "#001E62" } }>
-              <span className="text-xs font-bold" style={ { color: "#5A6680" } }>📊 ARPU por cliente</span>
-              <span className="text-sm font-bold font-mono">{fmtMonto(rT)} <span style={ { color: "#5A6680", fontWeight: 600 } }>{rpuAbierto ? "▴" : "▾"}</span></span>
-            </button>
-            {rpuAbierto ? (
-              <div className="mf-abrir px-4 pb-3 text-xs" style={ { color: "#5A6680", borderTop: "1px solid #EEF1F7" } }>
-                <div className="flex justify-between py-1.5"><span>🏠 Hogar</span><span className="font-mono" style={ { color: "#001E62" } }>{rH == null ? "—" : fmtMonto(rH)}</span></div>
-                <div className="flex justify-between py-1.5"><span>📱 Móvil</span><span className="font-mono" style={ { color: "#001E62" } }>{rM == null ? "—" : fmtMonto(rM)}</span></div>
-              </div>
-            ) : null}
-          </div>
-        );
-      })()}
 
       </div>
       {mostrarSimuladorArpu && (
