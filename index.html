@@ -1902,11 +1902,11 @@ function textoToque1(c) {
   const fechaPago = fechaPagoQuincena(c) || addDays(c.fechaInstalacion, 30);
   return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
 
-Le confirmamos que la instalación de su *servicio residencial* quedó activa. ✅
+Su instalación del *servicio residencial* quedó activa. ✅
 
-Como ya realizó su abono al contratar, ese pago se toma en cuenta para completar el costo de su primer mes. Le recomendamos completar el resto el *${fmtFechaConDia(fechaPago)}*, aprovechando la quincena, para dejar su cuenta al día desde el inicio.
+Su abono ya cuenta para su primer mes. Le recomiendo completar la otra mitad de su primer mes el *${fmtFechaConDia(fechaPago)}*, con la quincena, para dejar su cuenta al día desde el inicio.
 
-Puede pagar indicando su número de suscriptor *${c.numeroSuscriptor}*. Cualquier duda, quedo atento.`;
+Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Cualquier duda, quedo atento.`;
 }
 function textoToque2(c) {
   const nombre = primerNombre(c);
@@ -1914,10 +1914,10 @@ function textoToque2(c) {
   const dias = daysFromToday(fechaPago);
   const dia = fmtFechaConDia(fechaPago);
   const frase =
-    dias === 1 ? `Le recuerdo que mañana *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
-    : dias === 0 ? `Le recuerdo que hoy *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
-    : dias > 1 ? `Le recuerdo que el *${dia}*, con la quincena, es un buen día para completar el pago de su primer mes y dejar su cuenta al día.`
-    : `Le recuerdo completar el pago restante de su primer mes para dejar su cuenta al día.`;
+    dias === 1 ? `Le recuerdo que mañana *${dia}*, con la quincena, es un buen día para completar la otra mitad de su primer mes y dejar su cuenta al día.`
+    : dias === 0 ? `Le recuerdo que hoy *${dia}*, con la quincena, es un buen día para completar la otra mitad de su primer mes y dejar su cuenta al día.`
+    : dias > 1 ? `Le recuerdo que el *${dia}*, con la quincena, es un buen día para completar la otra mitad de su primer mes y dejar su cuenta al día.`
+    : `Le recuerdo completar la otra mitad de su primer mes para dejar su cuenta al día.`;
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
 
 ${frase}
@@ -2011,14 +2011,14 @@ function calcularFacturas(cliente, umbralProrrateo) {
 
     // Solo para la 1ra factura, de clientes instalados desde septiembre 2026 en
     // adelante: si el prorrateo es igual o mayor al umbral configurado, se agregan
-    // dos avisos preventivos (Toque 1 a los 2 días de la instalación, Toque 2 el día
+    // dos avisos preventivos (Toque 1 a los 2 días de la instalación, Toque 2 a los 3 días
     // ANTES de la fecha de quincena de pago) para que adelante el abono antes de que
     // exista la factura real con el número grande.
     if (n === 1 && !cliente.cancelado && esProrrateoAlto(cliente, umbralProrrateo)) {
         {
           [
             { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", getFecha: (cl) => addDays(cl.fechaInstalacion, 2), key: "aviso_toque1", getTexto: textoToque1 },
-            { type: "toque2", tag: "🔔", label: "Recordatorio de abono", getFecha: (cl) => { const fp = fechaPagoQuincena(cl); return fp ? addDays(fp, -1) : addDays(cl.fechaInstalacion, 25); }, key: "aviso_toque2", getTexto: textoToque2 },
+            { type: "toque2", tag: "🔔", label: "Recordatorio de abono", getFecha: (cl) => { const fp = fechaPagoQuincena(cl); return fp ? addDays(fp, -3) : addDays(cl.fechaInstalacion, 25); }, key: "aviso_toque2", getTexto: textoToque2 },
           ].forEach((t) => {
             const triggerDate = t.getFecha(cliente);
             const enviado = !!cliente[t.key];
