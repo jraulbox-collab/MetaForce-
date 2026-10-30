@@ -666,11 +666,26 @@ function rangoCiclo(periodoKey) {
 // tiempo para tu comisión: el día 5 del segundo período completo después de su
 // período de instalación. Ej.: instalado en el período de agosto → límite el
 // 5 de octubre (agosto +2 períodos = octubre).
+// El día del mes lo avisa Tigo tarde (durante el mes siguiente), así que arranca en 3 (margen
+// seguro) y se puede cambiar por período en "✎ Metas" (metas[período].diaLimite).
+const DIA_LIMITE_PRIMERA_FACTURA = 3;
+let DIAS_LIMITE_POR_PERIODO = {};
+function setDiasLimitePorPeriodo(metas) {
+  const out = {};
+  Object.keys(metas || {}).forEach((k) => {
+    const v = metas[k] && typeof metas[k] === "object" ? Number(metas[k].diaLimite) : NaN;
+    if (v >= 1 && v <= 28) out[k] = Math.round(v);
+  });
+  DIAS_LIMITE_POR_PERIODO = out;
+}
+function diaLimitePrimeraFactura(periodoInstalacion) {
+  return DIAS_LIMITE_POR_PERIODO[periodoInstalacion] || DIA_LIMITE_PRIMERA_FACTURA;
+}
 function fechaLimitePrimeraFactura(periodoInstalacion) {
   if (!periodoInstalacion) return null;
   const periodoLimite = sumarMesClave(periodoInstalacion, 2);
   const [y, m] = periodoLimite.split("-").map(Number);
-  return new Date(y, m - 1, 5);
+  return new Date(y, m - 1, diaLimitePrimeraFactura(periodoInstalacion));
 }
 // Un cliente deja de contar para tu comisión (en cualquier período) si no pagó su
 // 1ra factura y ya se venció su fecha límite real (día 5 del segundo período
@@ -1840,6 +1855,14 @@ Una vez realizado el pago, compárteme el comprobante para validar el ingreso. C
 function textoT3(c, n) {
   const nombre = primerNombre(c);
   const dias = daysFromToday(c._venc);
+  // Cliente que ya completó su primer mes (PAGO PARCIAL): este aviso cobra solo el prorrateo.
+  if (n === 1 && c.f1_saldoPendiente && c.fecha1raFactura) {
+    return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
+
+Le recuerdo que el último día para pagar su primera factura es el *${fmtFechaLarga(c._venc)}*. Ya completó su primer mes, y solo le queda por pagar el prorrateo, de los días del ${fmtFechaLarga(c.fechaInstalacion)} al ${fmtFechaLarga(addDays(c.fecha1raFactura, -1))}.
+
+Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Cuando pague, me envía el comprobante para confirmárselo. Cualquier duda o si necesita ayuda, quedo atento.`;
+  }
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
 La factura de su *servicio residencial* ${fraseVencimiento(dias)}:
@@ -1906,23 +1929,102 @@ Su instalación del *servicio residencial* quedó activa. ✅
 
 Su abono ya cuenta para su primer mes. Le recomiendo completar la otra mitad de su primer mes el *${fmtFechaConDia(fechaPago)}*, con la quincena, para dejar su cuenta al día desde el inicio.
 
-Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Cualquier duda, quedo atento.`;
+Le recuerdo su número de suscriptor para cuando vaya a realizar el pago: *${c.numeroSuscriptor}*
+
+¿Todo bien con su servicio hasta ahora?`;
 }
-function textoToque2(c) {
-  const nombre = primerNombre(c);
-  const fechaPago = fechaPagoQuincena(c) || addDays(c.fechaInstalacion, 30);
+// Frase del recordatorio: pide la otra mitad del primer mes para una fecha de quincena.
+function fraseOtraMitad(fechaPago) {
+  const base = "Le recuerdo completar la otra mitad de su primer mes";
+  if (!fechaPago) return `${base} para dejar su cuenta al día.`;
   const dias = daysFromToday(fechaPago);
   const dia = fmtFechaConDia(fechaPago);
-  const frase =
-    dias === 1 ? `Le recuerdo que mañana *${dia}*, con la quincena, es un buen día para completar la otra mitad de su primer mes y dejar su cuenta al día.`
-    : dias === 0 ? `Le recuerdo que hoy *${dia}*, con la quincena, es un buen día para completar la otra mitad de su primer mes y dejar su cuenta al día.`
-    : dias > 1 ? `Le recuerdo que el *${dia}*, con la quincena, es un buen día para completar la otra mitad de su primer mes y dejar su cuenta al día.`
-    : `Le recuerdo completar la otra mitad de su primer mes para dejar su cuenta al día.`;
-  return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
+  if (dias === 0) return `${base} a más tardar *hoy ${dia}*, con la quincena, para dejar su cuenta al día.`;
+  if (dias === 1) return `${base} a más tardar *mañana ${dia}*, con la quincena, para dejar su cuenta al día.`;
+  if (dias > 1) return `${base} a más tardar el *${dia}*, con la quincena, para dejar su cuenta al día.`;
+  return `${base} para dejar su cuenta al día.`;
+}
+function textoRecordatorioOtraMitad(c, fechaPago) {
+  return `Hola ${primerNombre(c)}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
 
-${frase}
+${fraseOtraMitad(fechaPago)}
 
-Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Una vez realizado, compárteme el comprobante para confirmar que ingresó correctamente. Quedo atento.`;
+Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Cuando pague, me envía el comprobante para confirmárselo. Cualquier duda o si necesita ayuda para hacer el pago, quedo atento.`;
+}
+function textoToque2(c) {
+  return textoRecordatorioOtraMitad(c, fechaPagoQuincena(c));
+}
+// Segunda quincena (solo si no pagó en la primera): la siguiente que queda antes de tu límite.
+function fechaPagoQuincena2(c) {
+  const q1 = fechaPagoQuincena(c);
+  if (!q1 || !c.fechaInstalacion) return null;
+  const lim = fechaLimitePrimeraFactura(periodoDelCliente(c));
+  const limISO = lim ? fechaLocalISO(lim) : null;
+  const q2 = quincenasDesde(c.fechaInstalacion, 6).filter((q) => q > q1)[0];
+  if (!q2 || (limISO && q2 >= limISO)) return null;
+  return q2;
+}
+function textoToque3(c) {
+  return textoRecordatorioOtraMitad(c, fechaPagoQuincena2(c));
+}
+// Fecha a la que se le pide la otra mitad en este momento: la 1ra quincena si aún no pasa; si no, la 2da.
+function proximaFechaOtraMitad(c) {
+  const hoy = fechaLocalISO(new Date());
+  const q1 = fechaPagoQuincena(c);
+  if (q1 && q1 >= hoy) return q1;
+  const q2 = fechaPagoQuincena2(c);
+  if (q2 && q2 >= hoy) return q2;
+  return null;
+}
+// Respuesta lista para cuando el cliente pregunta por qué su factura sale más alta (botón de la ficha).
+function textoExplicarProrrateo(c) {
+  const nombre = primerNombre(c);
+  const inst = fmtFechaLarga(c.fechaInstalacion);
+  const finPro = fmtFechaLarga(addDays(c.fecha1raFactura, -1));
+  const venc = vencimientoPrimeraFacturaHogar(c);
+  const fechaOM = proximaFechaOtraMitad(c);
+  const pedido = fechaOM
+    ? `Lo que le pido ahora es completar la otra mitad de su primer mes, a más tardar el *${fmtFechaConDia(fechaOM)}*.`
+    : `Lo que le pido ahora es completar la otra mitad de su primer mes lo antes posible.`;
+  return `Con gusto le explico, ${nombre}. 😊
+
+Tigo factura en fechas fijas, y a usted le toca el día ${c.cicloFacturacion} de cada mes. Como su servicio se instaló el ${inst}, su primera factura incluye 2 partes:
+
+📅 Prorrateo: los días que ya usa el servicio, del *${inst}* al *${finPro}*
+📅 Primer mes completo: del *${fmtFechaLarga(c.fecha1raFactura)}* al *${fmtFechaLarga(venc)}*
+
+Por eso su primera factura sale más alta que su plan mensual. Es normal y solo pasa en la primera. De la segunda en adelante paga únicamente su mensualidad.
+
+${pedido} El prorrateo lo puede pagar después, hasta el *${fmtFechaLarga(venc)}*.
+
+Cualquier duda, con gusto le ayudo.`;
+}
+
+// Esquema especial: clientes cuya 1ra factura vence el día límite de comisión o después (se instalaron
+// pasado el día de su ciclo) Y con prorrateo alto (con el primer mes pagado ya cuentan). A ellos se
+// les pide la otra mitad del primer mes en las quincenas, antes de que se les pase tu límite.
+function vencimientoPrimeraFacturaHogar(c) {
+  if (!c || !c.fecha1raFactura) return null;
+  const cicloDia = parseInt(c.cicloFacturacion, 10) || null;
+  const siguiente = cicloDia ? addMonthsKeepDay(c.fecha1raFactura, 1, cicloDia) : addDays(c.fecha1raFactura, 30);
+  return addDays(siguiente, -1);
+}
+function esEsquemaEspecial(c, umbralProrrateo) {
+  if (!c || !c.fechaInstalacion || c.fechaInstalacion < "2026-09-01" || c.cancelado || c.penalizado) return false;
+  if (!esProrrateoAlto(c, umbralProrrateo)) return false;
+  const venc = vencimientoPrimeraFacturaHogar(c);
+  const lim = fechaLimitePrimeraFactura(periodoDelCliente(c));
+  if (!venc || !lim) return false;
+  return venc >= fechaLocalISO(lim);
+}
+// Ciclo de hogar por confirmar en Tigo: clientes instalados desde octubre que aún no lo confirmas.
+// Los que se instalan desde FECHA_INICIO_ESPERA_CICLO además dejan sus mensajes en espera.
+const FECHA_INICIO_ESPERA_CICLO = "2026-10-30";
+function cicloHogarPorConfirmar(c) {
+  return !!c && !c.cicloConfirmado && !!c.fechaInstalacion && c.fechaInstalacion >= "2026-10-01" && c.f1_estado !== "pagada" && !c.cancelado && !c.penalizado;
+}
+function cicloHogarEspera(c) {
+  return cicloHogarPorConfirmar(c) && c.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO;
 }
 
 const MILESTONE_TYPES = [
@@ -1936,8 +2038,9 @@ const MILESTONE_TYPES = [
 // parte de los hitos normales de factura.
 const TIPOS_ALERTA = [
   ...MILESTONE_TYPES,
-  { type: "toque1", tag: "👋", corto: "Bienvenida", label: "Bienvenida (pedir abono)", color: "#0072CE", bg: "#E3EDFA" },
-  { type: "toque2", tag: "🔔", corto: "Pedir abono", label: "Recordatorio de abono", color: "#0072CE", bg: "#E3EDFA" },
+  { type: "toque1", tag: "👋", corto: "Bienvenida", label: "Bienvenida (pedir la otra mitad)", color: "#0072CE", bg: "#E3EDFA" },
+  { type: "toque2", tag: "🔔", corto: "Otra mitad", label: "Recordatorio de la otra mitad", color: "#0072CE", bg: "#E3EDFA" },
+  { type: "toque3", tag: "🔔", corto: "Otra mitad", label: "Segundo recordatorio (otra quincena)", color: "#0072CE", bg: "#E3EDFA" },
 ];
 
 const emptyForm = () => ({
@@ -1967,8 +2070,9 @@ const emptyForm = () => ({
 
 // Cliente de "prorrateo alto": instalado desde el 1 de septiembre de 2026 y cuyo
 // prorrateo de la 1ra factura es igual o mayor al umbral configurado (por defecto 25 %).
-// A estos clientes se les mandan los mensajes de abono (bienvenida y recordatorio) y,
-// al marcar su 1ra factura como pagada, pueden quedar en PAGO PARCIAL.
+// Con el primer mes pagado ya cuentan para la comisión: al marcar su 1ra factura como pagada
+// pueden quedar en PAGO PARCIAL. (Los mensajes de la otra mitad solo salen para el esquema
+// especial: ver esEsquemaEspecial.)
 function esProrrateoAlto(cliente, umbralProrrateo) {
   const cicloDia = parseInt(cliente.cicloFacturacion, 10) || null;
   if (!(cicloDia && cliente.montoMensual && cliente.fechaInstalacion >= "2026-09-01")) return false;
@@ -1996,7 +2100,12 @@ function calcularFacturas(cliente, umbralProrrateo) {
     // Solo la 1ra factura (la que decide si el cliente cuenta para tu comisión)
     // mantiene los 3 avisos completos. De la 2da en adelante, con el aviso de
     // 3 días antes alcanza — ya no hace falta la insistencia de D+1 y 15 días.
-    const tiposParaEstaFactura = cliente.cancelado ? [] : n === 1 ? MILESTONE_TYPES : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
+    // Esquema especial (la 1ra factura vence el día límite de comisión o después): en vez de la
+    // factura lista y el aviso de 15 días, reciben los avisos de la otra mitad (más abajo).
+    const especial = n === 1 && !cliente.cancelado && esEsquemaEspecial(cliente, umbralProrrateo);
+    // Clientes nuevos con ciclo sin confirmar: sus mensajes esperan hasta que lo confirmes en Tigo.
+    const espera = cicloHogarEspera(cliente);
+    const tiposParaEstaFactura = cliente.cancelado ? [] : n === 1 ? (especial ? MILESTONE_TYPES.filter((mt) => mt.type === "t3") : MILESTONE_TYPES) : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
     const milestones = tiposParaEstaFactura.map((mt) => {
       const key = `f${n}_${mt.type}`;
       const triggerDate =
@@ -2004,41 +2113,41 @@ function calcularFacturas(cliente, umbralProrrateo) {
         mt.type === "t15" ? addDays(vencimiento, -15) :
         addDays(vencimiento, -3);
       const enviado = !!cliente[key];
-      const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado;
+      const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado && !espera;
       const texto = mt.getTexto({ ...cliente, _venc: vencimiento, plan: planLabelMensaje(cliente) }, n);
       return { ...mt, key, n, triggerDate, enviado, pendienteHoy, texto };
     });
 
-    // Solo para la 1ra factura, de clientes instalados desde septiembre 2026 en
-    // adelante: si el prorrateo es igual o mayor al umbral configurado, se agregan
-    // dos avisos preventivos (Toque 1 a los 2 días de la instalación, Toque 2 a los 3 días
-    // ANTES de la fecha de quincena de pago) para que adelante el abono antes de que
-    // exista la factura real con el número grande.
-    if (n === 1 && !cliente.cancelado && esProrrateoAlto(cliente, umbralProrrateo)) {
-        {
-          [
-            { type: "toque1", tag: "👋", label: "Bienvenida (pedir abono)", getFecha: (cl) => addDays(cl.fechaInstalacion, 2), key: "aviso_toque1", getTexto: textoToque1 },
-            { type: "toque2", tag: "🔔", label: "Recordatorio de abono", getFecha: (cl) => { const fp = fechaPagoQuincena(cl); return fp ? addDays(fp, -3) : addDays(cl.fechaInstalacion, 25); }, key: "aviso_toque2", getTexto: textoToque2 },
-          ].forEach((t) => {
-            const triggerDate = t.getFecha(cliente);
-            const enviado = !!cliente[t.key];
-            const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado;
-            const texto = t.getTexto(cliente);
-            milestones.push({
-              type: t.type,
-              tag: t.tag,
-              label: t.label,
-              color: "#0072CE",
-              bg: "#E3EDFA",
-              key: t.key,
-              n,
-              triggerDate,
-              enviado,
-              pendienteHoy,
-              texto,
-            });
-          });
-        }
+    // Esquema especial, solo 1ra factura: bienvenida a los 5 días de instalar, recordatorio 3 días
+    // antes de la 1ra quincena de pago y, si no ha pagado, otro 3 días antes de la 2da quincena
+    // (siempre antes de tu límite). Al marcar la 1ra factura como pagada dejan de salir.
+    if (especial) {
+      [
+        { type: "toque1", tag: "👋", label: "Bienvenida (pedir la otra mitad)", getFecha: (cl) => addDays(cl.fechaInstalacion, 5), key: "aviso_toque1", getTexto: textoToque1 },
+        { type: "toque2", tag: "🔔", label: "Recordatorio de la otra mitad", getFecha: (cl) => { const fp = fechaPagoQuincena(cl); return fp ? addDays(fp, -3) : addDays(cl.fechaInstalacion, 25); }, key: "aviso_toque2", getTexto: textoToque2 },
+        { type: "toque3", tag: "🔔", label: "Segundo recordatorio (otra quincena)", getFecha: (cl) => { const fp = fechaPagoQuincena2(cl); return fp ? addDays(fp, -3) : null; }, key: "aviso_toque3", getTexto: textoToque3 },
+      ].forEach((t) => {
+        const triggerDate = t.getFecha(cliente);
+        if (!triggerDate) return;
+        const enviado = !!cliente[t.key];
+        // El 2.º recordatorio solo sale si ya se mandó el 1.º y la 2.ª quincena todavía no pasa.
+        const okToque3 = t.type !== "toque3" || (!!cliente.aviso_toque2 && daysFromToday(fechaPagoQuincena2(cliente)) >= 0);
+        const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado && !espera && okToque3;
+        const texto = t.getTexto(cliente);
+        milestones.push({
+          type: t.type,
+          tag: t.tag,
+          label: t.label,
+          color: "#0072CE",
+          bg: "#E3EDFA",
+          key: t.key,
+          n,
+          triggerDate,
+          enviado,
+          pendienteHoy,
+          texto,
+        });
+      });
     }
 
     facturas.push({ n, generada, vencimiento, milestones });
@@ -3019,7 +3128,7 @@ function App() {
         });
       });
     });
-    const orden = { t3: 0, t15: 1, d1: 2, toque2: 3, toque1: 4 };
+    const orden = { t3: 0, t15: 1, d1: 2, toque3: 3, toque2: 4, toque1: 5 };
     list.sort((a, b) => {
       if (orden[a.milestone.type] !== orden[b.milestone.type])
         return orden[a.milestone.type] - orden[b.milestone.type];
@@ -3031,7 +3140,7 @@ function App() {
   // Deja una sola alerta por cliente: la más reciente/urgente (T-3 > T-15 > D+1;
   // a igual prioridad, la de fecha de disparo más reciente).
   const alertasPorCliente = useMemo(() => {
-    const orden = { t3: 0, t15: 1, d1: 2, toque2: 3, toque1: 4 };
+    const orden = { t3: 0, t15: 1, d1: 2, toque3: 3, toque2: 4, toque1: 5 };
     const porCliente = new Map();
     alertasHoy.forEach(({ cliente, factura, milestone }) => {
       const actual = porCliente.get(cliente.id);
@@ -3244,6 +3353,24 @@ function App() {
     if (r && antes.montoMensual !== "" && antes.montoMensual != null) {
       const total = +((Number(antes.montoMensual) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
       despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
+    }
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+
+  // Confirma en Tigo el ciclo de un cliente Hogar: recalcula la 1ra factura y desbloquea sus mensajes.
+  // ciclo = null quita la confirmación.
+  function confirmarCicloHogar(clienteId, ciclo) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes) return;
+    let despues = { ...antes, cicloConfirmado: !!ciclo };
+    if (ciclo) {
+      despues.cicloFacturacion = String(ciclo);
+      const r = antes.fechaInstalacion ? calcularPrimeraFactura(antes.fechaInstalacion, parseInt(ciclo, 10), antes.montoMensual) : null;
+      if (r && antes.montoMensual !== "" && antes.montoMensual != null) {
+        const total = +((Number(antes.montoMensual) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
+        despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
+      }
     }
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
@@ -3774,6 +3901,7 @@ function App() {
         if (nuevoEstado === "pagada") {
           nuevo.aviso_toque1 = true;
           nuevo.aviso_toque2 = true;
+          nuevo.aviso_toque3 = true;
         }
       }
       return nuevo;
@@ -4707,6 +4835,7 @@ function App() {
             onVolverAPrecierre={(destino) => volverA(destino || "precierre")}
             onMarcarAbono={marcarAbonoInicial}
             onEnviarInfoInstalacion={enviarInfoInstalacion}
+            onConfirmarCiclo={confirmarCicloHogar}
           />
         )}
         {tab === "detalle" && (
@@ -8390,7 +8519,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         <RevisionDiariaModal
           pendientes={pendientesHoy}
           total={enRiesgoHoy.length}
-          permiteParcial={(c) => (c.facturas || []).some((f) => f.n === 1 && f.milestones.some((m) => m.type === "toque1"))}
+          permiteParcial={(c) => esProrrateoAlto(c, umbralProrrateo)}
           onMarcarPagada={(clienteId, n, opciones) => {
             if (idsMovilHoy.has(clienteId)) onMarcarMovilPagada(clienteId);
             else onActualizarEstadoFactura(clienteId, n, "pagada", opciones || {});
@@ -8627,13 +8756,15 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayMatch = (convergencias || []).some((c) => matchInfo(c)) && !!onVerClientes;
         const sinCiclo = onVerClientes ? (convergencias || []).filter(cicloPorConfirmar).sort((a, b) => fechaActivacionMovil(a).localeCompare(fechaActivacionMovil(b))) : [];
         const hayCiclo = sinCiclo.length > 0;
+        const sinCicloHogar = onVerClientes ? clientes.filter(cicloHogarPorConfirmar) : [];
+        const hayCicloHogar = sinCicloHogar.length > 0;
         const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
         const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) + vh.pendientesCalientes : 0;
         const nSeg = 0; // "por cerrar" ya no se muestra
         const hayVentas = nVentas > 0 || nSeg > 0;
         const listaPorInstalar = esActual ? clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado) : [];
         const hayPorInst = listaPorInstalar.length > 0;
-        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayVentas && !hayPorInst) return null;
+        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
           <LineaMatchPendiente
@@ -8695,12 +8826,27 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
             )}
+            {hayCicloHogar && (
+              <button
+                type="button"
+                onClick={() => onVerClientes({ chipGrupo: "faltaCiclo", todosLosMeses: true })}
+                className="w-full text-left flex items-center gap-3 px-4 py-3"
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayInfo || hayMatch || hayCiclo) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+              >
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔄</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold">{sinCicloHogar.length} {sinCicloHogar.length === 1 ? "ciclo Hogar por confirmar" : "ciclos Hogar por confirmar"}</span>
+                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>Revísalo en Tigo · confirma el ciclo en Clientes</span>
+                </span>
+                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+              </button>
+            )}
             {hayVentas && (
               <button
                 type="button"
                 onClick={onIrAVentas}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch || hayInfo || hayCiclo) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch || hayInfo || hayCiclo || hayCicloHogar) ? "1px solid rgba(255,255,255,.18)" : 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
                 <span className="min-w-0 flex-1 text-sm font-bold">{[nVentas > 0 ? `${nVentas} para escribir hoy` : "", nSeg > 0 ? `🔥 ${nSeg} por cerrar` : ""].filter(Boolean).join(" · ")}</span>
@@ -10259,8 +10405,9 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
     { type: "t3", titulo: "⏰ 3 días (urgente)" },
     { type: "t15", titulo: "⏰ 15 días" },
     { type: "d1", titulo: "🧾 Nueva factura" },
-    { type: "toque2", titulo: "🔔 Recordatorio de abono" },
-    { type: "toque1", titulo: "👋 Bienvenida (pedir abono)" },
+    { type: "toque3", titulo: "🔔 Segundo recordatorio (otra mitad)" },
+    { type: "toque2", titulo: "🔔 Recordatorio de la otra mitad" },
+    { type: "toque1", titulo: "👋 Bienvenida (pedir la otra mitad)" },
   ];
   const ordenFlat = GRUPOS.flatMap((g) => alertasFiltradas.filter(({ milestone }) => milestone.type === g.type));
   const visiblesLista = typeof limite === "number" ? ordenFlat.slice(0, limite) : ordenFlat;
@@ -10678,12 +10825,47 @@ function FiltroCampo({ label, children }) {
   );
 }
 
+// Confirmar en Tigo el ciclo de un cliente Hogar (afecta cuándo sale su 1ra factura).
+function CicloHogarConfirmar({ cliente, onConfirmar }) {
+  if (!onConfirmar || !cliente) return null;
+  const actual = parseInt(cliente.cicloFacturacion, 10) || null;
+  if (cicloHogarPorConfirmar(cliente)) {
+    const elegir = (n) => {
+      if (!window.confirm(`¿Confirmas que en Tigo el ciclo de ${cliente.nombre} es el ${String(n).padStart(2, "0")}?`)) return;
+      onConfirmar(cliente.id, n);
+    };
+    return (
+      <div className="mt-2 rounded-xl px-2.5 py-2" style={ { background: "#FFF3DC", border: "1.5px dashed #B45309" } }>
+        <div className="text-xs font-bold" style={ { color: "#92400E" } }>🔄 Ciclo sin confirmar · ¿cuál ves en Tigo?{cliente.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO ? " Sus mensajes esperan." : ""}</div>
+        <div className="flex flex-wrap gap-1.5 mt-1.5">
+          {[1, 6, 15, 21].map((n) => (
+            <button key={n} type="button" onClick={() => elegir(n)} className="text-xs font-bold px-3 py-1.5 rounded-full" style={ { background: "#fff", color: "#001E62", border: "1.5px solid #001E62", minHeight: 36 } }>
+              Ciclo {String(n).padStart(2, "0")}{actual === n ? " · en la app" : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  if (cliente.cicloConfirmado && cliente.f1_estado !== "pagada" && cliente.fechaInstalacion && cliente.fechaInstalacion >= "2026-10-01") {
+    return (
+      <div className="mt-2">
+        <button type="button" onClick={() => { if (window.confirm(`¿Quitar la confirmación del ciclo de ${cliente.nombre}?`)) onConfirmar(cliente.id, null); } } className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
+          ✅ Ciclo {String(actual || "").padStart(2, "0")} confirmado
+        </button>
+      </div>
+    );
+  }
+  return null;
+}
+
 const CHIPS_WEB_BASE = [
   ["todos", "Todos"],
   ["porInstalar", "⏳ Por instalar"],
   ["instalados", "✓ Instalados"],
   ["faltaAbono", "⚠ Falta abono"],
   ["faltaInfo", "📩 Falta info"],
+  ["faltaCiclo", "🔄 Falta ciclo"],
   ["nocuenta", "⛔ No cuenta"],
   ["cerrados", "Cerrados ▾"],
   ["factura1", "1ra factura ▾"],
@@ -10800,7 +10982,7 @@ function textoReporteDiario(clientes, convergencias) {
   return `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
 }
 
-function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion }) {
+function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -10934,7 +11116,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         );
       case "cliente":
         return (
-          <div className="max-w-[150px]">
+          <div className={cicloHogarPorConfirmar(c) ? "max-w-[280px]" : "max-w-[150px]"}>
             <button
               onClick={() => onVerDetalle(c)}
               title={c.nombre}
@@ -10954,6 +11136,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                 {copiedCell === c.id + "tel" ? "✓" : "📋"}
               </button>
             </div>
+            {cicloHogarPorConfirmar(c) && <div className="mt-1"><CicloHogarConfirmar cliente={c} onConfirmar={onConfirmarCiclo} /></div>}
           </div>
         );
       case "plan":
@@ -11104,6 +11287,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     instalados: baseChipsWeb.filter((c) => !!c.fechaInstalacion).length,
     faltaAbono: baseChipsWeb.filter(abonoPendiente).length,
     faltaInfo: baseChipsWeb.filter(instalacionPorAvisar).length,
+    faltaCiclo: baseChipsWeb.filter(cicloHogarPorConfirmar).length,
     cancelados: baseChipsWeb.filter((c) => !!c.cancelado && clienteExcluido(c)).length,
     nocuenta: baseChipsWeb.filter((c) => pasaFiltroFactura(c, "nocuenta")).length,
     penalizado: visiblesOrdenados.filter((c) => c.penalizado).length,
@@ -11128,6 +11312,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   const chipWebActivo =
     chipGrupo === "faltaAbono" ? "faltaAbono"
     : chipGrupo === "faltaInfo" ? "faltaInfo"
+    : chipGrupo === "faltaCiclo" ? "faltaCiclo"
     : chipGrupo === "cancelados" ? "cancelados"
     : filtroInstalacion === "pendientes" ? "porInstalar"
     : filtroInstalacion === "instalados" ? "instalados"
@@ -11136,7 +11321,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     : "todos";
   const elegirChipWeb = (k) => {
     const nuevo = chipWebActivo === k ? "todos" : k;
-    setChipGrupo(nuevo === "faltaAbono" || nuevo === "faltaInfo" || nuevo === "cancelados" ? nuevo : "todos");
+    setChipGrupo(nuevo === "faltaAbono" || nuevo === "faltaInfo" || nuevo === "faltaCiclo" || nuevo === "cancelados" ? nuevo : "todos");
     setFiltroInstalacion(nuevo === "porInstalar" ? "pendientes" : nuevo === "instalados" ? "instalados" : "");
     setFiltroEstado(nuevo === "nocuenta" || nuevo === "penalizado" ? nuevo : (filtroEstado === "pago1" || filtroEstado === "nopago1") && nuevo === "todos" ? filtroEstado : "");
   };
@@ -11169,10 +11354,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
       return (la ? la.getTime() : Infinity) - (lb ? lb.getTime() : Infinity);
     });
   const listaInfo = visiblesFinal.filter(instalacionPorAvisar).sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
+  const listaCiclo = visiblesFinal.filter(cicloHogarPorConfirmar).sort((a, b) => String(a.fechaInstalacion).localeCompare(String(b.fechaInstalacion)));
   // "Todos" en la web no incluye cancelados ni penalizados (tienen su propio chip).
   const filasWeb =
     chipGrupo === "faltaAbono" ? listaAbono
     : chipGrupo === "faltaInfo" ? listaInfo
+    : chipGrupo === "faltaCiclo" ? listaCiclo
     : chipGrupo === "cancelados" ? visiblesFinal.filter((c) => !!c.cancelado && clienteExcluido(c))
     : filtroEstado === "penalizado" || filtroEstado === "nocuenta" ? visiblesFinal
     : visiblesFinal.filter((c) => !clienteExcluido(c));
@@ -11229,9 +11416,9 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
   })();
   const planesEsp = planesOpc.filter(([k]) => !TIPOS_PLAN.includes(k));
   const factOpts = [nPago1 > 0 ? ["pago1", "✓ Pagó", nPago1] : null, nNoPago1 > 0 ? ["nopago1", "⏱ Aún no la paga", nNoPago1] : null].filter(Boolean);
-  const pendOpts = [listaAbono.length > 0 ? ["faltaAbono", "⚠ Falta abono", listaAbono.length] : null, listaInfo.length > 0 ? ["faltaInfo", "📩 Falta info", listaInfo.length] : null].filter(Boolean);
+  const pendOpts = [listaAbono.length > 0 ? ["faltaAbono", "⚠ Falta abono", listaAbono.length] : null, listaInfo.length > 0 ? ["faltaInfo", "📩 Falta info", listaInfo.length] : null, listaCiclo.length > 0 ? ["faltaCiclo", "🔄 Falta ciclo", listaCiclo.length] : null].filter(Boolean);
   const esFact = filtroEstado === "pago1" || filtroEstado === "nopago1";
-  const esPend = chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo";
+  const esPend = chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo" || chipGrupo === "faltaCiclo";
   const alternarEstado = (k) => { setChipGrupo("todos"); setFiltroEstado(filtroEstado === k ? "" : k); };
   const todoLimpio = chipGrupo === "todos" && !filtroEstado;
   const limpiarTodoM = () => { setFiltroEstado(""); setFiltroInstalacion(""); setChipGrupo("todos"); setFiltroPlan(""); setFechaDesde(""); setFechaHasta(""); };
@@ -11275,7 +11462,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                 ? chipM(!!filtroPlan, filtroPlan ? "📶 " + (TIPOS_PLAN.includes(filtroPlan) ? (filtroPlan === "SINGLE" ? "Single" : "Doble") : formatoPlan(filtroPlan)) : "📶 Plan ▾", () => { if (filtroPlan) { setFiltroPlan(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "plan" ? null : "plan"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
                 : planesEsp.length === 1 && chipM(false, "📶 " + planesEsp[0][1] + " " + planesEsp[0][2], () => setFiltroPlan(planesEsp[0][0]), true)}
               {esPend || pendOpts.length >= 2
-                ? chipM(esPend, esPend ? (chipGrupo === "faltaAbono" ? "⚠ Falta abono" : "📩 Falta info") : "📩 Pendientes " + (listaAbono.length + listaInfo.length) + " ▾", () => { if (esPend) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "pend" ? null : "pend"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
+                ? chipM(esPend, esPend ? (chipGrupo === "faltaAbono" ? "⚠ Falta abono" : chipGrupo === "faltaCiclo" ? "🔄 Falta ciclo" : "📩 Falta info") : "📩 Pendientes " + (listaAbono.length + listaInfo.length + listaCiclo.length) + " ▾", () => { if (esPend) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "pend" ? null : "pend"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
                 : pendOpts.length === 1 && chipM(false, pendOpts[0][1] + " " + pendOpts[0][2], () => { setFiltroEstado(""); setChipGrupo(pendOpts[0][0]); }, true)}
               {conteoG.cancelados > 0 && chipM(chipGrupo === "cancelados", "Cancelados " + conteoG.cancelados, () => setChipGrupo(chipGrupo === "cancelados" ? "todos" : "cancelados"), true)}
             </React.Fragment>
@@ -11299,6 +11486,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             {listaAbono.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaAbono"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⚠ Falta abono · {listaAbono.length}</button>}
             {listaInfo.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaInfo"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>📩 Falta info · {listaInfo.length}</button>}
+            {listaCiclo.length > 0 && <button type="button" onClick={() => { setFiltroEstado(""); setChipGrupo("faltaCiclo"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>🔄 Falta ciclo · {listaCiclo.length}</button>}
           </div>
         )}
         {mesPanelAbierto && (
@@ -11547,6 +11735,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {chip("todos", "Todos", totalCuentan)}
             {(listaAbono.length > 0 || chipGrupo === "faltaAbono") && chip("faltaAbono", "⚠ Falta abono", listaAbono.length)}
             {(listaInfo.length > 0 || chipGrupo === "faltaInfo") && chip("faltaInfo", "📩 Falta info", listaInfo.length)}
+            {(listaCiclo.length > 0 || chipGrupo === "faltaCiclo") && chip("faltaCiclo", "🔄 Falta ciclo", listaCiclo.length)}
             {chip("porInstalar", "Por instalar", conteoG.porInstalar)}
             {chip("instalados", "Instalados", conteoG.instalados)}
             {conteoG.cancelados > 0 && chip("cancelados", "Cancelados (no cuentan)", conteoG.cancelados)}
@@ -11669,7 +11858,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
             {filtroPlan && !TIPOS_PLAN.includes(filtroPlan) && <option value={filtroPlan}>{"Plan: " + formatoPlan(filtroPlan)}</option>}
           </select>
           <RangoFechasIcono desde={fechaDesde} hasta={fechaHasta} onChange={(d, h) => { setFechaDesde(d); setFechaHasta(h); } } />
-          {(filtrosActivos > 0 || chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo") && (
+          {(filtrosActivos > 0 || chipGrupo === "faltaAbono" || chipGrupo === "faltaInfo" || chipGrupo === "faltaCiclo") && (
             <button
               type="button"
               onClick={() => { setFiltroEstado(""); setFiltroInstalacion(""); setChipGrupo("todos"); setFiltroPlan(""); setFechaDesde(""); setFechaHasta(""); } }
@@ -11862,6 +12051,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         💬 Enviar info de instalación
                       </button>
                     )}
+                    <CicloHogarConfirmar cliente={c} onConfirmar={onConfirmarCiclo} />
                     <div className="flex items-center gap-2 mt-2.5">
                       <button
                         type="button"
@@ -11923,7 +12113,20 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                       </div>
                     )
                   )}
-                  {GRUPOS.filter((g) => chipGrupo !== "faltaAbono" && chipGrupo !== "faltaInfo" && (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
+                  {chipGrupo === "faltaCiclo" && (
+                    listaCiclo.length > 0 ? (
+                      <div className="flex flex-col gap-2">
+                        <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>Falta confirmar ciclo · {listaCiclo.length}</div>
+                        {listaCiclo.map(tarjeta)}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", background: "#fff", color: "#5A6680" } }>
+                        ✓ No falta confirmar ciclos
+                        <button type="button" onClick={() => setChipGrupo("todos")} className="block mx-auto mt-2 text-xs font-bold underline" style={ { color: "#001E62" } }>Ver todos los clientes</button>
+                      </div>
+                    )
+                  )}
+                  {GRUPOS.filter((g) => chipGrupo !== "faltaAbono" && chipGrupo !== "faltaInfo" && chipGrupo !== "faltaCiclo" && (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
                     <div key={g.k} className="flex flex-col gap-2">
                       <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>{g.t} · {conteoG[g.k]}</div>
                       {visiblesFinal.filter((c) => grupoDe(c) === g.k).map(tarjeta)}
