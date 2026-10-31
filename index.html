@@ -1887,9 +1887,10 @@ ${bloquePagoHogar()}
 
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`;
   }
+  const ordinal = { 2: "segunda", 3: "tercera", 4: "cuarta", 5: "quinta", 6: "sexta", 7: "séptima", 8: "octava", 9: "novena", 10: "décima" }[n];
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
-La factura de su *servicio residencial* ${fraseVencimiento(dias)}:
+La ${ordinal ? `*${ordinal} factura*` : "factura"} de su *servicio residencial* ${fraseVencimiento(dias)}:
 💳 Vence: *${fmtFechaLarga(c._venc)}*
 🔢 N° de suscriptor: *${c.numeroSuscriptor}*
 
