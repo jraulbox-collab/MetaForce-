@@ -99,6 +99,16 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
 .consejos{background:var(--soft);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.55}
 .consejos ul{margin:6px 0 0;padding-left:18px}
 .legal{border-top:1px solid var(--line);padding-top:12px}
+.tip{display:flex;align-items:flex-start;gap:8px;background:var(--soft);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.4}
+.tip .tx{flex:1;min-width:0}.tip .tx b{display:block}
+.tip button{font:inherit;font-size:12.5px;font-weight:800;border:0;background:transparent;color:var(--primary);cursor:pointer;min-height:32px;padding:4px 6px;text-decoration:underline}
+:root[data-theme="dark"] .tip button{color:var(--ring)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tip button{color:var(--ring)}}
+.alerta{background:var(--bad-soft);color:var(--bad);border:2px solid var(--bad);border-radius:12px;padding:11px 12px;font-size:13px;font-weight:700;display:flex;flex-direction:column;gap:8px}
+.ov{position:fixed;inset:0;background:rgba(5,10,25,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;overflow-y:auto}
+.ov .box{background:var(--surface);color:var(--fg);border-radius:18px;padding:18px;max-width:460px;width:100%;max-height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
+.ov h2{font-size:18px;margin:0}
+.av{display:flex;gap:10px;font-size:14px;line-height:1.4}.av .ic{font-size:20px;flex:none}.av b{display:block}.av span.d{color:var(--muted);font-size:13px}
 .firma{color:var(--muted);font-size:13px;text-align:center;margin:2px 0 0}.firma b{color:var(--fg)}
 </style>
 </head>
@@ -108,6 +118,8 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
     <h1>Calculadora de ventas</h1>
   </div>
   <div class="seg" id="modoSeg"><button type="button" data-modo="rapido" aria-pressed="true">⚡ Rápido</button><button type="button" data-modo="clientes" aria-pressed="false">👥 Con mis clientes</button></div>
+  <div class="tip" id="tipBar" hidden><span aria-hidden="true">💡</span><div class="tx" id="tipTx"></div><div style="display:flex;flex-direction:column;align-items:flex-end"><button type="button" id="tipOtro">Otro</button><button type="button" id="tipTodos">Ver todos</button></div><button type="button" id="tipX" aria-label="Cerrar consejo">✕</button></div>
+  <div class="alerta" id="respAviso" hidden><span>⚠️ Hace más de 7 días que no haces tu respaldo. Si pierdes los datos del navegador, pierdes tu lista.</span><button type="button" class="btn sm" id="respIr">Hacer respaldo ahora</button></div>
   <div class="chips" id="chips"></div>
 
   <div class="tabs" role="tablist">
@@ -173,7 +185,7 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
       <p class="h">Solo el resumen, para consultar.</p>
       <div id="historial" style="display:flex;flex-direction:column;gap:10px"></div>
     </section>
-    <section class="card">
+    <section class="card" id="cardResp">
       <h2>Respaldo</h2>
       <p class="h">Si cambias de teléfono o borras los datos del navegador, pierdes tu lista. Copia el respaldo de vez en cuando.</p>
       <div class="acts"><button type="button" class="btn pri" id="btnResp">Copiar respaldo</button><button type="button" class="btn" id="btnRest">Restaurar</button></div>
@@ -231,9 +243,21 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
   </div>
 
   <p class="nota legal"><b>Aviso legal:</b> herramienta personal, no oficial. Los resultados son solo una estimación y pueden no coincidir con tu comisión real. Úsala bajo tu responsabilidad y confirma siempre con tu empresa.</p>
+  <div class="acts" style="justify-content:center"><button type="button" class="btn sm" id="btnAvisos">ℹ️ Ver avisos y consejos</button></div>
   <p class="firma">Herramienta creada por <b>José Severino</b></p>
 </div>
 
+<div class="ov" id="ovPrimera" hidden role="dialog" aria-modal="true" aria-labelledby="ovT1"><div class="box">
+  <h2 id="ovT1">⚠️ Antes de empezar</h2>
+  <div id="ovLista1" style="display:flex;flex-direction:column;gap:12px"></div>
+  <label class="chk"><input type="checkbox" id="ovChk">Leí y entendí</label>
+  <button type="button" class="btn pri" id="ovOk" disabled>Entrar</button>
+</div></div>
+<div class="ov" id="ovTodos" hidden role="dialog" aria-modal="true" aria-labelledby="ovT2"><div class="box">
+  <h2 id="ovT2">Avisos y consejos</h2>
+  <div id="ovLista2" style="display:flex;flex-direction:column;gap:12px"></div>
+  <button type="button" class="btn pri" id="ovCerrar">Cerrar</button>
+</div></div>
 <script>
 var TRAMOS=[[70,250],[80,550],[90,750],[100,950],[110,1150],[120,1300],[130,1500],[140,1700]];
 var BONO_PORT=6;
@@ -264,6 +288,7 @@ function cargar(){try{var d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&
 function guardar(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 S=cargar()||inicial();
 if(!S.modo)S.modo="rapido";
+if(!S.desde){S.desde=Date.now();guardar()}
 if(!S.rapido)S.rapido={mh:"",mm:"",mi:"",ch:"",cm:"",ci:"",p:""};
 function cur(){var r=S.meses.filter(function(m){return m.id===S.sel})[0];if(!r){r=S.meses[0];S.sel=r.id}return r}
 
@@ -427,6 +452,7 @@ function pintarHistorial(){
 var CONSEJOS='<div class="consejos"><b>🔐 Cuida tu respaldo</b><ul><li>Guárdalo en tus notas o envíatelo por WhatsApp solo a ti mismo.</li><li>No lo compartas en grupos ni con otras personas: tiene números de suscriptor y de línea de tus clientes.</li><li>Bórralo cuando ya no lo necesites.</li></ul></div>';
 $("btnResp").addEventListener("click",function(){
   var txt="CALC-D2D:"+JSON.stringify({meses:S.meses,historial:S.historial});
+  S.ultResp=Date.now();guardar();pintarAviso();
   function ok(){$("respBox").innerHTML='<div class="lock" style="background:var(--ok-soft);color:var(--ok)">✓ Respaldo copiado. Pégalo en tus notas.</div>'+CONSEJOS}
   function manual(){$("respBox").innerHTML='<div class="nota">No se pudo copiar solo. Selecciona todo el texto y cópialo:</div><textarea id="respTxt" readonly></textarea>'+CONSEJOS;var t=$("respTxt");t.value=txt;t.focus();t.select()}
   try{navigator.clipboard.writeText(txt).then(ok,manual)}catch(e){manual()}
@@ -442,7 +468,7 @@ $("respBox").addEventListener("click",function(e){
       if(t.indexOf("CALC-D2D:")!==0)throw 0;
       var d=JSON.parse(t.slice(9));
       if(!Array.isArray(d.meses)||!d.meses.length||!Array.isArray(d.historial))throw 0;
-      S={meses:d.meses,sel:d.meses[0].id,historial:d.historial,modo:S.modo,rapido:S.rapido};guardar();pintarMetas();pintarTodo();cargarRap();pintarRap();aplicarModo();
+      S={meses:d.meses,sel:d.meses[0].id,historial:d.historial,modo:S.modo,rapido:S.rapido,desde:Date.now(),ultResp:Date.now()};guardar();pintarMetas();pintarTodo();cargarRap();pintarRap();aplicarModo();
       $("respBox").innerHTML='<div class="lock" style="background:var(--ok-soft);color:var(--ok)">✓ Respaldo restaurado.</div>';
     }catch(er){$("restErr").textContent="Ese texto no parece un respaldo de esta calculadora.";$("restErr").hidden=false}
   }
@@ -466,7 +492,7 @@ function aplicarModo(){
   if(rap&&TAB==="cli")TAB="com";
   tab(TAB);
 }
-$("modoSeg").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;S.modo=b.dataset.modo;guardar();aplicarModo()});
+$("modoSeg").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;S.modo=b.dataset.modo;guardar();aplicarModo();pintarAviso()});
 
 /* ---------- Modo rápido ---------- */
 var RF={rmh:"mh",rmm:"mm",rmi:"mi",rch:"ch",rcm:"cm",rci:"ci",rp:"p"};
@@ -491,7 +517,38 @@ function cargarRap(){Object.keys(RF).forEach(function(id){$(id).value=S.rapido[R
 $("rLimpiar").addEventListener("click",function(){S.rapido={mh:S.rapido.mh,mm:S.rapido.mm,mi:S.rapido.mi,ch:"",cm:"",ci:"",p:""};guardar();cargarRap();pintarRap()});
 
 function pintarTodo(){pintarChips();pintarCom();pintarCli();pintarMesBox();pintarHistorial()}
-pintarMetas();pintarTodo();cargarRap();pintarRap();aplicarModo();
+/* ---------- Avisos y consejos ---------- */
+var AV=[
+ {i:"📱",t:"Abre siempre desde el mismo navegador y el mismo link",d:"Si entras desde otro navegador, otro teléfono o en modo privado, la calculadora aparece vacía.",c:1},
+ {i:"🔒",t:"Tus datos se guardan solo en tu teléfono",d:"No se envían ni se guardan en ningún otro sitio, y nadie más los ve.",c:1},
+ {i:"💾",t:"Haz tu respaldo seguido",d:"Cópialo al terminar cada semana y siempre antes de cambiar de teléfono. Pégalo en tus notas.",c:1},
+ {i:"🗑️",t:"Si limpias el historial o los datos de Safari, se borra todo",d:"Safari también puede borrar los datos de páginas que llevas varios días sin abrir.",c:1},
+ {i:"🏠",t:"Si la agregas a la pantalla de inicio, úsala solo desde ahí",d:"Safari y el ícono de inicio guardan los datos por separado, y eso confunde."},
+ {i:"🕒",t:"Revisa que la fecha y la hora de tu teléfono estén bien",d:"De eso dependen los días que faltan para el límite."},
+ {i:"👤",t:"Guarda solo número de suscriptor o de línea, sin nombres de clientes",d:"Es más seguro si alguien ve tu respaldo."},
+ {i:"🧮",t:"Es una estimación",d:"Confirma siempre tu comisión real con la empresa."}
+];
+function lista(arr){return arr.map(function(a){return '<div class="av"><span class="ic" aria-hidden="true">'+a.i+'</span><div><b>'+a.t+'</b><span class="d">'+a.d+'</span></div></div>'}).join("")}
+var AKEY="calc_d2d_aviso",tipN=Math.floor(Math.random()*AV.length);
+function visto(){try{return localStorage.getItem(AKEY)==="1"}catch(e){return false}}
+function pintarTip(){var a=AV[tipN];$("tipTx").innerHTML="<b>"+a.t+"</b>"+a.d}
+$("tipOtro").onclick=function(){tipN=(tipN+1+Math.floor(Math.random()*(AV.length-1)))%AV.length;pintarTip()};
+$("tipX").onclick=function(){$("tipBar").hidden=true};
+function abrirTodos(){$("ovLista2").innerHTML=lista(AV);$("ovTodos").hidden=false}
+$("tipTodos").onclick=abrirTodos;$("btnAvisos").onclick=abrirTodos;
+$("ovCerrar").onclick=function(){$("ovTodos").hidden=true};
+$("ovChk").onchange=function(){$("ovOk").disabled=!$("ovChk").checked};
+$("ovOk").onclick=function(){try{localStorage.setItem(AKEY,"1")}catch(e){}$("ovPrimera").hidden=true;$("tipBar").hidden=false};
+function pintarAviso(){
+  var hay=S.meses.some(function(m){return m.clientes.length>0});
+  var ult=S.ultResp||S.desde||Date.now();
+  $("respAviso").hidden=!(S.modo==="clientes"&&hay&&Date.now()-ult>7*86400000);
+}
+$("respIr").onclick=function(){tab("com");var c=$("cardResp");if(c.scrollIntoView)c.scrollIntoView({behavior:"smooth",block:"start"})};
+if(!visto()){$("ovLista1").innerHTML=lista(AV.filter(function(a){return a.c}));$("ovPrimera").hidden=false}else $("tipBar").hidden=false;
+pintarTip();
+
+pintarMetas();pintarTodo();cargarRap();pintarRap();aplicarModo();pintarAviso();
 
 /* ---------- Prorrateo (igual que la calculadora anterior) ---------- */
 var MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"],MESL=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
