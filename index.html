@@ -4249,7 +4249,7 @@ function App() {
     setResumenCadena(null);
     // Los que ya se abrieron antes no entran a la cadena: se revisan al final.
     const nuevos = items.filter((it) => !aperturaDe(it));
-    guardarRevisar(items.filter((it) => aperturaDe(it)));
+    guardarRevisar(items.filter((it) => aperturaDe(it) && it.t !== "ch" && it.t !== "cm"));
     if (!nuevos.length) return;
     guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0 });
     abrirWhatsapp(nuevos[0]);
@@ -4258,6 +4258,7 @@ function App() {
   function enviarUno(item) {
     // Si ya se abrió antes este mismo mensaje, primero se pregunta si ya salió.
     if (aperturaDe(item)) {
+      if (item.t === "ch" || item.t === "cm") return; // se revisa en su misma fila de Cobros
       guardarRevisar([item, ...revisar.filter((x) => claveEnvio(x) !== claveEnvio(item))]);
       return;
     }
@@ -5041,6 +5042,8 @@ function App() {
             onVerTodos={() => { setSeccionMensajes("cobros"); window.scrollTo({ top: 0 }); } }
             onVerMas={() => setLotesMsj((p) => ({ ...p, cobros: p.cobros + 10 }))}
             onEnviarUno={enviarUno}
+            onRevisarSi={revisarSi}
+            onRevisarNo={revisarNo}
             alertasHoy={alertasCobroVis}
             alertasMovil={alertasMovilVis}
             onMarcarMovil={marcarMovilEnviadoSeguro}
@@ -10332,7 +10335,7 @@ function HistorialComisionChart({ data, periodoActivo, periodoActual, onSelect, 
   );
 }
 
-function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer, limite, modoResumen, onVerTodos, onVerMas, onEnviarUno }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer, limite, modoResumen, onVerTodos, onVerMas, onEnviarUno, onRevisarSi, onRevisarNo }) {
   const [posAbierto, setPosAbierto] = useState(null);
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
@@ -10638,7 +10641,9 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                   </h2>
                 )}
                 <div className="flex flex-col gap-2">
-                  {grupo.items.map(({ cliente, factura, milestone, esMovil, fechas }) => {
+                  {[...grupo.items].sort((a, b) => (aperturaDe({ t: b.esMovil ? "cm" : "ch", id: b.cliente.id, key: b.milestone.key }) ? 1 : 0) - (aperturaDe({ t: a.esMovil ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key }) ? 1 : 0)).map(({ cliente, factura, milestone, esMovil, fechas }) => {
+                    const itemEnvio = { t: esMovil ? "cm" : "ch", id: cliente.id, key: milestone.key, link: whatsappLink(cliente, milestone), nombre: cliente.nombre, et: "💵 Cobro · " + (esMovil ? milestone.tag : milestone.label) };
+                    const aperturaISO = aperturaDe(itemEnvio);
                     const extras = (extrasPorCliente.get(cliente.id) || []).filter((a) => a.milestone.key !== milestone.key);
                     const dias = daysFromToday(milestone.triggerDate);
                     const atrasada = dias < 0;
@@ -10663,20 +10668,30 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                               {esMovil ? milestone.tag : `${milestone.tag} ${milestone.label}`} · <span style={ { fontWeight: 700, color: atrasada || dias === 0 ? "#9B1C1C" : "#9A4A06" } }>{atrasada ? "⚠ " : dias === 0 ? "📅 " : ""}{diasTexto(milestone.triggerDate)}</span>
                             </div>
                           </div>
-                          <a
+                          {!aperturaISO && <a
                             href={whatsappLink(cliente, milestone)}
                             onClick={(e) => {
                               e.preventDefault();
                               e.stopPropagation();
-                              onEnviarUno({ t: esMovil ? "cm" : "ch", id: cliente.id, key: milestone.key, link: whatsappLink(cliente, milestone), nombre: cliente.nombre, et: "💵 Cobro · " + (esMovil ? milestone.tag : milestone.label) });
+                              onEnviarUno(itemEnvio);
                             } }
                             aria-label={"Enviar por WhatsApp a " + tituloEs(cliente.nombre || "")}
                             className="flex items-center justify-center shrink-0 rounded-xl"
                             style={ { width: 48, height: 48, background: "#1FA855", color: "#fff", fontSize: 22 } }
                           >
                             💬
-                          </a>
+                          </a>}
                         </div>
+                        {aperturaISO && onRevisarSi && onRevisarNo && (
+                          <div className="px-3 pb-3 pt-2" style={ { background: "#FFF3DC", borderTop: "1.5px solid #B45309" } }>
+                            <div className="text-xs font-extrabold" style={ { color: "#92400E" } }>👁 Abierto {textoApertura(aperturaISO)} · ¿ya lo enviaste?</div>
+                            <div className="flex flex-wrap gap-2 mt-2">
+                              <button type="button" onClick={() => { window.location.href = linkSoloChat(itemEnvio.link); } } className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>👁 Ver el chat</button>
+                              <button type="button" onClick={() => onRevisarSi(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } }>✓ Sí, lo envié</button>
+                              <button type="button" onClick={() => onRevisarNo(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#92400E", border: "1.5px solid #B45309" } }>↻ No, enviar otra vez</button>
+                            </div>
+                          </div>
+                        )}
                         {abierta && (
                           <div className="mf-abrir px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
                             <div className="text-sm mt-2" style={ { color: "#3D4A66" } }>
