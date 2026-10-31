@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calculadora de Ventas D2D</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;600;700;800&display=swap">
+<style>
+:root{
+  --bg:#F3F6FB; --surface:#FFFFFF; --fg:#0E1A33; --muted:#5A6680; --line:#DFE5EF;
+  --primary:#001E62; --on-primary:#FFFFFF; --soft:#EAF0FB; --accent:#B45309; --accent-soft:#FFF3DC;
+  --ring:#0072CE; --ok:#0B6B3A; --ok-soft:#E3F4EA; --bad:#9B1C1C; --bad-soft:#FBE9E9;
+  --font:"Figtree",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --bg:#0A1020; --surface:#121A30; --fg:#E8EEFC; --muted:#9BA8C4; --line:#26314D;
+  --primary:#1E3F94; --on-primary:#FFFFFF; --soft:#1A2644; --accent:#F0A24A; --accent-soft:#2E2412; --ring:#6FB1F2;
+  --ok:#59D08C; --ok-soft:#12301F; --bad:#FF8A8A; --bad-soft:#3B1717; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0A1020; --surface:#121A30; --fg:#E8EEFC; --muted:#9BA8C4; --line:#26314D;
+  --primary:#1E3F94; --on-primary:#FFFFFF; --soft:#1A2644; --accent:#F0A24A; --accent-soft:#2E2412; --ring:#6FB1F2;
+  --ok:#59D08C; --ok-soft:#12301F; --bad:#FF8A8A; --bad-soft:#3B1717; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font);font-size:15px;line-height:1.45;padding-inline:16px;padding-block:18px 48px}
+.wrap{max-width:460px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
+h1{font-size:21px;font-weight:800;margin:0;letter-spacing:-.01em}
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.pill{font-size:12.5px;font-weight:800;border-radius:999px;padding:5px 11px;border:1.5px solid var(--line);background:var(--surface);white-space:nowrap}
+.pill.open{color:var(--ok);border-color:var(--ok)}
+.pill.closed{color:var(--accent);border-color:var(--accent)}
+.demo{font-size:12.5px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:9px 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.chips{display:flex;gap:8px;flex-wrap:wrap}.chips button{font:inherit;font-size:13px;font-weight:800;border-radius:999px;padding:8px 13px;min-height:40px;border:2px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}.chips button[aria-pressed="true"]{border-color:var(--primary);background:var(--primary);color:var(--on-primary)}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--soft);border-radius:14px;padding:4px}
+.tabs button{font:inherit;font-size:13px;font-weight:800;padding:10px 2px;border-radius:10px;border:0;background:transparent;color:var(--muted);cursor:pointer;min-height:44px}
+.tabs button[aria-selected="true"]{background:var(--primary);color:var(--on-primary)}
+.pane{display:flex;flex-direction:column;gap:14px}
+.hero{background:var(--primary);color:var(--on-primary);border-radius:18px;padding:18px 18px 16px}
+.hero .lbl{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
+.hero .num{font-size:44px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:2px}
+.hero .tr{margin-top:6px;font-size:13px;opacity:.92}
+.res{display:flex;flex-direction:column;gap:3px;margin-top:12px;padding-top:12px;border-top:1px solid color-mix(in srgb,var(--on-primary) 25%,transparent);font-size:14px}
+.res div{display:flex;justify-content:space-between;gap:12px}
+.res b{font-variant-numeric:tabular-nums;text-align:right}
+.res small{opacity:.85;font-size:12px;display:block;margin-top:4px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px}
+.card h2{font-size:15px;font-weight:800;margin:0 0 2px}
+.card p.h{margin:0 0 12px;color:var(--muted);font-size:12.5px}
+.next{background:var(--accent-soft);color:var(--accent);border-radius:12px;padding:11px 12px;font-size:13px;font-weight:600;line-height:1.4}
+.nota{color:var(--muted);font-size:12px;line-height:1.5}
+input[type=number],input[type=text],input[type=date],select,textarea{width:100%;font:inherit;font-size:17px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--fg);background:var(--surface);border:2px solid var(--line);border-radius:10px;padding:9px 10px;min-width:0;min-height:46px}
+textarea{font-size:13px;font-weight:500;min-height:110px}
+input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid var(--ring);outline-offset:1px}
+.tbl{width:100%;border-collapse:collapse}
+.tbl th{font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;text-align:left;padding:0 0 6px}
+.tbl th+th{padding-left:10px}
+.tbl td{padding:6px 0;vertical-align:middle}
+.tbl td:first-child{font-weight:700;font-size:14px;padding-right:8px}
+.tbl td+td{padding-left:10px}
+.llevo{font-weight:800;font-variant-numeric:tabular-nums;font-size:17px}
+.btn{font:inherit;font-size:14px;font-weight:800;padding:11px 14px;border-radius:12px;border:2px solid var(--primary);background:var(--surface);color:var(--primary);cursor:pointer;min-height:46px}
+.btn.pri{background:var(--primary);color:var(--on-primary)}
+.btn.danger{border-color:var(--bad);color:var(--bad)}
+.btn.sm{min-height:40px;padding:8px 12px;font-size:13px}
+:root[data-theme="dark"] .btn:not(.pri){color:var(--fg);border-color:var(--ring)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .btn:not(.pri){color:var(--fg);border-color:var(--ring)}}
+.acts{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;background:var(--soft);border-radius:12px;padding:4px}
+.seg button{font:inherit;font-size:14px;font-weight:800;padding:10px;border-radius:9px;border:0;background:transparent;color:var(--muted);cursor:pointer;min-height:44px}
+.seg button[aria-pressed="true"]{background:var(--primary);color:var(--on-primary)}
+.fld{display:flex;flex-direction:column;gap:12px}
+.f label{display:block;font-size:13px;font-weight:700;margin-bottom:4px}
+.chk{display:flex;gap:10px;align-items:center;font-weight:700;font-size:15px;min-height:46px}
+.chk input{width:24px;height:24px;flex:none}
+.sum{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.sum div{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}
+.sum b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.sum small{font-size:11px;color:var(--muted);font-weight:700}
+.cli{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.cli .h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.cli .ref{font-weight:800;font-size:16px;font-variant-numeric:tabular-nums;flex:1;min-width:0;overflow-wrap:anywhere}
+.badge{font-size:11px;font-weight:800;border-radius:6px;padding:2px 7px;background:var(--soft);border:1px solid var(--line)}
+.badge.port{background:var(--accent-soft);color:var(--accent);border-color:var(--accent)}
+.cli .m{font-weight:800;font-variant-numeric:tabular-nums}
+.pago{font:inherit;font-weight:800;font-size:14px;border-radius:11px;min-height:46px;padding:0 14px;cursor:pointer;flex:1;min-width:140px;border:2px solid}
+.pago.si{background:var(--ok-soft);color:var(--ok);border-color:var(--ok)}
+.pago.no{background:var(--surface);color:var(--muted);border-color:var(--line)}
+.pago[disabled]{opacity:1}
+.lock{background:var(--accent-soft);color:var(--accent);border-radius:12px;padding:11px 12px;font-size:13px;font-weight:700}
+.confirm{background:var(--accent-soft);border:2px solid var(--accent);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px;font-size:14px;font-weight:600}
+.mes{border:1px solid var(--line);border-radius:14px;background:var(--surface);overflow:hidden}
+.mes summary{list-style:none;cursor:pointer;padding:14px;display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:800}
+.mes summary::-webkit-details-marker{display:none}
+.mes .in{padding:0 14px 14px;display:flex;flex-direction:column;gap:6px;font-size:13.5px}
+.mes .in div{display:flex;justify-content:space-between;gap:10px}
+.mini{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid var(--line);font-size:13px}
+.consejos{background:var(--soft);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.55}
+.consejos ul{margin:6px 0 0;padding-left:18px}
+.legal{border-top:1px solid var(--line);padding-top:12px}
+.firma{color:var(--muted);font-size:13px;text-align:center;margin:2px 0 0}.firma b{color:var(--fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Calculadora de ventas</h1>
+  </div>
+  <div class="chips" id="chips"></div>
+
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tabCom" aria-selected="true">Comisión</button>
+    <button type="button" role="tab" id="tabCli" aria-selected="false">Clientes</button>
+    <button type="button" role="tab" id="tabPro" aria-selected="false">Prorrateo</button>
+  </div>
+
+  <!-- COMISIÓN -->
+  <div class="pane" id="paneCom" role="tabpanel">
+    <div class="hero" aria-live="polite">
+      <div class="lbl" id="lblTotal"></div>
+      <div class="num" id="total">$0.00</div>
+      <div class="tr" id="tramo"></div>
+      <div class="res" id="res"></div>
+    </div>
+    <div class="next" id="sub" hidden></div>
+    <div class="lock" id="etapaMsg"></div>
+  <div class="next" id="next"></div>
+    <section class="card">
+      <h2>Mis metas del mes</h2>
+      <p class="h">Escríbelas al empezar el mes. Siempre las puedes cambiar. Lo que llevas sale de tu lista de clientes.</p>
+      <table class="tbl">
+        <thead><tr><th></th><th>Mi meta</th><th>Llevo</th></tr></thead>
+        <tbody>
+          <tr><td>Hogar</td><td><input id="mh" type="number" inputmode="decimal" min="0" aria-label="Meta de clientes Hogar"></td><td class="llevo" id="lh">0</td></tr>
+          <tr><td>Móvil</td><td><input id="mm" type="number" inputmode="decimal" min="0" aria-label="Meta de clientes Móvil"></td><td class="llevo" id="lm">0</td></tr>
+          <tr><td>Ingresos ($)</td><td><input id="mi" type="number" inputmode="decimal" min="0" step="0.01" aria-label="Meta de ingresos"></td><td class="llevo" id="li">$0.00</td></tr>
+        </tbody>
+      </table>
+    </section>
+    <section class="card"><h2>Este mes</h2><p class="h" id="mesHelp"></p><div id="mesBox"></div></section>
+    <section class="card">
+      <h2>Meses anteriores</h2>
+      <p class="h">Solo el resumen, para consultar.</p>
+      <div id="historial" style="display:flex;flex-direction:column;gap:10px"></div>
+    </section>
+    <section class="card">
+      <h2>Respaldo</h2>
+      <p class="h">Si cambias de teléfono o borras los datos del navegador, pierdes tu lista. Copia el respaldo de vez en cuando.</p>
+      <div class="acts"><button type="button" class="btn pri" id="btnResp">Copiar respaldo</button><button type="button" class="btn" id="btnRest">Restaurar</button></div>
+      <div id="respBox" style="display:flex;flex-direction:column;gap:10px;margin-top:12px"></div>
+    </section>
+    <div class="nota"><b>Ten en cuenta:</b>
+      <ul style="margin:4px 0 0;padding-left:18px">
+        <li>Cuentan solo los clientes instalados en el período, con su primera factura pagada a tiempo.</li>
+        <li>Es solo una estimación. Tus datos se guardan únicamente en este teléfono.</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- CLIENTES -->
+  <div class="pane" id="paneCli" role="tabpanel" hidden>
+    <div class="sum" id="sumCli"></div>
+    <section class="card" id="cardForm">
+      <h2 id="formTitulo">Agregar cliente instalado</h2>
+      <p class="h">Solo clientes instalados en el período que estás midiendo.</p>
+      <div class="fld">
+        <div class="seg" id="segTipo"><button type="button" data-tipo="hogar" aria-pressed="true">🏠 Hogar</button><button type="button" data-tipo="movil" aria-pressed="false">📱 Móvil</button></div>
+        <div class="f"><label for="fRef" id="lblRef">Número de suscriptor</label><input id="fRef" type="text" inputmode="numeric" autocomplete="off" placeholder="Ej.: 480112903"></div>
+        <div class="f"><label for="fMonto">Costo mensual del plan ($)</label><input id="fMonto" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Sin impuestos ni prorrateo"></div>
+        <label class="chk" id="rowPort" hidden><input id="fPort" type="checkbox">Es portabilidad (+$6 si paga)</label>
+        <div id="formErr" class="nota" style="color:var(--bad);font-weight:700" hidden></div>
+        <div class="acts"><button type="button" class="btn pri" id="btnAdd">Agregar</button></div>
+      </div>
+    </section>
+    <div class="lock" id="lockMsg" hidden>🔒 Mes finalizado. La lista ya no se puede editar: solo marca cada cliente como pagado o no pagado.</div>
+    <div id="listaCli" style="display:flex;flex-direction:column;gap:10px"></div>
+    <div id="finalizarBox"></div>
+  </div>
+
+  <!-- PRORRATEO -->
+  <div class="pane" id="panePro" role="tabpanel" hidden>
+    <div class="hero" aria-live="polite">
+      <div class="lbl">Primera factura (sin impuesto)</div>
+      <div class="num" id="pTotal">—</div>
+      <div class="tr" id="pSub">Llena los tres datos para calcular.</div>
+      <div class="res" id="pRes"></div>
+    </div>
+    <section class="card">
+      <h2>Datos del cliente</h2>
+      <p class="h">El prorrateo es lo que se cobra desde la instalación hasta el próximo ciclo de facturación.</p>
+      <div class="fld">
+        <div class="f"><label for="pf">Fecha de instalación</label><input id="pf" type="date"></div>
+        <div class="f"><label for="pc">Ciclo de facturación</label><select id="pc"><option value="">Elige el ciclo</option><option value="1">Ciclo 1</option><option value="6">Ciclo 6</option><option value="15">Ciclo 15</option><option value="21">Ciclo 21</option></select></div>
+        <div class="f"><label for="pm">Mensualidad del plan ($)</label><input id="pm" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Ej.: 30.00"></div>
+      </div>
+    </section>
+    <div class="nota"><b>Ten en cuenta:</b>
+      <ul style="margin:4px 0 0;padding-left:18px"><li>Los montos son sin impuesto.</li><li>Las facturas siguientes cobran solo la mensualidad.</li></ul>
+    </div>
+    <div class="acts"><button type="button" class="btn" id="pCopiar" hidden>Copiar mensaje</button><button type="button" class="btn" id="pLimpiar">Borrar datos</button></div>
+  </div>
+
+  <p class="nota legal"><b>Aviso legal:</b> herramienta personal, no oficial. Los resultados son solo una estimación y pueden no coincidir con tu comisión real. Úsala bajo tu responsabilidad y confirma siempre con tu empresa.</p>
+  <p class="firma">Herramienta creada por <b>José Severino</b></p>
+</div>
+
+<script>
+var TRAMOS=[[70,250],[80,550],[90,750],[100,950],[110,1150],[120,1300],[130,1500],[140,1700]];
+var BONO_PORT=6;
+var KEY="calc_d2d_v5";
+var MESES=["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+var MC=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+var $=function(id){return document.getElementById(id)};
+function esc(t){return String(t).replace(/[&<>"]/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})}
+function money(x){return "$"+Number(x||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+function pct(x){return Math.round(x)+"%"}
+function uid(){return "c"+Date.now().toString(36)+Math.random().toString(36).slice(2,6)}
+function pad(n){return (n<10?"0":"")+n}
+
+/* ---------- Fechas de cada mes ---------- */
+function ymNow(){var d=new Date();return d.getFullYear()+"-"+pad(d.getMonth()+1)}
+function ymAdd(ym,n){var y=+ym.slice(0,4),m=+ym.slice(5,7)-1+n;y+=Math.floor(m/12);m=((m%12)+12)%12;return y+"-"+pad(m+1)}
+function ymLabel(ym){return MESES[+ym.slice(5,7)-1]+" "+ym.slice(0,4)}
+function limiteDef(ym){var d=ymAdd(ym,2);return d+"-03"}
+function fechaCorta(iso){var p=iso.split("-");return +p[2]+" "+MC[+p[1]-1]}
+function diasHasta(iso){var p=iso.split("-"),t=new Date(+p[0],+p[1]-1,+p[2]),n=new Date();n=new Date(n.getFullYear(),n.getMonth(),n.getDate());return Math.round((t-n)/86400000)}
+function mesCobro(ym){return MESES[+ymAdd(ym,2).slice(5,7)-1].toLowerCase()}
+
+/* ---------- Estado ---------- */
+function nuevoMes(ym,metas){return {id:uid(),ym:ym,label:ymLabel(ym),etapa:"vendiendo",limite:limiteDef(ym),metas:metas||{h:"",m:"",i:""},clientes:[]}}
+function inicial(){var m=nuevoMes(ymNow());return {meses:[m],sel:m.id,historial:[]}}
+var S;
+function cargar(){try{var d=JSON.parse(localStorage.getItem(KEY)||"null");if(d&&Array.isArray(d.meses)&&d.meses.length&&Array.isArray(d.historial))return d}catch(e){}return null}
+function guardar(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+S=cargar()||inicial();
+function cur(){var r=S.meses.filter(function(m){return m.id===S.sel})[0];if(!r){r=S.meses[0];S.sel=r.id}return r}
+
+/* ---------- Cálculo ---------- */
+function posicion(p){var m=0;for(var k=0;k<TRAMOS.length;k++)if(p>=TRAMOS[k][0])m=TRAMOS[k][1];return m}
+function num(v){var n=parseFloat(v);return isFinite(n)&&n>0?n:0}
+function calc(lista,metas){
+  var h=0,m=0,i=0,p=0;
+  lista.forEach(function(c){if(c.tipo==="hogar")h++;else{m++;if(c.port)p++}i+=num(c.monto)});
+  var mh=num(metas.h),mm=num(metas.m),mi=num(metas.i);
+  var ph=mh?h/mh*100:0,pm=mm?m/mm*100:0,pc=ph*0.65+pm*0.35,pi=mi?i/mi*100:0;
+  var base=posicion(pc),f=pi>100?pi/100+0.1:pi<100?pi/100:1;
+  var sinPort=base*f;
+  return {h:h,m:m,i:i,p:p,mh:mh,mm:mm,mi:mi,ph:ph,pm:pm,pc:pc,pi:pi,base:base,f:f,sinPort:sinPort,bono:p*BONO_PORT,total:sinPort+p*BONO_PORT,ok:!!(mh&&mm&&mi)};
+}
+
+/* ---------- Selector de mes ---------- */
+function pintarChips(){
+  var h="";
+  S.meses.forEach(function(m){h+='<button type="button" data-id="'+m.id+'" aria-pressed="'+(m.id===S.sel)+'">'+(m.etapa==="vendiendo"?"🟢":"🟡")+" "+esc(m.label)+'</button>'});
+  $("chips").innerHTML=h;
+}
+$("chips").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;S.sel=b.dataset.id;guardar();formVacio();pintarTodo()});
+
+/* ---------- Comisión ---------- */
+function pintarCom(){
+  var M=cur(),esp=M.etapa==="esperando",r=calc(M.clientes,M.metas);
+  $("lblTotal").textContent="Proyección a cobrar · "+M.label;
+  if(esp){
+    var d=diasHasta(M.limite);
+    $("etapaMsg").textContent="🟡 Esperando pagos. Límite: "+fechaCorta(M.limite)+(d>0?" (faltan "+d+(d===1?" día":" días")+")":d===0?" (es hoy)":" (ya pasó)")+". Se cobra en la última quincena de "+mesCobro(M.ym)+".";
+  } else $("etapaMsg").textContent="🟢 Vendiendo. Agrega los clientes instalados en "+M.label+". Se cobra en la última quincena de "+mesCobro(M.ym)+".";
+  $("lh").textContent=r.h;$("lm").textContent=r.m;$("li").textContent=money(r.i);
+  if(!r.ok){
+    $("total").textContent="—";$("tramo").textContent="Escribe tus tres metas para calcular.";$("res").innerHTML="";$("next").hidden=true;$("sub").hidden=true;return;
+  }
+  $("total").textContent=money(r.total);
+  $("tramo").textContent=r.base?("Tramo base de "+money(r.base)):"Sin comisión: el mínimo es 70% de clientes";
+  var aj=r.pi>100?"× "+pct(r.f*100)+" (ingresos "+pct(r.pi)+" + 10)":r.pi<100?"× "+pct(r.f*100)+" (ingresos "+pct(r.pi)+")":"× 100%";
+  $("res").innerHTML=
+    "<div><span>Clientes (65% Hogar + 35% Móvil)</span><b>"+pct(r.pc)+"</b></div>"+
+    "<div><span>Ingresos</span><b>"+money(r.i)+" de "+money(r.mi)+"</b></div>"+
+    "<div><span>Comisión por clientes e ingresos</span><b>"+money(r.sinPort)+"</b></div>"+
+    "<div><span>Portabilidades: "+r.p+" × "+money(BONO_PORT)+"</span><b>"+money(r.bono)+"</b></div>";
+  var sig=null;for(var k=0;k<TRAMOS.length;k++)if(TRAMOS[k][0]>r.pc){sig=TRAMOS[k];break}
+  $("next").hidden=false;
+  if(sig){
+    var falta=sig[0]-r.pc;
+    $("next").textContent="Siguiente tramo: "+money(sig[1])+" al llegar a "+sig[0]+"% de clientes. Te faltan unos "+Math.max(1,Math.ceil(falta/100*r.mh/0.65-0.0001))+" clientes Hogar o "+Math.max(1,Math.ceil(falta/100*r.mm/0.35-0.0001))+" Móvil.";
+  } else $("next").textContent="Ya estás en el tramo máximo ("+money(1700)+").";
+  if(esp){
+    var rp=calc(M.clientes.filter(function(c){return c.pagado}),M.metas);
+    $("sub").hidden=false;
+    $("sub").textContent="✓ Si cerraras hoy con solo los clientes que ya pagaron ("+rp.h+" Hogar, "+rp.m+" Móvil): "+money(rp.total);
+  } else $("sub").hidden=true;
+}
+["mh","mm","mi"].forEach(function(id){
+  $(id).addEventListener("input",function(){var M=cur();M.metas={h:$("mh").value,m:$("mm").value,i:$("mi").value};guardar();pintarCom()});
+});
+function pintarMetas(){var M=cur();$("mh").value=M.metas.h;$("mm").value=M.metas.m;$("mi").value=M.metas.i}
+
+/* ---------- Clientes ---------- */
+var tipoForm="hogar";
+function pintarCli(){
+  var M=cur(),esp=M.etapa==="esperando",L=M.clientes;
+  var pag=L.filter(function(c){return c.pagado}).length;
+  $("sumCli").innerHTML="<div><b>"+L.length+"</b><small>INGRESADOS</small></div><div><b>"+pag+"</b><small>✓ PAGADOS</small></div><div><b>"+(L.length-pag)+"</b><small>○ SIN PAGAR</small></div>";
+  $("cardForm").hidden=esp;$("lockMsg").hidden=!esp;
+  $("lockMsg").textContent="🔒 Ya no se agregan clientes a "+M.label+". Solo marca cada uno como pagado o no pagado.";
+  $("formTitulo").textContent="Agregar cliente instalado en "+M.label;
+  [].forEach.call($("segTipo").children,function(b){b.setAttribute("aria-pressed",String(b.dataset.tipo===tipoForm))});
+  $("lblRef").textContent=tipoForm==="hogar"?"Número de suscriptor":"Número de línea";
+  $("fRef").placeholder=tipoForm==="hogar"?"Ej.: 480112903":"Ej.: 6612-0457";
+  $("rowPort").hidden=tipoForm!=="movil";
+  var h="";
+  if(!L.length)h='<div class="nota" style="text-align:center;padding:14px">Aún no hay clientes. Agrega el primero arriba.</div>';
+  L.forEach(function(c){
+    h+='<div class="cli" data-id="'+c.id+'"><div class="h"><span class="badge">'+(c.tipo==="hogar"?"🏠 Hogar":"📱 Móvil")+'</span>'+(c.port?'<span class="badge port">↔ Portabilidad</span>':'')+'<span class="ref">'+esc(c.ref)+'</span><span class="m">'+money(c.monto)+'</span></div>';
+    h+='<div class="acts"><button type="button" class="pago '+(c.pagado?'si':'no')+'" data-act="pago" aria-pressed="'+c.pagado+'">'+(c.pagado?'✓ Pagado · cuenta':'○ No pagado · no cuenta')+'</button>';
+    if(!esp)h+='<button type="button" class="btn sm danger" data-act="del" aria-label="Borrar cliente">🗑 Borrar</button>';
+    h+='</div></div>';
+  });
+  $("listaCli").innerHTML=h;
+}
+function formVacio(){$("fRef").value="";$("fMonto").value="";$("fPort").checked=false;$("formErr").hidden=true}
+function errForm(t){$("formErr").textContent=t;$("formErr").hidden=false}
+$("segTipo").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;tipoForm=b.dataset.tipo;pintarCli()});
+$("btnAdd").addEventListener("click",function(){
+  var M=cur();if(M.etapa!=="vendiendo")return;
+  var ref=$("fRef").value.trim(),monto=parseFloat($("fMonto").value);
+  if(!ref){errForm(tipoForm==="hogar"?"Escribe el número de suscriptor.":"Escribe el número de línea.");return}
+  if(!isFinite(monto)||monto<=0){errForm("Escribe el costo mensual del plan.");return}
+  var dup=M.clientes.some(function(c){return c.ref===ref&&c.tipo===tipoForm});
+  if(dup){errForm("Ese "+(tipoForm==="hogar"?"suscriptor":"número de línea")+" ya está en tu lista.");return}
+  M.clientes.push({id:uid(),tipo:tipoForm,ref:ref,monto:monto,port:tipoForm==="movil"&&$("fPort").checked,pagado:false});
+  formVacio();guardar();pintarTodo();
+});
+$("listaCli").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;
+  var M=cur(),card=b.closest(".cli"),id=card.dataset.id,c=M.clientes.filter(function(x){return x.id===id})[0];
+  if(!c)return;
+  if(b.dataset.act==="pago"){c.pagado=!c.pagado;guardar();pintarTodo();return}
+  if(M.etapa!=="vendiendo")return;
+  if(b.dataset.act==="del"){
+    card.querySelector(".acts").innerHTML='<span style="font-weight:700;font-size:14px;flex:1;min-width:100%">¿Borrar este cliente?</span><button type="button" class="btn sm danger" data-act="del2">Sí, borrar</button><button type="button" class="btn sm" data-act="no">No</button>';
+  }
+  if(b.dataset.act==="del2"){M.clientes=M.clientes.filter(function(x){return x.id!==id});guardar();pintarTodo()}
+  if(b.dataset.act==="no")pintarCli();
+});
+
+/* ---------- Este mes: etapas ---------- */
+function pintarMesBox(){
+  var M=cur(),box=$("mesBox");
+  if(M.etapa==="vendiendo"){
+    $("mesHelp").textContent="Cuando termine el mes y ya no vayas a ingresar más clientes, pásalo a esperar pagos. El mes siguiente se crea solo.";
+    box.innerHTML='<button type="button" class="btn pri" id="btnEsp" style="width:100%">Terminé de ingresar clientes</button>';
+  } else {
+    $("mesHelp").textContent="Cuando pase la fecha límite y ya confirmaste los pagos, finaliza el mes. Se guarda el resumen con solo los clientes pagados.";
+    box.innerHTML='<div class="fld"><div class="f"><label for="fLim">Fecha límite de pago</label><input id="fLim" type="date" value="'+esc(M.limite)+'"></div><button type="button" class="btn pri" id="btnFin" style="width:100%">Finalizar '+esc(M.label)+'</button></div>';
+  }
+}
+$("mesBox").addEventListener("input",function(e){if(e.target.id==="fLim"&&e.target.value){cur().limite=e.target.value;guardar();pintarCom()}});
+$("mesBox").addEventListener("click",function(e){
+  var b=e.target.closest("button");if(!b)return;var M=cur(),box=$("mesBox");
+  if(b.id==="btnEsp")box.innerHTML='<div class="confirm">¿Pasar '+esc(M.label)+' a esperar pagos? Ya no podrás agregar ni borrar clientes; solo marcarlos como pagados o no pagados.<div class="acts"><button type="button" class="btn pri" id="btnEspSi">Sí, pasar</button><button type="button" class="btn" id="btnNo">Cancelar</button></div></div>';
+  if(b.id==="btnFin")box.innerHTML='<div class="confirm">¿Finalizar '+esc(M.label)+'? Se guarda el resumen con solo los clientes pagados y la lista se borra.<div class="acts"><button type="button" class="btn pri" id="btnFinSi">Sí, finalizar</button><button type="button" class="btn" id="btnNo">Cancelar</button></div></div>';
+  if(b.id==="btnNo")pintarMesBox();
+  if(b.id==="btnEspSi"){
+    M.etapa="esperando";
+    var sig=ymAdd(M.ym,1);
+    if(!S.meses.some(function(x){return x.ym===sig})&&!S.historial.some(function(x){return x.ym===sig})){var n=nuevoMes(sig,{h:M.metas.h,m:M.metas.m,i:M.metas.i});S.meses.push(n);S.sel=n.id}
+    guardar();formVacio();pintarTodo();pintarMetas();
+  }
+  if(b.id==="btnFinSi"){
+    var pg=M.clientes.filter(function(c){return c.pagado}),r=calc(pg,M.metas);
+    S.historial.push({ym:M.ym,label:M.label,metas:M.metas,resumen:{hogar:r.h,movil:r.m,pagados:pg.length,total:M.clientes.length,ingresos:r.i,port:r.p,comision:r.ok?r.total:0}});
+    S.meses=S.meses.filter(function(x){return x.id!==M.id});
+    if(!S.meses.length){var n2=nuevoMes(ymAdd(M.ym,1),M.metas);S.meses.push(n2)}
+    S.sel=S.meses[0].id;guardar();formVacio();pintarTodo();pintarMetas();
+  }
+});
+function pintarHistorial(){
+  var h="";
+  if(!S.historial.length)h='<div class="nota">Todavía no hay meses finalizados.</div>';
+  S.historial.slice().reverse().forEach(function(m){
+    var r=m.resumen||{};
+    h+='<details class="mes"><summary><span>'+esc(m.label)+'</span><span>'+money(r.comision)+'</span></summary><div class="in">'+
+      '<div><span>Clientes pagados</span><b>'+r.pagados+' de '+r.total+'</b></div>'+
+      '<div><span>Hogar · Móvil que contaron</span><b>'+r.hogar+' · '+r.movil+'</b></div>'+
+      '<div><span>Ingresos</span><b>'+money(r.ingresos)+'</b></div>'+
+      '<div><span>Portabilidades</span><b>'+r.port+' × '+money(BONO_PORT)+' = '+money(r.port*BONO_PORT)+'</b></div>'+
+      '<div><span>Metas (Hogar · Móvil · Ingresos)</span><b>'+(m.metas.h||0)+' · '+(m.metas.m||0)+' · '+money(m.metas.i)+'</b></div></div></details>';
+  });
+  $("historial").innerHTML=h;
+}
+
+/* ---------- Respaldo ---------- */
+var CONSEJOS='<div class="consejos"><b>🔐 Cuida tu respaldo</b><ul><li>Guárdalo en tus notas o envíatelo por WhatsApp solo a ti mismo.</li><li>No lo compartas en grupos ni con otras personas: tiene números de suscriptor y de línea de tus clientes.</li><li>Bórralo cuando ya no lo necesites.</li></ul></div>';
+$("btnResp").addEventListener("click",function(){
+  var txt="CALC-D2D:"+JSON.stringify({meses:S.meses,historial:S.historial});
+  function ok(){$("respBox").innerHTML='<div class="lock" style="background:var(--ok-soft);color:var(--ok)">✓ Respaldo copiado. Pégalo en tus notas.</div>'+CONSEJOS}
+  function manual(){$("respBox").innerHTML='<div class="nota">No se pudo copiar solo. Selecciona todo el texto y cópialo:</div><textarea id="respTxt" readonly></textarea>'+CONSEJOS;var t=$("respTxt");t.value=txt;t.focus();t.select()}
+  try{navigator.clipboard.writeText(txt).then(ok,manual)}catch(e){manual()}
+});
+$("btnRest").addEventListener("click",function(){
+  $("respBox").innerHTML='<div class="f"><label for="restTxt">Pega aquí tu respaldo</label><textarea id="restTxt" placeholder="CALC-D2D:{...}"></textarea></div><div id="restErr" class="nota" style="color:var(--bad);font-weight:700" hidden></div><div class="acts"><button type="button" class="btn pri" id="restOk">Restaurar</button><button type="button" class="btn" id="restNo">Cancelar</button></div><div class="nota">Esto reemplaza lo que tienes ahora en este teléfono.</div>';
+});
+$("respBox").addEventListener("click",function(e){
+  if(e.target.id==="restNo")$("respBox").innerHTML="";
+  if(e.target.id==="restOk"){
+    var t=($("restTxt").value||"").trim();
+    try{
+      if(t.indexOf("CALC-D2D:")!==0)throw 0;
+      var d=JSON.parse(t.slice(9));
+      if(!Array.isArray(d.meses)||!d.meses.length||!Array.isArray(d.historial))throw 0;
+      S={meses:d.meses,sel:d.meses[0].id,historial:d.historial};guardar();pintarMetas();pintarTodo();
+      $("respBox").innerHTML='<div class="lock" style="background:var(--ok-soft);color:var(--ok)">✓ Respaldo restaurado.</div>';
+    }catch(er){$("restErr").textContent="Ese texto no parece un respaldo de esta calculadora.";$("restErr").hidden=false}
+  }
+});
+
+/* ---------- Pestañas ---------- */
+function tab(w){
+  var m={com:["tabCom","paneCom"],cli:["tabCli","paneCli"],pro:["tabPro","panePro"]};
+  Object.keys(m).forEach(function(k){$(m[k][1]).hidden=k!==w;$(m[k][0]).setAttribute("aria-selected",String(k===w))});
+}
+$("tabCom").onclick=function(){tab("com")};$("tabCli").onclick=function(){tab("cli")};$("tabPro").onclick=function(){tab("pro")};
+$("chips").addEventListener("click",function(){pintarMetas()});
+
+function pintarTodo(){pintarChips();pintarCom();pintarCli();pintarMesBox();pintarHistorial()}
+pintarMetas();pintarTodo();
+
+/* ---------- Prorrateo (igual que la calculadora anterior) ---------- */
+var MES=["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"],MESL=["enero","febrero","marzo","abril","mayo","junio","julio","agosto","septiembre","octubre","noviembre","diciembre"];
+var MSG="";
+function rango(a,b){return a.getMonth()===b.getMonth()&&a.getFullYear()===b.getFullYear()?a.getDate()+" al "+b.getDate()+" de "+MESL[b.getMonth()]:a.getDate()+" de "+MESL[a.getMonth()]+" al "+b.getDate()+" de "+MESL[b.getMonth()]}
+function prorrateo(){
+  var f=$("pf").value,ciclo=Math.round(num($("pc").value)),mens=num($("pm").value);
+  if(!f||ciclo<1||ciclo>31||!mens){$("pTotal").textContent="—";$("pSub").textContent="Llena los tres datos para calcular.";$("pRes").innerHTML="";$("pCopiar").hidden=true;MSG="";return}
+  var p=f.split("-"),ins=new Date(+p[0],+p[1]-1,+p[2]);
+  var y=ins.getFullYear(),m=ins.getMonth();
+  if(ins.getDate()>=ciclo){m++;if(m>11){m=0;y++}}
+  var ult=new Date(y,m+1,0).getDate(),fact=new Date(y,m,Math.min(ciclo,ult));
+  var dias=Math.round((fact-ins)/86400000),pro=Math.round(mens*dias/30*100)/100;
+  var fin=new Date(fact.getFullYear(),fact.getMonth(),fact.getDate()-1);
+  $("pTotal").textContent=money(pro+mens);$("pSub").textContent="";
+  $("pRes").innerHTML="<div><span>Prorrateo ("+dias+" días)</span><b>"+money(pro)+"</b></div><div><span>Mensualidad</span><b>"+money(mens)+"</b></div><div><span>Total</span><b>"+money(pro+mens)+"</b></div>";
+  var mfin=ciclo===1?new Date(fact.getFullYear(),fact.getMonth()+1,0):new Date(fact.getFullYear(),fact.getMonth()+1,ciclo-1);
+  MSG="Hola, le explico cómo viene su primera factura 😊\n\n"+
+    "📅 *Prorrateo* ("+rango(ins,fin)+", "+dias+" días): *"+money(pro)+"*\nEs el servicio que usó desde su instalación hasta que inicia su ciclo de facturación.\n\n"+
+    "📅 *Mensualidad* ("+rango(fact,mfin)+"): *"+money(mens)+"*\nEs su primer mes completo de servicio.\n\n"+
+    "💵 *Total de la primera factura: "+money(pro+mens)+"* (más impuestos)\n\n"+
+    "Por eso esta factura viene más alta: incluye dos períodos. Desde la siguiente solo pagará "+money(mens)+" (más impuestos).";
+  $("pCopiar").hidden=false;
+}
+["pf","pc","pm"].forEach(function(id){$(id).addEventListener("input",prorrateo)});
+$("pLimpiar").addEventListener("click",function(){["pf","pc","pm"].forEach(function(id){$(id).value=""});prorrateo()});
+$("pCopiar").addEventListener("click",function(){
+  if(!MSG)return;var b=$("pCopiar");
+  function ok(){b.textContent="Copiado";setTimeout(function(){b.textContent="Copiar mensaje"},1500)}
+  function respaldo(x){var ta=document.createElement("textarea");ta.value=x;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");ok()}catch(e){}document.body.removeChild(ta)}
+  try{navigator.clipboard.writeText(MSG).then(ok,function(){respaldo(MSG)})}catch(e){respaldo(MSG)}
+});
+prorrateo();
+</script>
+</body>
+</html>
