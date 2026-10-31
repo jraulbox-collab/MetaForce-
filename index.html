@@ -10519,19 +10519,6 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
             )}
           </div>
         )}
-        {alertasHoy.length > 0 && (
-          <div className="p-4">
-            <button
-              type="button"
-              onClick={() => iniciarEnvioEnCadena(alertasHoy)}
-              disabled={!!colaEnvio}
-              className="w-full py-3 rounded-lg text-white text-sm font-semibold disabled:opacity-50"
-              style={ { background: "#001E62" } }
-            >
-              Enviar recordatorios <span style={ { fontWeight: 500, opacity: 0.8 } }>· {alertasHoy.length} por WhatsApp</span>
-            </button>
-          </div>
-        )}
       </div>
       )}
 
