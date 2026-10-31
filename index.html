@@ -1818,9 +1818,9 @@ function textoD1(c, n) {
   const nombre = primerNombre(c);
   if (n === 1) {
     const finProrrateo = addDays(c.fecha1raFactura, -1);
-    return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
+    return `Hola ${nombre}, le saluda José Severino de Tigo Panamá, sobre su *primera factura*.
 
-Le confirmo que la primera factura de su *servicio residencial* ya fue generada:
+Le confirmo que ya fue generada:
 📋 Plan: ${c.plan}
 📅 Prorrateo: ${fmtFechaLarga(c.fechaInstalacion)} al ${fmtFechaLarga(finProrrateo)}
 📅 Mensualidad regular: ${fmtFechaLarga(c.fecha1raFactura)} al ${fmtFechaLarga(c._venc)}
@@ -1842,6 +1842,17 @@ Una vez realizado el pago, por favor compárteme el comprobante para validar que
 function textoT15(c, n) {
   const nombre = primerNombre(c);
   const dias = daysFromToday(c._venc);
+  if (n === 1) {
+    return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *primera factura*.
+
+Le recuerdo que ${fraseVencimiento(dias)}:
+💳 Vence: *${fmtFechaLarga(c._venc)}*
+🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+${bloquePagoHogar()}
+
+Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier consulta sobre su plan, con gusto le ayudo.`;
+  }
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
 Le recuerdo que la factura de su *servicio residencial* ${fraseVencimiento(dias)}:
@@ -1857,11 +1868,24 @@ function textoT3(c, n) {
   const dias = daysFromToday(c._venc);
   // Cliente que ya completó su primer mes (PAGO PARCIAL): este aviso cobra solo el prorrateo.
   if (n === 1 && c.f1_saldoPendiente && c.fecha1raFactura) {
-    return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
+    return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *primera factura*.
 
 Le recuerdo que el último día para pagar su primera factura es el *${fmtFechaLarga(c._venc)}*. Ya completó su primer mes, y solo le queda por pagar el prorrateo, de los días del ${fmtFechaLarga(c.fechaInstalacion)} al ${fmtFechaLarga(addDays(c.fecha1raFactura, -1))}.
 
 Puede pagar con su número de suscriptor *${c.numeroSuscriptor}*. Cuando pague, me envía el comprobante para confirmárselo. Cualquier duda o si necesita ayuda, quedo atento.`;
+  }
+  if (n === 1) {
+    return `Hola ${nombre}, le habla José Severino de Tigo Panamá, sobre su *primera factura*.
+
+${fraseVencimiento(dias).replace(/^./, (x) => x.toUpperCase())}:
+💳 Vence: *${fmtFechaLarga(c._venc)}*
+🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+Le recomiendo realizar el pago a tiempo para evitar la suspensión del servicio.
+
+${bloquePagoHogar()}
+
+Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`;
   }
   return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
 
@@ -1923,7 +1947,7 @@ function fechaPagoQuincena(c) {
 function textoToque1(c) {
   const nombre = primerNombre(c);
   const fechaPago = fechaPagoQuincena(c) || addDays(c.fechaInstalacion, 30);
-  return `Hola ${nombre}, le saluda José Severino de Tigo Panamá.
+  return `Hola ${nombre}, le saluda José Severino de Tigo Panamá, sobre su *primera factura*.
 
 Su instalación del *servicio residencial* quedó activa. ✅
 
@@ -1945,7 +1969,7 @@ function fraseOtraMitad(fechaPago) {
   return `${base} para dejar su cuenta al día.`;
 }
 function textoRecordatorioOtraMitad(c, fechaPago) {
-  return `Hola ${primerNombre(c)}, le habla José Severino de Tigo Panamá, sobre su *servicio residencial*.
+  return `Hola ${primerNombre(c)}, le habla José Severino de Tigo Panamá, sobre su *primera factura*.
 
 ${fraseOtraMitad(fechaPago)}
 
@@ -10632,6 +10656,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                               <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(cliente.nombre || "")}</span>
+                              {!esMovil && milestone.n === 1 && <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#0072CE", color: "#FFFFFF" } }>🆕 1ª</span>}
                             </div>
                             <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>
                               {esMovil ? milestone.tag : `${milestone.tag} ${milestone.label}`} · <span style={ { fontWeight: 700, color: atrasada || dias === 0 ? "#9B1C1C" : "#9A4A06" } }>{atrasada ? "⚠ " : dias === 0 ? "📅 " : ""}{diasTexto(milestone.triggerDate)}</span>
@@ -10667,6 +10692,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                 </button>
                               )}
                             </div>
+                            {!esMovil && <FranjaPrimeraFactura milestone={milestone} cliente={cliente} />}
                             <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>
                               {milestone.texto}
                             </div>
@@ -10857,6 +10883,23 @@ function CicloHogarConfirmar({ cliente, onConfirmar }) {
     );
   }
   return null;
+}
+
+// Franja que avisa que este mensaje es de la 1ra factura del cliente (no va en el texto que se envía).
+function FranjaPrimeraFactura({ milestone, cliente }) {
+  if (!milestone || milestone.n !== 1) return null;
+  const especial = ["toque1", "toque2", "toque3"].includes(milestone.type);
+  let detalle = "";
+  if (especial) {
+    const q = milestone.type === "toque3" ? fechaPagoQuincena2(cliente) : fechaPagoQuincena(cliente);
+    detalle = q ? ` · 💰 Falta la otra mitad · ${fmtFechaConDia(q)}` : " · 💰 Falta la otra mitad";
+  } else if (milestone.type === "d1") detalle = " · 🧾 Ya salió la factura";
+  else detalle = " · ⏰ Pagar antes de que venza";
+  return (
+    <div className="rounded-md px-2.5 py-1.5 mt-2 text-xs font-extrabold" style={ { background: "#0072CE", color: "#FFFFFF" } }>
+      🆕 1ª FACTURA{detalle}
+    </div>
+  );
 }
 
 const CHIPS_WEB_BASE = [
@@ -13008,6 +13051,7 @@ function ClienteDetalle({
                             </span>
                             <span className="text-xs" style={ { color: "#5A6680" } }>{m.label}</span>
                           </div>
+                          <div className="-mt-1 mb-2"><FranjaPrimeraFactura milestone={m} cliente={cliente} /></div>
                           <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151" } }>
                             {m.texto}
                           </div>
