@@ -10359,6 +10359,18 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   const [indiceEnvio, setIndiceEnvio] = useState(0);
   const [contadorEnviados, setContadorEnviados] = useState(0);
   const [resumenEnvio, setResumenEnvio] = useState(null); // { total, enviados } al terminar
+  const [copiadoVer, setCopiadoVer] = useState(() => {
+    try { const [k, t] = (sessionStorage.getItem("mf-copiado") || "").split("@@"); return k && Date.now() - Number(t) < 600000 ? k : null; } catch (e) { return null; }
+  }); // clave del cobro cuyo mensaje se copió al ver el chat
+  // "Ver el chat" de un cobro: copia el mensaje y abre el chat sin texto, para pegarlo si no había salido.
+  function verChatCopiando(it, texto) {
+    const abrir = () => { window.location.href = linkSoloChat(it.link); };
+    setCopiadoVer(claveEnvio(it));
+    try { sessionStorage.setItem("mf-copiado", claveEnvio(it) + "@@" + Date.now()); } catch (e) {}
+    try {
+      Promise.resolve(navigator.clipboard.writeText(texto)).catch(() => {}).then(abrir);
+    } catch (e) { abrir(); }
+  }
 
   const itemDeAlerta = (a) => ({ t: a.esMovil ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key });
   function iniciarEnvioEnCadena(lista0) {
@@ -10672,8 +10684,9 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                         {aperturaISO && onRevisarSi && onRevisarNo && (
                           <div className="px-3 pb-3 pt-2" style={ { background: "#FFF3DC", borderTop: "1.5px solid #B45309" } }>
                             <div className="text-xs font-extrabold" style={ { color: "#92400E" } }>👁 Abierto {textoApertura(aperturaISO)} · ¿ya lo enviaste?</div>
+                            {copiadoVer === claveEnvio(itemEnvio) && <div className="text-xs font-bold mt-1" style={ { color: "#0B6B3A" } }>📋 Mensaje copiado · pégalo en el chat si no se había enviado</div>}
                             <div className="flex flex-wrap gap-2 mt-2">
-                              <button type="button" onClick={() => { window.location.href = linkSoloChat(itemEnvio.link); } } className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>👁 Ver el chat</button>
+                              <button type="button" onClick={() => verChatCopiando(itemEnvio, milestone.texto)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>👁 Ver el chat + copiar mensaje</button>
                               <button type="button" onClick={() => onRevisarSi(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } }>✓ Sí, lo envié</button>
                               <button type="button" onClick={() => onRevisarNo(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#92400E", border: "1.5px solid #B45309" } }>↻ No, enviar otra vez</button>
                             </div>
