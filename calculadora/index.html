@@ -99,11 +99,14 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
 .consejos{background:var(--soft);border-radius:12px;padding:12px 14px;font-size:13px;line-height:1.55}
 .consejos ul{margin:6px 0 0;padding-left:18px}
 .legal{border-top:1px solid var(--line);padding-top:12px}
-.tip{display:flex;align-items:flex-start;gap:8px;background:var(--soft);border-radius:12px;padding:10px 12px;font-size:13px;line-height:1.4}
-.tip .tx{flex:1;min-width:0}.tip .tx b{display:block}
-.tip button{font:inherit;font-size:12.5px;font-weight:800;border:0;background:transparent;color:var(--primary);cursor:pointer;min-height:32px;padding:4px 6px;text-decoration:underline}
-:root[data-theme="dark"] .tip button{color:var(--ring)}
-@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tip button{color:var(--ring)}}
+.tip{position:relative;display:flex;flex-direction:column;gap:10px;background:var(--soft);border-radius:14px;padding:12px 44px 12px 12px;font-size:13.5px;line-height:1.4}
+.tip .top2{display:flex;gap:8px;align-items:flex-start}
+.tip .tx{flex:1;min-width:0}.tip .tx b{display:block;margin-bottom:2px}
+.tip .bar{display:flex;gap:8px;flex-wrap:wrap}
+.tip .tb{font:inherit;font-size:13px;font-weight:800;border:2px solid var(--primary);background:var(--surface);color:var(--primary);border-radius:999px;min-height:40px;padding:6px 14px;cursor:pointer}
+:root[data-theme="dark"] .tip .tb{color:var(--fg);border-color:var(--ring)}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tip .tb{color:var(--fg);border-color:var(--ring)}}
+.tip .x{position:absolute;top:8px;right:8px;width:34px;height:34px;border-radius:50%;border:0;background:var(--surface);color:var(--muted);font-size:16px;font-weight:800;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .alerta{background:var(--bad-soft);color:var(--bad);border:2px solid var(--bad);border-radius:12px;padding:11px 12px;font-size:13px;font-weight:700;display:flex;flex-direction:column;gap:8px}
 .ov{position:fixed;inset:0;background:rgba(5,10,25,.6);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;overflow-y:auto}
 .ov .box{background:var(--surface);color:var(--fg);border-radius:18px;padding:18px;max-width:460px;width:100%;max-height:100%;overflow-y:auto;display:flex;flex-direction:column;gap:12px}
@@ -118,7 +121,7 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
     <h1>Calculadora de ventas</h1>
   </div>
   <div class="seg" id="modoSeg"><button type="button" data-modo="rapido" aria-pressed="true">⚡ Rápido</button><button type="button" data-modo="clientes" aria-pressed="false">👥 Con mis clientes</button></div>
-  <div class="tip" id="tipBar" hidden><span aria-hidden="true">💡</span><div class="tx" id="tipTx"></div><div style="display:flex;flex-direction:column;align-items:flex-end"><button type="button" id="tipOtro">Otro</button><button type="button" id="tipTodos">Ver todos</button></div><button type="button" id="tipX" aria-label="Cerrar consejo">✕</button></div>
+  <div class="tip" id="tipBar" hidden><div class="top2"><span aria-hidden="true">💡</span><div class="tx" id="tipTx"></div></div><div class="bar"><button type="button" class="tb" id="tipOtro">↻ Otro</button><button type="button" class="tb" id="tipTodos">Ver todos</button></div><button type="button" class="x" id="tipX" aria-label="Cerrar consejo">✕</button></div>
   <div class="alerta" id="respAviso" hidden><span>⚠️ Hace más de 7 días que no haces tu respaldo. Si pierdes los datos del navegador, pierdes tu lista.</span><button type="button" class="btn sm" id="respIr">Hacer respaldo ahora</button></div>
   <div class="chips" id="chips"></div>
 
