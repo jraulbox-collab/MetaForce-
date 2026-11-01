@@ -567,6 +567,9 @@ function clavePlan(c) {
 
 function periodoDelCliente(c) {
   if (c.fechaInstalacion) return periodoComision(c.fechaInstalacion);
+  // Sin instalar todavía: sigue vivo y se mueve solo al período actual cuando cambia el mes.
+  // (Los cancelados o penalizados sin instalar se quedan en el período en que se registraron.)
+  if (!c.cancelado && !c.penalizado) return periodoComision(fechaLocalISO(new Date()));
   if (c.creadoEn) return periodoComision(fechaLocalISO(c.creadoEn));
   return null;
 }
@@ -1267,7 +1270,7 @@ function clienteExcluido(c) {
 // Al contratar el cliente paga el 50 % de su plan. Si se instala sin ese abono, Tigo lo
 // penaliza. abonoInicial: true = recibido, false = falta; sin el campo (clientes de antes)
 // cuenta como recibido. El plazo corre desde que se registra el cliente: hasta el día
-// siguiente a las 12:00 PM.
+// siguiente a las 12:00 PM (si se registra en sábado, hasta el lunes a las 12:00 PM).
 function abonoPendiente(c) {
   return c.abonoInicial === false && !c.fechaInstalacion && !clienteExcluido(c);
 }
@@ -1279,7 +1282,10 @@ function plazoAbono(c) {
   if (!c.creadoEn) return null;
   const d = new Date(c.creadoEn);
   if (isNaN(d.getTime())) return null;
-  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1, 12, 0, 0);
+  // Registrado en sábado: el plazo llega hasta el lunes a las 12:00 PM (2 días). Los demás días,
+  // hasta el día siguiente a las 12:00 PM (el domingo también vence el lunes).
+  const dias = d.getDay() === 6 ? 2 : 1;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() + dias, 12, 0, 0);
 }
 function horaAMPM(d) {
   const h = d.getHours();
