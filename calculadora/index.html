@@ -33,7 +33,7 @@ h1{font-size:21px;font-weight:800;margin:0;letter-spacing:-.01em}
 .pill.closed{color:var(--accent);border-color:var(--accent)}
 .demo{font-size:12.5px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:9px 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .chips{display:flex;gap:8px;flex-wrap:wrap}.chips button{font:inherit;font-size:13px;font-weight:800;border-radius:999px;padding:8px 13px;min-height:40px;border:2px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}.chips button[aria-pressed="true"]{border-color:var(--primary);background:var(--primary);color:var(--on-primary)}
-.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--soft);border-radius:14px;padding:4px}
+.tabs{display:grid;grid-template-columns:repeat(2,1fr);gap:4px;background:var(--soft);border-radius:14px;padding:4px}
 .tabs button{font:inherit;font-size:12.5px;font-weight:800;padding:10px 2px;border-radius:10px;border:0;background:transparent;color:var(--muted);cursor:pointer;min-height:44px}
 .tabs button[aria-selected="true"]{background:var(--primary);color:var(--on-primary)}
 .pane{display:flex;flex-direction:column;gap:14px}
@@ -122,8 +122,7 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
   </div>
   <div class="tabs" role="tablist">
     <button type="button" role="tab" id="tabCom" aria-selected="true">💰 Comisión</button>
-    <button type="button" role="tab" id="tabPro" aria-selected="false">🏠 Prorrateo</button>
-    <button type="button" role="tab" id="tabMov" aria-selected="false">📱 Prorrateo</button>
+    <button type="button" role="tab" id="tabPro" aria-selected="false">🧮 Prorrateo</button>
   </div>
 
   <div id="wrapCom" style="display:flex;flex-direction:column;gap:14px">
@@ -227,6 +226,7 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
 
   <!-- PRORRATEO -->
   <div class="pane" id="panePro" role="tabpanel" hidden>
+    <div class="seg" id="segPro"><button type="button" data-pro="hogar" aria-pressed="true">🏠 Hogar</button><button type="button" data-pro="movil" aria-pressed="false">📱 Móvil</button></div>
     <div class="hero" aria-live="polite">
       <div class="lbl" id="pLbl">Primera factura (sin impuesto)</div>
       <div class="num" id="pTotal">—</div>
@@ -494,14 +494,14 @@ $("respBox").addEventListener("click",function(e){
 var TAB="com",SUB="res";
 function tab(w){
   TAB=w;
-  var rap=S.modo==="rapido",pro=(w==="pro"||w==="mov");
+  var rap=S.modo==="rapido",pro=(w==="pro");
   ["paneRap","paneCom","paneCli","panePro"].forEach(function(id){$(id).hidden=true});
   $("wrapCom").hidden=pro;
-  [["tabCom","com"],["tabPro","pro"],["tabMov","mov"]].forEach(function(t){$(t[0]).setAttribute("aria-selected",String(t[1]===w))});
-  if(pro){PM=w==="mov"?"movil":"hogar";prorrateo();$("panePro").hidden=false}
+  [["tabCom","com"],["tabPro","pro"]].forEach(function(t){$(t[0]).setAttribute("aria-selected",String(t[1]===w))});
+  if(pro){prorrateo();$("panePro").hidden=false}
   else $(rap?"paneRap":(SUB==="cli"?"paneCli":"paneCom")).hidden=false;
 }
-$("tabCom").onclick=function(){tab("com")};$("tabPro").onclick=function(){tab("pro")};$("tabMov").onclick=function(){tab("mov")};
+$("tabCom").onclick=function(){tab("com")};$("tabPro").onclick=function(){tab("pro")};
 function aplicarModo(){
   var rap=S.modo==="rapido";
   [].forEach.call($("modoSeg").children,function(b){b.setAttribute("aria-pressed",String(b.dataset.modo===S.modo))});
@@ -577,6 +577,7 @@ var TM={isc:0.05,itbms:0.07,port:0.02};
 function r2(n){return Math.round(n*100)/100}
 function iso(d){return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate())}
 function prorrateo(){
+  [].forEach.call($("segPro").children,function(b){b.setAttribute("aria-pressed",String(b.dataset.pro===PM))});
   $("cardPH").hidden=PM!=="hogar";$("cardPM").hidden=PM!=="movil";
   $("pLbl").textContent=PM==="hogar"?"Primera factura (sin impuesto)":"Primera factura aprox. (con impuestos)";
   $("pNotas").innerHTML=PM==="hogar"?"<li>Los montos son sin impuesto.</li><li>Las facturas siguientes cobran solo la mensualidad.</li>":"<li>Es un cálculo aproximado: la factura real de Tigo puede variar unos centavos.</li><li>Incluye ISC 5 %, ITBMS 7 % y la tasa de $0.02 por mes facturado.</li><li>Las facturas siguientes cobran solo la mensualidad con sus impuestos.</li>";
@@ -624,6 +625,7 @@ function prorrateoH(){
 }
 ["pf","pc","pm","mf","mp"].forEach(function(id){$(id).addEventListener("input",prorrateo)});
 $("mi2").addEventListener("change",prorrateo);
+$("segPro").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;PM=b.dataset.pro;prorrateo()});
 $("pLimpiar").addEventListener("click",function(){["pf","pc","pm","mf","mp"].forEach(function(id){$(id).value=""});$("mi2").checked=false;prorrateo()});
 $("pCopiar").addEventListener("click",function(){
   if(!MSG)return;var b=$("pCopiar");
