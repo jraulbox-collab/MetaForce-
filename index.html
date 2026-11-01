@@ -801,7 +801,7 @@ function tipoClienteMovil(c) {
 // ---------- Match Digital: el titular del Hogar tiene 5 días para aprobar ----------
 const DIAS_PLAZO_MATCH = 5;
 function matchLimiteISO(c) {
-  const base = c.matchFecha || String(c.creadoEn || "").slice(0, 10);
+  const base = c.matchFecha || (c.creadoEn ? fechaLocalISO(c.creadoEn) : "");
   return base ? addDays(base, DIAS_PLAZO_MATCH) : "";
 }
 // null si no aplica (no es Match Digital o ya confirmó). Si no, el estado del plazo.
@@ -833,7 +833,7 @@ function etiquetaTipoMovil(t) {
 // Fecha de activación de un Cliente Móvil: la propia si existe; si no (los que ya
 // tenías cargados antes de este campo), la fecha en que lo registraste.
 function fechaActivacionMovil(c) {
-  return c.fechaActivacion || (c.creadoEn || "").slice(0, 10);
+  return c.fechaActivacion || (c.creadoEn ? fechaLocalISO(c.creadoEn) : "");
 }
 
 // ---------- Recordatorios de Clientes Móvil (esquema nuevo, desde octubre 2026) ----------
@@ -6956,7 +6956,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   let totalMatch = 0;
   (convergencias || []).forEach((m) => {
     if (m.tipo !== "matchdigital" || !m.titularTelefono) return;
-    const f = String(m.matchFecha || m.creadoEn || "").slice(0, 7);
+    const f = String(m.matchFecha || (m.creadoEn ? fechaLocalISO(m.creadoEn) : "")).slice(0, 7);
     if (f !== mes) return;
     const dueño = dueños[d8(m.titularTelefono)];
     if (!dueño) return;
@@ -11241,7 +11241,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           </span>
         );
       case "ingreso":
-        return <span className="font-mono text-xs">{c.creadoEn ? fmtFecha(c.creadoEn.slice(0, 10)) : "—"}</span>;
+        return <span className="font-mono text-xs">{c.creadoEn ? fmtFecha(fechaLocalISO(c.creadoEn)) : "—"}</span>;
       case "periodo": {
         const p = periodoDelCliente(c);
         return p ? <span className="text-xs">{mesLabel(p)}</span> : <span className="text-xs" style={ { color: "#9CA3AF" } }>—</span>;
@@ -12973,7 +12973,7 @@ function ClienteDetalle({
         </div>
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Fecha de ingreso</div>
-          <div className="font-medium">{cliente.creadoEn ? fmtFecha(cliente.creadoEn.slice(0, 10)) : "—"}</div>
+          <div className="font-medium">{cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"}</div>
         </div>
       </div>
 
