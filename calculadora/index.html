@@ -33,7 +33,7 @@ h1{font-size:21px;font-weight:800;margin:0;letter-spacing:-.01em}
 .pill.closed{color:var(--accent);border-color:var(--accent)}
 .demo{font-size:12.5px;color:var(--muted);background:var(--surface);border:1px dashed var(--line);border-radius:12px;padding:9px 12px;display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
 .chips{display:flex;gap:8px;flex-wrap:wrap}.chips button{font:inherit;font-size:13px;font-weight:800;border-radius:999px;padding:8px 13px;min-height:40px;border:2px solid var(--line);background:var(--surface);color:var(--fg);cursor:pointer}.chips button[aria-pressed="true"]{border-color:var(--primary);background:var(--primary);color:var(--on-primary)}
-.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:var(--soft);border-radius:14px;padding:4px}
+.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:var(--soft);border-radius:14px;padding:4px}
 .tabs button{font:inherit;font-size:12.5px;font-weight:800;padding:10px 2px;border-radius:10px;border:0;background:transparent;color:var(--muted);cursor:pointer;min-height:44px}
 .tabs button[aria-selected="true"]{background:var(--primary);color:var(--on-primary)}
 .pane{display:flex;flex-direction:column;gap:14px}
@@ -120,16 +120,18 @@ input:focus-visible,button:focus-visible,select:focus-visible,textarea:focus-vis
   <div class="top">
     <h1>Calculadora de ventas</h1>
   </div>
+  <div class="tabs" role="tablist">
+    <button type="button" role="tab" id="tabCom" aria-selected="true">💰 Comisión</button>
+    <button type="button" role="tab" id="tabPro" aria-selected="false">🏠 Prorrateo</button>
+    <button type="button" role="tab" id="tabMov" aria-selected="false">📱 Prorrateo</button>
+  </div>
+
+  <div id="wrapCom" style="display:flex;flex-direction:column;gap:14px">
   <div class="seg" id="modoSeg"><button type="button" data-modo="rapido" aria-pressed="true">⚡ Rápido</button><button type="button" data-modo="clientes" aria-pressed="false">👥 Con mis clientes</button></div>
+  <div class="seg" id="subSeg" hidden><button type="button" data-sub="res" aria-pressed="true">📊 Resumen</button><button type="button" data-sub="cli" aria-pressed="false">👥 Mis clientes</button></div>
   <div class="tip" id="tipBar" hidden><div class="top2"><span aria-hidden="true">💡</span><div class="tx" id="tipTx"></div></div><div class="bar"><button type="button" class="tb" id="tipOtro">↻ Otro</button><button type="button" class="tb" id="tipTodos">Ver todos</button></div><button type="button" class="x" id="tipX" aria-label="Cerrar consejo">✕</button></div>
   <div class="alerta" id="respAviso" hidden><span>⚠️ Hace más de 7 días que no haces tu respaldo. Si pierdes los datos del navegador, pierdes tu lista.</span><button type="button" class="btn sm" id="respIr">Hacer respaldo ahora</button></div>
   <div class="chips" id="chips"></div>
-
-  <div class="tabs" role="tablist">
-    <button type="button" role="tab" id="tabCom" aria-selected="true">Comisión</button>
-    <button type="button" role="tab" id="tabCli" aria-selected="false">Clientes</button>
-    <button type="button" role="tab" id="tabPro" aria-selected="false">🏠 Prorrateo</button>
-    <button type="button" role="tab" id="tabMov" aria-selected="false">📱 Prorrateo</button>
   </div>
 
   <!-- RÁPIDO -->
@@ -489,24 +491,25 @@ $("respBox").addEventListener("click",function(e){
 });
 
 /* ---------- Pestañas ---------- */
-var TAB="com";
+var TAB="com",SUB="res";
 function tab(w){
   TAB=w;
-  var rap=S.modo==="rapido";
-  var m={com:["tabCom",rap?"paneRap":"paneCom"],cli:["tabCli","paneCli"],pro:["tabPro","panePro"],mov:["tabMov","panePro"]};
-  if(w==="pro"||w==="mov"){PM=w==="mov"?"movil":"hogar";prorrateo()}
+  var rap=S.modo==="rapido",pro=(w==="pro"||w==="mov");
   ["paneRap","paneCom","paneCli","panePro"].forEach(function(id){$(id).hidden=true});
-  Object.keys(m).forEach(function(k){$(m[k][0]).setAttribute("aria-selected",String(k===w));if(k===w)$(m[k][1]).hidden=false});
+  $("wrapCom").hidden=pro;
+  [["tabCom","com"],["tabPro","pro"],["tabMov","mov"]].forEach(function(t){$(t[0]).setAttribute("aria-selected",String(t[1]===w))});
+  if(pro){PM=w==="mov"?"movil":"hogar";prorrateo();$("panePro").hidden=false}
+  else $(rap?"paneRap":(SUB==="cli"?"paneCli":"paneCom")).hidden=false;
 }
-$("tabCom").onclick=function(){tab("com")};$("tabCli").onclick=function(){tab("cli")};$("tabPro").onclick=function(){tab("pro")};$("tabMov").onclick=function(){tab("mov")};
+$("tabCom").onclick=function(){tab("com")};$("tabPro").onclick=function(){tab("pro")};$("tabMov").onclick=function(){tab("mov")};
 function aplicarModo(){
   var rap=S.modo==="rapido";
   [].forEach.call($("modoSeg").children,function(b){b.setAttribute("aria-pressed",String(b.dataset.modo===S.modo))});
-  $("chips").hidden=rap;$("tabCli").hidden=rap;
-  document.querySelector(".tabs").style.gridTemplateColumns=rap?"repeat(3,1fr)":"repeat(4,1fr)";
-  if(rap&&TAB==="cli")TAB="com";
+  [].forEach.call($("subSeg").children,function(b){b.setAttribute("aria-pressed",String(b.dataset.sub===SUB))});
+  $("chips").hidden=rap;$("subSeg").hidden=rap;
   tab(TAB);
 }
+$("subSeg").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;SUB=b.dataset.sub;aplicarModo()});
 $("modoSeg").addEventListener("click",function(e){var b=e.target.closest("button");if(!b)return;S.modo=b.dataset.modo;guardar();aplicarModo();pintarAviso()});
 
 /* ---------- Modo rápido ---------- */
@@ -559,7 +562,7 @@ function pintarAviso(){
   var ult=S.ultResp||S.desde||Date.now();
   $("respAviso").hidden=!(S.modo==="clientes"&&hay&&Date.now()-ult>7*86400000);
 }
-$("respIr").onclick=function(){tab("com");var c=$("cardResp");if(c.scrollIntoView)c.scrollIntoView({behavior:"smooth",block:"start"})};
+$("respIr").onclick=function(){SUB="res";aplicarModo();tab("com");var c=$("cardResp");if(c.scrollIntoView)c.scrollIntoView({behavior:"smooth",block:"start"})};
 if(!visto()){$("ovLista1").innerHTML=lista(AV.filter(function(a){return a.c}));$("ovPrimera").hidden=false}else $("tipBar").hidden=false;
 pintarTip();
 
