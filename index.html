@@ -4294,6 +4294,21 @@ function App() {
     guardarCadena({ ...c, i, env, sal });
     setTimeout(() => { abrirWhatsapp(c.items[i]); }, 350);
   }
+  // Toca el nombre en la barra de envío: abre la ficha del cliente y la barra se queda visible.
+  function abrirFichaCadena(it) {
+    if (!it) return;
+    const esMov = it.t === "cm" || (it.t === "v" && (convergencias || []).some((m) => m.id === it.id));
+    if (esMov) {
+      const m = (convergencias || []).find((x) => x.id === it.id);
+      if (!m) return;
+      setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: m.id, volverA: "alertas" }, token: Date.now() });
+      navegarA("clientes");
+    } else {
+      setOrigenDetalle("alertas");
+      setClienteDetalleId(it.id);
+      navegarA("detalle");
+    }
+  }
   function detenerCadena() {
     if (!cadena) return;
     setResumenCadena({ total: cadena.items.length, env: cadena.env });
@@ -4660,7 +4675,7 @@ function App() {
         <div className="fixed z-50 left-3 right-3 rounded-xl p-3" style={ { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } }>
           {cadena.items.length === 1 ? (
             <React.Fragment>
-              <div className="text-sm font-bold text-white">¿Enviaste el mensaje a {tituloEs(cadena.items[0].nombre || "").split(" ").slice(0, 2).join(" ")}?</div>
+              <div className="text-sm font-bold text-white">¿Enviaste el mensaje a <button type="button" onClick={() => abrirFichaCadena(cadena.items[0])} className="font-bold underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0 } }>{tituloEs(cadena.items[0].nombre || "").split(" ").slice(0, 2).join(" ")} ›</button>?</div>
               <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[0].et} · Se abrió WhatsApp con el mensaje.</div>
               <div className="flex gap-2 mt-2 items-stretch">
                 <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No todavía</button>
@@ -4669,7 +4684,7 @@ function App() {
             </React.Fragment>
           ) : (
             <React.Fragment>
-              <div className="text-sm font-bold text-white">Enviando {cadena.i + 1} de {cadena.items.length}: {tituloEs(cadena.items[cadena.i].nombre || "")}</div>
+              <div className="text-sm font-bold text-white">Enviando {cadena.i + 1} de {cadena.items.length}: <button type="button" onClick={() => abrirFichaCadena(cadena.items[cadena.i])} className="font-bold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0 } }>{tituloEs(cadena.items[cadena.i].nombre || "")} ›</button></div>
               <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[cadena.i].et} · Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</div>
               <div className="flex gap-2 mt-2 items-stretch">
                 <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
@@ -4785,7 +4800,7 @@ function App() {
       })()}
       <main
         className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : fadeTab ? " mf-fade-tab" : "") + (tab === "dashboard" || tab === "clientes" || tab === "alertas" ? " mf-esp" : "")}
-        style={ tab === "dashboard" || tab === "clientes" || tab === "alertas" ? { "--mf-gap": espacios[tab === "dashboard" ? "dash" : tab === "clientes" ? "cli" : "msj"] + "px" } : undefined }
+        style={ { ...(tab === "dashboard" || tab === "clientes" || tab === "alertas" ? { "--mf-gap": espacios[tab === "dashboard" ? "dash" : tab === "clientes" ? "cli" : "msj"] + "px" } : {}), ...(cadena ? { paddingBottom: 230 } : {}) } }
       >
         {!loaded ? (
           <SkeletonCargando />
