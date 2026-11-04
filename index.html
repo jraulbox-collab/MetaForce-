@@ -2085,6 +2085,7 @@ const emptyForm = () => ({
   tecnologia: "",
   cuentaTigo: "",
   montoMensual: "",
+  fechaIngreso: fechaLocalISO(new Date()),
   fechaInstalacion: fechaLocalISO(new Date()),
   instalacionProgramada: "",
   franjaInstalacion: "",
@@ -3710,16 +3711,21 @@ function App() {
       if (!continuar) return;
     }
 
+    // La fecha de ingreso se carga sola; si la cambias, se guarda al mediodía de ese día (hora de Panamá).
+    const { fechaIngreso: fechaIngresoForm, ...formSinIngreso } = form;
+    const creadoEnDeFecha = (f) => new Date(f + "T12:00:00").toISOString();
     if (editingId) {
       const antes = clientes.find((c) => c.id === editingId);
-      const camposForm = camposEstadoCliente({ ...form, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, antes);
+      const camposForm = camposEstadoCliente({ ...formSinIngreso, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, antes);
+      if (fechaIngresoForm && (!antes || !antes.creadoEn || fechaLocalISO(antes.creadoEn) !== fechaIngresoForm)) camposForm.creadoEn = creadoEnDeFecha(fechaIngresoForm);
       const despues = antes ? { ...antes, ...camposForm } : null;
       actualizarClientes((prev) => prev.map((c) => (c.id === editingId ? { ...c, ...camposForm } : c)));
       if (antes && despues) {
         registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: editingId });
       }
     } else {
-      const nuevo = { id: uid(), ...camposEstadoCliente({ ...form, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, null), abonoInicial: form.fechaInstalacion ? true : false, creadoEn: new Date().toISOString() };
+      const creadoEnNuevo = fechaIngresoForm && fechaIngresoForm !== fechaLocalISO(new Date()) ? creadoEnDeFecha(fechaIngresoForm) : new Date().toISOString();
+      const nuevo = { id: uid(), ...camposEstadoCliente({ ...formSinIngreso, numeroSuscriptor: (form.numeroSuscriptor || "").trim() }, null), abonoInicial: form.fechaInstalacion ? true : false, creadoEn: creadoEnNuevo };
       actualizarClientes((prev) => [...prev, nuevo]);
       registrarCambio({ entidad: "cliente", tipo: "crear", etiqueta: nuevo.nombre, despues: nuevo, cambios: [], refId: nuevo.id });
     }
@@ -3739,6 +3745,7 @@ function App() {
       tecnologia: c.tecnologia || "",
       cuentaTigo: c.cuentaTigo || "",
       montoMensual: c.montoMensual,
+      fechaIngreso: c.creadoEn ? fechaLocalISO(c.creadoEn) : "",
       fechaInstalacion: c.fechaInstalacion,
       instalacionProgramada: c.instalacionProgramada || "",
       franjaInstalacion: c.franjaInstalacion || "",
@@ -16172,6 +16179,23 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                     Quitar fecha
                   </button>
                 )}
+              </Field>
+            </div>
+            <div className="col-span-2">
+              <Field label="Fecha de ingreso (se carga sola, puedes cambiarla)">
+                <input
+                  type="date"
+                  value={form.fechaIngreso || ""}
+                  max={fechaLocalISO(new Date())}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    const campoFecha = e.target;
+                    if (v) setTimeout(() => { try { campoFecha.blur(); } catch (err) {} }, 0);
+                    setForm((f) => ({ ...f, fechaIngreso: v }));
+                  } }
+                  className={inputClass}
+                  style={inputStyle}
+                />
               </Field>
             </div>
             <div className="col-span-2">
