@@ -2137,7 +2137,7 @@ function calcularFacturas(cliente, umbralProrrateo) {
     const especial = n === 1 && !cliente.cancelado && esEsquemaEspecial(cliente, umbralProrrateo);
     // Clientes nuevos con ciclo sin confirmar: sus mensajes esperan hasta que lo confirmes en Tigo.
     const espera = cicloHogarEspera(cliente);
-    const tiposParaEstaFactura = cliente.cancelado ? [] : n === 1 ? (especial ? MILESTONE_TYPES.filter((mt) => mt.type === "t3") : MILESTONE_TYPES) : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
+    const tiposParaEstaFactura = cliente.cancelado || n === 4 ? [] : n === 1 ? (especial ? MILESTONE_TYPES.filter((mt) => mt.type === "t3") : MILESTONE_TYPES) : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
     const milestones = tiposParaEstaFactura.map((mt) => {
       const key = `f${n}_${mt.type}`;
       const triggerDate =
@@ -4283,7 +4283,7 @@ function App() {
     if (it.t === "ch") marcarEnviadoSeguro(it.id, it.key, "cadena");
     else if (it.t === "cm") marcarMovilEnviadoSeguro(it.id, it.key, "cadena");
     else if (it.t === "in") marcarInstalacionEnviada(it.id, true);
-    else if (it.t === "v") cambiarVentaMsg(it.id, it.k, it.ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() });
+    else if (it.t === "v") cambiarVentaMsg(it.id, it.k, it.ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : it.ronda === "movil4" ? { m4AbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() });
   }
   function avanzarCadena(marcar) {
     const c = cadena;
@@ -5008,8 +5008,8 @@ function App() {
               onEnviarUno={enviarUno}
               clientes={clientesActivos}
               convergencias={convergencias}
-              onAbrir={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() })}
-              onDeshacer={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: undefined } : null)}
+              onAbrir={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : ronda === "movil4" ? { m4AbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() })}
+              onDeshacer={(id, k, ronda) => cambiarVentaMsg(id, k, ronda === "referido" ? { refAbiertoEn: undefined } : ronda === "movil4" ? { m4AbiertoEn: undefined } : null)}
               onAgregarReferido={(id, lista) => {
                 const ahoraISO = new Date().toISOString();
                 const nuevos = lista.map((x) => ({ id: uid(), tel: x.tel, nombre: x.nombre || "", creadoEn: ahoraISO }));
@@ -5017,7 +5017,7 @@ function App() {
                 if (mov) editarConvergencia(id, { referidos: [...(mov.referidos || []), ...nuevos] });
                 else actualizarClientes((prev) => prev.map((c) => (c.id === id ? { ...c, referidos: [...(c.referidos || []), ...nuevos] } : c)));
               } }
-              onSaltar={(id, k, saltos, ronda) => cambiarVentaMsg(id, k, ronda === "movil" ? { intSaltoDia: fechaLocalISO(new Date()), intSaltos: saltos + 1, intDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR } : { refSaltoDia: fechaLocalISO(new Date()), refSaltos: saltos + 1, refDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR })}
+              onSaltar={(id, k, saltos, ronda) => cambiarVentaMsg(id, k, ronda === "movil4" ? { m4SaltoDia: fechaLocalISO(new Date()), m4Saltos: saltos + 1, m4Descartado: saltos + 1 >= SALTOS_PARA_DESCARTAR } : ronda === "movil" ? { intSaltoDia: fechaLocalISO(new Date()), intSaltos: saltos + 1, intDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR } : { refSaltoDia: fechaLocalISO(new Date()), refSaltos: saltos + 1, refDescartado: saltos + 1 >= SALTOS_PARA_DESCARTAR })}
               onNoEscribir={(id, k) => cambiarVentaMsg(id, k, { noEscribir: true })}
               onRespondio={(id, k) => cambiarVentaMsg(id, k, { respondio: true, respondioEn: new Date().toISOString(), cerrado: false })}
               onCerrar={(id, k) => cambiarVentaMsg(id, k, { cerrado: true })}
@@ -6695,17 +6695,39 @@ const DIAS_REFERIDOS_CLIENTE = 60;      // días después de la 1ra factura paga
 const PRECIO_BENEFICIO_MOVIL = "$20.70 más impuestos";
 const d8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
 function mensajeVentaFicha(c) {
-  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()}. Soy José Severino, su asesor de ventas en Tigo.
+  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()} 😊 Soy José Severino, su asesor de Tigo.
 
-Por tener su plan de internet con nosotros, usted puede tener un plan de celular con *precio especial*, con data ilimitada, minutos ilimitados a Tigo y 250 minutos a otros operadores.
+Por ser cliente de nuestro internet, tiene un *plan de celular con precio especial*:
 
-Si hoy gasta en tarjetas de recarga, seguramente le sale más caro así.
+📱 Datos ilimitados
+📞 Minutos ilimitados a Tigo
+☎️ 250 minutos a otros operadores
 
-Ese mismo beneficio se lo puede dar a algún familiar o persona cercana a usted.
+No tiene que pagar nada por adelantado para activarlo. ✅ Si gasta mucho en recarga, este plan le conviene.
 
-No tendrían que pagar nada por adelantado para activar el plan.
+Dígame, ¿con qué compañía tiene su línea... Tigo o Más Móvil?`;
+}
+// Segundo toque (momento de la 4ta factura): da el precio y pide el número para activarlo ya.
+function mensajeVentaMovil4(c) {
+  return `Hola ${primerNombre(c)}, ${saludoSegunHora().toLowerCase()} 😊 le habla José Severino de Tigo Panamá.
 
-Dígame, ¿su línea actual es de Tigo o de Más Móvil?`;
+Por ser cliente de nuestro internet, tiene un *plan de celular con precio especial: ${PRECIO_BENEFICIO_MOVIL.replace(" más", " al mes más")}*.
+
+📱 Datos ilimitados
+📞 Minutos ilimitados a Tigo
+☎️ 250 minutos a otros operadores
+
+Ya mismo lleno todo y se lo activo de inmediato. También puede ser para un familiar y no tiene que pagar nada por adelantado. ✅
+
+*¿Cuál es el número de la línea que desea activar?* 📲 (Si es de otra compañía, conserva su mismo número)`;
+}
+// ¿Ya llegó el momento de la 4ta factura? (la ventana dura 30 días, para no ofrecerle a clientes viejos)
+function ofertaMovil4Lista(c) {
+  if (cicloHogarEspera(c)) return false;
+  const f4 = calcularFacturas(c)[3];
+  if (!f4) return false;
+  const d = daysFromToday(addDays(f4.vencimiento, -3));
+  return d <= 0 && d >= -30;
 }
 function mensajeVentaContacto(c) {
   return `${saludoSegunHora()}. Soy José Severino, asesor de ventas en Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
@@ -6839,6 +6861,14 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
             if (fechaLocalISO(new Date(e.refAbiertoEn)) === hoyISO) numeros.push({ ...n, ronda: "referido", estado: "abierto", abiertoEn: e.refAbiertoEn });
           } else if (!e.refDescartado && c.f1_pagadaEn && -daysFromToday(fechaLocalISO(new Date(c.f1_pagadaEn))) >= DIAS_REFERIDOS_CLIENTE && e.refSaltoDia !== hoyISO) {
             numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+          }
+        }
+        // Cliente Hogar sin línea móvil: en el momento de su 4ta factura se le manda el 2º mensaje de móvil.
+        if (n.tipo === "ficha" && !tieneMovil && !e.respondio && !numeros.some((x) => x.k === n.k)) {
+          if (e.m4AbiertoEn) {
+            if (fechaLocalISO(new Date(e.m4AbiertoEn)) === hoyISO) numeros.push({ ...n, ronda: "movil4", estado: "abierto", abiertoEn: e.m4AbiertoEn });
+          } else if (!e.m4Descartado && e.m4SaltoDia !== hoyISO && ofertaMovil4Lista(c)) {
+            numeros.push({ ...n, ronda: "movil4", estado: "pendiente", saltos: e.m4Saltos || 0 });
           }
         }
         if (e.respondio) {
@@ -7099,6 +7129,7 @@ function ofertaVenta(n, f) {
     return conMovil ? "Pedir un referido: recargas o internet" : "Pedir un referido: mudanza o cambio de internet";
   }
   if (n.tipo === "movil") return "Preguntar por su internet";
+  if (n.ronda === "movil4") return "Plan móvil: $20.70, pedir el número";
   return "Plan móvil: precio especial";
 }
 const FILTROS_VENTAS = [
@@ -7181,7 +7212,7 @@ function ListaMisReferidos({ clientes, convergencias }) {
 }
 
 // Texto del mensaje de venta de un número (lo usan el panel de Ventas y el envío en cadena de Mensajes).
-const mensajeVentaDe = (n, c, f) => (n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
+const mensajeVentaDe = (n, c, f) => (n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : n.ronda === "movil4" ? mensajeVentaMovil4(c) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
 
 function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
@@ -7390,7 +7421,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
         const href = enlaceDe(n, c, f);
         const bloqueado = n.frio && (llegoAlTope || esperando);
         const tipoM = FILTROS_VENTAS.find((x) => x.k === tipoMensajeVenta(n));
-        const puedeSaltar = n.estado === "pendiente" && (n.ronda === "referido" || n.ronda === "movil");
+        const puedeSaltar = n.estado === "pendiente" && (n.ronda === "referido" || n.ronda === "movil" || n.ronda === "movil4");
         const nombreFila = esRef ? (n.nombreRef ? tituloEs(n.nombreRef) : "Referido nuevo") : tituloEs(c.nombre || "");
         const otrosNums = (f.otros || []).filter((o) => o.k !== n.k);
         const fechaInst = f.instalacion ? new Date(f.instalacion + "T00:00:00").toLocaleDateString("es-PA", { day: "numeric", month: "short", year: "numeric" }) : "";
