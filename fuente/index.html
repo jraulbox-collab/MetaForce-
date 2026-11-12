@@ -4261,7 +4261,7 @@ function App() {
   const alertasMovilVis = alertasMovilPendientes(convergencias).filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
   const instalacionesVis = tab === "alertas" ? clientesActivos.filter((c) => instalacionPorAvisar(c) && !estaPospuesto("inst-" + c.id)) : [];
   const qMsj = searchAlertas.trim().toLowerCase();
-  const instalacionesBus = qMsj ? instalacionesVis.filter((c) => String(c.nombre || "").toLowerCase().includes(qMsj) || String(c.telefono || "").includes(qMsj)) : instalacionesVis;
+  const instalacionesBus = qMsj ? instalacionesVis.filter((c) => String(c.nombre || "").toLowerCase().includes(qMsj) || String(c.telefono || "").includes(qMsj) || String(c.numeroSuscriptor || "").toLowerCase().includes(qMsj)) : instalacionesVis;
   const conteoMsj = (() => {
     if (tab !== "alertas") return null;
     const nCobros = alertasCobroVis.length + alertasMovilVis.length;
@@ -5075,7 +5075,7 @@ function App() {
             <CampoBuscar
               value={searchAlertas}
               onChange={(t) => { setSearchAlertas(t); setLotesMsj({ cobros: 10, instalacion: 10 }); } }
-              placeholder="🔍 Buscar cliente…"
+              placeholder="🔍 Buscar nombre, teléfono o suscriptor…"
               ariaLabel="Buscar cliente"
               wrapperClassName="mb-4"
               inputClassName="w-full rounded-xl"
@@ -7362,7 +7362,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   const filtroEf = filtro !== "todos" && !(cuenta[filtro] > 0) ? "todos" : filtro;
   const pasa = (x) => filtroEf === "todos" || filtroEf === tipoMensajeVenta(x.n);
   const qBus = (busqueda || "").trim().toLowerCase();
-  const pasaBus = (x) => !qBus || String(x.f.cliente.nombre || "").toLowerCase().includes(qBus) || String(x.n.nombreRef || "").toLowerCase().includes(qBus) || String(x.n.tel || "").includes(qBus);
+  const pasaBus = (x) => !qBus || String(x.f.cliente.nombre || "").toLowerCase().includes(qBus) || String(x.n.nombreRef || "").toLowerCase().includes(qBus) || String(x.n.tel || "").includes(qBus) || String(x.f.cliente.numeroSuscriptor || "").toLowerCase().includes(qBus);
   const abiertosF = filtroEf === "respondieron" ? [] : abiertos.filter(pasa).filter(pasaBus);
   const pendF2 = filtroEf === "respondieron" ? [] : pendientes.filter(pasa).filter(pasaBus);
   const mostrar = pendF2.slice(0, resumen ? 3 : visibles);
