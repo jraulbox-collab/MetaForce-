@@ -2196,6 +2196,50 @@ function facturaActual(facturas) {
 }
 
 // Al marcar algo como hecho, la fila se atenúa y se desliza antes de salir de la lista.
+// ---------- Ventana de confirmación propia (reemplaza la del navegador) ----------
+let _confirmadorEscucha = null;
+function pedirConfirmacion(mensaje, opts) {
+  return new Promise((resolve) => {
+    if (_confirmadorEscucha) _confirmadorEscucha({ mensaje, opts: opts || {}, resolve });
+    else resolve(window.confirm(mensaje));
+  });
+}
+// Pregunta con la ventana de la app y, si dice que sí, ejecuta alSi. 'e' (opcional) es para la animación de salida de la fila.
+function confirmarAccion(e, mensaje, alSi, opts) {
+  const objetivo = e && e.currentTarget ? e.currentTarget : null;
+  pedirConfirmacion(mensaje, opts).then((ok) => {
+    if (!ok) return;
+    if (objetivo) conSalida({ currentTarget: objetivo }, alSi); else alSi();
+  });
+}
+function ConfirmadorGlobal() {
+  const [pend, setPend] = useState(null);
+  useEffect(() => {
+    _confirmadorEscucha = (p) => setPend((prev) => { if (prev) prev.resolve(false); return p; });
+    return () => { _confirmadorEscucha = null; };
+  }, []);
+  useEffect(() => {
+    if (!pend) return undefined;
+    const tecla = (ev) => { if (ev.key === "Escape") { const p = pend; setPend(null); p.resolve(false); } };
+    window.addEventListener("keydown", tecla);
+    return () => window.removeEventListener("keydown", tecla);
+  }, [pend]);
+  if (!pend) return null;
+  const cerrar = (v) => { const p = pend; setPend(null); p.resolve(v); };
+  const o = pend.opts || {};
+  return (
+    <div className="fixed inset-0 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,.5)", zIndex: 100 } } role="dialog" aria-modal="true" onClick={() => cerrar(false)}>
+      <div className="bg-white rounded-2xl p-5 w-full" style={ { maxWidth: 380 } } onClick={(ev) => ev.stopPropagation()}>
+        <div className="text-base font-bold" style={ { color: "#001E62", whiteSpace: "pre-wrap", lineHeight: 1.4 } }>{pend.mensaje}</div>
+        <div className="flex gap-2 mt-5">
+          <button type="button" onClick={() => cerrar(false)} className="flex-1 font-bold rounded-xl" style={ { minHeight: 52, background: "#fff", color: "#001E62", border: "2px solid #001E62", fontSize: 15 } }>{o.no || "✕ No, cancelar"}</button>
+          <button type="button" autoFocus onClick={() => cerrar(true)} className="flex-1 font-bold rounded-xl text-white" style={ { minHeight: 52, background: "#001E62", border: "2px solid #001E62", fontSize: 15 } }>{o.si || "✓ Sí, confirmar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function conSalida(e, fn) {
   try {
     const el = e && e.currentTarget && e.currentTarget.closest ? e.currentTarget.closest("[data-fila]") : null;
@@ -3333,7 +3377,7 @@ function App() {
 
   // Desde el precierre: iguala el plan (Single/Doble, velocidad, TV) al que activó Tigo.
   // La mensualidad no cambia sola: se propone la más común entre tus clientes con ese plan.
-  function corregirPlanDesdePrecierre(clienteId, plan) {
+  async function corregirPlanDesdePrecierre(clienteId, plan) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes || !plan || (plan.tipo !== "SINGLE" && plan.tipo !== "DOBLE")) return;
     const mismos = clientes
@@ -3347,7 +3391,7 @@ function App() {
     const textoAntes = `${planCorto(antes) || "—"} · ${antes.montoMensual !== "" && antes.montoMensual != null ? fmtMonto(antes.montoMensual) : "sin monto"}`;
     const textoAhora = `${planTigoTexto(plan)} · ${montoNuevo !== "" && montoNuevo != null ? fmtMonto(montoNuevo) : "sin monto"}`;
     const nota = masComun ? "\n\n(La mensualidad es la más común entre tus clientes con ese plan. Puedes ajustarla en Editar.)" : "\n\nLa mensualidad no cambia. Revísala en Editar si hace falta.";
-    if (!window.confirm("¿Corregir el plan de " + antes.nombre + "?\n\nAntes: " + textoAntes + "\nAhora (Tigo): " + textoAhora + nota)) return;
+    if (!(await pedirConfirmacion("¿Corregir el plan de " + antes.nombre + "?\n\nAntes: " + textoAntes + "\nAhora (Tigo): " + textoAhora + nota, { si: "✓ Sí, corregir" }))) return;
     let despues = { ...antes, planTipo: plan.tipo, velocidad: plan.velocidad, planTV: plan.tipo === "DOBLE" ? plan.tv : "", montoMensual: montoNuevo };
     if (antes.fechaInstalacion && antes.cicloFacturacion && montoNuevo !== "" && montoNuevo != null) {
       const r = calcularPrimeraFactura(antes.fechaInstalacion, parseInt(antes.cicloFacturacion, 10), montoNuevo);
@@ -3674,7 +3718,7 @@ function App() {
     });
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     const obligatorios = [
       form.numeroSuscriptor,
@@ -3705,9 +3749,7 @@ function App() {
           : (duplicado.nombre || "").trim().toLowerCase() === nombreNorm
           ? "nombre"
           : "teléfono";
-      const continuar = window.confirm(
-        `Ya existe un cliente con el mismo ${campo}: ${duplicado.nombre} (suscriptor ${duplicado.numeroSuscriptor || "—"}).\n\n¿Quieres guardar este cliente de todas formas?`
-      );
+      const continuar = await pedirConfirmacion(`Ya existe un cliente con el mismo ${campo}: ${duplicado.nombre} (suscriptor ${duplicado.numeroSuscriptor || "—"}).\n\n¿Quieres guardar este cliente de todas formas?`, { si: "✓ Sí, guardarlo igual", no: "✕ No, revisar" });
       if (!continuar) return;
     }
 
@@ -4093,11 +4135,11 @@ function App() {
   }
 
   // Marca (o quita la marca de) el abono inicial de un cliente Hogar. Siempre pide confirmación.
-  function marcarAbonoInicial(clienteId, recibido) {
+  async function marcarAbonoInicial(clienteId, recibido) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes) return;
     const quien = antes.nombre || antes.numeroSuscriptor || "este cliente";
-    const ok = window.confirm(recibido ? `¿Confirmas que ${quien} ya hizo su abono?` : `¿Quitar la marca de abono a ${quien}?`);
+    const ok = await pedirConfirmacion(recibido ? `¿Confirmas que ${quien} ya hizo su abono?` : `¿Quitar la marca de abono a ${quien}?`, { si: recibido ? "✓ Sí, ya abonó" : "Sí, quitar la marca" });
     if (!ok) return;
     const despues = { ...antes, abonoInicial: recibido, abonoFecha: recibido ? new Date().toISOString() : "" };
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
@@ -6440,7 +6482,7 @@ function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite
                 <div className="flex items-stretch gap-1.5 mt-3">
                   <button
                     type="button"
-                    onClick={(e) => { if (window.confirm("¿Confirmas que ya enviaste la info de instalación?")) conSalida(e, () => onMarcar(c.id)); } }
+                    onClick={(e) => confirmarAccion(e, "¿Confirmas que ya enviaste la info de instalación?", () => onMarcar(c.id), { si: "✓ Sí, ya la envié" })}
                     className="flex-1 text-[13px] font-semibold px-2 rounded-md"
                     style={ { background: "#001E62", color: "#fff", minHeight: 46, whiteSpace: "nowrap" } }
                   >
@@ -7398,7 +7440,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
             <button type="button" onClick={() => { salRef.current += 1; avanzarCola(idxCola + 1); } } className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No, saltar</button>
             <button type="button" onClick={() => { onAbrir(itemCola.f.cliente.id, itemCola.n.k, itemCola.n.ronda); envRef.current += 1; avanzarCola(idxCola + 1); } } className="text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 48, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0 } }>Sí, siguiente</button>
           </div>
-          <button type="button" onClick={() => { if (window.confirm(`¿No escribirle más a ${itemCola.n.tel}? Sale de todas las listas.`)) { onNoEscribir(itemCola.f.cliente.id, itemCola.n.k); salRef.current += 1; avanzarCola(idxCola + 1); } } } className="mt-2 text-xs font-semibold underline" style={ { color: "#B9C4E0" } }>✕ No escribirle más</button>
+          <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${itemCola.n.tel}? Sale de todas las listas.`, () => { onNoEscribir(itemCola.f.cliente.id, itemCola.n.k); salRef.current += 1; avanzarCola(idxCola + 1); }, { si: "✕ Sí, no escribirle más" })} className="mt-2 text-xs font-semibold underline" style={ { color: "#B9C4E0" } }>✕ No escribirle más</button>
         </div>
       )}
       {resumenCola && (
@@ -7492,7 +7534,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
                 )}
                 <button
                   type="button"
-                  onClick={() => { if (window.confirm(`¿No escribirle más a ${n.tel}? Sale de todas las listas.`)) onNoEscribir(c.id, n.k); } }
+                  onClick={() => confirmarAccion(null, `¿No escribirle más a ${n.tel}? Sale de todas las listas.`, () => onNoEscribir(c.id, n.k), { si: "✕ Sí, no escribirle más" })}
                   className="text-xs font-semibold underline"
                   style={ { color: "#5A6680" } }
                 >
@@ -10778,14 +10820,8 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                               <div
                                 role="button"
                                 tabIndex={0}
-                                onClick={(e) => {
-                                  if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
-                                    conSalida(e, () => {
-                                      if (esMovil) onMarcarMovil(cliente.id, milestone.key);
-                                      else onMarcar(cliente.id, milestone.key);
-                                    });
-                                  }
-                                } }
+                                onClick={(e) => confirmarAccion(e, "¿Confirmas que ya enviaste este mensaje?", () => { if (esMovil) onMarcarMovil(cliente.id, milestone.key);
+                                      else onMarcar(cliente.id, milestone.key); }, { si: "✓ Sí, ya lo envié" })}
                                 className="flex-1 flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer"
                                 style={ { background: "#001E62", color: "#FFFFFF", minHeight: 46, whiteSpace: "nowrap" } }
                               >
@@ -10796,14 +10832,10 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                 tabIndex={0}
                                 onClick={(e) => {
                                   if (esMovil) {
-                                    if (window.confirm(`¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`)) conSalida(e, () => onPagoMovil(cliente.id));
+                                    confirmarAccion(e, `¿Confirmas que ${cliente.nombre} ya pagó su 1ra factura?`, () => onPagoMovil(cliente.id), { si: "✓ Sí, ya pagó" });
                                   } else {
                                     const saldo = factura.n === 1 && !!cliente.f1_saldoPendiente;
-                                    if (window.confirm(saldo
-                                      ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?`
-                                      : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`)) {
-                                      conSalida(e, () => onPagoRealizado(cliente.id, factura.n));
-                                    }
+                                    confirmarAccion(e, saldo ? `¿Confirmas que ${cliente.nombre} ya pagó el saldo de la 1ra factura?` : `¿Confirmas que ${cliente.nombre} ya pagó la ${ORDINAL[factura.n]} factura?`, () => onPagoRealizado(cliente.id, factura.n), { si: "✓ Sí, ya pagó" });
                                   }
                                 } }
                                 className="flex-1 flex items-center justify-center text-[13px] font-semibold px-2 rounded-md cursor-pointer"
@@ -10865,11 +10897,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                           <span className="text-xs font-medium" style={ { color: ex.milestone.color } }>{diasTexto(ex.milestone.triggerDate)}</span>
                                         </div>
                                         <button
-                                          onClick={() => {
-                                            if (window.confirm("¿Confirmas que ya enviaste este mensaje?")) {
-                                              onMarcar(ex.cliente.id, ex.milestone.key);
-                                            }
-                                          } }
+                                          onClick={() => confirmarAccion(null, "¿Confirmas que ya enviaste este mensaje?", () => onMarcar(ex.cliente.id, ex.milestone.key), { si: "✓ Sí, ya lo envié" })}
                                           className="text-xs font-medium px-2 py-1 rounded-md border"
                                           style={ { borderColor: "#DFE5EF", color: "#374151" } }
                                         >
@@ -10934,10 +10962,7 @@ function CicloHogarConfirmar({ cliente, onConfirmar }) {
   if (!onConfirmar || !cliente) return null;
   const actual = parseInt(cliente.cicloFacturacion, 10) || null;
   if (cicloHogarPorConfirmar(cliente)) {
-    const elegir = (n) => {
-      if (!window.confirm(`¿Confirmas que en Tigo el ciclo de ${cliente.nombre} es el ${String(n).padStart(2, "0")}?`)) return;
-      onConfirmar(cliente.id, n);
-    };
+    const elegir = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${cliente.nombre} es el ${String(n).padStart(2, "0")}?`, () => onConfirmar(cliente.id, n), { si: "✓ Sí, es ese ciclo" });
     return (
       <div className="mt-2 rounded-xl px-2.5 py-2" style={ { background: "#FFF3DC", border: "1.5px dashed #B45309" } }>
         <div className="text-xs font-bold" style={ { color: "#92400E" } }>🔄 Ciclo sin confirmar · ¿cuál ves en Tigo?{cliente.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO ? " Sus mensajes esperan." : ""}</div>
@@ -10954,7 +10979,7 @@ function CicloHogarConfirmar({ cliente, onConfirmar }) {
   if (cliente.cicloConfirmado && cliente.f1_estado !== "pagada" && cliente.fechaInstalacion && cliente.fechaInstalacion >= "2026-10-01") {
     return (
       <div className="mt-2">
-        <button type="button" onClick={() => { if (window.confirm(`¿Quitar la confirmación del ciclo de ${cliente.nombre}?`)) onConfirmar(cliente.id, null); } } className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
+        <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${cliente.nombre}?`, () => onConfirmar(cliente.id, null), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
           ✅ Ciclo {String(actual || "").padStart(2, "0")} confirmado
         </button>
       </div>
@@ -13963,10 +13988,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                               )}
                               <button
                                 type="button"
-                                onClick={() => {
-                                  if (!window.confirm(`¿Confirmas que el titular ya aprobó el match de ${c.nombre}?`)) return;
-                                  onEditar(c.id, { matchConfirmado: true });
-                                } }
+                                onClick={() => confirmarAccion(null, `¿Confirmas que el titular ya aprobó el match de ${c.nombre}?`, () => onEditar(c.id, { matchConfirmado: true }), { si: "✓ Sí, ya aprobó" })}
                                 className="text-xs font-bold px-3 py-1.5 rounded-full"
                                 style={ { background: "#fff", color: "#001E62", border: "1.5px solid #DFE5EF", minHeight: 34 } }
                               >
@@ -14007,10 +14029,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         {cicloPorConfirmar(c) && (() => {
                           const fch = movilFechasPrimeraFactura(c);
                           const sug = fch ? fch.ciclo : null;
-                          const elegir = (n) => {
-                            if (!window.confirm(`¿Confirmas que en Tigo el ciclo de ${c.nombre} es el ${String(n).padStart(2, "0")}?`)) return;
-                            onEditar(c.id, { cicloConfirmado: true, cicloManual: n === (movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo ? null : n });
-                          };
+                          const elegir = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${c.nombre} es el ${String(n).padStart(2, "0")}?`, () => { onEditar(c.id, { cicloConfirmado: true, cicloManual: n === (movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo ? null : n }); }, { si: "✓ Sí, es ese ciclo" });
                           return (
                             <div className="flex items-center flex-wrap gap-1.5 mt-2 rounded-xl px-2.5 py-2" style={ { background: "#FFF3DC", border: "1.5px dashed #B45309" } }>
                               <span className="text-xs font-bold" style={ { color: "#92400E" } }>🔄 Ciclo sin confirmar · ¿cuál ves en Tigo?</span>
@@ -14024,7 +14043,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         })()}
                         {c.cicloConfirmado && c.f1_estado !== "pagada" && esquemaNuevo(m.key) && (
                           <div className="mt-1.5">
-                            <button type="button" onClick={() => { if (window.confirm(`¿Quitar la confirmación del ciclo de ${c.nombre}?`)) onEditar(c.id, { cicloConfirmado: false }); } } className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
+                            <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${c.nombre}?`, () => onEditar(c.id, { cicloConfirmado: false }), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
                               ✅ Ciclo {String((movilFechasPrimeraFactura(c) || {}).ciclo || "").padStart(2, "0")} confirmado
                             </button>
                           </div>
@@ -14042,11 +14061,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                             <div className="flex flex-wrap gap-1.5 mt-2">
                               <button
                                 type="button"
-                                onClick={() => {
-                                  const ok = window.confirm(pagada ? `¿Quitar la marca de 1ra factura pagada a ${c.nombre}?` : `¿Confirmas que ${c.nombre} ya pagó su 1ra factura?`);
-                                  if (!ok) return;
-                                  onEditar(c.id, pagada ? { f1_estado: "", f1_pagadaEn: null } : { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() });
-                                } }
+                                onClick={() => confirmarAccion(null, pagada ? `¿Quitar la marca de 1ra factura pagada a ${c.nombre}?` : `¿Confirmas que ${c.nombre} ya pagó su 1ra factura?`, () => { onEditar(c.id, pagada ? { f1_estado: "", f1_pagadaEn: null } : { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() }); }, { si: pagada ? "Sí, quitar la marca" : "✓ Sí, ya pagó" })}
                                 className="text-xs font-bold px-3 py-1.5 rounded-full text-left"
                                 style={ pagada
                                   ? { background: "#EAF0FB", color: "#001E62", border: "1.5px solid #001E62", minHeight: 34 }
@@ -14956,7 +14971,7 @@ function ResultadoPrecierre({ resultado, onIrNuevo, onAbrirCliente, onCambiarFec
                 <div style={caja("app")}><span style={rotulo}>Tu app</span>{app ? fmtFechaDia(app) : "Sin fecha de instalación"}</div>
               </div>
               <button
-                onClick={() => { if (confirmarCambioFechaOrden(c, tigo, false)) onCambiarFecha(c.id, tigo); } }
+                onClick={() => confirmarCambioFechaOrden(c, tigo, false, () => onCambiarFecha(c.id, tigo))}
                 className="w-full font-bold text-white"
                 style={ { background: "#001E62", height: 44, borderRadius: 12, fontSize: 14 } }
               >
@@ -15422,12 +15437,12 @@ function FilaOrden({ color, nombre, sub, children, onClickNombre }) {
   );
 }
 
-function confirmarCambioFechaOrden(cliente, nueva, esMovil) {
+function confirmarCambioFechaOrden(cliente, nueva, esMovil, alSi) {
   const actual = esMovil ? fechaActivacionMovil(cliente) : cliente.fechaInstalacion;
   const antes = actual ? fmtFechaDia(actual) : "pendiente (sin fecha)";
-  return window.confirm(
+  confirmarAccion(null, 
     "¿Cambiar la fecha de " + (esMovil ? "activación" : "instalación") + " de " + cliente.nombre + "?\n\nAntes: " + antes + "\nAhora: " + fmtFechaDia(nueva)
-  );
+  , alSi, { si: "✓ Sí, cambiarla" });
 }
 
 function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha, movil }) {
@@ -15436,7 +15451,7 @@ function FilaFechaDistinta({ fila, cliente, color, onCambiarFecha, movil }) {
   const [valor, setValor] = useState(fechaApp || "");
   function aplicar(nueva) {
     if (!nueva) return;
-    if (confirmarCambioFechaOrden(cliente, nueva, movil)) onCambiarFecha(cliente.id, nueva);
+    confirmarCambioFechaOrden(cliente, nueva, movil, () => onCambiarFecha(cliente.id, nueva));
   }
   const estiloBoton = { color: "#001E62", border: "1px solid #DFE5EF", background: "#FFFFFF", height: 44, borderRadius: 12, fontSize: 13 };
   const estiloPrimario = { background: "#001E62", height: 44, borderRadius: 12, fontSize: 13 };
@@ -15761,9 +15776,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                 onClick={() => {
                   const lista = resultado.pendientesInstalados.filter((x) => x.fila.fin);
                   const detalle = lista.map((x) => x.cliente.nombre + " · " + fmtFechaDia(x.fila.fin)).join("\n");
-                  if (window.confirm("¿Marcar " + lista.length + " clientes como instalados?\n\n" + detalle)) {
-                    lista.forEach((x) => onCambiarFecha(x.cliente.id, x.fila.fin));
-                  }
+                  confirmarAccion(null, "¿Marcar " + lista.length + " clientes como instalados?\n\n" + detalle, () => { lista.forEach((x) => onCambiarFecha(x.cliente.id, x.fila.fin)); }, { si: "✓ Sí, marcarlos" });
                 }}
                 className="font-bold text-white"
                 style={ { background: "#001E62", height: 52, borderRadius: 14, fontSize: 15, width: "calc(100% - 32px)", margin: "4px 16px 12px" } }
@@ -15781,7 +15794,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
                 >
                   <BotonCopiarOrden texto={cliente.numeroSuscriptor} label="Copiar suscriptor" vacio="Sin suscriptor" />
                   <button
-                    onClick={() => { if (confirmarCambioFechaOrden(cliente, fila.fin)) onCambiarFecha(cliente.id, fila.fin); }}
+                    onClick={() => confirmarCambioFechaOrden(cliente, fila.fin, false, () => onCambiarFecha(cliente.id, fila.fin))}
                     disabled={!fila.fin}
                     className="font-bold px-4 text-white disabled:opacity-40"
                     style={estiloPrimarioOrden}
@@ -16617,7 +16630,7 @@ function SplashInicio() {
     </div>
   );
 }
-root.render(<CapturadorErrores><App /><SplashInicio /></CapturadorErrores>);
+root.render(<CapturadorErrores><App /><SplashInicio /><ConfirmadorGlobal /></CapturadorErrores>);
 </script>
 </body>
 </html>
