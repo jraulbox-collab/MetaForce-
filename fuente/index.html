@@ -350,8 +350,26 @@ function crearSincronizador(key, { nuevosAlPrincipio = false } = {}) {
 
 // Lista de objetos con "id" que vive en la nube y se mantiene sincronizada.
 // Devuelve [lista, setLista, sincronizador, cargada].
+// Copia local de cada lista: al abrir, la app muestra al instante lo último que vio en este
+// dispositivo y por detrás trae lo de la nube y lo mezcla (sin pisar lo que se toque mientras tanto).
+const CACHE_PREFIJO = "mf_cache_";
+function leerCacheLista(key) {
+  try {
+    const v = JSON.parse(localStorage.getItem(CACHE_PREFIJO + key) || "null");
+    return Array.isArray(v) ? v : null;
+  } catch (e) { return null; }
+}
+function guardarCacheLista(key, lista) {
+  try { localStorage.setItem(CACHE_PREFIJO + key, JSON.stringify(lista)); } catch (e) {}
+}
+function borrarCachesListas() {
+  try { Object.keys(localStorage).filter((k) => k.indexOf(CACHE_PREFIJO) === 0).forEach((k) => localStorage.removeItem(k)); } catch (e) {}
+}
 function useListaNube(key, { nuevosAlPrincipio = false, alEstado = null, alExito = null, alFusionarExtra = null } = {}) {
-  const [lista, setLista] = useState([]);
+  const cacheInicial = useRef(undefined);
+  if (cacheInicial.current === undefined) cacheInicial.current = leerCacheLista(key);
+  const tuvoCache = useRef(cacheInicial.current !== null);
+  const [lista, setLista] = useState(() => cacheInicial.current || []);
   const [cargada, setCargada] = useState(false);
   const listaRef = useRef(lista);
   listaRef.current = lista;
@@ -371,12 +389,23 @@ function useListaNube(key, { nuevosAlPrincipio = false, alEstado = null, alExito
     (async () => {
       const r = await sync.cargar();
       if (!vivo) return;
-      if (r.ok && r.lista) setLista(r.lista);
+      if (r.ok && r.lista) {
+        const cache = cacheInicial.current;
+        if (cache) setLista((prev) => mezclarListasPorId(cache, prev, r.lista, nuevosAlPrincipio));
+        else setLista(r.lista);
+      } else if (r.ok && !r.lista && cacheInicial.current) {
+        setLista((prev) => prev); // la nube está vacía: se conserva lo que hay en pantalla
+      }
+      cacheInicial.current = null;
       setCargada(true);
       if (!r.ok) sync.sincronizar(); // sin conexión al abrir: reintenta solo, sin guardar nada vacío
     })();
     return () => { vivo = false; };
   }, []);
+
+  useEffect(() => {
+    if (cargada && sync.cargado) guardarCacheLista(key, lista);
+  }, [lista, cargada]);
 
   useEffect(() => {
     if (!cargada) return;
@@ -385,7 +414,7 @@ function useListaNube(key, { nuevosAlPrincipio = false, alEstado = null, alExito
     sync.sincronizar();
   }, [lista, cargada]);
 
-  return [lista, setLista, sync, cargada];
+  return [lista, setLista, sync, cargada, tuvoCache.current];
 }
 
 // Diario local de marcas de "enviado": se anota en este dispositivo ANTES de saltar a WhatsApp,
@@ -2825,7 +2854,7 @@ function App() {
     alFusionarExtra: (fusionada, snapshot) => registrarFusionRef.current(clave, fusionada, snapshot),
     ...extra,
   });
-  const [clientes, setClientes, syncClientes, loaded] = useListaNube("clientes-churn", opcionesNube("clientes"));
+  const [clientes, setClientes, syncClientes, loaded, clientesDeCache] = useListaNube("clientes-churn", opcionesNube("clientes"));
   const [convergencias, setConvergencias, syncConv, convergenciasLoaded] = useListaNube("convergencias-churn", opcionesNube("convergencias"));
   const [eliminados, setEliminados, syncElim, eliminadosLoaded] = useListaNube("clientes-eliminados", opcionesNube("eliminados"));
   const [historialCambios, setHistorialCambios, syncHist, historialCambiosLoaded] = useListaNube("historial-cambios-churn", opcionesNube("historial", { nuevosAlPrincipio: true }));
@@ -4865,7 +4894,7 @@ function App() {
         className={"flex-1 min-w-0 w-full px-4 pt-20 pb-32 sm:px-8 sm:pt-20 sm:pb-32 md:pt-7 md:pb-7 max-w-5xl" + (slide ? " mf-slide-" + slide : fadeTab ? " mf-fade-tab" : "") + (tab === "dashboard" || tab === "clientes" || tab === "alertas" ? " mf-esp" : "")}
         style={ { ...(tab === "dashboard" || tab === "clientes" || tab === "alertas" ? { "--mf-gap": espacios[tab === "dashboard" ? "dash" : tab === "clientes" ? "cli" : "msj"] + "px" } : {}), ...(cadena ? { paddingBottom: 230 } : {}) } }
       >
-        {!loaded ? (
+        {!loaded && !clientesDeCache ? (
           <SkeletonCargando />
         ) : (
         <React.Fragment>
@@ -5261,6 +5290,7 @@ function App() {
             try {
               localStorage.removeItem("antichurn_auth");
             } catch (e) {}
+            borrarCachesListas();
             setAutenticado(false);
           } }
         />
