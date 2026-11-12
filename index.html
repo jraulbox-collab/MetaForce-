@@ -4327,6 +4327,8 @@ function App() {
       return;
     }
     if (key === "dashboard") setPeriodoDash(periodoActualApp);
+    // Al entrar a Clientes desde el menú, si venías de un aviso del tablero (todos los meses), vuelve a la vista por mes.
+    if (key === "clientes") setFiltrosClientes((prev) => (prev.modoVerTodos ? { ...prev, modoVerTodos: false, filtroEstado: "" } : prev));
     setTab(key);
   }
   // ---- Barra de abajo que se esconde al bajar y vuelve al subir; deslizar de lado cambia de pestaña ----
@@ -4582,6 +4584,7 @@ function App() {
                 key={item.key}
                 onClick={() => {
                   if (item.key === "nuevo" && !editingId) resetForm();
+                  if (item.key === "clientes" && tab !== "clientes") setFiltrosClientes((prev) => (prev.modoVerTodos ? { ...prev, modoVerTodos: false, filtroEstado: "" } : prev));
                   setTab(item.key);
                 } }
                 className={"mf-side-it" + (tab === item.key ? " on" : "")}
@@ -11779,7 +11782,16 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
 
       {modoVerTodos && (
         <div className="flex items-center justify-between gap-2 rounded-md p-2.5 mb-3" style={ { background: "#E3EDFA" } }>
-          <span className="text-xs font-medium" style={ { color: "#0072CE" } }>Mostrando resultados de todos los meses.</span>
+          <span className="text-xs font-medium" style={ { color: "#0072CE" } }>
+            {(() => {
+              const motivo = chipGrupo === "faltaAbono" ? "clientes con el abono pendiente"
+                : chipGrupo === "faltaInfo" ? "clientes a los que les falta información de instalación"
+                : chipGrupo === "faltaCiclo" ? "clientes con el ciclo sin confirmar"
+                : filtroEstado === "nocuenta" ? "clientes que no cuentan para comisión"
+                : "";
+              return motivo ? `Mostrando todos los meses: ${motivo}.` : "Mostrando resultados de todos los meses.";
+            })()}
+          </span>
           <button
             type="button"
             onClick={() => setModoVerTodos(false)}
