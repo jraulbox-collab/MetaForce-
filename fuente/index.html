@@ -702,14 +702,6 @@ function rangoCiclo(periodoKey) {
 // seguro) y se puede cambiar por período en "✎ Metas" (metas[período].diaLimite).
 const DIA_LIMITE_PRIMERA_FACTURA = 3;
 let DIAS_LIMITE_POR_PERIODO = {};
-function setDiasLimitePorPeriodo(metas) {
-  const out = {};
-  Object.keys(metas || {}).forEach((k) => {
-    const v = metas[k] && typeof metas[k] === "object" ? Number(metas[k].diaLimite) : NaN;
-    if (v >= 1 && v <= 28) out[k] = Math.round(v);
-  });
-  DIAS_LIMITE_POR_PERIODO = out;
-}
 function diaLimitePrimeraFactura(periodoInstalacion) {
   return DIAS_LIMITE_POR_PERIODO[periodoInstalacion] || DIA_LIMITE_PRIMERA_FACTURA;
 }
@@ -1414,7 +1406,6 @@ function camposEstadoCliente(form, previo) {
   return out;
 }
 
-const ESTADOS = ["Pendiente", "Pagado", "Atrasado", "Suspendido"];
 const CICLOS = [
   { value: "1", label: "Ciclo 1 (factura el 1, cubre 1–fin de mes)" },
   { value: "6", label: "Ciclo 6 (factura el 6, cubre 6–5 del sig. mes)" },
@@ -1820,25 +1811,6 @@ ${datos}
 
 Recuerde estar pendiente a esos números, porque los técnicos pueden llamarle si necesitan comunicarse con usted. Avíseme por favor cuando le instalen, para confirmar que todo quedó bien.`;
 }
-// Clientes pendientes con instalación programada, separados en hoy, mañana y vencidas.
-function instalacionesPorAvisar(clientes) {
-  const hoy = fechaLocalISO(new Date());
-  const manana = addDays(hoy, 1);
-  const g = { hoy: [], manana: [], vencidas: [], total: 0 };
-  (clientes || []).forEach((c) => {
-    if (c.fechaInstalacion || !c.instalacionProgramada || c.cancelado || c.penalizado) return;
-    const f = c.instalacionProgramada;
-    if (f === hoy) g.hoy.push(c);
-    else if (f === manana) g.manana.push(c);
-    else if (f < hoy) g.vencidas.push(c);
-  });
-  const porHora = (a, b) => horaInicioFranja(a.franjaInstalacion) - horaInicioFranja(b.franjaInstalacion);
-  g.hoy.sort(porHora);
-  g.manana.sort(porHora);
-  g.vencidas.sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)) || porHora(a, b));
-  g.total = g.hoy.length + g.manana.length + g.vencidas.length;
-  return g;
-}
 
 // Frase de vencimiento calculada según los días reales que faltan hoy
 // (no un número fijo), con casos especiales para "vence hoy" y atrasos.
@@ -2035,29 +2007,6 @@ function proximaFechaOtraMitad(c) {
   const q2 = fechaPagoQuincena2(c);
   if (q2 && q2 >= hoy) return q2;
   return null;
-}
-// Respuesta lista para cuando el cliente pregunta por qué su factura sale más alta (botón de la ficha).
-function textoExplicarProrrateo(c) {
-  const nombre = primerNombre(c);
-  const inst = fmtFechaLarga(c.fechaInstalacion);
-  const finPro = fmtFechaLarga(addDays(c.fecha1raFactura, -1));
-  const venc = vencimientoPrimeraFacturaHogar(c);
-  const fechaOM = proximaFechaOtraMitad(c);
-  const pedido = fechaOM
-    ? `Lo que le pido ahora es completar la otra mitad de su primer mes, a más tardar el *${fmtFechaConDia(fechaOM)}*.`
-    : `Lo que le pido ahora es completar la otra mitad de su primer mes lo antes posible.`;
-  return `Con gusto le explico, ${nombre}. 😊
-
-Tigo factura en fechas fijas, y a usted le toca el día ${c.cicloFacturacion} de cada mes. Como su servicio se instaló el ${inst}, su primera factura incluye 2 partes:
-
-📅 Prorrateo: los días que ya usa el servicio, del *${inst}* al *${finPro}*
-📅 Primer mes completo: del *${fmtFechaLarga(c.fecha1raFactura)}* al *${fmtFechaLarga(venc)}*
-
-Por eso su primera factura sale más alta que su plan mensual. Es normal y solo pasa en la primera. De la segunda en adelante paga únicamente su mensualidad.
-
-${pedido} El prorrateo lo puede pagar después, hasta el *${fmtFechaLarga(venc)}*.
-
-Cualquier duda, con gusto le ayudo.`;
 }
 
 // Esquema especial: clientes cuya 1ra factura vence el día límite de comisión o después (se instalaron
@@ -3953,31 +3902,6 @@ function App() {
     return () => clearTimeout(t);
   }, [loaded, convergenciasLoaded]);
 
-  function marcarFacturaPagada(clienteId, n) {
-    const antes = clientes.find((c) => c.id === clienteId);
-    actualizarClientes((prev) =>
-      prev.map((c) =>
-        c.id === clienteId
-          ? { ...c, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada" }
-          : c
-      )
-    );
-    if (antes) {
-      const despues = { ...antes, [`f${n}_d1`]: true, [`f${n}_t15`]: true, [`f${n}_t3`]: true, [`f${n}_estado`]: "pagada" };
-      const anteriorLabel = etiquetaEstadoFactura(antes[`f${n}_estado`]);
-      if (anteriorLabel !== "pagada") {
-        registrarCambio({
-          entidad: "factura",
-          tipo: "editar",
-          etiqueta: `Factura ${n} de ${antes.nombre}`,
-          antes,
-          despues,
-          cambios: [{ campo: `f${n}_estado`, label: `Estado factura ${n}`, anterior: anteriorLabel, nuevo: "pagada" }],
-          refId: clienteId,
-        });
-      }
-    }
-  }
 
   // Cambia el estado de pago de una factura puntual: "pagada" o "" (no pagada).
   // Al marcar como pagada, silencia sus 3 avisos; al desmarcar, los reactiva por si
@@ -5377,28 +5301,6 @@ function estiloBarra(valor, meta, proyectado) {
   if (r >= 0.8) return { fill: "#D97706", track: "#FCE9C6", texto: "#B45309", tag: "◐ vas cerca" };
   return { fill: "#92400E", track: "#F4D9B0", texto: "#92400E", tag: "⚠ vas lejos" };
 }
-function BarraMeta({ valor, meta, proyectado, formato }) {
-  const fmt = formato || ((x) => x);
-  const pct = meta ? (valor / meta) * 100 : 0;
-  const e = estiloBarra(valor, meta, proyectado);
-  const falta = meta - valor;
-  return (
-    <React.Fragment>
-      <p className="text-sm mb-2" style={ { color: "#374151" } }>
-        <span className="font-semibold">{fmt(valor)}</span> de <span className="font-semibold">{fmt(meta)}</span> ·{" "}
-        {falta > 0 ? (
-          <React.Fragment>faltan <span className="font-bold" style={ { color: e.texto } }>{fmt(falta)}</span></React.Fragment>
-        ) : (
-          <span className="font-bold" style={ { color: e.texto } }>{falta === 0 ? "✓ meta cumplida" : `✓ meta superada +${fmt(-falta)}`}</span>
-        )}
-      </p>
-      <div className="w-full h-2.5 rounded-full" style={ { background: e.track } }>
-        <div className="h-2.5 rounded-full" style={ { width: `${Math.min(100, pct)}%`, background: e.fill } } />
-      </div>
-      {e.tag && <div className="text-[11px] font-semibold mt-1.5" style={ { color: e.texto } }>{e.tag}</div>}
-    </React.Fragment>
-  );
-}
 
 function LineaProyeccion({ aunEsTemprano, texto, variant }) {
   if (!aunEsTemprano && texto == null) return null;
@@ -5952,17 +5854,6 @@ function SimuladorComisionModal({ periodoKey, base, defecto, ritmo, onClose }) {
   );
 }
 
-function MiniStat({ valor, label, color, onClick }) {
-  return (
-    <button
-      onClick={onClick}
-      className="bg-white rounded-lg border border-gray-200 shadow-sm px-3 py-3 text-left hover:border-gray-300 transition-colors"
-    >
-      <div className="text-xl font-mono font-semibold" style={ { color } }>{valor}</div>
-      <div className="text-[11px] mt-0.5 leading-tight" style={ { color: "#5A6680" } }>{label}</div>
-    </button>
-  );
-}
 
 // Input de meta que solo confirma el cambio (y por lo tanto solo registra en la
 // bitácora) al presionar Enter, salir del campo, o tocar el botón ✓ — no en cada
@@ -10530,17 +10421,6 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   }
 
   const itemDeAlerta = (a) => ({ t: a.esMovil ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key });
-  function iniciarEnvioEnCadena(lista0) {
-    // Los que ya se abrieron antes se saltan (se revisan tocando su botón de enviar).
-    const lista = lista0.filter((a) => !aperturaDe(itemDeAlerta(a)));
-    if (!lista.length) return;
-    setColaEnvio(lista);
-    setIndiceEnvio(0);
-    setContadorEnviados(0);
-    setResumenEnvio(null);
-    anotarApertura(itemDeAlerta(lista[0]));
-    window.location.href = whatsappLink(lista[0].cliente, lista[0].milestone);
-  }
 
   function avanzarEnvio(marcarComoEnviado) {
     const actual = colaEnvio[indiceEnvio];
@@ -10987,17 +10867,6 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   );
 }
 
-function ultimosMeses(count) {
-  const MESES_CAP = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
-  const hoy = new Date();
-  const out = [];
-  for (let i = 0; i < count; i++) {
-    const d = new Date(hoy.getFullYear(), hoy.getMonth() - i, 1);
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    out.push({ key, label: MESES_CAP[d.getMonth()], anio: d.getFullYear() });
-  }
-  return out;
-}
 
 function FiltroCampo({ label, children }) {
   return (
