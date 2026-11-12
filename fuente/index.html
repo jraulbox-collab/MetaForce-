@@ -5005,12 +5005,24 @@ function App() {
         )}
         {tab === "alertas" && (
           <React.Fragment>
-          {resumenCadena && (
-            <div className="flex items-center justify-between gap-3 rounded-lg p-4 mb-3 flex-wrap" style={ { background: "#E9F7EF", border: "1px solid #BEE8CE" } }>
-              <p className="text-sm" style={ { color: "#166534" } }>✅ Envío terminado: <span className="font-semibold">{resumenCadena.env} de {resumenCadena.total}</span> mensajes marcados como enviados.</p>
-              <button type="button" onClick={() => setResumenCadena(null)} className="text-sm font-bold" style={ { color: "#166534", minHeight: 40 } }>Cerrar</button>
+          {resumenCadena && (() => {
+            const quedan = conteoMsj ? conteoMsj.total : null;
+            const saltados = Math.max(0, resumenCadena.total - resumenCadena.env);
+            return (
+            <div className="rounded-lg p-4 mb-3" style={ { background: "#E9F7EF", border: "1px solid #BEE8CE", color: "#166534" } }>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-base font-bold">{quedan === 0 ? "🎉 Listo por hoy" : "✅ Envío terminado"}</p>
+                <button type="button" onClick={() => setResumenCadena(null)} className="text-sm font-bold" style={ { color: "#166534", minHeight: 40 } }>Cerrar</button>
+              </div>
+              <div className="text-sm mt-1 flex flex-wrap gap-x-4 gap-y-1">
+                <span>📤 Enviados: <b>{resumenCadena.env}</b></span>
+                <span>⏭️ Saltados: <b>{saltados}</b></span>
+                {quedan !== null && <span>📋 Pendientes ahora: <b>{quedan}</b></span>}
+              </div>
+              {quedan === 0 && <p className="text-sm mt-1">No te queda ningún mensaje pendiente.</p>}
             </div>
-          )}
+            );
+          })()}
           {(() => {
             const { nCobros, nVentas, nInstal, total } = conteoMsj;
             const filas = [
