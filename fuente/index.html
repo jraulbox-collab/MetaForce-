@@ -8691,9 +8691,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             <div className="text-sm font-bold" style={ { color: "#001E62" } }>
               <span style={ { color: "#B45309", fontSize: 32, fontWeight: 800, lineHeight: 1 } }>{enRiesgoHoy.length}</span> por cobrar
             </div>
-            {sumaPorCobrar > 0 && (
-              <div className="text-sm font-semibold mt-1" style={ { color: "#B45309" } }>{fmtMonto(sumaPorCobrar)} por cobrar</div>
-            )}
             <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
               Si no pagan, no cuentan
               {periodoRescateActivo && fechaLimitePrimeraFactura(periodoRescateActivo) ? ` · vence el ${fmtFechaLarga(fechaLocalISO(fechaLimitePrimeraFactura(periodoRescateActivo)))}` : ""}
@@ -8795,9 +8792,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                       </span>
                     </div>
                     <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
-                      Total a cobrar: <b className="font-mono">{fmtMonto(rescatePones)}</b>
-                      {rescateCruceTramo && <span> · 📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}</span>}
-                      {rescateCruceAcelerador && <span> · {comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)" : "🐢 Perderías el acelerador"}</span>}
+                      {rescateCruceTramo && <span>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}</span>}
+                      {rescateCruceAcelerador && <span>{rescateCruceTramo ? " · " : ""}{comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)" : "🐢 Perderías el acelerador"}</span>}
                     </div>
                     {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && (
                       <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>
@@ -8810,7 +8806,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                       <span>✅ <b>Ya tienes el máximo posible</b> con tu lista ({fmtMonto(consejoEnVivo.total)}). Marcar a más no sube más tu comisión.</span>
                     ) : (
                       <span className="flex items-center justify-between gap-2">
-                        <span>💡 <b>Consejo:</b> marca a {consejoEnVivo.agregados.slice(0, 3).map((c) => tituloEs(c.nombre || "").split(" ")[0]).join(", ")}{consejoEnVivo.agregados.length > 3 ? ` y ${consejoEnVivo.agregados.length - 3} más` : ""} y subes <b className="font-mono">+{fmtMonto(consejoEnVivo.sube)}</b> (a {fmtMonto(consejoEnVivo.nuevo)}){consejoEnVivo.cuesta > 0 ? `, cobrando ${fmtMonto(consejoEnVivo.cuesta)}` : ""}.</span>
+                        <span>💡 <b>Consejo:</b> marca a {consejoEnVivo.agregados.slice(0, 3).map((c) => tituloEs(c.nombre || "").split(" ")[0]).join(", ")}{consejoEnVivo.agregados.length > 3 ? ` y ${consejoEnVivo.agregados.length - 3} más` : ""} y subes <b className="font-mono">+{fmtMonto(consejoEnVivo.sube)}</b> (a {fmtMonto(consejoEnVivo.nuevo)}){consejoEnVivo.agregados.length === 1 ? " con 1 cliente" : ` con ${consejoEnVivo.agregados.length} clientes`}.</span>
                         <button type="button" onClick={marcarSugeridos} className="shrink-0 font-bold rounded-lg px-2.5" style={ { minHeight: 36, background: "#14532D", color: "#fff" } }>Marcar</button>
                       </span>
                     )}
@@ -8819,7 +8815,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 {rescateSeleccionados.length > 0 ? (
                   rescateConfirmando ? (
                     <div className="mt-2">
-                      <p className="text-xs font-bold mb-1.5" style={ { color: "#001E62" } }>¿Confirmas regularizar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"}? Pendiente: {fmtMonto(rescatePones)}.</p>
+                      <p className="text-xs font-bold mb-1.5" style={ { color: "#001E62" } }>¿Confirmas que {rescateSeleccionados.length === 1 ? "este cliente ya regularizó su 1ra factura" : `estos ${rescateSeleccionados.length} clientes ya regularizaron su 1ra factura`}?</p>
                       <div className="flex gap-2">
                         <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✓ Sí, confirmar</button>
                         <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
@@ -8874,7 +8870,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-sm truncate text-left font-semibold underline underline-offset-2" style={ { color: "#0B4A99" } }>{c.nombre}</button>
                           </span>
                           <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
-                            le faltan {fmtMonto(montoFaltanteCliente(c))}
+                            {c.fechaInstalacion ? `Instalado el ${fmtFechaLarga(c.fechaInstalacion)}` : ""}
                           </span>
                         </div>
                         {clienteProrrateoAlto(c) && (
@@ -8919,7 +8915,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={ idsMovilHoy.has(c.id) ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{idsMovilHoy.has(c.id) ? "Móvil" : "Hogar"}</span>
                           </span>
                           <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
-                            {idsMovilHoy.has(c.id) ? "1ra factura completa" : `le faltan ${fmtMonto(montoFaltanteCliente(c))}`}
+                            {idsMovilHoy.has(c.id) ? "Línea Móvil" : c.fechaInstalacion ? `Instalado el ${fmtFechaLarga(c.fechaInstalacion)}` : ""}
                           </span>
                         </div>
                         {!idsMovilHoy.has(c.id) && clienteProrrateoAlto(c) && (
