@@ -3273,6 +3273,9 @@ function App() {
       memoriaCobros.retorno = true;
       comisionRestaurar.current = true;
       restaurarRef.current = scrollPorTab.current.dashboard || 0;
+      comisionPasoSimple.current = false;
+      navPop.current = true; // el paso de historial lo agregamos aquí, no el cambio de pestaña
+      try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {}
       setTab("dashboard");
       setComisionAbierta(true);
       return;
@@ -3298,6 +3301,8 @@ function App() {
     function onPop(e) {
       const st = e.state;
       if (!st || !st.mf || !st.tab) return;
+      // La herramienta "Asegurar comisión" tiene su propio paso en el historial: atrás la cierra sola.
+      if (st.comision) { memoriaCobros.retorno = true; comisionRestaurar.current = true; comisionPasoSimple.current = true; setComisionAbierta(true); } else setComisionAbierta(false);
       if (st.tab === tabRef.current) return;
       if (tabRef.current === "nuevo" && JSON.stringify(formRefActual.current) !== formInicialRef.current) {
         if (!window.confirm("Tienes cambios sin guardar. ¿Salir de todos modos?")) {
@@ -4222,6 +4227,18 @@ function App() {
   const comisionRef = useRef(null);
   const comisionScroll = useRef(0);
   const comisionRestaurar = useRef(false);
+  const comisionPasoSimple = useRef(true); // true: el paso de historial de la herramienta viene justo después del Dashboard
+  const cerrarComision = () => {
+    memoriaCobros.rescateSeleccion = {};
+    let hayPaso = false;
+    try { hayPaso = !!(window.history.state && window.history.state.comision); } catch (e) {}
+    if (hayPaso && comisionPasoSimple.current) window.history.back();
+    else {
+      // El paso anterior del historial no es el Dashboard (vienes de una ficha): no se retrocede, solo se limpia este paso.
+      if (hayPaso) { try { window.history.replaceState({ mf: true, tab: "dashboard", clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} }
+      setComisionAbierta(false);
+    }
+  };
   const guardarScrollComision = () => { comisionScroll.current = comisionRef.current ? comisionRef.current.scrollTop : 0; };
   useEffect(() => {
     if (!comisionAbierta) return;
@@ -4238,7 +4255,7 @@ function App() {
   useEffect(() => { if (comisionAbierta && tab !== "dashboard") setComisionAbierta(false); }, [tab]);
   useEffect(() => {
     if (!comisionAbierta) return undefined;
-    const tecla = (ev) => { if (ev.key === "Escape") setComisionAbierta(false); };
+    const tecla = (ev) => { if (ev.key === "Escape") cerrarComision(); };
     window.addEventListener("keydown", tecla);
     return () => window.removeEventListener("keydown", tecla);
   }, [comisionAbierta]);
@@ -4882,7 +4899,7 @@ function App() {
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
             onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
-            onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; setComisionAbierta(true); } }
+            onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; comisionPasoSimple.current = true; try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} setComisionAbierta(true); } }
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
@@ -5244,7 +5261,7 @@ function App() {
       {comisionAbierta && (
         <div ref={comisionRef} className="fixed inset-0 overflow-y-auto" style={ { zIndex: 45, background: "#F3F6FB" } } role="dialog" aria-modal="true" aria-label="Asegurar comisión">
           <div className="sticky top-0 flex items-center gap-3 px-4" style={ { zIndex: 30, minHeight: 56, background: "#001E62", color: "#fff", paddingTop: "env(safe-area-inset-top)" } }>
-            <button type="button" onClick={() => { memoriaCobros.rescateSeleccion = {}; setComisionAbierta(false); } } className="font-bold text-sm rounded-lg px-3" style={ { minHeight: 40, background: "#fff", color: "#001E62" } }>← Volver</button>
+            <button type="button" onClick={cerrarComision} className="font-bold text-sm rounded-lg px-3" style={ { minHeight: 40, background: "#fff", color: "#001E62" } }>← Volver</button>
             <span className="font-bold text-base">💰 Asegurar comisión</span>
           </div>
           <div className="max-w-3xl mx-auto px-4 pt-4 pb-24">
@@ -8554,6 +8571,36 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     return comisionCon.total - comisionBase.total;
   }
 
+  // Cuánto subiría tu comisión si SOLO ese cliente paga (los más valiosos primero).
+  const aportePorCliente = useMemo(() => {
+    const m = new Map();
+    if (!periodoRescateActivo || !comisionConfirmadaHoy.completo) return m;
+    rescateCandidatos.forEach((c) => {
+      let g = null;
+      try { g = calcularGananciaPorRescate(c); } catch (e) { g = null; }
+      m.set(c.id, g !== null && g > 0 ? g : 0);
+    });
+    return m;
+  }, [rescateCandidatos, comisionConfirmadaHoy, periodoRescateActivo]);
+  // Lo que aporta cada cliente SUMADO a los que ya marcaste (la comisión sube por saltos: el grupo es lo que la mueve).
+  const aporteConMarcados = useMemo(() => {
+    const m = new Map();
+    if (!periodoRescateActivo || !comisionConfirmadaHoy.completo || rescateCandidatos.length === 0) return m;
+    const sel = rescateSeleccionados;
+    rescateCandidatos.forEach((c) => {
+      try {
+        const con = sel.some((x) => x.id === c.id) ? sel : [...sel, c];
+        const sin = sel.filter((x) => x.id !== c.id);
+        const a = calcularComisionConSubconjuntoHoy(con);
+        const b = calcularComisionConSubconjuntoHoy(sin);
+        if (a && b && a.completo && b.completo) m.set(c.id, a.total - b.total);
+      } catch (e) {}
+    });
+    return m;
+  }, [rescateCandidatos, rescateSeleccionados, comisionConfirmadaHoy, periodoRescateActivo]);
+  const porAporte = (arr) => [...arr].sort((a, b) => (aportePorCliente.get(b.id) || 0) - (aportePorCliente.get(a.id) || 0));
+  const vencidosVista = porAporte(rescateVencidosOrdenados);
+  const enPlazoVista = porAporte(rescateEnPlazoOrdenados);
   const vistaCobros = (
     <div>
       {periodoRescateActivo && rescateCandidatos.length === 0 && (
@@ -8747,11 +8794,14 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 </button>
               )}
 
+              {Array.from(aporteConMarcados.values()).some((v) => v > 0.005) && (
+                <p className="text-[11px] mb-2" style={ { color: "#5A6680" } }>Cada cliente muestra cuánto sumaría a tu comisión junto con los que ya marcaste.</p>
+              )}
               {rescateVencidosOrdenados.length > 0 && (
                 <>
                   <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⛔ Ya vencidos — regularízalos de inmediato</div>
                   <div className="flex flex-col gap-2 mb-3">
-                    {rescateVencidosOrdenados.map((c) => (
+                    {vencidosVista.map((c) => (
                       <label
                         key={c.id}
                         className="block px-3 py-2 rounded-md border cursor-pointer"
@@ -8779,6 +8829,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
                           </div>
                         )}
+                        {(aporteConMarcados.get(c.id) || 0) > 0.005 && (
+                          <div className="mt-1.5 text-xs font-bold" style={ { color: "#166534" } }>💰 {rescateSeleccion[c.id] ? "Aporta" : "Sumaría"} {fmtMonto(aporteConMarcados.get(c.id))} a tu comisión{rescateSeleccion[c.id] ? "" : " si lo marcas"}</div>
+                        )}
                         {c.telefono && (
                           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
                         )}
@@ -8792,7 +8845,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <>
                   <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo — conviene asegurarlos ya</div>
                   <div className="flex flex-col gap-2 mb-4">
-                    {rescateEnPlazoOrdenados.map((c) => (
+                    {enPlazoVista.map((c) => (
                       <label
                         key={c.id}
                         className="block px-3 py-2 rounded-md border cursor-pointer"
@@ -8820,6 +8873,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
                           </div>
+                        )}
+                        {(aporteConMarcados.get(c.id) || 0) > 0.005 && (
+                          <div className="mt-1.5 text-xs font-bold" style={ { color: "#166534" } }>💰 {rescateSeleccion[c.id] ? "Aporta" : "Sumaría"} {fmtMonto(aporteConMarcados.get(c.id))} a tu comisión{rescateSeleccion[c.id] ? "" : " si lo marcas"}</div>
                         )}
                         {c.telefono && (
                           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
@@ -9087,18 +9143,39 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 : `${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} para sumar más`
               : "";
           const nPorCobrar = rescateCandidatos.length;
-          filaRescate = fila(
-            hayPend ? "⏳" : "✓",
-            mesPagoNombre,
-            !comisionConfirmadaHoy.completo
-              ? "Faltan cargar las metas de ese ciclo"
-              : hayPend
-              ? `De tus ventas de ${nombreMes(periodoRescateActivo)} · 📋 ${nPorCobrar} por cobrar${textoPlazo ? " · ⏳ " + textoPlazo : ""}`
-              : `De tus ventas de ${nombreMes(periodoRescateActivo)} · todo pagado y seguro`,
-            comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—",
-            hayPend && comisionMaximaHoy.completo ? `hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan · abrir ›` : hayPend ? "abrir ›" : "",
-            hayPend && onAbrirComision ? onAbrirComision : onIrACobros
-          );
+          if (hayPend && onAbrirComision && comisionConfirmadaHoy.completo) {
+            filaRescate = (
+              <div className="px-3 py-3">
+                <button type="button" onClick={onAbrirComision} className="w-full text-left rounded-xl p-3" style={ { background: "#FFF6E3", border: "2px solid #B45309" } }>
+                  <div className="text-[11px] font-extrabold uppercase tracking-wide" style={ { color: "#B45309" } }>🎯 Para rescatar · todavía puedes sumar</div>
+                  <div className="flex items-end justify-between gap-3 mt-1.5">
+                    <span className="min-w-0">
+                      <span className="block text-base font-bold" style={ { color: "#001E62" } }>{mesPagoNombre}</span>
+                      <span className="block text-xs" style={ { color: "#5A6680" } }>De tus ventas de {nombreMes(periodoRescateActivo)}</span>
+                    </span>
+                    <span className="text-right shrink-0">
+                      <span className="block text-[11px]" style={ { color: "#5A6680" } }>Confirmado hoy</span>
+                      <span className="block text-lg font-bold font-mono" style={ { color: "#001E62" } }>{fmtMonto(comisionConfirmadaHoy.total)}</span>
+                      {comisionMaximaHoy.completo && <span className="block text-xs font-bold font-mono" style={ { color: "#B45309" } }>hasta {fmtMonto(comisionMaximaHoy.total)} si pagan</span>}
+                    </span>
+                  </div>
+                  <div className="text-xs font-semibold mt-2" style={ { color: "#B45309" } }>📋 {nPorCobrar} por cobrar{textoPlazo ? " · ⏳ " + textoPlazo : ""}</div>
+                  <div className="mt-2 rounded-lg text-center text-white font-bold text-sm flex items-center justify-center" style={ { minHeight: 44, background: "#001E62" } }>Abrir herramienta de cobro ›</div>
+                </button>
+              </div>
+            );
+          } else {
+            filaRescate = fila(
+              hayPend ? "⏳" : "✓",
+              mesPagoNombre,
+              !comisionConfirmadaHoy.completo
+                ? "Faltan cargar las metas de ese ciclo"
+                : `De tus ventas de ${nombreMes(periodoRescateActivo)} · ${hayPend ? "asegurado hasta hoy" : "todo pagado y seguro"}`,
+              comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—",
+              textoPlazo,
+              hayPend && onAbrirComision ? onAbrirComision : onIrACobros
+            );
+          }
         }
         return (
           <div className="mb-6">
