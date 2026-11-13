@@ -8797,7 +8797,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
                 <>
-              <div className="fixed left-0 right-0 bottom-0" style={ { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "#fff", borderTop: "2px solid #001E62", boxShadow: "0 -6px 16px rgba(0,30,98,.18)", padding: "10px 16px calc(14px + env(safe-area-inset-bottom))", maxHeight: "70vh", overflowY: "auto" } }>
+              <div className="fixed left-0 right-0 bottom-0" style={ { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "#fff", borderTop: "2px solid #001E62", borderRadius: "20px 20px 0 0", boxShadow: "0 -8px 24px rgba(0,30,98,.22)", padding: "8px 16px max(28px, calc(14px + env(safe-area-inset-bottom)))", maxHeight: "72vh", overflowY: "auto" } }>
+                <div aria-hidden="true" style={ { width: 44, height: 5, borderRadius: 3, background: "#C5CEDF", margin: "0 auto 8px" } } />
                 {rescateConfirmando ? (
                   <div>
                     <p className="text-sm font-bold mb-2" style={ { color: "#001E62" } }>¿Confirmas que {rescateSeleccionados.length === 1 ? "este cliente ya regularizó su 1ra factura" : `estos ${rescateSeleccionados.length} clientes ya regularizaron su 1ra factura`}?</p>
@@ -8809,18 +8810,24 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 ) : (
                   <>
                     <div className="flex items-center justify-between gap-3">
-                      <button type="button" onClick={() => setBarraComAbierta((v) => !v)} aria-expanded={barraComAbierta} className="text-left min-w-0 flex-1" style={ { background: "transparent", border: 0, padding: 0 } }>
-                        <div className="text-[11px] font-bold" style={ { color: "#5A6680" } }>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : "Sin marcar"} · {barraComAbierta ? "ocultar detalle ▼" : "toca para ver el detalle ▲"}</div>
-                        <div className="font-mono font-extrabold" style={ { fontSize: 17, color: "#001E62" } }>
+                      <button type="button" onClick={() => setBarraComAbierta((v) => !v)} aria-expanded={barraComAbierta} className="text-left min-w-0 flex-1" style={ { background: "transparent", border: 0, padding: 0, minHeight: 64 } }>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-extrabold" style={ { color: "#001E62", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : "Sin marcar"}</span>
+                          <span className="text-[11px] font-bold rounded-full px-2 py-0.5" style={ { background: "#EEF3FB", color: "#001E62", whiteSpace: "nowrap" } }>{barraComAbierta ? "▼ Ocultar" : "▲ Detalle"}</span>
+                        </div>
+                        <div className="font-mono font-extrabold mt-0.5" style={ { fontSize: 20, color: "#001E62", whiteSpace: "nowrap" } }>
                           {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
                           {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
                         </div>
                         {rescateSeleccionados.length > 0
-                          ? <div className="text-xs font-extrabold" style={ { color: "#166534" } }>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}</div>
+                          ? <div className="text-sm font-extrabold" style={ { color: "#166534" } }>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""} <span className="text-xs font-bold" style={ { color: "#5A6680" } }>a tu comisión</span></div>
                           : comisionMaximaHoy.completo && <div className="text-xs font-bold" style={ { color: "#B45309" } }>Hasta {fmtMonto(comisionMaximaHoy.total)} si pagan todos</div>}
                       </button>
                       {rescateSeleccionados.length > 0 && (
-                        <button type="button" onClick={() => setRescateConfirmando(true)} className="shrink-0 rounded-xl text-white font-extrabold text-sm px-4" style={ { minHeight: 50, background: "#001E62" } }>✅ Confirmar ({rescateSeleccionados.length})</button>
+                        <button type="button" onClick={() => setRescateConfirmando(true)} className="shrink-0 rounded-xl text-white font-extrabold px-4 flex flex-col items-center justify-center" style={ { minHeight: 56, minWidth: 116, background: "#001E62", lineHeight: 1.15 } }>
+                          <span style={ { fontSize: 18 } } aria-hidden="true">✅</span>
+                          <span className="text-sm">Confirmar ({rescateSeleccionados.length})</span>
+                        </button>
                       )}
                     </div>
                     {barraComAbierta && (
@@ -8986,7 +8993,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
-      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 400 : 170 } } aria-hidden="true" />}
+      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 440 : 200 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
