@@ -8657,7 +8657,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       </div>
     );
   };
-  const porAporte = (arr) => [...arr].sort((a, b) => (aportePorCliente.get(b.id) || 0) - (aportePorCliente.get(a.id) || 0));
+  // Orden por lo que vale cada cliente: línea Móvil primero, luego mayor plan mensual (estable: no salta al marcar).
+  const valorCliente = (c) => (idsMovilHoy.has(c.id) ? 1e9 : 0) + (Number(c.montoMensual) || 0);
+  const porAporte = (arr) => [...arr].sort((a, b) => valorCliente(b) - valorCliente(a));
   const vencidosVista = porAporte(rescateVencidosOrdenados);
   const enPlazoVista = porAporte(rescateEnPlazoOrdenados);
   const vistaCobros = (
