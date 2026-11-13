@@ -2827,6 +2827,15 @@ function App() {
     } catch (e) {}
   };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
+  // Último contacto por cliente: la fecha más reciente de la bitácora (envíos marcados, chats abiertos).
+  const ultimoContacto = useMemo(() => {
+    const m = {};
+    (envios || []).forEach((e) => {
+      if (!e || !e.clienteId || !e.fecha || (e.tipo !== "marcar" && e.tipo !== "abrir" && e.tipo !== "contacto")) return;
+      if (!m[e.clienteId] || e.fecha > m[e.clienteId]) m[e.clienteId] = e.fecha;
+    });
+    return m;
+  }, [envios]);
   const [seccionMensajes, setSeccionMensajes] = useState(() => {
     try { const v = localStorage.getItem("antichurn_seccion_mensajes"); return ["todos", "cobros", "ventas", "instalacion"].includes(v) ? v : "todos"; } catch (e) { return "todos"; }
   });
@@ -5266,6 +5275,8 @@ function App() {
           </div>
           <div className="max-w-3xl mx-auto px-4 pt-4 pb-24">
       <Dashboard
+        ultimoContacto={ultimoContacto}
+        onContacto={(c) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "comision" })}
         umbralProrrateo={umbralProrrateo}
         vista="cobros"
         stats={stats}
@@ -7615,7 +7626,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onAbrirComision, onIrAVentas, onVerCliente }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onAbrirComision, onIrAVentas, onVerCliente, ultimoContacto, onContacto }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -8662,6 +8673,38 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const porAporte = (arr) => [...arr].sort((a, b) => valorCliente(b) - valorCliente(a));
   const vencidosVista = porAporte(rescateVencidosOrdenados);
   const enPlazoVista = porAporte(rescateEnPlazoOrdenados);
+  // Texto corto de cuándo fue el último contacto con el cliente (según la bitácora de envíos).
+  const textoContacto = (id) => {
+    const f = ultimoContacto && ultimoContacto[id];
+    if (!f) return { t: "💬 Sin contactar", c: "#B45309" };
+    const d = Math.max(0, Math.round((Date.now() - new Date(f).getTime()) / 86400000));
+    return { t: d === 0 ? "💬 Contactado hoy" : d === 1 ? "💬 Contactado ayer" : `💬 Contactado hace ${d} días`, c: "#166534" };
+  };
+  const filaCobro = (c) => {
+    const movil = idsMovilHoy.has(c.id);
+    const sel = !!rescateSeleccion[c.id];
+    const fechaCorta = movil ? "Línea Móvil" : c.fechaInstalacion ? new Date(c.fechaInstalacion + "T12:00:00").toLocaleDateString("es", { day: "numeric", month: "short" }).replace(".", "") : "";
+    const plan = Number(c.montoMensual) > 0 ? `${fmtMonto(c.montoMensual)}/mes` : "";
+    const ct = textoContacto(c.id);
+    return (
+      <label key={c.id} className="flex items-start gap-3 px-3 py-3 rounded-xl border cursor-pointer" style={ { borderColor: sel ? "#0072CE" : "#DFE5EF", background: sel ? "#E3EDFA" : "white" } }>
+        <input type="checkbox" checked={sel} onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))} style={ { width: 24, height: 24, marginTop: 2, flexShrink: 0 } } />
+        <div className="flex-1 min-w-0">
+          <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-left font-extrabold underline underline-offset-2" style={ { color: "#0B4A99", fontSize: 17, lineHeight: 1.2 } }>{c.nombre}</button>
+          <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs font-bold" style={ { color: "#5A6680" } }>
+            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ movil ? { background: "#0E7C66", color: "#fff" } : { background: "#001E62", color: "#fff" } }>{movil ? "Móvil" : "Hogar"}</span>
+            {plan && <span>{plan}</span>}
+            {fechaCorta && <span>· {fechaCorta}</span>}
+            <span style={ { color: ct.c } }>· {ct.t}</span>
+          </div>
+          {chipsCliente(c)}
+        </div>
+        {c.telefono && (
+          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" aria-label="Abrir chat de WhatsApp" onClick={(e) => { e.stopPropagation(); if (onContacto) onContacto(c); }} className="shrink-0 flex items-center justify-center rounded-xl" style={ { width: 48, height: 48, border: "2px solid #001E62", fontSize: 22 } }>💬</a>
+        )}
+      </label>
+    );
+  };
   const vistaCobros = (
     <div>
       {periodoRescateActivo && rescateCandidatos.length === 0 && (
@@ -8904,32 +8947,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⛔ Ya vencidos — regularízalos de inmediato</div>
                   <div className="flex flex-col gap-2 mb-3">
                     {vencidosVista.map((c) => (
-                      <label
-                        key={c.id}
-                        className="block px-3 py-2 rounded-md border cursor-pointer"
-                        style={ {
-                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#DFE5EF",
-                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
-                        } }
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-2 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={!!rescateSeleccion[c.id]}
-                              onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                            />
-                            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-sm truncate text-left font-semibold underline underline-offset-2" style={ { color: "#0B4A99" } }>{c.nombre}</button>
-                          </span>
-                          <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
-                            {c.fechaInstalacion ? `Instalado el ${fmtFechaLarga(c.fechaInstalacion)}` : ""}
-                          </span>
-                        </div>
-                        {chipsCliente(c)}
-                        {c.telefono && (
-                          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
-                        )}
-                      </label>
+                      filaCobro(c)
                     ))}
                   </div>
                 </>
@@ -8937,36 +8955,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
               {rescateEnPlazoOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo — conviene asegurarlos ya</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo{rescateDiasRestantes !== null && rescateDiasRestantes >= 0 ? ` · quedan ${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"}` : ""} — conviene asegurarlos ya</div>
                   <div className="flex flex-col gap-2 mb-4">
                     {enPlazoVista.map((c) => (
-                      <label
-                        key={c.id}
-                        className="block px-3 py-2 rounded-md border cursor-pointer"
-                        style={ {
-                          borderColor: rescateSeleccion[c.id] ? "#0072CE" : "#DFE5EF",
-                          background: rescateSeleccion[c.id] ? "#E3EDFA" : "white",
-                        } }
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-2 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={!!rescateSeleccion[c.id]}
-                              onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))}
-                            />
-                            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-sm truncate text-left font-semibold underline underline-offset-2" style={ { color: "#0B4A99" } }>{c.nombre}</button>
-                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0" style={ idsMovilHoy.has(c.id) ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{idsMovilHoy.has(c.id) ? "Móvil" : "Hogar"}</span>
-                          </span>
-                          <span className="text-xs font-mono font-bold shrink-0" style={ { color: "#001E62" } }>
-                            {idsMovilHoy.has(c.id) ? "Línea Móvil" : c.fechaInstalacion ? `Instalado el ${fmtFechaLarga(c.fechaInstalacion)}` : ""}
-                          </span>
-                        </div>
-                        {chipsCliente(c)}
-                        {c.telefono && (
-                          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
-                        )}
-                      </label>
+                      filaCobro(c)
                     ))}
                   </div>
                 </>
