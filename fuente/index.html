@@ -2828,7 +2828,7 @@ function App() {
   };
   const periodoActualApp = periodoComision(fechaLocalISO(new Date()));
   const [seccionMensajes, setSeccionMensajes] = useState(() => {
-    try { const v = localStorage.getItem("antichurn_seccion_mensajes"); return ["todos", "comision", "cobros", "ventas", "instalacion"].includes(v) ? v : "todos"; } catch (e) { return "todos"; }
+    try { const v = localStorage.getItem("antichurn_seccion_mensajes"); return ["todos", "cobros", "ventas", "instalacion"].includes(v) ? v : "todos"; } catch (e) { return "todos"; }
   });
   // Mensajes pospuestos: { clave: { hasta: "AAAA-MM-DD", nombre } }. Reaparecen solos al llegar la fecha.
   const [pospuestos, setPospuestos] = useState(() => {
@@ -4202,12 +4202,20 @@ function App() {
   // Si estás en un filtro que se quedó sin nada, vuelve solo a "Todos".
   useEffect(() => {
     if (!conteoMsj) return;
-    const vacio = { cobros: conteoMsj.nCobros === 0, ventas: conteoMsj.nVentas === 0, instalacion: conteoMsj.nInstal === 0, comision: !conteoMsj.hayComision };
+    const vacio = { cobros: conteoMsj.nCobros === 0, ventas: conteoMsj.nVentas === 0, instalacion: conteoMsj.nInstal === 0 };
     if (vacio[seccionMensajes]) setSeccionMensajes("todos");
   }, [conteoMsj && conteoMsj.nCobros, conteoMsj && conteoMsj.nVentas, conteoMsj && conteoMsj.nInstal, conteoMsj && conteoMsj.hayComision, seccionMensajes]);
   const pospuestosActivos = Object.keys(pospuestos).filter((k) => estaPospuesto(k));
   // ---- Envío en cadena unificado (Cobros + Instalación + Ventas) ----
   // La cola se guarda en esta pestaña del navegador: si al volver de WhatsApp la app se recarga, sigue donde iba.
+  // Herramienta "Asegurar comisión" (antes vivía dentro de Mensajes): se abre a pantalla completa desde el Dashboard.
+  const [comisionAbierta, setComisionAbierta] = useState(false);
+  useEffect(() => {
+    if (!comisionAbierta) return undefined;
+    const tecla = (ev) => { if (ev.key === "Escape") setComisionAbierta(false); };
+    window.addEventListener("keydown", tecla);
+    return () => window.removeEventListener("keydown", tecla);
+  }, [comisionAbierta]);
   const [cadena, setCadena] = useState(() => {
     try { return JSON.parse(sessionStorage.getItem("mf-cadena") || "null"); } catch (e) { return null; }
   });
@@ -4848,6 +4856,7 @@ function App() {
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
             onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
+            onAbrirComision={() => setComisionAbierta(true)}
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
@@ -4904,8 +4913,8 @@ function App() {
         {tab === "detalle" && (
           <ClienteDetalle
             cliente={clienteDetalle}
-            onVolver={() => volverA(origenDetalle)}
-            volverLabel={origenDetalle === "alertas" ? "← Volver a Cobros" : origenDetalle === "dashboard" ? "← Volver al Dashboard" : "← Volver a Clientes"}
+            onVolver={() => { if (origenDetalle === "comision") { volverA("dashboard"); setComisionAbierta(true); } else volverA(origenDetalle); } }
+            volverLabel={origenDetalle === "comision" ? "← Volver a Comisión" : origenDetalle === "alertas" ? "← Volver a Cobros" : origenDetalle === "dashboard" ? "← Volver al Dashboard" : "← Volver a Clientes"}
             onEditar={startEdit}
             onMarcarPagada={pedirMarcarPagada}
             onActualizarEstadoFactura={pedirCambioFactura}
@@ -4978,9 +4987,9 @@ function App() {
               </div>
             );
           })()}
-          {(conteoMsj.total > 0 || conteoMsj.hayComision) && (
+          {conteoMsj.total > 0 && (
           <div className="flex gap-2 mb-4 overflow-x-auto" role="tablist" data-no-swipe="" style={ { WebkitOverflowScrolling: "touch" } }>
-            {[["todos", "Todos", conteoMsj.total], ["comision", "💰 Comisión", null], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].filter(([k, , n]) => k === "todos" || (k === "comision" ? conteoMsj.hayComision : n > 0)).map(([k, t, n]) => (
+            {[["todos", "Todos", conteoMsj.total], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].filter(([k, , n]) => k === "todos" || n > 0).map(([k, t, n]) => (
               <button
                 key={k}
                 type="button"
@@ -5055,31 +5064,6 @@ function App() {
           )}
           {["todos", "comision", "cobros"].includes(seccionMensajes) && (
           <div style={ { order: 1 } }>
-          <Dashboard
-            umbralProrrateo={umbralProrrateo}
-            vista="cobros"
-            stats={stats}
-            clientes={clientesActivos}
-            metas={metas}
-            onActualizarMeta={actualizarMeta}
-            convergencias={convergencias}
-            onNuevo={() => setMostrarSelectorNuevo(true)}
-            onActualizarEstadoFactura={actualizarEstadoFactura}
-            onCopiarSuscriptor={copySuscriptor}
-            copiedSubKey={copiedSubKey}
-            onDescartarCliente={cancelarCliente}
-            onConfirmarRescate={confirmarRescate}
-            onMarcarMovilPagada={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
-            onVerClientes={(payload) => {
-              setSaltarAMes({ ...payload, token: Date.now() });
-              navegarA("clientes");
-            } }
-            onVerCliente={(c) => {
-              setOrigenDetalle("alertas");
-              setClienteDetalleId(c.id);
-              navegarA("detalle");
-            } }
-          />
           {seccionMensajes === "todos" && (
             <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
           )}
@@ -5230,6 +5214,43 @@ function App() {
             setAutenticado(false);
           } }
         />
+      )}
+      {comisionAbierta && (
+        <div className="fixed inset-0 overflow-y-auto" style={ { zIndex: 45, background: "#F3F6FB" } } role="dialog" aria-modal="true" aria-label="Asegurar comisión">
+          <div className="sticky top-0 flex items-center gap-3 px-4" style={ { zIndex: 30, height: 56, background: "#001E62", color: "#fff", paddingTop: "env(safe-area-inset-top)" } }>
+            <button type="button" onClick={() => setComisionAbierta(false)} className="font-bold text-sm rounded-lg px-3" style={ { minHeight: 40, background: "#fff", color: "#001E62" } }>← Volver</button>
+            <span className="font-bold text-base">💰 Asegurar comisión</span>
+          </div>
+          <div className="max-w-3xl mx-auto px-4 pt-4 pb-24">
+      <Dashboard
+        umbralProrrateo={umbralProrrateo}
+        vista="cobros"
+        stats={stats}
+        clientes={clientesActivos}
+        metas={metas}
+        onActualizarMeta={actualizarMeta}
+        convergencias={convergencias}
+        onNuevo={() => setMostrarSelectorNuevo(true)}
+        onActualizarEstadoFactura={actualizarEstadoFactura}
+        onCopiarSuscriptor={copySuscriptor}
+        copiedSubKey={copiedSubKey}
+        onDescartarCliente={cancelarCliente}
+        onConfirmarRescate={confirmarRescate}
+        onMarcarMovilPagada={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
+        onVerClientes={(payload) => {
+          setComisionAbierta(false);
+          setSaltarAMes({ ...payload, token: Date.now() });
+          navegarA("clientes");
+        } }
+        onVerCliente={(c) => {
+          setComisionAbierta(false);
+          setOrigenDetalle("comision");
+          setClienteDetalleId(c.id);
+          navegarA("detalle");
+        } }
+      />
+          </div>
+        </div>
       )}
       <input
         type="file"
@@ -7549,7 +7570,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAVentas, onVerCliente }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onAbrirComision, onIrAVentas, onVerCliente }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -7570,7 +7591,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     return candidato ? candidato.p : null;
   }, [periodoActual]);
   const [rescateAbierto, setRescateAbierto] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.rescateAbierto : false));
-  const [tarjetaComAbierta, setTarjetaComAbierta] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.tarjetaComAbierta : false));
+  const [tarjetaComAbierta, setTarjetaComAbierta] = useState(() => (vista === "cobros" ? true : memoriaCobros.retorno ? !!memoriaCobros.tarjetaComAbierta : false));
   memoriaCobros.tarjetaComAbierta = tarjetaComAbierta;
   const [rescateSeleccion, setRescateSeleccion] = useState(() => (memoriaCobros.retorno ? { ...memoriaCobros.rescateSeleccion } : {}));
   memoriaCobros.rescateAbierto = rescateAbierto;
@@ -8502,6 +8523,12 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
   const vistaCobros = (
     <div>
+      {periodoRescateActivo && rescateCandidatos.length === 0 && (
+        <div className="rounded-xl p-4 mb-4" style={ { background: "#E9F7EF", border: "1px solid #BEE8CE", color: "#166534" } }>
+          <div className="text-base font-bold">✅ Comisión asegurada{comisionConfirmadaHoy.completo ? `: ${fmtMonto(comisionConfirmadaHoy.total)}` : ""}</div>
+          <div className="text-sm mt-1">Todos tus clientes de este ciclo ya pagaron su 1ra factura. No te queda nadie por cobrar.</div>
+        </div>
+      )}
       {enRiesgoHoy.length > 0 && rescateDiasRestantes !== null && rescateDiasRestantes <= 3 && (
         <div className="rounded-lg p-3 mb-4 text-sm font-semibold" style={ { background: "#FFF3DC", color: "#B45309", border: "1px solid #F3E3C3" } }>
           ⏳ {rescateDiasRestantes <= 0 ? "Hoy vence el plazo" : rescateDiasRestantes === 1 ? "Queda 1 día" : `Quedan ${rescateDiasRestantes} días`} para cobrar {enRiesgoHoy.length === 1 ? "a 1 cliente" : `a ${enRiesgoHoy.length} clientes`}.
@@ -8634,6 +8661,43 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
                 <>
+              <div className="rounded-xl mb-3 px-3 py-2.5" style={ { position: "sticky", top: 64, zIndex: 20, background: "#fff", border: "1.5px solid #001E62", boxShadow: "0 4px 12px rgba(0,30,98,.15)" } }>
+                <div className="flex items-center justify-between gap-2 text-xs" style={ { color: "#5A6680" } }>
+                  <span>💰 Comisión confirmada{rescateSeleccionados.length > 0 ? " pasa de" : ""}</span>
+                  <span>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : comisionMaximaHoy.completo ? `Hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan todos` : ""}</span>
+                </div>
+                <div className="font-mono font-bold" style={ { fontSize: 20, color: "#001E62" } }>
+                  {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
+                  {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
+                </div>
+                {rescateSeleccionados.length > 0 ? (
+                  <>
+                    <div className="flex items-center justify-between mt-1">
+                      <span className="text-sm font-bold" style={ { color: "#001E62" } }>Impacto en comisión</span>
+                      <span className="font-mono font-extrabold rounded-full px-2.5 py-0.5 text-sm" style={ { background: "#E3EDFA", color: "#001E62" } }>
+                        {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs mt-0.5" style={ { color: "#5A6680" } }>
+                      <span>Total a cobrar: <b className="font-mono">{fmtMonto(rescatePones)}</b></span>
+                      {rescateCruceTramo && <span>📈 Subes de tramo</span>}
+                    </div>
+                    {rescateConfirmando ? (
+                      <div className="mt-2">
+                        <p className="text-xs font-bold mb-1.5" style={ { color: "#001E62" } }>¿Confirmas regularizar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"}? Pendiente: {fmtMonto(rescatePones)}.</p>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✓ Sí, confirmar</button>
+                          <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button type="button" onClick={() => setRescateConfirmando(true)} className="w-full mt-2 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✅ Marcar como regularizados ({rescateSeleccionados.length})</button>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Marca abajo a los clientes que van a pagar y aquí verás cuánto sube.</div>
+                )}
+              </div>
               {rescateProximoTramo && (
                 <p className="text-xs mb-3" style={ { color: "#0072CE" } }>
                   📏 Te falta {rescateProximoTramo.pctFalta.toFixed(1)}% para llegar a la base de {fmtMonto(rescateProximoTramo.montoSiguiente)}.
@@ -8682,6 +8746,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
                           </div>
                         )}
+                        {c.telefono && (
+                          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
+                        )}
                       </label>
                     ))}
                   </div>
@@ -8720,6 +8787,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
                           </div>
+                        )}
+                        {c.telefono && (
+                          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
                         )}
                       </label>
                     ))}
@@ -8770,42 +8840,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 )}
               </div>
 
-              {rescateSeleccionados.length > 0 && (
-                rescateConfirmando ? (
-                  <div className="rounded-md p-3 mt-3" style={ { background: "#EEF3FB" } }>
-                    <p className="text-xs font-medium mb-2" style={ { color: "#001E62" } }>
-                      ¿Confirmas regularizar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"}? Pendiente: {fmtMonto(rescatePones)}.
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } }
-                        className="flex-1 py-2 rounded-md text-white font-medium text-sm"
-                        style={ { background: "#001E62" } }
-                      >
-                        Sí, confirmar
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setRescateConfirmando(false)}
-                        className="flex-1 py-2 rounded-md border font-medium text-sm"
-                        style={ { borderColor: "#DFE5EF", color: "#374151" } }
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRescateConfirmando(true)}
-                    className="w-full mt-3 py-2.5 rounded-md text-white font-medium text-sm"
-                    style={ { background: "#001E62" } }
-                  >
-                    ✅ Marcar como regularizados
-                  </button>
-                )
-              )}
               </>
               )}
             </div>
@@ -9019,15 +9053,18 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 ? "hoy es el último día"
                 : `${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"} para sumar más`
               : "";
+          const nPorCobrar = rescateCandidatos.length;
           filaRescate = fila(
             hayPend ? "⏳" : "✓",
             mesPagoNombre,
             !comisionConfirmadaHoy.completo
               ? "Faltan cargar las metas de ese ciclo"
-              : `De tus ventas de ${nombreMes(periodoRescateActivo)} · ${hayPend ? "asegurado hasta hoy" : "todo pagado y seguro"}`,
+              : hayPend
+              ? `De tus ventas de ${nombreMes(periodoRescateActivo)} · 📋 ${nPorCobrar} por cobrar${textoPlazo ? " · ⏳ " + textoPlazo : ""}`
+              : `De tus ventas de ${nombreMes(periodoRescateActivo)} · todo pagado y seguro`,
             comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—",
-            textoPlazo,
-            onIrACobros
+            hayPend && comisionMaximaHoy.completo ? `hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan · abrir ›` : hayPend ? "abrir ›" : "",
+            hayPend && onAbrirComision ? onAbrirComision : onIrACobros
           );
         }
         return (
