@@ -8696,6 +8696,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             {plan && <span>{plan}</span>}
             {fechaCorta && <span>· {fechaCorta}</span>}
             <span style={ { color: ct.c } }>· {ct.t}</span>
+            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (onContacto) onContacto(c); }} className="rounded-full font-bold px-2.5 py-1" style={ { background: "#EEF3FB", color: "#001E62", border: "1px solid #C5CEDF", fontSize: 11 } }>✓ Ya hablé</button>
           </div>
           {chipsCliente(c)}
         </div>
