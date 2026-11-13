@@ -8925,12 +8925,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             {c.fechaInstalacion ? `Instalado el ${fmtFechaLarga(c.fechaInstalacion)}` : ""}
                           </span>
                         </div>
-                        {clienteProrrateoAlto(c) && (
-                          <div className="mt-2 flex items-start gap-2 rounded-md px-2.5 py-2 text-xs font-bold" style={ { background: "#FFF3DC", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", color: "#B45309", lineHeight: 1.35 } }>
-                            <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
-                            <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
-                          </div>
-                        )}
                         {chipsCliente(c)}
                         {c.telefono && (
                           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
@@ -8968,12 +8962,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             {idsMovilHoy.has(c.id) ? "Línea Móvil" : c.fechaInstalacion ? `Instalado el ${fmtFechaLarga(c.fechaInstalacion)}` : ""}
                           </span>
                         </div>
-                        {!idsMovilHoy.has(c.id) && clienteProrrateoAlto(c) && (
-                          <div className="mt-2 flex items-start gap-2 rounded-md px-2.5 py-2 text-xs font-bold" style={ { background: "#FFF3DC", border: "1px solid #F0D9AE", borderLeft: "5px solid #B45309", color: "#B45309", lineHeight: 1.35 } }>
-                            <span className="inline-flex items-center justify-center shrink-0 rounded-full text-white" style={ { width: 18, height: 18, background: "#B45309", fontSize: 12 } }>!</span>
-                            <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
-                          </div>
-                        )}
                         {chipsCliente(c)}
                         {c.telefono && (
                           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
