@@ -5260,7 +5260,7 @@ function App() {
       )}
       {comisionAbierta && (
         <div ref={comisionRef} className="fixed inset-0 overflow-y-auto" style={ { zIndex: 45, background: "#F3F6FB" } } role="dialog" aria-modal="true" aria-label="Asegurar comisión">
-          <div className="sticky top-0 flex items-center gap-3 px-4" style={ { zIndex: 30, minHeight: 56, background: "#001E62", color: "#fff", paddingTop: "env(safe-area-inset-top)" } }>
+          <div className="sticky top-0 flex items-center gap-3 px-4" style={ { zIndex: 30, minHeight: "calc(56px + env(safe-area-inset-top))", background: "#001E62", color: "#fff", paddingTop: "env(safe-area-inset-top)" } }>
             <button type="button" onClick={cerrarComision} className="font-bold text-sm rounded-lg px-3" style={ { minHeight: 40, background: "#fff", color: "#001E62" } }>← Volver</button>
             <span className="font-bold text-base">💰 Asegurar comisión</span>
           </div>
@@ -8206,6 +8206,35 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     }
     return mejor ? mejor.subset : null;
   }, [rescateCandidatos, comisionConfirmadaHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, periodoRescateActivo]);
+  // Consejo en vivo: partiendo de lo que ya marcaste, agrega de uno en uno al cliente de mejor relación
+  // (más ingreso por cada dólar que cobras) hasta que la comisión suba. Es una sugerencia, no una garantía.
+  const consejoEnVivo = useMemo(() => {
+    if (!periodoRescateActivo || !comisionConfirmadaHoy.completo || rescateCandidatos.length === 0) return null;
+    try {
+      const maxTotal = calcularComisionConSubconjuntoHoy(rescateCandidatos);
+      if (!maxTotal.completo) return null;
+      const actual = rescateSeleccionados.length > 0 ? comisionSimulada.total : comisionConfirmadaHoy.total;
+      if (maxTotal.total <= actual + 0.005) return { tipo: "maximo", total: actual };
+      const ratio = (c) => (idsMovilHoy.has(c.id) ? 1e9 : (Number(c.montoMensual) || 0) / Math.max(1, montoFaltanteCliente(c)));
+      const libres = rescateCandidatos.filter((c) => !rescateSeleccion[c.id]).sort((a, b) => ratio(b) - ratio(a));
+      const sel = [...rescateSeleccionados];
+      const agregados = [];
+      for (const c of libres) {
+        sel.push(c);
+        agregados.push(c);
+        const r = calcularComisionConSubconjuntoHoy(sel);
+        if (r.completo && r.total > actual + 0.005) {
+          const cuesta = agregados.filter((x) => !idsMovilHoy.has(x.id)).reduce((acc, x) => acc + montoFaltanteCliente(x), 0);
+          return { tipo: "sugerir", agregados, nuevo: r.total, sube: r.total - actual, cuesta };
+        }
+      }
+      return null;
+    } catch (e) { return null; }
+  }, [rescateCandidatos, rescateSeleccionados, rescateSeleccion, comisionSimulada, comisionConfirmadaHoy, periodoRescateActivo]);
+  function marcarSugeridos() {
+    if (!consejoEnVivo || consejoEnVivo.tipo !== "sugerir") return;
+    setRescateSeleccion((prev) => { const n = { ...prev }; consejoEnVivo.agregados.forEach((c) => { n[c.id] = true; }); return n; });
+  }
   function marcarCombinacionMinima() {
     if (!rescateCombinacionMinima) return;
     const nuevaSeleccion = {};
@@ -8617,7 +8646,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
       {/* Sección 1: facturas pendientes que hay que cobrar para que cuenten en la comisión */}
       {(!periodoRescateActivo || rescateCandidatos.length > 0) && (
-      <div className="rounded-xl overflow-hidden border mb-4 bg-white" style={ { borderColor: "#DFE5EF" } }>
+      <div className="rounded-xl border mb-4 bg-white" style={ { borderColor: "#DFE5EF", overflow: vista === "cobros" ? "visible" : "hidden" } }>
       {periodoRescateActivo && comisionConfirmadaHoy.completo && (() => {
         const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0];
         const nPendCom = rescateEnPlazo.length + movilesPendientesHoy.length;
@@ -8744,13 +8773,20 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               <div className="rounded-xl mb-3 px-3 py-2.5" style={ { position: "sticky", top: "calc(64px + env(safe-area-inset-top))", zIndex: 20, background: "#fff", border: "1.5px solid #001E62", boxShadow: "0 4px 12px rgba(0,30,98,.15)" } }>
                 <div className="flex items-center justify-between gap-2 text-xs" style={ { color: "#5A6680" } }>
                   <span>💰 Comisión confirmada{rescateSeleccionados.length > 0 ? " pasa de" : ""}</span>
-                  <span>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : comisionMaximaHoy.completo ? `Hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan todos` : ""}</span>
+                  {rescateSeleccionados.length > 0 ? (
+                    <span className="flex items-center gap-2">
+                      <span>{rescateSeleccionados.length} marcado{rescateSeleccionados.length === 1 ? "" : "s"}</span>
+                      <button type="button" onClick={() => { setRescateSeleccion({}); setRescateConfirmando(false); } } className="font-bold rounded-lg px-2" style={ { minHeight: 32, color: "#001E62", border: "1.5px solid #001E62", background: "#fff" } }>☐ Desmarcar todo</button>
+                    </span>
+                  ) : (
+                    <span>{comisionMaximaHoy.completo ? `Hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan todos` : ""}</span>
+                  )}
                 </div>
                 <div className="font-mono font-bold" style={ { fontSize: 20, color: "#001E62" } }>
                   {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
                   {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
                 </div>
-                {rescateSeleccionados.length > 0 ? (
+                {rescateSeleccionados.length > 0 && (
                   <>
                     <div className="flex items-center justify-between mt-1">
                       <span className="text-sm font-bold" style={ { color: "#001E62" } }>Impacto en comisión</span>
@@ -8758,24 +8794,42 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                         {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}
                       </span>
                     </div>
-                    <div className="flex items-center justify-between text-xs mt-0.5" style={ { color: "#5A6680" } }>
-                      <span>Total a cobrar: <b className="font-mono">{fmtMonto(rescatePones)}</b></span>
-                      {rescateCruceTramo && <span>📈 Subes de tramo</span>}
+                    <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
+                      Total a cobrar: <b className="font-mono">{fmtMonto(rescatePones)}</b>
+                      {rescateCruceTramo && <span> · 📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}</span>}
+                      {rescateCruceAcelerador && <span> · {comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)" : "🐢 Perderías el acelerador"}</span>}
                     </div>
-                    {rescateConfirmando ? (
-                      <div className="mt-2">
-                        <p className="text-xs font-bold mb-1.5" style={ { color: "#001E62" } }>¿Confirmas regularizar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"}? Pendiente: {fmtMonto(rescatePones)}.</p>
-                        <div className="flex gap-2">
-                          <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✓ Sí, confirmar</button>
-                          <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <button type="button" onClick={() => setRescateConfirmando(true)} className="w-full mt-2 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✅ Marcar como regularizados ({rescateSeleccionados.length})</button>
+                    {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && (
+                      <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>
                     )}
                   </>
+                )}
+                {consejoEnVivo && (
+                  <div className="mt-2 rounded-lg px-2.5 py-2 text-xs" style={ { background: "#EEF7F1", border: "1px solid #BEE8CE", color: "#14532D" } }>
+                    {consejoEnVivo.tipo === "maximo" ? (
+                      <span>✅ <b>Ya tienes el máximo posible</b> con tu lista ({fmtMonto(consejoEnVivo.total)}). Marcar a más no sube más tu comisión.</span>
+                    ) : (
+                      <span className="flex items-center justify-between gap-2">
+                        <span>💡 <b>Consejo:</b> marca a {consejoEnVivo.agregados.slice(0, 3).map((c) => tituloEs(c.nombre || "").split(" ")[0]).join(", ")}{consejoEnVivo.agregados.length > 3 ? ` y ${consejoEnVivo.agregados.length - 3} más` : ""} y subes <b className="font-mono">+{fmtMonto(consejoEnVivo.sube)}</b> (a {fmtMonto(consejoEnVivo.nuevo)}){consejoEnVivo.cuesta > 0 ? `, cobrando ${fmtMonto(consejoEnVivo.cuesta)}` : ""}.</span>
+                        <button type="button" onClick={marcarSugeridos} className="shrink-0 font-bold rounded-lg px-2.5" style={ { minHeight: 36, background: "#14532D", color: "#fff" } }>Marcar</button>
+                      </span>
+                    )}
+                  </div>
+                )}
+                {rescateSeleccionados.length > 0 ? (
+                  rescateConfirmando ? (
+                    <div className="mt-2">
+                      <p className="text-xs font-bold mb-1.5" style={ { color: "#001E62" } }>¿Confirmas regularizar a {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"}? Pendiente: {fmtMonto(rescatePones)}.</p>
+                      <div className="flex gap-2">
+                        <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✓ Sí, confirmar</button>
+                        <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button type="button" onClick={() => setRescateConfirmando(true)} className="w-full mt-2 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✅ Marcar como regularizados ({rescateSeleccionados.length})</button>
+                  )
                 ) : (
-                  <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Marca abajo a los clientes que van a pagar y aquí verás cuánto sube.</div>
+                  !consejoEnVivo && <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Marca abajo a los clientes que van a pagar y aquí verás cuánto sube.</div>
                 )}
               </div>
               {rescateProximoTramo && (
@@ -8885,49 +8939,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   </div>
                 </>
               )}
-
-              <div className="rounded-md p-3" style={ { background: "#F3F6FB" } }>
-                {rescatePones > 0 && (
-                  <div className="flex items-center justify-between text-sm mb-1">
-                    <span style={ { color: "#5A6680" } }>Total a cobrar:</span>
-                    <span className="font-mono font-semibold">{fmtMonto(rescatePones)}</span>
-                  </div>
-                )}
-                {rescatePones > 0 && (
-                  <div className="flex items-center justify-between text-xs mb-2">
-                    <span style={ { color: "#001E62" } }>Mínimo para que cuenten:</span>
-                    <span className="font-mono font-semibold" style={ { color: "#001E62" } }>{fmtMonto(rescateMinimo)}</span>
-                  </div>
-                )}
-                {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && (
-                  <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>
-                )}
-                <div className="flex items-center justify-between text-sm mb-1">
-                  <span style={ { color: "#5A6680" } }>Tu comisión confirmada pasa de:</span>
-                  <span className="font-mono">
-                    {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"} → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between text-sm pt-1 mt-1" style={ { borderTop: "1px solid #DFE5EF" } }>
-                  <span className="font-semibold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>Impacto en comisión:</span>
-                  <span className="font-mono font-bold" style={ { color: rescateGanancia > 0 ? "#001E62" : "#374151" } }>
-                    {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}
-                    {rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}
-                  </span>
-                </div>
-                {(rescateCruceTramo || rescateCruceAcelerador) && (
-                  <div className="text-xs mt-2 pt-2" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
-                    {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
-                    {rescateCruceAcelerador && (
-                      <div>
-                        {comisionSimulada.ajusteIngreso === "acelerador"
-                          ? "⚡ Superarías el 100% de ingresos y se activaría el acelerador (+10 puntos)."
-                          : "🐢 Dejarías de superar el 100% de ingresos y se perdería el acelerador."}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
 
               </>
               )}
