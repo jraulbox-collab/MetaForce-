@@ -7638,6 +7638,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const [rescateAbierto, setRescateAbierto] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.rescateAbierto : false));
   const [tarjetaComAbierta, setTarjetaComAbierta] = useState(() => (vista === "cobros" ? true : memoriaCobros.retorno ? !!memoriaCobros.tarjetaComAbierta : false));
   if (vista !== "cobros") memoriaCobros.tarjetaComAbierta = tarjetaComAbierta;
+  const [barraComAbierta, setBarraComAbierta] = useState(false);
+  const [montoAbierto, setMontoAbierto] = useState({});
   const [rescateSeleccion, setRescateSeleccion] = useState(() => (memoriaCobros.retorno ? { ...memoriaCobros.rescateSeleccion } : {}));
   if (vista === "cobros") {
     memoriaCobros.rescateAbierto = rescateAbierto;
@@ -8206,35 +8208,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     }
     return mejor ? mejor.subset : null;
   }, [rescateCandidatos, comisionConfirmadaHoy, clientesConfirmadosHoy.length, dineroConfirmadoHoy, esNuevoHoy, periodoRescateActivo]);
-  // Consejo en vivo: partiendo de lo que ya marcaste, agrega de uno en uno al cliente de mejor relación
-  // (más ingreso por cada dólar que cobras) hasta que la comisión suba. Es una sugerencia, no una garantía.
-  const consejoEnVivo = useMemo(() => {
-    if (!periodoRescateActivo || !comisionConfirmadaHoy.completo || rescateCandidatos.length === 0) return null;
-    try {
-      const maxTotal = calcularComisionConSubconjuntoHoy(rescateCandidatos);
-      if (!maxTotal.completo) return null;
-      const actual = rescateSeleccionados.length > 0 ? comisionSimulada.total : comisionConfirmadaHoy.total;
-      if (maxTotal.total <= actual + 0.005) return { tipo: "maximo", total: actual };
-      const ratio = (c) => (idsMovilHoy.has(c.id) ? 1e9 : (Number(c.montoMensual) || 0) / Math.max(1, montoFaltanteCliente(c)));
-      const libres = rescateCandidatos.filter((c) => !rescateSeleccion[c.id]).sort((a, b) => ratio(b) - ratio(a));
-      const sel = [...rescateSeleccionados];
-      const agregados = [];
-      for (const c of libres) {
-        sel.push(c);
-        agregados.push(c);
-        const r = calcularComisionConSubconjuntoHoy(sel);
-        if (r.completo && r.total > actual + 0.005) {
-          const cuesta = agregados.filter((x) => !idsMovilHoy.has(x.id)).reduce((acc, x) => acc + montoFaltanteCliente(x), 0);
-          return { tipo: "sugerir", agregados, nuevo: r.total, sube: r.total - actual, cuesta };
-        }
-      }
-      return null;
-    } catch (e) { return null; }
-  }, [rescateCandidatos, rescateSeleccionados, rescateSeleccion, comisionSimulada, comisionConfirmadaHoy, periodoRescateActivo]);
-  function marcarSugeridos() {
-    if (!consejoEnVivo || consejoEnVivo.tipo !== "sugerir") return;
-    setRescateSeleccion((prev) => { const n = { ...prev }; consejoEnVivo.agregados.forEach((c) => { n[c.id] = true; }); return n; });
-  }
   function marcarCombinacionMinima() {
     if (!rescateCombinacionMinima) return;
     const nuevaSeleccion = {};
@@ -8611,8 +8584,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     });
     return m;
   }, [rescateCandidatos, comisionConfirmadaHoy, periodoRescateActivo]);
-  // Lo que aporta cada cliente SUMADO a los que ya marcaste (la comisión sube por saltos: el grupo es lo que la mueve).
-  const aporteConMarcados = useMemo(() => {
+  // Para cada cliente: cuánto aporta SUMADO a lo ya marcado (o cuánto bajaría si lo quitas) y si es "clave"
+  // (su sola presencia cambia el tramo de base). La comisión sube por saltos, por eso se mide junto al grupo.
+  const etiquetas = useMemo(() => {
     const m = new Map();
     if (!periodoRescateActivo || !comisionConfirmadaHoy.completo || rescateCandidatos.length === 0) return m;
     const sel = rescateSeleccionados;
@@ -8621,12 +8595,68 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const con = sel.some((x) => x.id === c.id) ? sel : [...sel, c];
         const sin = sel.filter((x) => x.id !== c.id);
         const a = calcularComisionConSubconjuntoHoy(con);
-        const b = calcularComisionConSubconjuntoHoy(sin);
-        if (a && b && a.completo && b.completo) m.set(c.id, a.total - b.total);
+        const b = sin.length > 0 ? calcularComisionConSubconjuntoHoy(sin) : comisionConfirmadaHoy;
+        if (a && b && a.completo && b.completo) m.set(c.id, { gain: a.total - b.total, clave: a.montoBase !== b.montoBase });
       } catch (e) {}
     });
     return m;
   }, [rescateCandidatos, rescateSeleccionados, comisionConfirmadaHoy, periodoRescateActivo]);
+  // Análisis para la barra: a quién cobrar primero, cuántos faltan para el próximo tramo y cuánto se gana.
+  const analisis = useMemo(() => {
+    if (!periodoRescateActivo || !comisionConfirmadaHoy.completo || rescateCandidatos.length === 0) return null;
+    try {
+      const maxR = calcularComisionConSubconjuntoHoy(rescateCandidatos);
+      if (!maxR.completo) return null;
+      const ref = rescateSeleccionados.length > 0 ? comisionSimulada : comisionConfirmadaHoy;
+      const actual = ref.total;
+      const baseActual = ref.montoBase;
+      const ratio = (c) => (idsMovilHoy.has(c.id) ? 1e9 : (Number(c.montoMensual) || 0) / Math.max(1, montoFaltanteCliente(c)));
+      const libres = rescateCandidatos.filter((c) => !rescateSeleccion[c.id]);
+      const porRatio = [...libres].sort((a, b) => ratio(b) - ratio(a));
+      const ganaDe = (c) => (etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0);
+      const primeros = [...libres].sort((a, b) => ganaDe(b) - ganaDe(a) || ratio(b) - ratio(a)).slice(0, 3);
+      let sube = null;
+      let tramo = null;
+      const sel = [...rescateSeleccionados];
+      let k = 0;
+      for (const c of porRatio) {
+        sel.push(c);
+        k += 1;
+        const r = calcularComisionConSubconjuntoHoy(sel);
+        if (!r.completo) continue;
+        if (!sube && r.total > actual + 0.005) sube = { n: k, total: r.total, extra: r.total - actual };
+        if (!tramo && r.montoBase !== baseActual && r.montoBase > baseActual) tramo = { n: k, monto: r.montoBase, total: r.total };
+        if (sube && tramo) break;
+      }
+      return { primeros, sube, tramo, baseActual, actual, maxTotal: maxR.total, esMaximo: maxR.total <= actual + 0.005 };
+    } catch (e) { return null; }
+  }, [rescateCandidatos, rescateSeleccionados, rescateSeleccion, comisionSimulada, comisionConfirmadaHoy, periodoRescateActivo, etiquetas]);
+  const primerosIds = new Set(analisis ? analisis.primeros.map((c) => c.id) : []);
+  function marcarPrimeros() {
+    if (!analisis) return;
+    setRescateSeleccion((prev) => { const n = { ...prev }; analisis.primeros.forEach((c) => { n[c.id] = true; }); return n; });
+  }
+  // Etiquetas de cada cliente: prioridad (⭐), clave (🔑), suma (➕) o normal (◽). Tocar la etiqueta muestra el monto exacto.
+  const chipsCliente = (c) => {
+    const e = etiquetas.get(c.id) || { gain: 0, clave: false };
+    const marcado = !!rescateSeleccion[c.id];
+    const tipo = e.clave
+      ? { t: "🔑 Clave", st: { background: "#E3EDFA", color: "#001E62", border: "1.5px solid #001E62" } }
+      : e.gain > 0.005
+      ? { t: "➕ Suma", st: { background: "#E9F7EF", color: "#166534", border: "1.5px solid #166534" } }
+      : { t: "◽ Suma al grupo", st: { background: "#F3F4F6", color: "#5A6680", border: "1.5px solid #9CA3AF" } };
+    const abierto = !!montoAbierto[c.id];
+    return (
+      <div className="mt-2 flex flex-wrap items-center gap-1.5">
+        {primerosIds.has(c.id) && !marcado && (
+          <span className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ { background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>⭐ Cóbrale primero</span>
+        )}
+        <button type="button" onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setMontoAbierto((p) => ({ ...p, [c.id]: !p[c.id] })); } } className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ tipo.st }>
+          {tipo.t}{abierto ? ` · ${e.gain >= 0 ? "+" : ""}${fmtMonto(e.gain)} ${marcado ? "aporta" : "si lo marcas"}` : ""}
+        </button>
+      </div>
+    );
+  };
   const porAporte = (arr) => [...arr].sort((a, b) => (aportePorCliente.get(b.id) || 0) - (aportePorCliente.get(a.id) || 0));
   const vencidosVista = porAporte(rescateVencidosOrdenados);
   const enPlazoVista = porAporte(rescateEnPlazoOrdenados);
@@ -8767,65 +8797,81 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
                 <>
-              <div className="rounded-xl mb-3 px-3 py-2.5" style={ { position: "sticky", top: "calc(64px + env(safe-area-inset-top))", zIndex: 20, background: "#fff", border: "1.5px solid #001E62", boxShadow: "0 4px 12px rgba(0,30,98,.15)" } }>
-                <div className="flex items-center justify-between gap-2 text-xs" style={ { color: "#5A6680" } }>
-                  <span>💰 Comisión confirmada{rescateSeleccionados.length > 0 ? " pasa de" : ""}</span>
-                  {rescateSeleccionados.length > 0 ? (
-                    <span className="flex items-center gap-2">
-                      <span>{rescateSeleccionados.length} marcado{rescateSeleccionados.length === 1 ? "" : "s"}</span>
-                      <button type="button" onClick={() => { setRescateSeleccion({}); setRescateConfirmando(false); } } className="font-bold rounded-lg px-2" style={ { minHeight: 32, color: "#001E62", border: "1.5px solid #001E62", background: "#fff" } }>☐ Desmarcar todo</button>
-                    </span>
-                  ) : (
-                    <span>{comisionMaximaHoy.completo ? `Hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan todos` : ""}</span>
-                  )}
-                </div>
-                <div className="font-mono font-bold" style={ { fontSize: 20, color: "#001E62" } }>
-                  {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
-                  {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
-                </div>
-                {rescateSeleccionados.length > 0 && (
+              <div className="fixed left-0 right-0 bottom-0" style={ { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "#fff", borderTop: "2px solid #001E62", boxShadow: "0 -6px 16px rgba(0,30,98,.18)", padding: "10px 16px calc(14px + env(safe-area-inset-bottom))", maxHeight: "70vh", overflowY: "auto" } }>
+                {rescateConfirmando ? (
+                  <div>
+                    <p className="text-sm font-bold mb-2" style={ { color: "#001E62" } }>¿Confirmas que {rescateSeleccionados.length === 1 ? "este cliente ya regularizó su 1ra factura" : `estos ${rescateSeleccionados.length} clientes ya regularizaron su 1ra factura`}?</p>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 48, background: "#001E62" } }>✓ Sí, confirmar</button>
+                      <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 48, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
+                    </div>
+                  </div>
+                ) : (
                   <>
-                    <div className="flex items-center justify-between mt-1">
-                      <span className="text-sm font-bold" style={ { color: "#001E62" } }>Impacto en comisión</span>
-                      <span className="font-mono font-extrabold rounded-full px-2.5 py-0.5 text-sm" style={ { background: "#E3EDFA", color: "#001E62" } }>
-                        {rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}
-                      </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <button type="button" onClick={() => setBarraComAbierta((v) => !v)} aria-expanded={barraComAbierta} className="text-left min-w-0 flex-1" style={ { background: "transparent", border: 0, padding: 0 } }>
+                        <div className="text-[11px] font-bold" style={ { color: "#5A6680" } }>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : "Sin marcar"} · {barraComAbierta ? "ocultar detalle ▼" : "toca para ver el detalle ▲"}</div>
+                        <div className="font-mono font-extrabold" style={ { fontSize: 17, color: "#001E62" } }>
+                          {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
+                          {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
+                        </div>
+                        {rescateSeleccionados.length > 0
+                          ? <div className="text-xs font-extrabold" style={ { color: "#166534" } }>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""}</div>
+                          : comisionMaximaHoy.completo && <div className="text-xs font-bold" style={ { color: "#B45309" } }>Hasta {fmtMonto(comisionMaximaHoy.total)} si pagan todos</div>}
+                      </button>
+                      {rescateSeleccionados.length > 0 && (
+                        <button type="button" onClick={() => setRescateConfirmando(true)} className="shrink-0 rounded-xl text-white font-extrabold text-sm px-4" style={ { minHeight: 50, background: "#001E62" } }>✅ Confirmar ({rescateSeleccionados.length})</button>
+                      )}
                     </div>
-                    <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
-                      {rescateCruceTramo && <span>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}</span>}
-                      {rescateCruceAcelerador && <span>{rescateCruceTramo ? " · " : ""}{comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)" : "🐢 Perderías el acelerador"}</span>}
-                    </div>
-                    {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && (
-                      <div className="text-[11px] mt-0.5" style={ { color: "#5A6680" } }>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>
+                    {barraComAbierta && (
+                      <div className="mt-3 pt-3 flex flex-col gap-3" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
+                        {analisis && (
+                          <>
+                            <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
+                              <span style={ { fontSize: 18, width: 24, textAlign: "center" } } aria-hidden="true">🎯</span>
+                              <span className="flex-1">
+                                <span className="block text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>1 · A quién cobrar primero</span>
+                                {analisis.primeros.length > 0 && !analisis.esMaximo
+                                  ? <span>{analisis.primeros.map((c) => tituloEs(c.nombre || "").split(" ").slice(0, 2).join(" ")).join(", ")}: los que más te acercan al siguiente salto.</span>
+                                  : <span>Ya marcaste a todos los que importan.</span>}
+                              </span>
+                              {analisis.primeros.length > 0 && !analisis.esMaximo && (
+                                <button type="button" onClick={marcarPrimeros} className="shrink-0 self-start font-bold rounded-lg px-2.5 text-xs" style={ { minHeight: 36, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>Marcar</button>
+                              )}
+                            </div>
+                            <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
+                              <span style={ { fontSize: 18, width: 24, textAlign: "center" } } aria-hidden="true">📏</span>
+                              <span className="flex-1">
+                                <span className="block text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>2 · Cuántos faltan para el próximo tramo</span>
+                                {analisis.tramo
+                                  ? <span>Con <b>{analisis.tramo.n} cliente{analisis.tramo.n === 1 ? "" : "s"} más</b> pasas al tramo de {fmtMonto(analisis.tramo.monto)} (hoy: {fmtMonto(analisis.baseActual)}).</span>
+                                  : <span>Con tu lista actual no hay un tramo más alto por alcanzar (hoy: {fmtMonto(analisis.baseActual)}).</span>}
+                              </span>
+                            </div>
+                            <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
+                              <span style={ { fontSize: 18, width: 24, textAlign: "center" } } aria-hidden="true">💵</span>
+                              <span className="flex-1">
+                                <span className="block text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>3 · Cuánto ganas</span>
+                                {rescateSeleccionados.length > 0
+                                  ? <span>Con estos {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} subes <b>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}</b>.{analisis.sube ? <span> Con {analisis.sube.n} más serían <b>+{fmtMonto(analisis.sube.extra)}</b> extra.</span> : <span> Es lo máximo que da tu lista.</span>}</span>
+                                  : <span>Si pagan todos, subirías hasta <b>{fmtMonto(analisis.maxTotal)}</b> ({fmtMonto(analisis.maxTotal - comisionConfirmadaHoy.total)} más que hoy).</span>}
+                              </span>
+                            </div>
+                          </>
+                        )}
+                        {rescateSeleccionados.length > 0 && (
+                          <div className="text-xs" style={ { color: "#5A6680" } }>
+                            {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
+                            {rescateCruceAcelerador && <div>{comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)." : "🐢 Perderías el acelerador."}</div>}
+                            {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && <div>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>}
+                          </div>
+                        )}
+                        {rescateSeleccionados.length > 0 && (
+                          <button type="button" onClick={() => { setRescateSeleccion({}); setRescateConfirmando(false); } } className="self-start font-bold rounded-lg px-3 text-sm" style={ { minHeight: 40, color: "#001E62", border: "2px solid #001E62", background: "#fff" } }>☐ Desmarcar todo</button>
+                        )}
+                      </div>
                     )}
                   </>
-                )}
-                {consejoEnVivo && (
-                  <div className="mt-2 rounded-lg px-2.5 py-2 text-xs" style={ { background: "#EEF7F1", border: "1px solid #BEE8CE", color: "#14532D" } }>
-                    {consejoEnVivo.tipo === "maximo" ? (
-                      <span>✅ <b>Ya tienes el máximo posible</b> con tu lista ({fmtMonto(consejoEnVivo.total)}). Marcar a más no sube más tu comisión.</span>
-                    ) : (
-                      <span className="flex items-center justify-between gap-2">
-                        <span>💡 <b>Consejo:</b> marca a {consejoEnVivo.agregados.slice(0, 3).map((c) => tituloEs(c.nombre || "").split(" ")[0]).join(", ")}{consejoEnVivo.agregados.length > 3 ? ` y ${consejoEnVivo.agregados.length - 3} más` : ""} y subes <b className="font-mono">+{fmtMonto(consejoEnVivo.sube)}</b> (a {fmtMonto(consejoEnVivo.nuevo)}){consejoEnVivo.agregados.length === 1 ? " con 1 cliente" : ` con ${consejoEnVivo.agregados.length} clientes`}.</span>
-                        <button type="button" onClick={marcarSugeridos} className="shrink-0 font-bold rounded-lg px-2.5" style={ { minHeight: 36, background: "#14532D", color: "#fff" } }>Marcar</button>
-                      </span>
-                    )}
-                  </div>
-                )}
-                {rescateSeleccionados.length > 0 ? (
-                  rescateConfirmando ? (
-                    <div className="mt-2">
-                      <p className="text-xs font-bold mb-1.5" style={ { color: "#001E62" } }>¿Confirmas que {rescateSeleccionados.length === 1 ? "este cliente ya regularizó su 1ra factura" : `estos ${rescateSeleccionados.length} clientes ya regularizaron su 1ra factura`}?</p>
-                      <div className="flex gap-2">
-                        <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✓ Sí, confirmar</button>
-                        <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 46, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
-                      </div>
-                    </div>
-                  ) : (
-                    <button type="button" onClick={() => setRescateConfirmando(true)} className="w-full mt-2 rounded-lg text-white font-bold text-sm" style={ { minHeight: 46, background: "#001E62" } }>✅ Marcar como regularizados ({rescateSeleccionados.length})</button>
-                  )
-                ) : (
-                  !consejoEnVivo && <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Marca abajo a los clientes que van a pagar y aquí verás cuánto sube.</div>
                 )}
               </div>
               {rescateProximoTramo && (
@@ -8844,9 +8890,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 </button>
               )}
 
-              {Array.from(aporteConMarcados.values()).some((v) => v > 0.005) && (
-                <p className="text-[11px] mb-2" style={ { color: "#5A6680" } }>Cada cliente muestra cuánto sumaría a tu comisión junto con los que ya marcaste.</p>
-              )}
               {rescateVencidosOrdenados.length > 0 && (
                 <>
                   <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⛔ Ya vencidos — regularízalos de inmediato</div>
@@ -8879,9 +8922,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
                           </div>
                         )}
-                        {(aporteConMarcados.get(c.id) || 0) > 0.005 && (
-                          <div className="mt-1.5 text-xs font-bold" style={ { color: "#166534" } }>💰 {rescateSeleccion[c.id] ? "Aporta" : "Sumaría"} {fmtMonto(aporteConMarcados.get(c.id))} a tu comisión{rescateSeleccion[c.id] ? "" : " si lo marcas"}</div>
-                        )}
+                        {chipsCliente(c)}
                         {c.telefono && (
                           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
                         )}
@@ -8924,9 +8965,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             <span>Prorrateo alto · puede pagar solo {fmtMonto(montoMitadCliente(c))}</span>
                           </div>
                         )}
-                        {(aporteConMarcados.get(c.id) || 0) > 0.005 && (
-                          <div className="mt-1.5 text-xs font-bold" style={ { color: "#166534" } }>💰 {rescateSeleccion[c.id] ? "Aporta" : "Sumaría"} {fmtMonto(aporteConMarcados.get(c.id))} a tu comisión{rescateSeleccion[c.id] ? "" : " si lo marcas"}</div>
-                        )}
+                        {chipsCliente(c)}
                         {c.telefono && (
                           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="mt-2 flex items-center justify-center gap-1.5 rounded-lg font-bold text-sm" style={ { minHeight: 40, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>💬 Abrir chat de WhatsApp</a>
                         )}
@@ -8947,6 +8986,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
+      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 400 : 170 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
