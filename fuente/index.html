@@ -3268,6 +3268,15 @@ function App() {
     setTab(destino);
   }
   function volverA(destino) {
+    if (destino === "comision") {
+      // Vuelve a la herramienta "Asegurar comisión" exactamente como la dejaste (marcados y posición).
+      memoriaCobros.retorno = true;
+      comisionRestaurar.current = true;
+      restaurarRef.current = scrollPorTab.current.dashboard || 0;
+      setTab("dashboard");
+      setComisionAbierta(true);
+      return;
+    }
     restaurarRef.current = scrollPorTab.current[destino] || 0;
     if (destino === "alertas") memoriaCobros.retorno = true;
     setTab(destino);
@@ -4210,6 +4219,23 @@ function App() {
   // La cola se guarda en esta pestaña del navegador: si al volver de WhatsApp la app se recarga, sigue donde iba.
   // Herramienta "Asegurar comisión" (antes vivía dentro de Mensajes): se abre a pantalla completa desde el Dashboard.
   const [comisionAbierta, setComisionAbierta] = useState(false);
+  const comisionRef = useRef(null);
+  const comisionScroll = useRef(0);
+  const comisionRestaurar = useRef(false);
+  const guardarScrollComision = () => { comisionScroll.current = comisionRef.current ? comisionRef.current.scrollTop : 0; };
+  useEffect(() => {
+    if (!comisionAbierta) return;
+    memoriaCobros.retorno = false; // lo marcado ya se leyó al montar; la próxima apertura empieza limpia
+    if (comisionRestaurar.current) {
+      comisionRestaurar.current = false;
+      const y = comisionScroll.current;
+      requestAnimationFrame(() => { if (comisionRef.current) comisionRef.current.scrollTop = y; });
+    } else {
+      comisionScroll.current = 0;
+    }
+  }, [comisionAbierta]);
+  // Si te vas a otra pestaña (barra de abajo o botón atrás), la herramienta se cierra sola.
+  useEffect(() => { if (comisionAbierta && tab !== "dashboard") setComisionAbierta(false); }, [tab]);
   useEffect(() => {
     if (!comisionAbierta) return undefined;
     const tecla = (ev) => { if (ev.key === "Escape") setComisionAbierta(false); };
@@ -4856,7 +4882,7 @@ function App() {
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
             onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
-            onAbrirComision={() => setComisionAbierta(true)}
+            onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; setComisionAbierta(true); } }
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
@@ -4913,7 +4939,7 @@ function App() {
         {tab === "detalle" && (
           <ClienteDetalle
             cliente={clienteDetalle}
-            onVolver={() => { if (origenDetalle === "comision") { volverA("dashboard"); setComisionAbierta(true); } else volverA(origenDetalle); } }
+            onVolver={() => volverA(origenDetalle)}
             volverLabel={origenDetalle === "comision" ? "← Volver a Comisión" : origenDetalle === "alertas" ? "← Volver a Cobros" : origenDetalle === "dashboard" ? "← Volver al Dashboard" : "← Volver a Clientes"}
             onEditar={startEdit}
             onMarcarPagada={pedirMarcarPagada}
@@ -5216,9 +5242,9 @@ function App() {
         />
       )}
       {comisionAbierta && (
-        <div className="fixed inset-0 overflow-y-auto" style={ { zIndex: 45, background: "#F3F6FB" } } role="dialog" aria-modal="true" aria-label="Asegurar comisión">
-          <div className="sticky top-0 flex items-center gap-3 px-4" style={ { zIndex: 30, height: 56, background: "#001E62", color: "#fff", paddingTop: "env(safe-area-inset-top)" } }>
-            <button type="button" onClick={() => setComisionAbierta(false)} className="font-bold text-sm rounded-lg px-3" style={ { minHeight: 40, background: "#fff", color: "#001E62" } }>← Volver</button>
+        <div ref={comisionRef} className="fixed inset-0 overflow-y-auto" style={ { zIndex: 45, background: "#F3F6FB" } } role="dialog" aria-modal="true" aria-label="Asegurar comisión">
+          <div className="sticky top-0 flex items-center gap-3 px-4" style={ { zIndex: 30, minHeight: 56, background: "#001E62", color: "#fff", paddingTop: "env(safe-area-inset-top)" } }>
+            <button type="button" onClick={() => { memoriaCobros.rescateSeleccion = {}; setComisionAbierta(false); } } className="font-bold text-sm rounded-lg px-3" style={ { minHeight: 40, background: "#fff", color: "#001E62" } }>← Volver</button>
             <span className="font-bold text-base">💰 Asegurar comisión</span>
           </div>
           <div className="max-w-3xl mx-auto px-4 pt-4 pb-24">
@@ -5238,11 +5264,13 @@ function App() {
         onConfirmarRescate={confirmarRescate}
         onMarcarMovilPagada={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
         onVerClientes={(payload) => {
+          guardarScrollComision();
           setComisionAbierta(false);
           setSaltarAMes({ ...payload, token: Date.now() });
           navegarA("clientes");
         } }
         onVerCliente={(c) => {
+          guardarScrollComision();
           setComisionAbierta(false);
           setOrigenDetalle("comision");
           setClienteDetalleId(c.id);
@@ -7592,10 +7620,12 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   }, [periodoActual]);
   const [rescateAbierto, setRescateAbierto] = useState(() => (memoriaCobros.retorno ? !!memoriaCobros.rescateAbierto : false));
   const [tarjetaComAbierta, setTarjetaComAbierta] = useState(() => (vista === "cobros" ? true : memoriaCobros.retorno ? !!memoriaCobros.tarjetaComAbierta : false));
-  memoriaCobros.tarjetaComAbierta = tarjetaComAbierta;
+  if (vista !== "cobros") memoriaCobros.tarjetaComAbierta = tarjetaComAbierta;
   const [rescateSeleccion, setRescateSeleccion] = useState(() => (memoriaCobros.retorno ? { ...memoriaCobros.rescateSeleccion } : {}));
-  memoriaCobros.rescateAbierto = rescateAbierto;
-  memoriaCobros.rescateSeleccion = rescateSeleccion;
+  if (vista === "cobros") {
+    memoriaCobros.rescateAbierto = rescateAbierto;
+    memoriaCobros.rescateSeleccion = rescateSeleccion; // solo la herramienta guarda lo marcado (el Dashboard de fondo no debe pisarlo)
+  }
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
   // Vista de la tarjeta de comisión (nueva = fondo blanco, actual = azul oscuro). Se
   // recuerda la última que elegiste en este teléfono; si no hay nada guardado, la nueva.
@@ -7608,7 +7638,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   }
   // Detalle de la proyección al cierre (hogar, móvil e ingresos): cerrado por defecto.
   const [proyAbierta, setProyAbierta] = useState(false);
+  const primeraVezRescate = useRef(true);
   useEffect(() => {
+    // Al montar NO se borra lo marcado (si vuelves de una ficha se conserva); solo si cambia el ciclo.
+    if (primeraVezRescate.current) { primeraVezRescate.current = false; return; }
     setRescateSeleccion({});
     setRescateConfirmando(false);
   }, [periodoRescateActivo]);
@@ -8018,7 +8051,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     e.stopPropagation();
     if (idsMovilHoy.has(c.id)) {
       memoriaDashboard.retorno = true;
-      onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "dashboard" } });
+      onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: vista === "cobros" ? "comision" : "dashboard" } });
     }
     else onVerCliente(c);
   };
@@ -8661,7 +8694,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
                 <>
-              <div className="rounded-xl mb-3 px-3 py-2.5" style={ { position: "sticky", top: 64, zIndex: 20, background: "#fff", border: "1.5px solid #001E62", boxShadow: "0 4px 12px rgba(0,30,98,.15)" } }>
+              <div className="rounded-xl mb-3 px-3 py-2.5" style={ { position: "sticky", top: "calc(64px + env(safe-area-inset-top))", zIndex: 20, background: "#fff", border: "1.5px solid #001E62", boxShadow: "0 4px 12px rgba(0,30,98,.15)" } }>
                 <div className="flex items-center justify-between gap-2 text-xs" style={ { color: "#5A6680" } }>
                   <span>💰 Comisión confirmada{rescateSeleccionados.length > 0 ? " pasa de" : ""}</span>
                   <span>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : comisionMaximaHoy.completo ? `Hasta ${fmtMonto(comisionMaximaHoy.total)} si pagan todos` : ""}</span>
