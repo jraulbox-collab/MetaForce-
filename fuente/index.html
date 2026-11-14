@@ -12329,6 +12329,18 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         💬 Enviar info de instalación
                       </button>
                     )}
+                    {!c.fechaInstalacion && !c.cancelado && !c.penalizado && String(c.telefono || "").replace(/\D/g, "") && !(instalacionPorAvisar(c) && onEnviarInfoInstalacion) && (
+                      <a
+                        href={whatsappLink(c, { texto: c.instalacionProgramada && c.instalacionProgramada >= hoyISO ? textoInstalacion(c) : "" })}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={() => { if (onContacto) onContacto(c); }}
+                        className="w-full mt-2 flex items-center justify-center text-xs font-bold rounded-lg text-white"
+                        style={ { minHeight: 44, background: "#128C4A" } }
+                      >
+                        {c.instalacionProgramada && c.instalacionProgramada >= hoyISO ? "💬 Recordar instalación por WhatsApp" : "💬 Escribirle por WhatsApp"}
+                      </a>
+                    )}
                     <CicloHogarConfirmar cliente={c} onConfirmar={onConfirmarCiclo} />
                     <div className="flex items-center gap-2 mt-2.5">
                       <button
