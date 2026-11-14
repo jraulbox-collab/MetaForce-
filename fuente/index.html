@@ -5001,6 +5001,8 @@ function App() {
             onEnviarInfoInstalacion={enviarInfoInstalacion}
             onMarcarInstalacionEnviada={marcarInstalacionEnviada}
             onEliminar={(id) => setConfirmDelete(id)}
+            envios={envios}
+            onRegistrarContacto={(c, canal, nota) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "ficha", canal, nota: nota || "" })}
           />
         )}
         {tab === "alertas" && (
@@ -13244,7 +13246,13 @@ function ClienteDetalle({
   onMarcarAbono,
   onMarcarInstalado,
   onEliminar,
+  envios,
+  onRegistrarContacto,
 }) {
+  const [formContacto, setFormContacto] = useState(false);
+  const [canalContacto, setCanalContacto] = useState("whatsapp");
+  const [notaContacto, setNotaContacto] = useState("");
+  const [verTodosContactos, setVerTodosContactos] = useState(false);
   const [mostrarPenalizar, setMostrarPenalizar] = useState(false);
   const [motivoPenal, setMotivoPenal] = useState("");
   const [mostrarCancelar, setMostrarCancelar] = useState(false);
@@ -13561,7 +13569,7 @@ function ClienteDetalle({
         </div>
       ) : (
       <div className="flex flex-col gap-2">
-        {cliente.facturas.map((f) => {
+        {cliente.facturas.filter((f) => f.n <= 3).map((f) => {
           const estadoFactura = cliente[`f${f.n}_estado`] || "";
           return (
             <div key={f.n} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
@@ -13605,6 +13613,23 @@ function ClienteDetalle({
                   </div>
                 )}
               </div>
+
+              {(() => {
+                const enviadosF = f.milestones.filter((m) => m.enviado).map((m) => {
+                  const ev = (envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === m.key && e.tipo === "marcar").map((e) => e.fecha).sort().pop();
+                  return { m, ev };
+                });
+                if (enviadosF.length === 0) return null;
+                return (
+                  <div className="mb-3 flex flex-col gap-1">
+                    {enviadosF.map(({ m, ev }) => (
+                      <div key={m.key} className="text-xs font-medium" style={ { color: "#166534" } }>
+                        ✓ {m.label} · {ev ? "enviado " + fmtFechaHora(ev) : "enviado (sin fecha registrada)"}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
 
               {(() => {
                 const alertasActivas = f.milestones.filter((m) => m.pendienteHoy);
@@ -13665,6 +13690,47 @@ function ClienteDetalle({
         })}
       </div>
       )}
+
+      {(() => {
+        const CANAL = { whatsapp: "💬 WhatsApp", llamada: "📞 Llamada", visita: "🚶 Visita" };
+        const lista = (envios || []).filter((e) => e && e.clienteId === cliente.id && e.tipo === "contacto").sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+        const mostrar = verTodosContactos ? lista : lista.slice(0, 5);
+        return (
+          <div className="mt-6">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <h2 className="text-sm font-semibold">Contactos</h2>
+              <button type="button" onClick={() => setFormContacto(!formContacto)} className="text-xs font-bold rounded-md px-3" style={ { minHeight: 40, background: "#001E62", color: "#fff" } }>＋ Registrar contacto</button>
+            </div>
+            {formContacto && (
+              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-2">
+                <div className="flex gap-2 flex-wrap mb-3">
+                  {Object.entries(CANAL).map(([k, t]) => (
+                    <button key={k} type="button" onClick={() => setCanalContacto(k)} className="rounded-full font-bold text-sm px-3" style={ { minHeight: 40, border: "1.5px solid " + (canalContacto === k ? "#001E62" : "#DFE5EF"), background: canalContacto === k ? "#001E62" : "#fff", color: canalContacto === k ? "#fff" : "#001E62" } }>{t}</button>
+                  ))}
+                </div>
+                <textarea value={notaContacto} onChange={(e) => setNotaContacto(e.target.value)} rows={2} placeholder="Nota (opcional): ej. dice que paga el viernes" className="w-full rounded-md border outline-none px-3 py-2 text-sm mb-3" style={ { borderColor: "#DFE5EF" } } />
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => { onRegistrarContacto && onRegistrarContacto(cliente, canalContacto, notaContacto.trim()); setNotaContacto(""); setFormContacto(false); }} className="text-sm font-bold rounded-md px-4 text-white" style={ { minHeight: 44, background: "#166534" } }>Guardar</button>
+                  <button type="button" onClick={() => setFormContacto(false)} className="text-sm font-bold rounded-md px-4 border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#374151" } }>Cancelar</button>
+                </div>
+              </div>
+            )}
+            <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4">
+              {lista.length === 0 ? (
+                <p className="text-xs py-4" style={ { color: "#5A6680" } }>Todavía no hay contactos registrados.</p>
+              ) : mostrar.map((e, i) => (
+                <div key={e.id || i} className="py-2" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                  <div className="text-sm font-bold" style={ { color: "#001E62" } }>{CANAL[e.canal] || "💬 WhatsApp"} <span className="text-xs font-normal" style={ { color: "#5A6680" } }>· {fmtFechaHora(e.fecha)}</span></div>
+                  {e.nota && <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }>{e.nota}</div>}
+                </div>
+              ))}
+              {lista.length > 5 && (
+                <button type="button" onClick={() => setVerTodosContactos(!verTodosContactos)} className="w-full text-xs font-bold py-3" style={ { color: "#0072CE", borderTop: "1px solid #EEF2F9" } }>{verTodosContactos ? "Ver menos" : `Ver todos (${lista.length})`}</button>
+              )}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
