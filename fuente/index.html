@@ -12337,7 +12337,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         <span className="font-bold" style={ { color: "#001E62" } }>{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>
                       </div>
                       <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold" style={ estiloEstado[est.cls] }>{est.txt}</div>
-                      {(() => {
+                      {enProceso && (() => {
                         const lf = lineaFactura(c);
                         if (!lf) return null;
                         if (lf.pagada) return <div className="mt-1.5 text-xs font-bold" style={ { color: "#166534" } }>✓ 1ra factura pagada</div>;
@@ -12357,12 +12357,10 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         </div>
                       )}
                     </button>
-                    {!c.fechaInstalacion && !c.cancelado && !c.penalizado && (
+                    {!c.fechaInstalacion && !c.cancelado && !c.penalizado && c.abonoInicial === false && (
                       <div className="mt-2">
-                        {c.abonoInicial === false ? (
+                        {c.abonoInicial === false && (
                           <EtiquetaAbono cliente={c} onClick={onMarcarAbono ? () => onMarcarAbono(c.id, true) : undefined} />
-                        ) : (
-                          <span className="inline-block text-xs font-bold rounded-full px-2.5 py-0.5" style={ { background: "#EAF0FB", color: "#001E62" } }>✓ Abono recibido</span>
                         )}
                       </div>
                     )}
@@ -12376,7 +12374,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         💬 Enviar info de instalación
                       </button>
                     )}
-                    {!c.fechaInstalacion && !c.cancelado && !c.penalizado && String(c.telefono || "").replace(/\D/g, "") && !(instalacionPorAvisar(c) && onEnviarInfoInstalacion) && !(c.instalacionProgramada && c.instalacionProgramada >= hoyISO) && (
+                    {!c.fechaInstalacion && !c.cancelado && !c.penalizado && String(c.telefono || "").replace(/\D/g, "") && !(instalacionPorAvisar(c) && onEnviarInfoInstalacion) && !(c.instalacionProgramada && c.instalacionProgramada >= hoyISO) && !c.instalacionEnviadaEn && (
                       <a
                         href={whatsappLink(c, { texto: "" })}
                         target="_blank"
@@ -12398,7 +12396,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                       >
                         {copiedCell === c.id + "sub" ? "✓ Copiado" : "📋 " + (c.numeroSuscriptor || "Sin N°")}
                       </button>
-                      {c.fechaInstalacion && !c.cancelado && !c.penalizado && c.telefono && (
+                      {(c.fechaInstalacion || c.instalacionEnviadaEn) && !c.cancelado && !c.penalizado && c.telefono && (
                         <a
                           href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`}
                           onClick={(e) => { e.preventDefault(); const destino = `https://wa.me/${telefonoWhatsapp(c.telefono)}`; if (onContacto) onContacto(c); setTimeout(() => { window.location.href = destino; }, 300); } }
