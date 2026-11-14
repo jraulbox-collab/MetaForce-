@@ -4961,6 +4961,8 @@ function App() {
             onEnviarInfoInstalacion={enviarInfoInstalacion}
             onConfirmarCiclo={confirmarCicloHogar}
             onContacto={(c) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "clientes" })}
+            ultimoContacto={ultimoContacto}
+            onAbrirComision={() => { navegarA("dashboard"); memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; comisionPasoSimple.current = true; try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} setComisionAbierta(true); }}
           />
         )}
         {tab === "detalle" && (
@@ -11250,7 +11252,7 @@ function textoReporteDiario(clientes, convergencias) {
   return `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
 }
 
-function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onContacto }) {
+function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onContacto, ultimoContacto, onAbrirComision }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -12269,6 +12271,29 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                 { k: "cancelados", t: "Cancelados (no cuentan)" },
               ];
               const hoyISO = fechaLocalISO(new Date());
+              // Mes en proceso: instalados del período anterior (o el de antes) cuyo plazo para pagar la 1ra factura sigue abierto.
+              const hoyDia = new Date(); hoyDia.setHours(0, 0, 0, 0);
+              const limiteMes = fechaLimitePrimeraFactura(mesActivoEfectivo);
+              const enProceso = subVista === "clientes" && !!limiteMes && limiteMes >= hoyDia && (mesActivoEfectivo === sumarMesClave(periodoActual, -1) || mesActivoEfectivo === sumarMesClave(periodoActual, -2));
+              const delProceso = enProceso ? (clientesTodos || clientes).filter((c) => c.fechaInstalacion && !c.cancelado && !c.penalizado && periodoDelCliente(c) === mesActivoEfectivo && clienteCuentaParaComision(c)) : [];
+              const nPagaron = delProceso.filter((c) => c.f1_estado === "pagada").length;
+              const diasMes = enProceso ? Math.round((limiteMes - hoyDia) / 86400000) : 0;
+              const fechaCortaF = (iso) => (iso ? new Date(iso + "T12:00:00").toLocaleDateString("es", { day: "numeric", month: "short" }).replace(".", "") : "");
+              const textoContactoCl = (id) => {
+                const f = ultimoContacto && ultimoContacto[id];
+                if (!f) return { t: "💬 Sin contactar", c: "#B45309" };
+                const d = Math.max(0, Math.round((Date.now() - new Date(f).getTime()) / 86400000));
+                return { t: d === 0 ? "💬 Contactado hoy" : d === 1 ? "💬 Contactado ayer" : `💬 Contactado hace ${d} días`, c: "#166534" };
+              };
+              // Estado de la 1ra factura de un cliente instalado: pagada / pendiente, ciclo, vencimiento y último contacto.
+              const lineaFactura = (c) => {
+                if (!c.fechaInstalacion || c.cancelado || c.penalizado) return null;
+                if (c.f1_estado === "pagada") return { pagada: true };
+                const ciclo = parseInt(c.cicloFacturacion, 10) || null;
+                const venc = ciclo ? vencimientoPrimeraFacturaHogar(c) : null;
+                const dias = venc ? daysFromToday(venc) : null;
+                return { pagada: false, ciclo, venc, dias, parcial: !!c.f1_saldoPendiente, contacto: textoContactoCl(c.id) };
+              };
               const estadoLinea = (c) => {
                 if (c.penalizado) return { cls: "can", txt: "✕ Penalizado" };
                 if (c.cancelado) return { cls: "can", txt: "✕ Cancelado · no cuenta en pendientes" };
@@ -12295,7 +12320,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                   <div key={c.id} className="bg-white rounded-xl border p-3" style={ { borderColor: "#DFE5EF", opacity: cuenta ? 1 : 0.75 } }>
                     <button type="button" onClick={() => onVerDetalle(c)} className="text-left block w-full">
                       <div className="flex items-center gap-2">
-                        <span className="font-extrabold text-sm flex-1 min-w-0 truncate" style={ { color: "#001E62" } }>{c.nombre}</span>
+                        <span className="font-extrabold text-sm flex-1 min-w-0" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{c.nombre}</span>
                         <span className="text-[10.5px] font-extrabold rounded-md px-1.5 py-0.5" style={ { background: "#EAF0FB", color: "#0B4A99", border: "1px solid #CFE0F7" } }>Hogar</span>
                       </div>
                       <div className="flex items-center justify-between text-xs mt-1 mb-2" style={ { color: "#5A6680" } }>
@@ -12303,6 +12328,20 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         <span className="font-bold" style={ { color: "#001E62" } }>{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>
                       </div>
                       <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold" style={ estiloEstado[est.cls] }>{est.txt}</div>
+                      {(() => {
+                        const lf = lineaFactura(c);
+                        if (!lf) return null;
+                        if (lf.pagada) return <div className="mt-1.5 text-xs font-bold" style={ { color: "#166534" } }>✓ 1ra factura pagada</div>;
+                        return (
+                          <div className="mt-1.5 text-xs font-bold flex flex-col gap-1">
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                              <span style={ { color: "#B45309" } }>{lf.parcial ? "◐ 1ra factura: pago parcial" : "⏳ 1ra factura pendiente"}</span>
+                              {lf.venc && <span style={ { color: "#001E62" } }>Vence {fechaCortaF(lf.venc)}{lf.dias !== null ? (lf.dias > 0 ? ` · ${lf.dias} día${lf.dias === 1 ? "" : "s"}` : lf.dias === 0 ? " · hoy" : " · ⛔ venció") : ""}</span>}
+                            </div>
+                            <div style={ { color: lf.contacto.c } }>{lf.contacto.t}</div>
+                          </div>
+                        );
+                      })()}
                       {!cuenta && !c.cancelado && !c.penalizado && (
                         <div className="text-[10px] font-semibold mt-1" style={ { color: "#B45309" } }>
                           ⛔ No cuenta para tu comisión (venció sin pagar la 1ra factura)
@@ -12387,6 +12426,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
               };
               return (
                 <>
+                  {enProceso && delProceso.length > 0 && (
+                    <div className="rounded-xl p-3" style={ { background: "#FFF6E3", border: "2px solid #B45309" } }>
+                      <div className="text-xs font-extrabold" style={ { color: "#B45309" } }>🎯 {labelMesM.toUpperCase()} EN PROCESO · ⏳ quedan {diasMes} día{diasMes === 1 ? "" : "s"}</div>
+                      <div className="mt-1 text-sm font-extrabold" style={ { color: "#001E62" } }>✓ Pagaron {nPagaron} de {delProceso.length} · faltan {delProceso.length - nPagaron}</div>
+                      {onAbrirComision && (
+                        <button type="button" onClick={onAbrirComision} className="mt-2 w-full rounded-lg text-white font-bold text-sm" style={ { minHeight: 44, background: "#001E62" } }>Abrir herramienta de cobro ›</button>
+                      )}
+                    </div>
+                  )}
                   {chipGrupo === "faltaAbono" && (
                     listaAbono.length > 0 ? (
                       <div className="flex flex-col gap-2">
