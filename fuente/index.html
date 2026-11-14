@@ -4961,6 +4961,7 @@ function App() {
             onMarcarAbono={marcarAbonoInicial}
             onEnviarInfoInstalacion={enviarInfoInstalacion}
             onConfirmarCiclo={confirmarCicloHogar}
+            onContacto={(c) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "clientes" })}
           />
         )}
         {tab === "detalle" && (
@@ -11250,7 +11251,7 @@ function textoReporteDiario(clientes, convergencias) {
   return `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
 }
 
-function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo }) {
+function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onContacto }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -12341,6 +12342,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                       {c.fechaInstalacion && !c.cancelado && !c.penalizado && c.telefono && (
                         <a
                           href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`}
+                          onClick={(e) => { e.preventDefault(); const destino = `https://wa.me/${telefonoWhatsapp(c.telefono)}`; if (onContacto) onContacto(c); setTimeout(() => { window.location.href = destino; }, 300); } }
                           aria-label={"Abrir chat de WhatsApp con " + tituloEs(c.nombre || "")}
                           className="mf-wa-chat rounded-lg border flex items-center justify-center shrink-0"
                           style={ { width: 36, alignSelf: "stretch", borderColor: "#DFE5EF", color: "#5A6680", background: "#fff" } }
