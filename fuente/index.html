@@ -3726,7 +3726,6 @@ function App() {
       form.numeroSuscriptor,
       form.nombre,
       form.telefono,
-      form.cicloFacturacion,
       form.planTipo,
       form.velocidad,
       form.montoMensual,
@@ -16401,9 +16400,9 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
               </Field>
             </div>
             <div className="col-span-2">
-            <Field label="Ciclo de facturación *">
-              <select required value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
-                <option value="">Seleccionar…</option>
+            <Field label="Ciclo de facturación (opcional)">
+              <select value={form.cicloFacturacion} onChange={set("cicloFacturacion")} className={inputClass} style={inputStyle}>
+                <option value="">Confirmar cuando esté instalado</option>
                 {CICLOS.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
               </select>
             </Field>
