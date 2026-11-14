@@ -1408,10 +1408,10 @@ function camposEstadoCliente(form, previo) {
 }
 
 const CICLOS = [
-  { value: "1", label: "Ciclo 1 (factura el 1, cubre 1–fin de mes)" },
-  { value: "6", label: "Ciclo 6 (factura el 6, cubre 6–5 del sig. mes)" },
-  { value: "15", label: "Ciclo 15 (factura el 15, cubre 15–14 del sig. mes)" },
-  { value: "21", label: "Ciclo 21 (factura el 21, cubre 21–20 del sig. mes)" },
+  { value: "1", label: "Ciclo 1" },
+  { value: "6", label: "Ciclo 6" },
+  { value: "15", label: "Ciclo 15" },
+  { value: "21", label: "Ciclo 21" },
 ];
 const TIPOS_PLAN = ["SINGLE", "DOBLE"];
 const VELOCIDADES = ["150 Megas", "300 Megas", "500 Megas", "750 Megas", "1000 Megas"];
@@ -13508,6 +13508,9 @@ function ClienteDetalle({
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Monto 1ra factura</div>
           <div className="font-medium">{fmtMonto(cliente.monto1raFactura)}</div>
+          {cliente.fechaInstalacion && cliente.fecha1raFactura && vencimientoPrimeraFacturaHogar(cliente) && (
+            <div className="text-xs" style={ { color: "#5A6680" } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>
+          )}
         </div>
         <div>
           <div className="text-xs" style={ { color: "#5A6680" } }>Estado de pago</div>
