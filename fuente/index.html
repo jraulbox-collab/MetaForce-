@@ -8671,9 +8671,18 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       </div>
     );
   };
-  // Orden por lo que vale cada cliente: línea Móvil primero, luego mayor plan mensual (estable: no salta al marcar).
-  const valorCliente = (c) => (idsMovilHoy.has(c.id) ? 1e9 : 0) + (Number(c.montoMensual) || 0);
-  const porAporte = (arr) => [...arr].sort((a, b) => valorCliente(b) - valorCliente(a));
+  // Orden para sumar la mayor cantidad de pagos: primero los que aún no has contactado, luego los que
+  // vencen antes y, por último, los contactados hace más tiempo.
+  const claveCobro = (c) => {
+    const f = ultimoContacto && ultimoContacto[c.id];
+    let venc = "9999";
+    try { if (!idsMovilHoy.has(c.id) && parseInt(c.cicloFacturacion, 10)) venc = vencimientoPrimeraFacturaHogar(c) || "9999"; } catch (e) {}
+    return { contactado: f ? 1 : 0, venc, f: f || "" };
+  };
+  const porAporte = (arr) => [...arr].sort((a, b) => {
+    const x = claveCobro(a), y = claveCobro(b);
+    return x.contactado - y.contactado || String(x.venc).localeCompare(String(y.venc)) || String(x.f).localeCompare(String(y.f));
+  });
   const vencidosVista = porAporte(rescateVencidosOrdenados);
   const enPlazoVista = porAporte(rescateEnPlazoOrdenados);
   // Texto corto de cuándo fue el último contacto con el cliente (según la bitácora de envíos).
@@ -12477,7 +12486,20 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                   {GRUPOS.filter((g) => chipGrupo !== "faltaAbono" && chipGrupo !== "faltaInfo" && chipGrupo !== "faltaCiclo" && (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
                     <div key={g.k} className="flex flex-col gap-2">
                       <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>{g.t} · {conteoG[g.k]}</div>
-                      {visiblesFinal.filter((c) => grupoDe(c) === g.k).map(tarjeta)}
+                      {(() => {
+                        const lista = visiblesFinal.filter((c) => grupoDe(c) === g.k);
+                        if (!(enProceso && g.k === "instalados")) return lista.map(tarjeta);
+                        const clave = (c) => {
+                          const f = ultimoContacto && ultimoContacto[c.id];
+                          let venc = "9999";
+                          try { if (parseInt(c.cicloFacturacion, 10)) venc = vencimientoPrimeraFacturaHogar(c) || "9999"; } catch (e) {}
+                          return { pagada: c.f1_estado === "pagada" ? 1 : 0, contactado: f ? 1 : 0, venc, f: f || "" };
+                        };
+                        return [...lista].sort((a, b) => {
+                          const x = clave(a), y = clave(b);
+                          return x.pagada - y.pagada || x.contactado - y.contactado || String(x.venc).localeCompare(String(y.venc)) || String(x.f).localeCompare(String(y.f));
+                        }).map(tarjeta);
+                      })()}
                     </div>
                   ))}
                   <div style={ { height: 72 } } />
