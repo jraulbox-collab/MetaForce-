@@ -7446,6 +7446,7 @@ const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factur
 const DIAS_PARA_REFERIDOS = 30;       // días después del 1er mensaje a un contacto para pedirle referidos
 const SALTOS_PARA_DESCARTAR = 3;        // "Hoy no" seguidos antes de sacarlo de la lista
 const DIAS_OFERTA_INTERNET_MOVIL = 15; // días después de la 1ra factura pagada para ofrecer internet a un cliente móvil
+const PEDIR_REFERIDOS = false;           // ya no se piden referidos: los clientes comparten la promo en sus estados
 const DIAS_REFERIDOS_CLIENTE = 60;      // días después de la 1ra factura pagada para pedirle referidos a un cliente Hogar
 const PRECIO_BENEFICIO_MOVIL = "$20.70 más impuestos";
 const d8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
@@ -7615,7 +7616,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
           if (e.refAbiertoEn) {
             if (fechaLocalISO(new Date(e.refAbiertoEn)) === hoyISO) numeros.push({ ...n, ronda: "referido", estado: "abierto", abiertoEn: e.refAbiertoEn });
           } else if (!e.refDescartado && c.f1_pagadaEn && -daysFromToday(fechaLocalISO(new Date(c.f1_pagadaEn))) >= DIAS_REFERIDOS_CLIENTE && e.refSaltoDia !== hoyISO) {
-            numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+            PEDIR_REFERIDOS && numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
           }
         }
         // Cliente Hogar sin línea móvil: en el momento de su 4ta factura se le manda el 2º mensaje de móvil.
@@ -7643,7 +7644,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
           }
           const dias = -daysFromToday(fechaLocalISO(new Date(e.abiertoEn)));
           if (!e.refDescartado && dias >= DIAS_PARA_REFERIDOS) {
-            if (e.refSaltoDia !== hoyISO) numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+            if (e.refSaltoDia !== hoyISO) PEDIR_REFERIDOS && numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
             return;
           }
         }
@@ -7653,7 +7654,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
       if (n.tipo === "ficha" && tieneMovil) {
         // Ya tiene móvil contigo: no se le ofrece plan móvil; a los 60 días se le piden referidos.
         if (!e.refDescartado && c.f1_pagadaEn && -daysFromToday(fechaLocalISO(new Date(c.f1_pagadaEn))) >= DIAS_REFERIDOS_CLIENTE && e.refSaltoDia !== hoyISO) {
-          numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+          PEDIR_REFERIDOS && numeros.push({ ...n, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
         }
         return;
       }
@@ -7718,7 +7719,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
       } else if (e.refAbiertoEn) {
         if (fechaLocalISO(new Date(e.refAbiertoEn)) === hoyISO) items.push({ ...base, ronda: "referido", estado: "abierto", abiertoEn: e.refAbiertoEn });
       } else if (!internetPendiente && !abiertoHoy && diasDesde >= DIAS_REFERIDOS_CLIENTE && !e.refDescartado && e.refSaltoDia !== hoyISO) {
-        items.push({ ...base, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
+        PEDIR_REFERIDOS && items.push({ ...base, ronda: "referido", estado: "pendiente", saltos: e.refSaltos || 0 });
       }
     }
     items.forEach((it) => { it.ultimoISO = [e.abiertoEn, e.refAbiertoEn].filter(Boolean).sort().pop() || ""; });
@@ -8071,7 +8072,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   const totalRefs = datos.referidos.guardados;
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden mb-4">
-      {!cola && !sinCabecera && <button
+      {false && !cola && !sinCabecera && <button
         type="button"
         onClick={() => setAgregando(true)}
         className="fixed z-40 flex items-center justify-center gap-1.5 text-white text-sm font-extrabold px-4"
@@ -8117,7 +8118,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
             );
           })}
         </div>}
-        {totalRefs > 0 && (
+        {false && totalRefs > 0 && (
           <div className="mt-3">
             <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
               {verRefs ? "✓ " : ""}📋 Mis referidos ({totalRefs})
@@ -8297,12 +8298,14 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
             ? <><b style={ { color: "#001E62" } }>{datos.ventasMes.total} {datos.ventasMes.total === 1 ? "venta" : "ventas"}</b> móvil · {datos.ventasMes.clientes.map((x) => `${tituloEs(x.nombre || "")} (${x.n})`).join(", ")}</>
             : "Todavía ninguna. Se suma sola cuando registras un Match Digital cuyo titular es un cliente tuyo."}
         </div>
+        {false && <>
         <div className="text-[11px] font-extrabold uppercase mt-3" style={ { color: "#5A6680", letterSpacing: ".04em" } }>Referidos</div>
         <div className="text-xs mt-1" style={ { color: "#374151" } }>
           {datos.referidos.guardados > 0
             ? <><b style={ { color: "#001E62" } }>{datos.referidos.guardados}</b> guardados · <b style={ { color: "#001E62" } }>{datos.referidos.contrataron}</b> ya {datos.referidos.contrataron === 1 ? "es cliente" : "son clientes"}</>
             : "Todavía ninguno. Se guardan con el botón ➕ Agregar referido."}
         </div>
+        </>}
       </div>
       )}
       {cola && itemCola && <div style={ { height: 240 } } aria-hidden="true"></div>}
