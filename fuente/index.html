@@ -6503,7 +6503,8 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
   const [periodoStat, setPeriodoStat] = useState("30");
   const [statAbierto, setStatAbierto] = useState(null);
   const [provVender, setProvVender] = useState("centrales");
-  const [provOtras, setProvOtras] = useState("todas");
+  const [provOtras, setProvOtras] = useState(inicial && inicial.provincia ? inicial.provincia : "todas");
+  const [soloId, setSoloId] = useState(inicial && !inicial.sinCoincidencia ? inicial.id : null);
   const provSel = vista === "vender" ? provVender : provOtras;
   const setProvSel = vista === "vender" ? setProvVender : setProvOtras;
   const [busca, setBusca] = useState(inicial ? inicial.barrio || "" : "");
@@ -6631,8 +6632,8 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
   const resultados = useMemo(() => {
     const q = normTexto(busca);
     if (!q) return [];
-    return todos.filter(enAlcance).filter((e) => normTexto(`${e.todosNombres || e.barrio} ${e.corregimiento} ${e.distrito}`).includes(q)).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp);
-  }, [todos, busca, provSel]);
+    return todos.filter(enAlcance).filter((e) => (soloId ? e.id === soloId : normTexto(`${e.todosNombres || e.barrio} ${e.corregimiento} ${e.distrito}`).includes(q))).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp);
+  }, [todos, busca, provSel, soloId]);
   const provincias = datos ? [...new Set(datos.filas.map((f) => f.provincia))].sort() : [];
   const chip = (activo, texto, alPulsar) => (
     <button type="button" onClick={alPulsar} className="shrink-0 rounded-full font-bold text-sm px-3" style={ { minHeight: 40, border: "1.5px solid " + (activo ? "#001E62" : "#DFE5EF"), background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{texto}</button>
@@ -6862,10 +6863,11 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
 
           {vista === "buscar" && (
             <>
-              <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setVerMas(30); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" className="w-full rounded-xl border outline-none px-3 mb-2" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
+              <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setSoloId(null); setVerMas(30); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" className="w-full rounded-xl border outline-none px-3 mb-2" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
               {formNuevo ? <FormBarrioNuevo datos={datos} inicial={formNuevo} onGuardar={guardarNuevo} onCancelar={() => setFormNuevo(null)} /> : (
                 <button type="button" onClick={() => setFormNuevo({})} className="w-full rounded-xl border font-bold text-sm mb-3" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Agregar barrio</button>
               )}
+              {soloId && <div className="flex items-center justify-between gap-2 text-xs mb-2" style={ { color: "#5A6680" } }><span>Mostrando solo este barrio.</span><button type="button" onClick={() => { setSoloId(null); setProvOtras("todas"); }} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver todos con ese nombre</button></div>}
               {!busca.trim() && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Escribe el nombre de un barrio, corregimiento o distrito.</div>}
               {busca.trim() && resultados.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Ningún barrio coincide{provSel !== "todas" ? ". Prueba con “Todas las provincias”." : "."}</div>}
               <div className="flex flex-col gap-2">{resultados.slice(0, verMas).map(tarjetaBarrio)}</div>
