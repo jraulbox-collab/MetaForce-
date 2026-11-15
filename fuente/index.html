@@ -6514,6 +6514,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
   const [ideaAbierta, setIdeaAbierta] = useState(null);
   const [periodoStat, setPeriodoStat] = useState("30");
   const [statAbierto, setStatAbierto] = useState(null);
+  const [statTodos, setStatTodos] = useState({});
   const [provOtras, setProvOtras] = useState(inicial && inicial.provincia ? inicial.provincia : "todas");
   const [soloId, setSoloId] = useState(inicial && !inicial.sinCoincidencia ? inicial.id : null);
   const provSel = provOtras;
@@ -6633,7 +6634,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
       zonas: por([...zonasM.values()].filter((z) => z.clientes > 0), (z) => z.ventas * 1000 + z.clientes).slice(0, 8),
     };
   }, [est, periodoStat]);
-  const mios = useMemo(() => (est ? est.conClientes.filter(enAlcance).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp) : []), [est, provSel]);
+  const mios = useMemo(() => (est ? est.conClientes.filter(enAlcance).map((e) => ({ e, rec: e.clientes.filter((c) => !c.cancelado && !c.penalizado && c.creadoEn && Date.now() - new Date(c.creadoEn).getTime() <= 30 * 86400000).length })).sort((a, b) => b.rec - a.rec || b.e.vendidos - a.e.vendidos || b.e.hhpp - a.e.hhpp).map((x) => x.e) : []), [est, provSel]);
   const resultados = useMemo(() => {
     const q = normTexto(busca);
     if (!q) return [];
@@ -6653,7 +6654,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
     </button>
   );
   const lugar = (e) => [e.corregimiento, e.distrito, e.provincia.charAt(0) + e.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ");
-  const tarjetaBarrio = (e) => {
+  const tarjetaBarrio = (e, compacto) => {
     const abre = abierto === e.id;
     const mas = masAbierto === e.id;
     const par = abre && mas ? parecidosDe(datos, e) : [];
@@ -6665,11 +6666,17 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
             <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
           </div>
           <div className="text-xs" style={ { color: "#5A6680" } }>{lugar(e)}</div>
+          {compacto ? (
+            <div className="text-sm font-bold mt-1" style={ { color: "#001E62" } }>
+              👥 {e.vendidos} cliente{e.vendidos === 1 ? "" : "s"} · 💰 {e.pagaron} pagaron la 1ra
+            </div>
+          ) : (
           <div className="text-sm font-bold mt-1" style={ { color: "#001E62" } }>
             {e.vendidos} cliente{e.vendidos === 1 ? "" : "s"} · 🏠 {fmtNum(e.hhpp)} casas · {etiquetaTamano(e.hhpp)}
           </div>
-          {e.vendidos >= 3 && <div className="text-xs font-bold mt-1" style={ { color: e.pagaron / e.vendidos >= 0.6 ? "#166534" : "#B45309" } }>💰 Pagaron la 1ra factura {e.pagaron} de {e.vendidos}</div>}
-          {e.bajas > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ {e.bajas} baja{e.bajas === 1 ? "" : "s"} (cancelados o penalizados)</div>}
+          )}
+          {!compacto && e.vendidos >= 3 && <div className="text-xs font-bold mt-1" style={ { color: e.pagaron / e.vendidos >= 0.6 ? "#166534" : "#B45309" } }>💰 Pagaron la 1ra factura {e.pagaron} de {e.vendidos}</div>}
+          {!compacto && e.bajas > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ {e.bajas} baja{e.bajas === 1 ? "" : "s"} (cancelados o penalizados)</div>}
         </button>
         {abre && (
           <div className="px-3 pb-3">
@@ -6766,7 +6773,8 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
               <div className="mb-4">
                 <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>{titulo}</div>
                 {nota && <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{nota}</div>}
-                {filas.length === 0 ? <div className="rounded-xl border bg-white p-3 text-xs" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>{vacio}</div> : <div className="flex flex-col gap-2">{filas}</div>}
+                {filas.length === 0 ? <div className="rounded-xl border bg-white p-3 text-xs" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>{vacio}</div> : <div className="flex flex-col gap-2">{statTodos[titulo] ? filas : filas.slice(0, 3)}</div>}
+                {filas.length > 3 && <button type="button" onClick={() => setStatTodos((t) => ({ ...t, [titulo]: !t[titulo] }))} className="text-xs font-bold rounded-md px-3 border mt-2" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>{statTodos[titulo] ? "Ver menos" : `Ver todos (${filas.length})`}</button>}
               </div>
             );
             const fila = (clave, nombre, sub, valor, color, clientesLista) => {
@@ -6802,7 +6810,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
           {vista === "mios" && (
             <>
               {mios.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no hay clientes en barrios de esta provincia.</div>}
-              <div className="flex flex-col gap-2">{mios.slice(0, verMas).map(tarjetaBarrio)}</div>
+              <div className="flex flex-col gap-2">{mios.slice(0, verMas).map((e) => tarjetaBarrio(e, true))}</div>
               {mios.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({mios.length - verMas} barrios)</button>}
             </>
           )}
