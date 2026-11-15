@@ -6273,12 +6273,31 @@ function prepararBarrios(raw) {
   return { filas, exacto, corto, parecidos, aBase };
 }
 // Aplica tus ajustes: barrios unidos a mano y casas corregidas a mano. Devuelve las "entidades" finales.
-function aplicarAjustesBarrios(base, ajustes) {
+function conBarriosNuevos(base, lista) {
+  const nuevos = lista.filter((a) => a && a.tipo === "nuevo" && a.barrio && a.provincia);
+  if (nuevos.length === 0) return base;
+  const copiar = (m) => new Map([...m].map(([k, v]) => [k, [...v]]));
+  const filas = [...base.filas];
+  const exacto = copiar(base.exacto);
+  const corto = copiar(base.corto);
+  const parecidos = copiar(base.parecidos);
+  const meter = (m, k, f) => { if (!k) return; const a = m.get(k); if (a) { if (a.indexOf(f) < 0) a.push(f); } else m.set(k, [f]); };
+  nuevos.forEach((a) => {
+    const f = { id: "N" + a.id, ajusteId: a.id, nuevo: true, barrio: String(a.barrio).trim().toUpperCase(), provincia: a.provincia, distrito: a.distrito || "", corregimiento: a.corregimiento || "", hhpp: Number(a.hhpp) || 0 };
+    f.ids = [f.id]; f.partes = [{ nombre: f.barrio, hhpp: f.hhpp }]; f.nombres = [f.barrio];
+    clavesBarrio(f.barrio).forEach((k) => { meter(exacto, k, f); meter(corto, k, f); });
+    f.grupoParecido = [f.provincia, f.distrito, f.corregimiento, claveParecida(f.barrio)].join("|");
+    meter(parecidos, f.grupoParecido, f);
+    filas.push(f);
+  });
+  return { ...base, filas, exacto, corto, parecidos };
+}
+function aplicarAjustesBarrios(base0, ajustes) {
   const lista = Array.isArray(ajustes) ? ajustes : [];
+  const base = conBarriosNuevos(base0, lista);
   const porBase = new Map(base.filas.map((f) => [f.id, f]));
   const miembroDe = new Map();
   lista.forEach((a) => { if (a && a.tipo === "union") (a.miembros || []).forEach((m) => { if (porBase.has(m) && porBase.has(a.principal)) miembroDe.set(m, a.principal); }); });
-  const casas = new Map(lista.filter((a) => a && a.tipo === "casas").map((a) => [a.barrioId, Number(a.casas)]));
   const entidades = [];
   const aEnt = new Map();
   base.filas.forEach((f) => {
@@ -6287,8 +6306,7 @@ function aplicarAjustesBarrios(base, ajustes) {
     const miembros = uni ? (uni.miembros || []).map((m) => porBase.get(m)).filter(Boolean) : [];
     const todos = [f, ...miembros];
     const hhppArchivo = todos.reduce((t, x) => t + x.hhpp, 0);
-    const editada = casas.has(f.id) && Number.isFinite(casas.get(f.id));
-    const e = { ...f, hhppArchivo, hhpp: editada ? casas.get(f.id) : hhppArchivo, editada, unidos: miembros, todosNombres: todos.flatMap((x) => x.nombres).join(" ") };
+    const e = { ...f, hhppArchivo, hhpp: hhppArchivo, unidos: miembros, todosNombres: todos.flatMap((x) => x.nombres).join(" ") };
     entidades.push(e);
     todos.forEach((x) => aEnt.set(x.id, e.id));
   });
@@ -6411,22 +6429,79 @@ function BarriosTarjeta({ clientes, onAbrir, ajustes }) {
   );
 }
 
+// Formulario para agregar un barrio que no viene en el listado de Tigo.
+function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
+  const [nombre, setNombre] = useState(inicial.nombre || "");
+  const [prov, setProv] = useState(inicial.provincia || "");
+  const [dist, setDist] = useState(inicial.distrito || "");
+  const [corr, setCorr] = useState(inicial.corregimiento || "");
+  const [otroDist, setOtroDist] = useState("");
+  const [otroCorr, setOtroCorr] = useState("");
+  const [casas, setCasas] = useState("");
+  const OTRO = "__otro__";
+  const provincias = useMemo(() => [...new Set(datos.filas.map((f) => f.provincia))].sort(), [datos]);
+  const distritos = useMemo(() => [...new Set(datos.filas.filter((f) => f.provincia === prov).map((f) => f.distrito))].filter(Boolean).sort(), [datos, prov]);
+  const corregs = useMemo(() => [...new Set(datos.filas.filter((f) => f.provincia === prov && f.distrito === dist).map((f) => f.corregimiento))].filter(Boolean).sort(), [datos, prov, dist]);
+  const distFinal = dist === OTRO ? otroDist.trim().toUpperCase() : dist;
+  const corrFinal = corr === OTRO || dist === OTRO ? otroCorr.trim().toUpperCase() : corr;
+  const valido = nombre.trim().length >= 2 && prov && distFinal && corrFinal;
+  const campo = "w-full rounded-md border outline-none px-3 mb-3";
+  const est = { borderColor: "#DFE5EF", height: 44, background: "#fff" };
+  const etiqueta = (t) => <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>{t}</div>;
+  return (
+    <div className="bg-white rounded-xl border p-4 mb-3" style={ { borderColor: "#0072CE" } }>
+      <div className="font-extrabold text-sm mb-3" style={ { color: "#001E62" } }>＋ Agregar barrio nuevo</div>
+      {etiqueta("Nombre del barrio")}
+      <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} className={campo} style={ est } placeholder="Ej. Barriada Los Pinos" />
+      {etiqueta("Provincia")}
+      <select value={prov} onChange={(e) => { setProv(e.target.value); setDist(""); setCorr(""); }} className={campo} style={ est }>
+        <option value="">Elige…</option>
+        {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
+      </select>
+      {prov && (<>
+        {etiqueta("Distrito")}
+        <select value={dist} onChange={(e) => { setDist(e.target.value); setCorr(""); }} className={campo} style={ est }>
+          <option value="">Elige…</option>
+          {distritos.map((d) => <option key={d} value={d}>{d}</option>)}
+          <option value={OTRO}>➕ Otro (escribir)</option>
+        </select>
+        {dist === OTRO && <input type="text" value={otroDist} onChange={(e) => setOtroDist(e.target.value)} className={campo} style={ est } placeholder="Nombre del distrito" />}
+      </>)}
+      {prov && dist && (<>
+        {etiqueta("Corregimiento")}
+        {dist === OTRO ? null : (
+          <select value={corr} onChange={(e) => setCorr(e.target.value)} className={campo} style={ est }>
+            <option value="">Elige…</option>
+            {corregs.map((c) => <option key={c} value={c}>{c}</option>)}
+            <option value={OTRO}>➕ Otro (escribir)</option>
+          </select>
+        )}
+        {(dist === OTRO || corr === OTRO) && <input type="text" value={otroCorr} onChange={(e) => setOtroCorr(e.target.value)} className={campo} style={ est } placeholder="Nombre del corregimiento" />}
+      </>)}
+      {etiqueta("Casas (opcional)")}
+      <input type="number" inputMode="numeric" min="0" value={casas} onChange={(e) => setCasas(e.target.value)} className={campo} style={ est } placeholder="Si no sabes, déjalo vacío" />
+      <div className="flex gap-2">
+        <button type="button" disabled={!valido} onClick={() => onGuardar({ barrio: nombre.trim(), provincia: prov, distrito: distFinal, corregimiento: corrFinal, hhpp: parseInt(casas, 10) || 0 })} className="text-sm font-bold rounded-md px-4 text-white" style={ { minHeight: 44, background: valido ? "#166534" : "#9CA3AF" } }>Guardar barrio</button>
+        <button type="button" onClick={onCancelar} className="text-sm font-bold rounded-md px-4 border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
 function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes }) {
   const { datos, error } = useBarrios(ajustes);
-  const [editando, setEditando] = useState(null);
-  const [valorCasas, setValorCasas] = useState("");
-  const guardarCasas = (e, valor) => {
-    const n = parseInt(valor, 10);
-    onAjustes((prev) => {
-      const sin = prev.filter((a) => !(a.tipo === "casas" && a.barrioId === e.id));
-      return Number.isFinite(n) && n >= 0 ? [...sin, { id: "casas-" + e.id, tipo: "casas", barrioId: e.id, casas: n }] : sin;
-    });
-    setEditando(null);
+  const [formNuevo, setFormNuevo] = useState(null);
+  const guardarNuevo = (d) => {
+    onAjustes((prev) => [...prev, { id: "nuevo-" + uid(), tipo: "nuevo", ...d }]);
+    setFormNuevo(null);
+    setBusca(d.barrio);
+    setAlcance("todos");
   };
+  const borrarNuevo = (e) => onAjustes((prev) => prev.filter((a) => a.id !== e.ajusteId && !(a.tipo === "union" && (a.principal === e.id || (a.miembros || []).includes(e.id)))));
   const unir = (e, otro) => {
     onAjustes((prev) => {
       const heredados = prev.filter((a) => a.tipo === "union" && a.principal === otro.id).flatMap((a) => a.miembros || []);
-      const sin = prev.filter((a) => !(a.tipo === "union" && (a.principal === otro.id || a.principal === e.id)) && !(a.tipo === "casas" && a.barrioId === otro.id));
+      const sin = prev.filter((a) => !(a.tipo === "union" && (a.principal === otro.id || a.principal === e.id)));
       const actuales = prev.filter((a) => a.tipo === "union" && a.principal === e.id).flatMap((a) => a.miembros || []);
       const miembros = [...new Set([...actuales, otro.id, ...(otro.ids || []).filter((x) => x !== otro.id), ...heredados])];
       return [...sin, { id: "union-" + e.id, tipo: "union", principal: e.id, miembros }];
@@ -6489,6 +6564,9 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
             ))}
           </div>
           <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setVerMas(60); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" className="w-full rounded-xl border outline-none px-3 mb-2" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
+          {formNuevo ? <FormBarrioNuevo datos={datos} inicial={formNuevo} onGuardar={guardarNuevo} onCancelar={() => setFormNuevo(null)} /> : (
+            <button type="button" onClick={() => setFormNuevo({})} className="w-full rounded-xl border font-bold text-sm mb-2" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Agregar barrio</button>
+          )}
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
             {chip(alcance === "mios", "Mis barrios", () => { setAlcance("mios"); setVerMas(60); })}
             {chip(alcance === "todos", "Todos los barrios", () => { setAlcance("todos"); setVerMas(60); })}
@@ -6508,7 +6586,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
                 <div key={e.id} className="rounded-xl border bg-white" style={ { borderColor: abre ? "#0072CE" : "#DFE5EF" } }>
                   <button type="button" onClick={() => setAbierto(abre ? null : e.id)} aria-expanded={abre} className="w-full text-left p-3">
                     <div className="flex items-start justify-between gap-2">
-                      <span className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{e.barrio}</span>
+                      <span className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{e.barrio}{e.nuevo && <span className="ml-2 text-[10px] font-bold rounded-full px-2 py-0.5" style={ { background: "#E3EDFA", color: "#0072CE" } }>NUEVO</span>}</span>
                       <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
                     </div>
                     <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{[e.corregimiento, e.distrito, e.provincia.charAt(0) + e.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}</div>
@@ -6528,25 +6606,14 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
                         ✓ Pagaron {e.pagaron} · 📦 Instalados {e.instalados} · ✕ Bajas {e.bajas} · 🏠 Casas libres {fmtNum(e.libres)}
                       </div>
                       <div className="rounded-lg p-3 my-2" style={ { background: "#F3F6FB" } }>
-                        <div className="text-xs font-bold mb-1" style={ { color: "#001E62" } }>🏠 Casas (HHPP): {fmtNum(e.hhpp)}{e.editada ? " · ✎ corregidas por ti" : ""}</div>
+                        <div className="text-xs font-bold mb-1" style={ { color: "#001E62" } }>🏠 Casas (HHPP): {fmtNum(e.hhpp)}{e.nuevo ? " · 🆕 barrio agregado por ti" : ""}</div>
                         {(e.partes && e.partes.length > 1 || (e.unidos || []).length > 0) && (
                           <div className="text-xs mb-1" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>
                             Archivo: {[...(e.partes || [{ nombre: e.barrio, hhpp: e.hhpp }]), ...(e.unidos || []).flatMap((u) => u.partes || [{ nombre: u.barrio, hhpp: u.hhpp }])].map((x) => `${x.nombre} ${fmtNum(x.hhpp)}`).join(" + ")}
                           </div>
                         )}
-                        {editando === e.id ? (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <input type="number" inputMode="numeric" min="0" value={valorCasas} onChange={(ev) => setValorCasas(ev.target.value)} className="rounded-md border outline-none px-3" style={ { height: 44, width: 120, borderColor: "#DFE5EF", background: "#fff" } } placeholder="Casas" />
-                            <button type="button" onClick={() => guardarCasas(e, valorCasas)} className="text-sm font-bold rounded-md px-4 text-white" style={ { minHeight: 44, background: "#166534" } }>Guardar</button>
-                            <button type="button" onClick={() => setEditando(null)} className="text-sm font-bold rounded-md px-3 border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>Cancelar</button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <button type="button" onClick={() => { setEditando(e.id); setValorCasas(String(e.hhpp)); }} className="text-xs font-bold rounded-md px-3 border" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>✎ Editar casas</button>
-                            {e.editada && <button type="button" onClick={() => guardarCasas(e, "")} className="text-xs font-bold rounded-md px-3 border" style={ { minHeight: 40, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>Volver al valor del archivo ({fmtNum(e.hhppArchivo)})</button>}
-                          </div>
-                        )}
                       </div>
+                      {e.nuevo && <button type="button" onClick={() => borrarNuevo(e)} className="text-xs font-bold rounded-md px-3 border mb-2" style={ { minHeight: 40, borderColor: "#B45309", color: "#B45309", background: "#fff" } }>🗑 Borrar este barrio</button>}
                       {(e.unidos || []).map((u) => (
                         <div key={u.id} className="flex items-center justify-between gap-2 text-xs py-1" style={ { color: "#374151" } }>
                           <span style={ { overflowWrap: "anywhere" } }>🔗 Unido: <b>{u.barrio}</b> · {fmtNum(u.hhpp)} casas</span>
@@ -6586,7 +6653,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
             {verSin && nSin > 0 && (
               <div className="px-3 pb-3">
                 <div className="text-xs mb-1" style={ { color: "#5A6680" } }>Toca el cliente y corrige su barrio en Observaciones para que entre en las estadísticas. Ya coinciden {est.cruzados} de {clientes.length} clientes.</div>
-                {est.sinMatch.map((x) => <div key={x.c.id}>{cliente(x.c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Barrio guardado: “{x.barrio}” · no está en el listado</div></div>)}
+                {est.sinMatch.map((x) => <div key={x.c.id}>{cliente(x.c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Barrio guardado: “{x.barrio}” · no está en el listado</div><button type="button" onClick={() => { const z = leerBloqueTigo(x.c.observaciones).zona || ""; const [d0, c0] = z.split("·").map((t) => limpiarZona(t)); const f0 = d0 ? datos.filas.find((f) => normTexto(f.distrito) === normTexto(d0)) : null; setFormNuevo({ nombre: x.barrio, provincia: f0 ? f0.provincia : "", distrito: f0 ? f0.distrito : "", corregimiento: f0 && c0 && datos.filas.some((f) => f.distrito === f0.distrito && normTexto(f.corregimiento) === normTexto(c0)) ? datos.filas.find((f) => f.distrito === f0.distrito && normTexto(f.corregimiento) === normTexto(c0)).corregimiento : "" }); window.scrollTo(0, 0); }} className="text-xs font-bold rounded-md px-3 border mb-2" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Crear este barrio</button></div>)}
                 {est.ambiguos.map((x) => <div key={x.c.id}>{cliente(x.c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Barrio “{x.barrio}” · hay {x.n} con ese nombre; falta el corregimiento</div></div>)}
                 {est.sinBarrio.map((c) => <div key={c.id}>{cliente(c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Sin barrio guardado</div></div>)}
               </div>
