@@ -6946,7 +6946,7 @@ function ocultosDashboardNormal(cfg) {
 
 // Panel siempre visible de la herramienta de rescate: dónde estás, cuánto te falta para el siguiente
 // escalón, a qué clientes te conviene que paguen y cuánto tiempo queda.
-function PanelRescate({ pcHoy, pcRef, tramo, nPend, nMarcados, conviene, esMaximo, onMarcar, dias, totalHoy, totalSim, ganancia }) {
+function PanelRescate({ pcHoy, pcRef, tramo, nPend, nMarcados, conviene, esMaximo, onMarcar, dias, totalHoy, totalSim, ganancia, ing }) {
   const navy = "#001E62", mu = "#5A6680", verde = "#166534", azul = "#0072CE", naranja = "#B45309";
   const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
   const tr = (pc) => TABLA_POSICION_NUEVA.filter((t) => pc + 1e-9 >= t.min).slice(-1)[0] || null;
@@ -6995,6 +6995,28 @@ function PanelRescate({ pcHoy, pcRef, tramo, nPend, nMarcados, conviene, esMaxim
           <b>Con los {nMarcados} marcado{nMarcados === 1 ? "" : "s"}:</b> {fmtMonto(totalHoy)} → <b>{fmtMonto(totalSim)}</b> <b style={ { color: verde } }>({ganancia >= 0 ? "+" : ""}{fmtMonto(ganancia)})</b>
         </div>
       )}
+      {ing && ing.meta > 0 && ing.pctRef != null && (() => {
+        const pct = ing.pctRef;
+        const ingresos = (pct / 100) * ing.meta;
+        const falta = Math.max(0, ing.meta - ingresos);
+        const cuantos = (r) => (r > 0 ? Math.floor(falta / r) + 1 : null);
+        const cH = cuantos(ing.rpuH);
+        const cM = cuantos(ing.rpuM);
+        const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
+        const sinAcel = pct <= 100 + 1e-9;
+        return (
+          <div className="mt-3 pt-3 text-sm" style={ { borderTop: "1px solid #DFE5EF", lineHeight: 1.4 } }>
+            <div><b>💵 Ingresos: {pct.toFixed(0)}%</b> <span style={ { color: mu } }>({d(ingresos)} de {d(ing.meta)})</span></div>
+            {pct < 100 - 1e-9 && <div>Tu comisión se multiplica <b>×{(pct / 100).toFixed(2)}</b>. Te faltan <b style={ { color: naranja } }>{d(falta)}</b> para llegar a 100% (×1.0).</div>}
+            {sinAcel
+              ? <div>Para el acelerador (+10 pts) necesitas pasar de {d(ing.meta)}{(cH || cM) ? ": unos " + [cH ? cH + " cliente" + (cH === 1 ? "" : "s") + " Hogar" : null, cM ? cM + " Móvil" : null].filter(Boolean).join(" o ") + " más" : ""}.</div>
+              : <div style={ { color: verde, fontWeight: 700 } }>✓ Acelerador activo (+10 puntos).</div>}
+            {sinAcel && nMarcados === 0 && ing.pctMax != null && ing.pctMax > pct + 0.5 && (
+              <div style={ { color: mu } }>⚡ Si cobras todos los pendientes, tus ingresos suben a {ing.pctMax.toFixed(0)}%{ing.pctMax > 100 + 1e-9 ? " y activas el acelerador." : "."}</div>
+            )}
+          </div>
+        );
+      })()}
       {dias !== null && dias !== undefined && (
         <div className="text-xs mt-2" style={ { color: dias <= 7 ? naranja : mu, fontWeight: dias <= 7 ? 700 : 400 } }>
           {dias <= 7 ? "⏳ " : ""}{dias <= 0 ? "Hoy vence el plazo para cobrar" : dias === 1 ? "Queda 1 día para cobrar" : "Quedan " + dias + " días para cobrar"}
@@ -9657,6 +9679,13 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   totalHoy={comisionConfirmadaHoy.total}
                   totalSim={comisionSimulada.completo ? comisionSimulada.total : null}
                   ganancia={rescateGanancia}
+                  ing={{
+                    meta: metaDineroHoy,
+                    pctRef: rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctIngreso : comisionConfirmadaHoy.pctIngreso,
+                    pctMax: comisionMaximaHoy.completo ? comisionMaximaHoy.pctIngreso : null,
+                    rpuH: clientesDelPeriodoHoy.length ? clientesDelPeriodoHoy.reduce((a, c) => a + (Number(c.montoMensual) || 0), 0) / clientesDelPeriodoHoy.length : 38,
+                    rpuM: resumenMovilesConfirmadoHoy.cantidad ? costoPlanesMovilesPeriodoHoy / resumenMovilesConfirmadoHoy.cantidad : 20,
+                  }}
                 />
               ) : (
               <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
