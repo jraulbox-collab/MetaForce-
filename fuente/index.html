@@ -13413,7 +13413,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
 // Pegar el texto que Tigo da para la instalación: lo lee, muestra qué va a guardar y espera confirmación.
 // Con "cliente" (ficha existente) solo agrega fecha, horario y datos extra; sin "cliente" (formulario
 // de cliente nuevo) avisa si ese cliente ya existe y, si no, deja que el formulario se llene.
-function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, etiqueta = "Pegar texto de Tigo" }) {
+function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, etiqueta = "Pegar texto de Tigo", permitirSinFecha = false }) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
   const [datos, setDatos] = useState(null);
@@ -13429,7 +13429,7 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
   }
   function leer() {
     const d = leerOrdenInstalacionTigo(texto);
-    if (!d.fecha) {
+    if (!d.fecha && !(permitirSinFecha && (d.nombre || d.suscriptor))) {
       setDatos(null);
       setError("No encontré la fecha de instalación. Pega el texto completo que da Tigo.");
       return;
@@ -13508,7 +13508,7 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
       {datos && (
         <div className="bg-white rounded-md p-3 mb-1" style={ { border: "1px solid #DFE5EF" } }>
           <div className="text-xs font-semibold mb-1" style={ { color: "#001E62" } }>Esto se va a guardar</div>
-          {fila("Fecha de instalación", fmtFechaDia(datos.fecha))}
+          {fila("Fecha de instalación", datos.fecha ? fmtFechaDia(datos.fecha) : "Sin fecha todavía")}
           {datos.franjas.length === 1 && fila("Horario", franjaCorta(datos.franjas[0]))}
           {datos.franjas.length === 0 && fila("Horario", "No venía en el texto")}
           {fila("Tecnología", datos.tecnologia)}
@@ -17161,6 +17161,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
             clientes={clientes}
             onAbrirExistente={onAbrirExistente}
             etiqueta="Pegar texto de Tigo para llenar la ficha"
+            permitirSinFecha
             onAplicar={(d) =>
               setForm((f) => ({
                 ...f,
