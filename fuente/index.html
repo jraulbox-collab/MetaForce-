@@ -5065,7 +5065,7 @@ function App() {
               </div>
             );
           })()}
-          {conteoMsj.total > 0 && (
+          {conteoMsj.total > 0 && [conteoMsj.nCobros, conteoMsj.nVentas, conteoMsj.nInstal].filter((n) => n > 0).length > 1 && (
           <div className="flex gap-2 mb-4 overflow-x-auto" role="tablist" data-no-swipe="" style={ { WebkitOverflowScrolling: "touch" } }>
             {[["todos", "Todos", conteoMsj.total], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].filter(([k, , n]) => k === "todos" || n > 0).map(([k, t, n]) => (
               <button
@@ -5183,6 +5183,7 @@ function App() {
           </div>
           )}
           </div>
+          <div aria-hidden="true" style={ { height: 72 } } />
           </React.Fragment>
         )}
         {tab === "precierre" && (
@@ -8093,11 +8094,6 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
             );
           })}
         </div>
-        {pendF2.length > 0 && (
-          <button type="button" disabled={!!cola} onClick={() => iniciarCola(pendF2)} className="w-full mt-3 text-sm font-extrabold rounded-lg text-white disabled:opacity-50" style={ { minHeight: 46, background: "#001E62" } }>
-            ▶ Empezar a enviar <span style={ { fontWeight: 500, opacity: 0.85 } }>· {pendF2.length} por WhatsApp</span>
-          </button>
-        )}
         {totalRefs > 0 && (
           <div className="mt-3">
             <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
@@ -8171,7 +8167,8 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
                   <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ f.esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{f.esMovil ? "Móvil" : "Hogar"}</span>
                   <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{nombreFila}</span>
                 </div>
-                <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>{n.etiqueta}{n.frio && !esRef ? " · número nuevo" : ""} · 🎯 {ofertaVenta(n, f)}</div>
+                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>{n.etiqueta} · …{String(n.tel).replace(/\D/g, "").slice(-4)}{n.frio && !esRef ? " · número nuevo" : ""}</div>
+                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>🎯 {ofertaVenta(n, f)}</div>
               </div>
 {n.estado === "pendiente" && (
                 <div className="shrink-0 flex flex-col items-end gap-2">
