@@ -6151,7 +6151,7 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
             )}
 
             <p className="text-xs mb-4" style={ { color: "#5A6680" } }>
-              Revisa en el sistema de Tigo si ya pagó su factura, y confirma abajo.
+              Revisa en el sistema de Tigo si ya pagó. Si pagó, márcalo en la pestaña Clientes.
               {actual.esMovil && <span className="block mt-1" style={ { color: "#B45309", fontWeight: 600 } }>Debe pagar su 1ra factura completa para contar.</span>}
             </p>
 
@@ -6216,14 +6216,6 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                <button
-                  onClick={() => setConfirmando("pagada")}
-                  disabled={!actual.facturaPendiente}
-                  className="w-full py-3 rounded-md text-white font-medium disabled:opacity-40"
-                  style={ { background: "#001E62" } }
-                >
-                  ✓ Sí pagó
-                </button>
                 <button
                   onClick={() => onNoPagoTodavia(actual.cliente.id)}
                   className="w-full py-3 rounded-md border font-medium"
@@ -9686,7 +9678,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 />
               ) : (
               <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
-                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca los clientes pendientes y mira cuánto sube.
+                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca clientes para simular cuánto sube.
               </p>
               )}
               {rescateCandidatos.length === 0 ? (
@@ -9695,20 +9687,12 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <>
               <div className="fixed left-0 right-0 bottom-0" style={ { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "#fff", borderTop: "2px solid #001E62", borderRadius: "20px 20px 0 0", boxShadow: "0 -8px 24px rgba(0,30,98,.22)", padding: "8px 16px max(28px, calc(14px + env(safe-area-inset-bottom)))", maxHeight: "72vh", overflowY: "auto" } }>
                 <div aria-hidden="true" style={ { width: 44, height: 5, borderRadius: 3, background: "#C5CEDF", margin: "0 auto 8px" } } />
-                {rescateConfirmando ? (
-                  <div>
-                    <p className="text-sm font-bold mb-2" style={ { color: "#001E62" } }>¿Confirmas que {rescateSeleccionados.length === 1 ? "este cliente ya regularizó su 1ra factura" : `estos ${rescateSeleccionados.length} clientes ya regularizaron su 1ra factura`}?</p>
-                    <div className="flex gap-2">
-                      <button type="button" onClick={() => { onConfirmarRescate(periodoRescateActivo, rescateSeleccionados, rescatePones, rescateGanancia); setRescateConfirmando(false); setRescateSeleccion({}); } } className="flex-1 rounded-lg text-white font-bold text-sm" style={ { minHeight: 48, background: "#001E62" } }>✓ Sí, confirmar</button>
-                      <button type="button" onClick={() => setRescateConfirmando(false)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 48, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>✕ Cancelar</button>
-                    </div>
-                  </div>
-                ) : (
+                {(
                   <>
                     <div className="flex items-center justify-between gap-3">
                       <button type="button" onClick={() => setBarraComAbierta((v) => !v)} aria-expanded={barraComAbierta} className="text-left min-w-0 flex-1" style={ { background: "transparent", border: 0, padding: 0, minHeight: 64 } }>
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-extrabold" style={ { color: "#001E62", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `${rescateSeleccionados.length} marcado${rescateSeleccionados.length === 1 ? "" : "s"}` : "Sin marcar"}</span>
+                          <span className="text-sm font-extrabold" style={ { color: "#001E62", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}` : "Simulación"}</span>
                           <span className="text-[11px] font-bold rounded-full px-2 py-0.5" style={ { background: "#EEF3FB", color: "#001E62", whiteSpace: "nowrap" } }>{barraComAbierta ? "▼ Ocultar" : "▲ Detalle"}</span>
                         </div>
                         <div className="font-mono font-extrabold mt-0.5" style={ { fontSize: 20, color: "#001E62", whiteSpace: "nowrap" } }>
@@ -9732,12 +9716,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                           />
                         )}
                       </button>
-                      {rescateSeleccionados.length > 0 && (
-                        <button type="button" onClick={() => setRescateConfirmando(true)} className="shrink-0 rounded-xl text-white font-extrabold px-4 flex flex-col items-center justify-center" style={ { minHeight: 56, minWidth: 116, background: "#001E62", lineHeight: 1.15 } }>
-                          <span style={ { fontSize: 18 } } aria-hidden="true">✅</span>
-                          <span className="text-sm">Confirmar ({rescateSeleccionados.length})</span>
-                        </button>
-                      )}
                     </div>
                     {barraComAbierta && (
                       <div className="mt-3 pt-3 flex flex-col gap-3" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
@@ -9749,7 +9727,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                           </div>
                         )}
                         {rescateSeleccionados.length > 0 && (
-                          <button type="button" onClick={() => { setRescateSeleccion({}); setRescateConfirmando(false); } } className="self-start font-bold rounded-lg px-3 text-sm" style={ { minHeight: 40, color: "#001E62", border: "2px solid #001E62", background: "#fff" } }>☐ Desmarcar todo</button>
+                          <button type="button" onClick={() => { setRescateSeleccion({}); } } className="self-start font-bold rounded-lg px-3 text-sm" style={ { minHeight: 40, color: "#001E62", border: "2px solid #001E62", background: "#fff" } }>☐ Limpiar simulación</button>
                         )}
                       </div>
                     )}
