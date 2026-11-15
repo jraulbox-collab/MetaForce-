@@ -6944,99 +6944,61 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-// Panel siempre visible de la herramienta de rescate. La comisión es base (clientes) × ingresos,
-// así que muestra las dos palancas juntas, cuánto vale cada una y a quién conviene cobrar.
+// Panel compacto y siempre visible de la herramienta de rescate: una línea por cosa, sin explicaciones.
 function PanelRescate({ pcRef, tramo, nPend, nMarcados, conviene, esMaximo, onMarcar, dias, totalHoy, totalSim, totalMax, ganancia, ganaConviene, ing, comRef }) {
-  const navy = "#001E62", mu = "#5A6680", verde = "#166534", azul = "#0072CE", naranja = "#B45309";
+  const navy = "#001E62", mu = "#5A6680", verde = "#166534", naranja = "#B45309";
   const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
-  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
   const nombre = (c) => tituloEs(c.nombre || "").split(" ").slice(0, 2).join(" ");
-  const tr = (pc) => TABLA_POSICION_NUEVA.filter((t) => pc + 1e-9 >= t.min).slice(-1)[0] || null;
-  const tAct = tr(pcRef);
-  const idx = tAct ? TABLA_POSICION_NUEVA.findIndex((t) => t.min === tAct.min) : -1;
-  const sig = TABLA_POSICION_NUEVA[idx + 1] || null;
-  const sig2 = TABLA_POSICION_NUEVA[idx + 2] || null;
-  const montoAct = tAct ? tAct.monto : 0;
-  const factor = comRef && comRef.factorAcelerador != null ? comRef.factorAcelerador : 1;
+  const tAct = TABLA_POSICION_NUEVA.filter((t) => pcRef + 1e-9 >= t.min).slice(-1)[0] || null;
+  const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pcRef + 1e-9) || null;
   const alcanza = !!(sig && tramo && tramo.monto >= sig.monto - 1e-6);
-  const faltan = sig ? Math.max(0.1, sig.min - pcRef) : 0;
-  const pasoChip = (t, tipo) => (
-    <div style={ { flex: 1, textAlign: "center", padding: "5px 2px", borderRadius: 10, border: "2px " + (tipo === "sig" ? "dashed " + azul : "solid " + navy), background: tipo === "hoy" ? navy : "#fff", color: tipo === "hoy" ? "#fff" : tipo === "sig" ? azul : mu } }>
-      <div style={ { fontSize: 10, fontWeight: 700 } }>{tipo === "hoy" ? "● " : tipo === "sig" ? "→ " : ""}{t.max === Infinity ? t.min + "%+" : t.min + "%"}</div>
-      <div style={ { fontSize: 14, fontWeight: 800 } }>{abrev(t.monto)}</div>
-    </div>
-  );
-  const fila = { display: "flex", gap: 8, marginTop: 12, paddingTop: 12, borderTop: "1px solid #DFE5EF", lineHeight: 1.4 };
-  // Ingresos
-  let bloqueIng = null;
+  const fila = { display: "flex", gap: 8, alignItems: "baseline", padding: "7px 0", borderTop: "1px solid #DFE5EF", fontSize: 14, lineHeight: 1.35 };
+  const ico = { width: 22, flexShrink: 0, textAlign: "center" };
+  let txtIng = null;
   if (ing && ing.meta > 0 && ing.pctRef != null) {
     const pct = ing.pctRef;
-    const ingresos = (pct / 100) * ing.meta;
-    const falta = Math.max(0, ing.meta - ingresos);
-    const cuantos = (r) => (r > 0 ? Math.floor(falta / r) + 1 : null);
-    const cH = cuantos(ing.rpuH);
-    const cM = cuantos(ing.rpuM);
-    const base = comRef ? comRef.montoBase : montoAct;
-    const por100 = (base * 100) / ing.meta;
-    const bajo = pct < 100 - 1e-9;
-    const activo = pct > 100 + 1e-9;
-    bloqueIng = (
-      <div style={ fila }>
-        <span aria-hidden="true" style={ { fontSize: 18 } }>💵</span>
-        <div className="flex-1 text-sm">
-          <div><b>Ingresos {pct.toFixed(0)}%</b> <span style={ { color: mu } }>({d(ingresos)} de {d(ing.meta)})</span></div>
-          {bajo && <div>Tu comisión se multiplica <b>×{(pct / 100).toFixed(2)}</b> · faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%.</div>}
-          {activo
-            ? <div style={ { color: verde, fontWeight: 700 } }>✓ Acelerador activo (+10 puntos).</div>
-            : <div>Al pasar 100% se activa el acelerador: <b>+{d(base * 0.1)}</b> extra.</div>}
-          {por100 > 0 && <div style={ { color: mu } }>Cada $100 más de ingreso = +{d(por100)} de comisión.</div>}
-          {!activo && (cH || cM) && <div style={ { color: mu } }>En ventas nuevas serían unos {[cH ? cH + " Hogar" : null, cM ? cM + " Móvil" : null].filter(Boolean).join(" o ")}.</div>}
-          {!activo && nMarcados === 0 && ing.pctMax != null && ing.pctMax > pct + 0.5 && (
-            <div style={ { color: mu } }>⚡ Si cobras todos los pendientes: {ing.pctMax.toFixed(0)}%{ing.pctMax > 100 + 1e-9 ? " y activas el acelerador." : "."}</div>
-          )}
-        </div>
-      </div>
-    );
+    const falta = Math.max(0, ing.meta - (pct / 100) * ing.meta);
+    txtIng = pct > 100 + 1e-9
+      ? <span><b>Ingresos:</b> {pct.toFixed(0)}% · <b style={ { color: verde } }>acelerador activo ✓</b></span>
+      : <span><b>Ingresos:</b> {pct.toFixed(0)}% ({d((pct / 100) * ing.meta)} de {d(ing.meta)}) · faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%</span>;
   }
   return (
-    <div className="rounded-xl mb-3" style={ { background: "#F7FAFE", border: "1px solid #C9DBF3", padding: 12, color: navy } }>
-      <div className="text-sm" style={ { lineHeight: 1.4 } }>
-        {nMarcados > 0 && totalSim != null
-          ? <span><b>Con {nMarcados === 1 ? "el marcado" : "los " + nMarcados + " marcados"}:</b> {d(totalHoy)} → <b>{d(totalSim)}</b> <b style={ { color: verde } }>({ganancia >= 0 ? "+" : ""}{d(ganancia)})</b></span>
-          : <span><b>Hoy {d(totalHoy)}</b>{totalMax != null && totalMax > totalHoy + 0.5 ? <span> · hasta <b style={ { color: naranja } }>{d(totalMax)}</b> si pagan todos</span> : null}</span>}
+    <div className="rounded-xl mb-3" style={ { background: "#F7FAFE", border: "1px solid #C9DBF3", padding: "4px 12px", color: navy } }>
+      <div style={ { ...fila, borderTop: 0 } }>
+        <span style={ ico } aria-hidden="true">💰</span>
+        <span>
+          <b>Comisión:</b> {nMarcados > 0 && totalSim != null
+            ? <span>{d(totalHoy)} → <b>{d(totalSim)}</b> <b style={ { color: verde } }>({ganancia >= 0 ? "+" : ""}{d(ganancia)})</b> con {nMarcados} marcado{nMarcados === 1 ? "" : "s"}</span>
+            : <span>{d(totalHoy)}</span>}
+          {totalMax != null && totalMax > totalHoy + 0.5 ? <span style={ { color: mu } }> · máximo {d(totalMax)}</span> : null}
+        </span>
       </div>
       <div style={ fila }>
-        <span aria-hidden="true" style={ { fontSize: 18 } }>📊</span>
-        <div className="flex-1 text-sm">
-          <div><b>Clientes {pcRef.toFixed(0)}%</b> <span style={ { color: mu } }>· base {montoAct ? d(montoAct) : "—"}</span></div>
-          {!sig
-            ? <div style={ { fontWeight: 700 } }>🏆 Ya estás en el escalón más alto.</div>
-            : alcanza
-              ? <div>Faltan <b style={ { color: verde } }>{tramo.n} cliente{tramo.n === 1 ? "" : "s"}</b> para <b>{abrev(sig.monto)}</b> (+{d((sig.monto - montoAct) * factor)} de comisión).</div>
-              : <div>Faltan {faltan.toFixed(1)} puntos para {abrev(sig.monto)}. <b style={ { color: naranja } }>Con los pendientes de este mes no alcanzas.</b></div>}
-          {tAct && (
-            <div className="flex gap-2 mt-2" role="img" aria-label="Escalones de comisión">
-              {pasoChip(tAct, "hoy")}
-              {sig && pasoChip(sig, "sig")}
-              {sig2 && pasoChip(sig2, "otro")}
-            </div>
-          )}
-        </div>
+        <span style={ ico } aria-hidden="true">📊</span>
+        <span>
+          <b>Clientes:</b> {pcRef.toFixed(0)}% · base {tAct ? d(tAct.monto) : "—"}
+          {!sig ? <span> · <b>escalón máximo</b></span>
+            : alcanza ? <span> · faltan <b style={ { color: verde } }>{tramo.n}</b> para siguiente escalón</span>
+            : <span> · <b style={ { color: naranja } }>no alcanzas el siguiente escalón</b></span>}
+        </span>
       </div>
-      {bloqueIng}
+      {txtIng && (
+        <div style={ fila }>
+          <span style={ ico } aria-hidden="true">💵</span>
+          {txtIng}
+        </div>
+      )}
       {conviene.length > 0 && !esMaximo && (
         <div style={ fila }>
-          <span aria-hidden="true" style={ { fontSize: 18 } }>💡</span>
-          <div className="flex-1 text-sm"><b>Te conviene que paguen:</b> {conviene.map(nombre).join(", ")}.{" "}
-            {ganaConviene > 0.5 ? <span>Son los que más suben tu comisión (<b style={ { color: verde } }>+{d(ganaConviene)}</b> entre {conviene.length === 1 ? "él" : "ellos"}, contando clientes e ingresos).</span> : <span>Son los que más te acercan al siguiente salto.</span>}
-          </div>
-          <button type="button" onClick={onMarcar} className="shrink-0 self-start font-bold rounded-lg px-2.5 text-xs" style={ { minHeight: 36, background: "#fff", color: navy, border: "2px solid " + navy } }>Marcar</button>
+          <span style={ ico } aria-hidden="true">💡</span>
+          <span className="flex-1"><b>Te conviene que paguen:</b> {conviene.map(nombre).join(", ")}{ganaConviene > 0.5 ? <b style={ { color: verde } }> (+{d(ganaConviene)})</b> : null}</span>
+          <button type="button" onClick={onMarcar} className="shrink-0 font-bold rounded-lg px-2.5 text-xs" style={ { minHeight: 34, background: "#fff", color: navy, border: "2px solid " + navy } }>Marcar</button>
         </div>
       )}
       {dias !== null && dias !== undefined && (
-        <div className="text-xs mt-3" style={ { color: dias <= 7 ? naranja : mu, fontWeight: dias <= 7 ? 700 : 400 } }>
-          {dias <= 7 ? "⏳ " : ""}{dias <= 0 ? "Hoy vence el plazo para cobrar" : dias === 1 ? "Queda 1 día para cobrar" : "Quedan " + dias + " días para cobrar"}
-          {nPend ? " · " + nPend + " pendiente" + (nPend === 1 ? "" : "s") : ""}
+        <div style={ { ...fila, color: dias <= 7 ? naranja : mu, fontWeight: dias <= 7 ? 700 : 400 } }>
+          <span style={ ico } aria-hidden="true">⏳</span>
+          <span>{dias <= 0 ? "Vence hoy" : dias === 1 ? "Queda 1 día" : "Quedan " + dias + " días"}{nPend ? " · " + nPend + " pendiente" + (nPend === 1 ? "" : "s") : ""}</span>
         </div>
       )}
     </div>
