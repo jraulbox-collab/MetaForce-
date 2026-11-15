@@ -6218,6 +6218,7 @@ function diasDeVentaPeriodo(periodoKey, hoy) {
 const BARRIOS_URL = "datos/barrios.json";
 const BARRIOS_CACHE = "mf_barrios_v3";
 const PROV_CENTRALES = ["COCLE", "HERRERA", "LOS SANTOS", "VERAGUAS"];
+const PROV_VENDER = ["HERRERA", "LOS SANTOS"];
 let barriosPreparados = null;
 function limpiarZona(s) {
   return String(s || "").trim().replace(/^(DIST|DISTRITO|CORREG|CORREGIMIENTO)\.?\s+(DE\s+)?/i, "");
@@ -6492,7 +6493,10 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
   const { datos, error } = useBarrios(ajustes);
   const [formNuevo, setFormNuevo] = useState(null);
   const [vista, setVista] = useState("vender");
-  const [provSel, setProvSel] = useState("centrales");
+  const [provVender, setProvVender] = useState("centrales");
+  const [provOtras, setProvOtras] = useState("todas");
+  const provSel = vista === "vender" ? provVender : provOtras;
+  const setProvSel = vista === "vender" ? setProvVender : setProvOtras;
   const [busca, setBusca] = useState("");
   const [filtroZona, setFiltroZona] = useState("todas");
   const [zonaAbierta, setZonaAbierta] = useState(null);
@@ -6505,7 +6509,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
     setFormNuevo(null);
     setBusca(d.barrio);
     setVista("buscar");
-    setProvSel("todas");
+    setProvOtras("todas");
   };
   const borrarNuevo = (e) => onAjustes((prev) => prev.filter((a) => a.id !== e.ajusteId && !(a.tipo === "union" && (a.principal === e.id || (a.miembros || []).includes(e.id)))));
   const unir = (e, otro) => {
@@ -6525,7 +6529,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
     }));
   };
   const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos) : null), [clientes, datos]);
-  const enAlcance = (e) => provSel === "todas" || (provSel === "centrales" ? PROV_CENTRALES.includes(e.provincia) : e.provincia === provSel);
+  const enAlcance = (e) => provSel === "todas" || (provSel === "centrales" ? PROV_VENDER.includes(e.provincia) : e.provincia === provSel);
   // Todos los barrios con sus números (los que no tienen clientes tuyos, en cero).
   const todos = useMemo(() => {
     if (!datos || !est) return [];
@@ -6666,7 +6670,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
             {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
           </div>
           <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
-            <option value="centrales">Provincias centrales</option>
+            <option value="centrales">Herrera y Los Santos</option>
             <option value="todas">Todas las provincias</option>
             {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
           </select>
