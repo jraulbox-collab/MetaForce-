@@ -6514,14 +6514,11 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
   const [ideaAbierta, setIdeaAbierta] = useState(null);
   const [periodoStat, setPeriodoStat] = useState("30");
   const [statAbierto, setStatAbierto] = useState(null);
-  const [provVender, setProvVender] = useState("centrales");
   const [provOtras, setProvOtras] = useState(inicial && inicial.provincia ? inicial.provincia : "todas");
   const [soloId, setSoloId] = useState(inicial && !inicial.sinCoincidencia ? inicial.id : null);
-  const provSel = vista === "vender" ? provVender : provOtras;
-  const setProvSel = vista === "vender" ? setProvVender : setProvOtras;
+  const provSel = provOtras;
+  const setProvSel = setProvOtras;
   const [busca, setBusca] = useState(inicial ? inicial.barrio || "" : "");
-  const [filtroZona, setFiltroZona] = useState("todas");
-  const [zonaAbierta, setZonaAbierta] = useState(null);
   const [abierto, setAbierto] = useState(inicial && !inicial.sinCoincidencia ? inicial.id : null);
   const [masAbierto, setMasAbierto] = useState(null);
   const [verMas, setVerMas] = useState(30);
@@ -6558,17 +6555,6 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
     const mapa = new Map(est.filas.map((e) => [e.id, e]));
     return datos.filas.map((f) => mapa.get(f.id) || { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0, libres: f.hhpp, pen: 0 });
   }, [datos, est]);
-  // Zonas (corregimientos) ordenadas por casas con red de Tigo: dónde hay más mercado.
-  const zonas = useMemo(() => {
-    const m = new Map();
-    todos.filter(enAlcance).forEach((e) => {
-      const k = [e.provincia, e.distrito, e.corregimiento].join("|");
-      let z = m.get(k);
-      if (!z) { z = { k, corregimiento: e.corregimiento, distrito: e.distrito, provincia: e.provincia, barrios: [], casas: 0, libres: 0, vendidos: 0 }; m.set(k, z); }
-      z.barrios.push(e); z.casas += e.hhpp; z.libres += e.libres; z.vendidos += e.vendidos;
-    });
-    return [...m.values()].filter((z) => z.casas >= 100).map((z) => ({ ...z, barrios: [...z.barrios].sort((a, b) => b.hhpp - a.hhpp) })).sort((a, b) => b.casas - a.casas);
-  }, [todos, provSel]);
   // Ruta de hoy: zonas de Herrera y Los Santos con los mejores barrios. Solo suma puntos (nunca resta).
   const rutas = useMemo(() => {
     const porZona = new Map();
@@ -6647,7 +6633,6 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
       zonas: por([...zonasM.values()].filter((z) => z.clientes > 0), (z) => z.ventas * 1000 + z.clientes).slice(0, 8),
     };
   }, [est, periodoStat]);
-  const zonasVis = zonas.filter((z) => (filtroZona === "ya" ? z.vendidos > 0 : filtroZona === "nuevas" ? z.vendidos === 0 : true));
   const mios = useMemo(() => (est ? est.conClientes.filter(enAlcance).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp) : []), [est, provSel]);
   const resultados = useMemo(() => {
     const q = normTexto(busca);
@@ -6718,42 +6703,6 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
       </div>
     );
   };
-  const tarjetaZona = (z) => {
-    const abre = zonaAbierta === z.k;
-    const top = z.barrios.slice(0, 3);
-    return (
-      <div key={z.k} className="rounded-xl border bg-white" style={ { borderColor: abre ? "#0072CE" : "#DFE5EF" } }>
-        <button type="button" onClick={() => setZonaAbierta(abre ? null : z.k)} aria-expanded={abre} className="w-full text-left p-3">
-          <div className="flex items-start justify-between gap-2">
-            <span className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{z.corregimiento || z.distrito}</span>
-            <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
-          </div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>{[z.distrito, z.provincia.charAt(0) + z.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}</div>
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            <span className="text-sm font-extrabold" style={ { color: "#001E62" } }>🏠 {fmtNum(z.casas)} casas</span>
-            <span className="text-xs" style={ { color: "#5A6680" } }>en {z.barrios.length} barrios</span>
-          </div>
-          <div className="mt-1">
-            {z.vendidos > 0
-              ? <span className="text-xs font-bold rounded-full px-2 py-0.5" style={ { background: "#E7F5EC", color: "#166534" } }>✓ Ya vendes aquí · {z.vendidos} cliente{z.vendidos === 1 ? "" : "s"}</span>
-              : <span className="text-xs font-bold rounded-full px-2 py-0.5" style={ { background: "#E3EDFA", color: "#0072CE" } }>🆕 Zona nueva</span>}
-          </div>
-          <div className="text-xs mt-2" style={ { color: "#374151", overflowWrap: "anywhere" } }>Empieza por: {top.map((b) => `${b.barrio} (${fmtNum(b.hhpp)})`).join(" · ")}</div>
-        </button>
-        {abre && (
-          <div className="px-3 pb-3">
-            {z.barrios.slice(0, 12).map((b) => (
-              <div key={b.id} className="flex items-center justify-between gap-2 text-sm py-2" style={ { borderTop: "1px solid #EEF2F9" } }>
-                <span className="font-bold min-w-0" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.barrio}</span>
-                <span className="text-xs font-bold shrink-0" style={ { color: "#5A6680" } }>{fmtNum(b.hhpp)} casas · {etiquetaTamano(b.hhpp)}{b.vendidos > 0 ? ` · ${b.vendidos} tuyo${b.vendidos === 1 ? "" : "s"}` : ""}</span>
-              </div>
-            ))}
-            {z.barrios.length > 12 && <div className="text-xs pt-2" style={ { color: "#5A6680" } }>…y {z.barrios.length - 12} barrios más en esta zona. Búscalos en “Buscar”.</div>}
-          </div>
-        )}
-      </div>
-    );
-  };
   const resumen = est ? `${fmtNum(est.conClientes.length)} barrios · ${fmtNum(est.totalVendidos)} clientes` : "";
   return (
     <div className="max-w-2xl">
@@ -6766,7 +6715,6 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
         <>
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
             {chip(vista === "hoy", "📍 Hoy", () => { setVista("hoy"); setVerMas(30); })}
-            {chip(vista === "vender", "🎯 Zonas", () => { setVista("vender"); setVerMas(30); })}
             {chip(vista === "stats", "📊 Estadísticas", () => { setVista("stats"); setVerMas(30); })}
             {chip(vista === "mios", "🏘️ Mis barrios", () => { setVista("mios"); setVerMas(30); })}
             {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
@@ -6810,20 +6758,6 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
                 })}
               </div>
               {ideas.length > 0 && <button type="button" onClick={() => { setRonda(ronda + 1); setIdeaAbierta(null); }} className="w-full mt-3 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>🎲 Dame otras ideas</button>}
-            </>
-          )}
-
-          {vista === "vender" && (
-            <>
-              <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Zonas con más casas con red de Tigo. Dentro de cada zona, empieza por los barrios de arriba (los más grandes).</p>
-              <div className="flex items-center gap-2 overflow-x-auto mb-3" style={ { scrollbarWidth: "none" } }>
-                {chip(filtroZona === "todas", "Todas", () => setFiltroZona("todas"))}
-                {chip(filtroZona === "ya", "Ya vendo aquí", () => setFiltroZona("ya"))}
-                {chip(filtroZona === "nuevas", "Zonas nuevas", () => setFiltroZona("nuevas"))}
-              </div>
-              {zonasVis.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay zonas con este filtro.</div>}
-              <div className="flex flex-col gap-2">{zonasVis.slice(0, verMas).map(tarjetaZona)}</div>
-              {zonasVis.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({zonasVis.length - verMas} zonas)</button>}
             </>
           )}
 
