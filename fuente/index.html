@@ -6917,71 +6917,67 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-// Escalera de comisión para la herramienta de rescate: ● = donde estás hoy (confirmado),
-// ⭐ = hasta donde llegarías con los clientes marcados (o con todos, si no has marcado ninguno).
-function EscaleraRescate({ pcHoy, pcFin, esMaximo, pcRef, tramo, nPend, nMarcados }) {
-  const navy = "#001E62", mu = "#5A6680", cell = "#E3EDFA", verde = "#166534";
+// Panel siempre visible de la herramienta de rescate: dónde estás, cuánto te falta para el siguiente
+// escalón, a qué clientes te conviene que paguen y cuánto tiempo queda.
+function PanelRescate({ pcHoy, pcRef, tramo, nPend, nMarcados, conviene, esMaximo, onMarcar, dias, totalHoy, totalSim, ganancia }) {
+  const navy = "#001E62", mu = "#5A6680", verde = "#166534", azul = "#0072CE", naranja = "#B45309";
   const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
-  const pos = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
   const tr = (pc) => TABLA_POSICION_NUEVA.filter((t) => pc + 1e-9 >= t.min).slice(-1)[0] || null;
-  const tHoy = tr(pcHoy);
-  const tFin = tr(pcFin);
-  const sube = pcFin > pcHoy + 1e-9;
-  const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pcRef + 1e-9) || null;
-  const montoHoy = tHoy ? tHoy.monto : 0;
-  const montoFin = tFin ? tFin.monto : 0;
+  const tAct = tr(pcRef);
+  const idx = tAct ? TABLA_POSICION_NUEVA.findIndex((t) => t.min === tAct.min) : -1;
+  const sig = TABLA_POSICION_NUEVA[idx + 1] || null;
+  const sig2 = TABLA_POSICION_NUEVA[idx + 2] || null;
+  const montoAct = tAct ? tAct.monto : 0;
+  const alcanza = !!(sig && tramo && tramo.monto >= sig.monto - 1e-6);
+  const faltan = sig ? Math.max(0.1, sig.min - pcRef) : 0;
+  const nombre = (c) => tituloEs(c.nombre || "").split(" ").slice(0, 2).join(" ");
+  const paso = (t, tipo) => (
+    <div style={ { flex: 1, textAlign: "center", padding: "6px 2px", borderRadius: 10, border: "2px " + (tipo === "sig" ? "dashed " + azul : "solid " + navy), background: tipo === "hoy" ? navy : "#fff", color: tipo === "hoy" ? "#fff" : tipo === "sig" ? azul : mu } }>
+      <div style={ { fontSize: 10, fontWeight: 700 } }>{tipo === "hoy" ? "● " : tipo === "sig" ? "→ " : ""}{t.max === Infinity ? t.min + "%+" : t.min + "%"}</div>
+      <div style={ { fontSize: 15, fontWeight: 800 } }>{abrev(t.monto)}</div>
+    </div>
+  );
   return (
-    <div>
-      <div className="text-[11px] font-bold uppercase tracking-wide" style={ { color: mu } }>Tu escalera de comisión</div>
-      <div style={ { position: "relative", height: 62, margin: "8px 16px 4px" } } role="img" aria-label={"Escalera: hoy " + pcHoy.toFixed(0) + " por ciento, " + (esMaximo ? "con todos" : "con los marcados") + " " + pcFin.toFixed(0) + " por ciento."}>
-        <div style={ { position: "absolute", left: 0, right: 0, top: 21, height: 8, borderRadius: 4, background: cell } } />
-        {sube && <div style={ { position: "absolute", left: 0, top: 21, height: 8, borderRadius: 4, background: "#86C79A", width: pos(pcFin) + "%" } } />}
-        <div style={ { position: "absolute", left: 0, top: 21, height: 8, borderRadius: 4, background: navy, width: pos(pcHoy) + "%" } } />
-        {TABLA_POSICION_NUEVA.map((t) => {
-          const esHoy = tHoy && t.min === tHoy.min;
-          const esFin = sube && tFin && t.min === tFin.min;
-          const lograda = pcHoy + 1e-9 >= t.min;
-          const ganada = !lograda && sube && pcFin + 1e-9 >= t.min;
-          const esSig = !!sig && t.min === sig.min;
-          return (
-            <div key={t.min} style={ { position: "absolute", top: 0, width: 38, marginLeft: -19, textAlign: "center", left: pos(t.min) + "%" } }>
-              <div style={ { fontSize: 10, fontWeight: 700, color: mu, height: 14, lineHeight: "14px" } }>{t.max === Infinity ? t.min + "+" : t.min}</div>
-              <div style={ { width: 16, height: 16, boxSizing: "border-box", borderRadius: "50%", margin: "3px auto 0", border: "2px " + (esSig ? "dashed #0072CE" : "solid " + (ganada || esFin ? verde : navy)), background: lograda ? navy : ganada ? "#86C79A" : "#fff", color: "#fff", fontSize: 9, lineHeight: "12px", fontWeight: 700 } }>{esHoy ? "●" : esFin ? "⭐" : lograda ? "✓" : ""}</div>
-              <div style={ { fontSize: 10, fontWeight: 700, color: esFin || ganada ? verde : esSig ? "#0072CE" : navy, marginTop: 4, whiteSpace: "nowrap" } }>{abrev(t.monto)}{esFin || esSig ? " →" : ""}</div>
-            </div>
-          );
-        })}
+    <div className="rounded-xl mb-3" style={ { background: "#F7FAFE", border: "1px solid #C9DBF3", padding: 12, color: navy } }>
+      <div className="text-sm" style={ { lineHeight: 1.4 } }>
+        {!sig
+          ? <span style={ { fontWeight: 800 } }>🏆 Estás en el escalón más alto ({abrev(montoAct)}).</span>
+          : alcanza
+            ? <span>Estás en <b>{montoAct ? abrev(montoAct) : "—"}</b> → te faltan <b style={ { color: verde } }>{tramo.n} cliente{tramo.n === 1 ? "" : "s"}</b> para <b>{abrev(sig.monto)}</b> (+${sig.monto - montoAct}).</span>
+            : <span>Estás en <b>{montoAct ? abrev(montoAct) : "—"}</b> → te faltan <b>{faltan.toFixed(1)} puntos</b> para <b>{abrev(sig.monto)}</b>. <b style={ { color: naranja } }>Con los pendientes de este mes no alcanzas.</b></span>}
       </div>
-      <div className="text-xs mt-1" style={ { color: navy, lineHeight: 1.4 } }>
-        <span style={ { fontWeight: 700 } }>● Hoy:</span> {pcHoy.toFixed(0)}% · base {montoHoy ? "$" + montoHoy : "—"}
-        {sube
-          ? <span> · <span style={ { fontWeight: 700, color: verde } }>⭐ {esMaximo ? "Si pagan todos" : "Con los marcados"}:</span> {pcFin.toFixed(0)}% · base {montoFin ? "$" + montoFin : "—"}{montoFin > montoHoy ? <span style={ { fontWeight: 700, color: verde } }> (+${montoFin - montoHoy})</span> : <span> (mismo escalón)</span>}</span>
-          : <span> · rescatar no te cambia de escalón</span>}
-      </div>
-      <div className="text-xs mt-2 rounded-lg px-3 py-2" style={ { background: "#EEF3FB", color: navy, lineHeight: 1.4 } }>
-        {!sig ? <span style={ { fontWeight: 700 } }>🏆 Ya estás en el escalón más alto.</span> : (
-          <span>
-            <span style={ { fontWeight: 700 } }>→ Siguiente: {abrev(sig.monto)} (+${sig.monto - (tr(pcRef) ? tr(pcRef).monto : 0)})</span> · te faltan {Math.max(0.1, sig.min - pcRef).toFixed(1)} puntos.
-            {" "}{tramo && tramo.monto >= sig.monto - 1e-6 ? <span style={ { fontWeight: 700, color: verde } }>Cobrando {tramo.n === 1 ? "1 cliente más" : tramo.n + " clientes más"}{nMarcados > 0 ? " (además de los marcados)" : ""} llegas{nPend ? " (tienes " + nPend + " pendientes)" : ""}.</span> : <span style={ { fontWeight: 700, color: "#B45309" } }>Ni cobrando todos los pendientes llegas este mes.</span>}
-          </span>
-        )}
-      </div>
+      {tAct && (
+        <div className="flex gap-2 mt-2" role="img" aria-label="Escalones de comisión">
+          {paso(tAct, "hoy")}
+          {sig && paso(sig, "sig")}
+          {sig2 && paso(sig2, "otro")}
+        </div>
+      )}
+      {sig && (
+        <div className="text-[11px] mt-1" style={ { color: mu } }>Llevas {pcRef.toFixed(1)}% · el siguiente escalón empieza en {sig.min}%</div>
+      )}
+      {conviene.length > 0 && !esMaximo && (
+        <div className="flex items-start gap-2 mt-3 text-sm" style={ { lineHeight: 1.35 } }>
+          <span aria-hidden="true" style={ { fontSize: 18 } }>💡</span>
+          <span className="flex-1"><b>Te conviene que paguen:</b> {conviene.map(nombre).join(", ")}. Son los que más te acercan{sig ? " a " + abrev(sig.monto) : " al siguiente salto"}.</span>
+          <button type="button" onClick={onMarcar} className="shrink-0 font-bold rounded-lg px-2.5 text-xs" style={ { minHeight: 36, background: "#fff", color: navy, border: "2px solid " + navy } }>Marcar</button>
+        </div>
+      )}
+      {nMarcados > 0 && totalSim != null && (
+        <div className="text-sm mt-3" style={ { lineHeight: 1.35 } }>
+          <b>Con los {nMarcados} marcado{nMarcados === 1 ? "" : "s"}:</b> {fmtMonto(totalHoy)} → <b>{fmtMonto(totalSim)}</b> <b style={ { color: verde } }>({ganancia >= 0 ? "+" : ""}{fmtMonto(ganancia)})</b>
+        </div>
+      )}
+      {dias !== null && dias !== undefined && (
+        <div className="text-xs mt-2" style={ { color: dias <= 7 ? naranja : mu, fontWeight: dias <= 7 ? 700 : 400 } }>
+          {dias <= 7 ? "⏳ " : ""}{dias <= 0 ? "Hoy vence el plazo para cobrar" : dias === 1 ? "Queda 1 día para cobrar" : "Quedan " + dias + " días para cobrar"}
+          {nPend ? " · " + nPend + " pendiente" + (nPend === 1 ? "" : "s") : ""}
+        </div>
+      )}
     </div>
   );
 }
 
-// Bono de ingresos (+10 puntos): se activa al pasar el 100% de la meta de ingresos.
-// Aproximado: cuántos clientes más hacen falta según lo que deja cada tipo en promedio.
-function clientesParaBonoIngresos(ingresosTotal, metaDinero, rpuHogar, rpuMovil) {
-  if (!metaDinero) return null;
-  const falta = metaDinero - ingresosTotal;
-  if (falta < 0) return { activo: true, falta: 0, cH: null, cM: null };
-  const cuantos = (r) => (r > 0 ? Math.floor(falta / r) + 1 : null);
-  return { activo: false, falta, cH: cuantos(rpuHogar), cM: cuantos(rpuMovil) };
-}
-// Tarjeta "Comisión del ciclo" en versión clara (fondo blanco) para el esquema nuevo del
-// período actual. Muestra los mismos números que la versión azul, ordenados para leerse
-// más fácil: fórmula en tres piezas, barra hacia el próximo escalón, tramos y detalle
 // plegables, y la proyección al final.
 function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaClientesHogar, metaClientesMovil, metaDinero, ingresosTotal, rpuHogar, rpuMovil, proyeccion, aunEsTemprano, onCambiarVista, onSimular }) {
   const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", pn: "#EEF3FB", blue: "#0072CE", cell: "#E3EDFA" };
@@ -9607,9 +9603,26 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
           {(
             <div className="bg-white border-t border-gray-200 p-4">
+              {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && rescateCandidatos.length > 0 ? (
+                <PanelRescate
+                  pcHoy={comisionConfirmadaHoy.pctClientesPonderado}
+                  pcRef={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado}
+                  tramo={analisis ? analisis.tramo : null}
+                  nPend={rescateCandidatos.length}
+                  nMarcados={rescateSeleccionados.length}
+                  conviene={analisis ? analisis.primeros : []}
+                  esMaximo={!analisis || analisis.esMaximo}
+                  onMarcar={marcarPrimeros}
+                  dias={rescateDiasRestantes}
+                  totalHoy={comisionConfirmadaHoy.total}
+                  totalSim={comisionSimulada.completo ? comisionSimulada.total : null}
+                  ganancia={rescateGanancia}
+                />
+              ) : (
               <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
                 Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca los clientes pendientes y mira cuánto sube.
               </p>
+              )}
               {rescateCandidatos.length === 0 ? (
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
@@ -9649,45 +9662,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                     </div>
                     {barraComAbierta && (
                       <div className="mt-3 pt-3 flex flex-col gap-3" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
-                        {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (() => {
-                          const fin = rescateSeleccionados.length > 0 ? comisionSimulada : comisionMaximaHoy;
-                          if (!fin || !fin.completo || fin.pctClientesPonderado == null) return null;
-                          return <EscaleraRescate pcHoy={comisionConfirmadaHoy.pctClientesPonderado} pcFin={fin.pctClientesPonderado} esMaximo={rescateSeleccionados.length === 0} pcRef={rescateSeleccionados.length > 0 ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado} tramo={analisis ? analisis.tramo : null} nPend={rescateCandidatos.length} nMarcados={rescateSeleccionados.length} />;
-                        })()}
-                        {analisis && (
-                          <>
-                            <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
-                              <span style={ { fontSize: 18, width: 24, textAlign: "center" } } aria-hidden="true">🎯</span>
-                              <span className="flex-1">
-                                <span className="block text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>1 · A quién cobrar primero</span>
-                                {analisis.primeros.length > 0 && !analisis.esMaximo
-                                  ? <span>{analisis.primeros.map((c) => tituloEs(c.nombre || "").split(" ").slice(0, 2).join(" ")).join(", ")}: los que más te acercan al siguiente salto.</span>
-                                  : <span>Ya marcaste a todos los que importan.</span>}
-                              </span>
-                              {analisis.primeros.length > 0 && !analisis.esMaximo && (
-                                <button type="button" onClick={marcarPrimeros} className="shrink-0 self-start font-bold rounded-lg px-2.5 text-xs" style={ { minHeight: 36, background: "#fff", color: "#001E62", border: "2px solid #001E62" } }>Marcar</button>
-                              )}
-                            </div>
-                            <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
-                              <span style={ { fontSize: 18, width: 24, textAlign: "center" } } aria-hidden="true">📏</span>
-                              <span className="flex-1">
-                                <span className="block text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>2 · Cuántos faltan para el próximo tramo</span>
-                                {analisis.tramo
-                                  ? <span>Con <b>{analisis.tramo.n} cliente{analisis.tramo.n === 1 ? "" : "s"} más</b> pasas al tramo de {fmtMonto(analisis.tramo.monto)} (hoy: {fmtMonto(analisis.baseActual)}).</span>
-                                  : <span>Con tu lista actual no hay un tramo más alto por alcanzar (hoy: {fmtMonto(analisis.baseActual)}).</span>}
-                              </span>
-                            </div>
-                            <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
-                              <span style={ { fontSize: 18, width: 24, textAlign: "center" } } aria-hidden="true">💵</span>
-                              <span className="flex-1">
-                                <span className="block text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>3 · Cuánto ganas</span>
-                                {rescateSeleccionados.length > 0
-                                  ? <span>Con estos {rescateSeleccionados.length} cliente{rescateSeleccionados.length === 1 ? "" : "s"} subes <b>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}</b>.{analisis.sube ? <span> Con {analisis.sube.n} más serían <b>+{fmtMonto(analisis.sube.extra)}</b> extra.</span> : <span> Es lo máximo que da tu lista.</span>}</span>
-                                  : <span>Si pagan todos, subirías hasta <b>{fmtMonto(analisis.maxTotal)}</b> ({fmtMonto(analisis.maxTotal - comisionConfirmadaHoy.total)} más que hoy).</span>}
-                              </span>
-                            </div>
-                          </>
-                        )}
                         {rescateSeleccionados.length > 0 && (
                           <div className="text-xs" style={ { color: "#5A6680" } }>
                             {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
