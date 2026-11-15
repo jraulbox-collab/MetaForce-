@@ -9457,7 +9457,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     const marcado = !!rescateSeleccion[c.id];
     return (
       <>
-        {primerosIds.has(c.id) && !marcado && <span aria-label="Te conviene" title="Te conviene">💡</span>}
         {e.clave && <span aria-label="Clave" title="Clave">🔑</span>}
       </>
     );
@@ -9626,27 +9625,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
           {(
             <div className="bg-white border-t border-gray-200 p-4">
-              {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && rescateCandidatos.length > 0 ? (
-                <PanelRescate
-                  nPend={rescateCandidatos.length}
-                  conviene={analisis ? analisis.primeros : []}
-                  esMaximo={!analisis || analisis.esMaximo}
-                  onMarcar={marcarPrimeros}
-                  dias={null}
-                  ganaConviene={(() => {
-                    if (!analisis || analisis.primeros.length === 0) return 0;
-                    try {
-                      const ref = rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada : comisionConfirmadaHoy;
-                      const con = calcularComisionConSubconjuntoHoy([...rescateSeleccionados, ...analisis.primeros]);
-                      return con.completo ? con.total - ref.total : 0;
-                    } catch (e) { return 0; }
-                  })()}
-                />
-              ) : (
-              <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
-                Confirmado: {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}. Marca clientes para simular cuánto sube.
-              </p>
-              )}
               {rescateCandidatos.length === 0 ? (
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
@@ -9699,29 +9677,42 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   </>
                 )}
               </div>
-              <div className="flex flex-wrap items-center gap-2 mb-3">
-                <select
-                  value={ordenRescate}
-                  onChange={(e) => setOrdenRescate(e.target.value)}
-                  aria-label="Ordenar"
-                  className="text-xs font-bold rounded-full px-3"
-                  style={ { minHeight: 34, border: "1.5px solid #001E62", color: "#001E62", background: "#fff" } }
-                >
-                  <option value="suma">↕ Más suma</option>
-                  <option value="vence">↕ Vence antes</option>
-                  <option value="sin">↕ Sin contactar</option>
-                </select>
-                {[["sin", "💬 Sin contactar"], ["hogar", "Hogar"], ["movil", "Móvil"]].map(([k, t]) => (
-                  <button
-                    key={k}
-                    type="button"
-                    onClick={() => setFiltroRescate((f) => ({ ...f, [k]: !f[k] }))}
-                    aria-pressed={!!filtroRescate[k]}
-                    className="text-xs font-bold rounded-full px-3"
-                    style={ { minHeight: 34, border: "1.5px solid #001E62", color: filtroRescate[k] ? "#fff" : "#001E62", background: filtroRescate[k] ? "#001E62" : "#fff" } }
-                  >{t}</button>
-                ))}
-              </div>
+              {(() => {
+                const todos = [...rescateVencidosOrdenados, ...rescateEnPlazoOrdenados];
+                const nSin = todos.filter((c) => !(ultimoContacto && ultimoContacto[c.id])).length;
+                const nHogar = todos.filter((c) => !idsMovilHoy.has(c.id)).length;
+                const nMovil = todos.length - nHogar;
+                const chips = [["sin", "💬 Sin contactar", nSin], ["hogar", "Hogar", nHogar], ["movil", "Móvil", nMovil]].filter(([k, , n]) => n > 0 && n < todos.length || filtroRescate[k]);
+                const hay = filtroRescate.sin || filtroRescate.hogar || filtroRescate.movil;
+                return (
+                  <div className="flex items-center gap-2 mb-3" style={ { overflowX: "auto", whiteSpace: "nowrap", paddingBottom: 2 } }>
+                    <select
+                      value={ordenRescate}
+                      onChange={(e) => setOrdenRescate(e.target.value)}
+                      aria-label="Ordenar"
+                      className="text-xs font-bold rounded-full px-2.5 shrink-0"
+                      style={ { minHeight: 32, border: "1.5px solid #001E62", color: "#001E62", background: "#fff" } }
+                    >
+                      <option value="suma">↕ Más suma</option>
+                      <option value="vence">↕ Vence antes</option>
+                      <option value="sin">↕ Sin contactar</option>
+                    </select>
+                    {chips.map(([k, t, n]) => (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setFiltroRescate((f) => ({ ...f, [k]: !f[k] }))}
+                        aria-pressed={!!filtroRescate[k]}
+                        className="text-xs font-bold rounded-full px-2.5 shrink-0"
+                        style={ { minHeight: 32, border: "1.5px solid #001E62", color: filtroRescate[k] ? "#fff" : "#001E62", background: filtroRescate[k] ? "#001E62" : "#fff" } }
+                      >{t} {n}</button>
+                    ))}
+                    {hay && (
+                      <button type="button" onClick={() => setFiltroRescate({ sin: false, hogar: false, movil: false })} className="text-xs font-bold shrink-0 px-1" style={ { color: "#B45309" } }>✕ Quitar</button>
+                    )}
+                  </div>
+                );
+              })()}
 
               {rescateVencidosOrdenados.length > 0 && (
                 <>
