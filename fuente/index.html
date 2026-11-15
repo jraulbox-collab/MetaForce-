@@ -6471,7 +6471,6 @@ function BarriosTarjeta({ clientes, onAbrir, ajustes }) {
     return ideas.length ? ideas[0] : null;
   }, [datos, est]);
   const z = idea ? idea.zona : null;
-  const sin = est ? est.sinMatch.length + est.ambiguos.length + est.sinBarrio.length : 0;
   return (
     <button type="button" onClick={onAbrir} className="block w-full text-left bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
       <div className="flex items-center justify-between gap-2 mb-2">
@@ -6489,7 +6488,6 @@ function BarriosTarjeta({ clientes, onAbrir, ajustes }) {
             </div>
           ))}
           <div className="text-xs font-bold mt-2" style={ { color: "#0072CE" } }>Toca para ver 3 ideas →</div>
-          {sin > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ {sin} cliente{sin === 1 ? "" : "s"} sin barrio</div>}
         </>
       )}
     </button>
