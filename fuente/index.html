@@ -8076,8 +8076,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
       {!sinCabecera && (
       <div className="px-4 py-3 border-b" style={ { borderColor: "#EEF1F6" } }>
         <div className="text-base font-extrabold" style={ { color: "#001E62" } }>💬 Para escribir hoy · quedan {pendientes.length}</div>
-        <div className="text-xs font-semibold mt-1" style={ { color: "#5A6680" } }>Números nuevos hoy: {datos.hechosHoy}</div>
-        <div className="flex flex-wrap gap-2 mt-3">
+        {(cuenta.todos >= 6 || cuenta.respondieron > 0) && <div className="flex flex-wrap gap-2 mt-3">
           {FILTROS_VENTAS.filter((f) => f.k === "todos" || cuenta[f.k] > 0).map((f) => {
             const sel = filtroEf === f.k;
             return (
@@ -8093,7 +8092,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
               </button>
             );
           })}
-        </div>
+        </div>}
         {totalRefs > 0 && (
           <div className="mt-3">
             <button type="button" onClick={() => setVerRefs((v) => !v)} className="text-xs font-extrabold rounded-lg px-3" style={ { height: 34, background: verRefs ? "#001E62" : "#fff", color: verRefs ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
