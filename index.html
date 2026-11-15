@@ -223,8 +223,6 @@ ${bloquePagoHogar()}
 
 Una vez realizado el pago, comp\xE1rteme el comprobante para validar el ingreso. Quedo atento si necesita ayuda.`}const DIAS_SEMANA=["domingo","lunes","martes","mi\xE9rcoles","jueves","viernes","s\xE1bado"];function fmtFechaConDia(e){if(!e)return"\u2014";const[t,o,n]=e.split("-").map(Number);return`${DIAS_SEMANA[new Date(t,o-1,n).getDay()]} ${n} de ${MESES[o-1]}`}function quincenasDesde(e,t){const[o,n]=e.split("-").map(Number),s=[];for(let r=0;r<t;r++){const c=n-1+r,i=o+Math.floor(c/12),p=c%12+1;[15,Math.min(30,daysInMonth(i,p-1))].forEach(m=>{const f=new Date(i,p-1,m);for(;f.getDay()===0||f.getDay()===6;)f.setDate(f.getDate()-1);s.push(`${f.getFullYear()}-${String(f.getMonth()+1).padStart(2,"0")}-${String(f.getDate()).padStart(2,"0")}`)})}return s.sort()}function fechaPagoQuincena(e){if(!e.fechaInstalacion)return null;const t=addDays(e.fechaInstalacion,10),o=quincenasDesde(e.fechaInstalacion,4).filter(n=>n>=t);if(e.fecha1raFactura){const n=o.filter(s=>s<e.fecha1raFactura);if(n.length)return n[n.length-1]}return o.length?o[0]:null}function textoToque1(e){const t=primerNombre(e),o=fechaPagoQuincena(e)||addDays(e.fechaInstalacion,30);return`Hola ${t}, le saluda Jos\xE9 Severino de Tigo Panam\xE1, sobre su *primera factura*.
 
-Su instalaci\xF3n del *servicio residencial* qued\xF3 activa. \u2705
-
 Su abono ya cuenta para su primer mes. Le recomiendo completar la otra mitad de su primer mes el *${fmtFechaConDia(o)}*, con la quincena, para dejar su cuenta al d\xEDa desde el inicio.
 
 Le recuerdo su n\xFAmero de suscriptor para cuando vaya a realizar el pago: *${e.numeroSuscriptor}*
