@@ -1300,6 +1300,10 @@ function abonoPendiente(c) {
 function instalacionPorAvisar(c) {
   return !c.fechaInstalacion && !clienteExcluido(c) && !c.penalizado && !!c.instalacionProgramada && !c.instalacionEnviadaEn && !!String(c.telefono || "").replace(/\D/g, "");
 }
+// Cliente instalado hace pocos días al que todavía no se le envió el mensaje de agradecimiento con la promo.
+function promoPorEnviar(c) {
+  return !!c.fechaInstalacion && daysFromToday(c.fechaInstalacion) <= 0 && daysFromToday(c.fechaInstalacion) >= -3 && !clienteExcluido(c) && !c.penalizado && !c.promoEnviadaEn && !!String(c.telefono || "").replace(/\D/g, "");
+}
 function plazoAbono(c) {
   if (!c.creadoEn) return null;
   const d = new Date(c.creadoEn);
@@ -1765,6 +1769,18 @@ function planParaCliente(c) {
 // Mensaje para copiar y enviar al cliente. Cambia según la situación de su instalación:
 // hoy o mañana → recordatorio corto con los datos del servicio; cualquier otro caso → la
 // confirmación de siempre con todos los datos de la cuenta. Sin palabras que dependan del género.
+function itemInstalacion(c) {
+  return instalacionPorAvisar(c)
+    ? { t: "in", id: c.id, link: whatsappLink(c, { texto: textoInstalacion(c) }), nombre: c.nombre, et: "🔧 Info de instalación" }
+    : { t: "in", key: "promo", id: c.id, link: whatsappLink(c, { texto: textoPromo(c) }), nombre: c.nombre, et: "🎁 Promo tras instalar" };
+}
+function textoPromo(c) {
+  return `${saludoSegunHora()} ${primerNombre(c)}, gracias por la confianza, su instalación quedó lista ✅
+
+Mi compromiso ahora es darle seguimiento y apoyo cuando lo necesite, para que tenga una buena experiencia con nosotros.
+
+Yo consigo mis clientes gracias a personas como usted, que me recomiendan, y su apoyo significa mucho para mí. Le enviaré una promo que tengo: ¿podría compartirla en sus estados de WhatsApp?`;
+}
 function textoInstalacion(c) {
   const b = leerBloqueTigo(c.observaciones);
   const plan = planParaCliente(c);
@@ -4134,6 +4150,13 @@ function App() {
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
+  function marcarPromoEnviada(clienteId) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes) return;
+    const despues = { ...antes, promoEnviadaEn: new Date().toISOString() };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
   // Abre WhatsApp con el mensaje de instalación y deja pendiente la pregunta "¿Lo enviaste?".
   function enviarInfoInstalacion(cliente) {
     try { window.sessionStorage.setItem("mf-pregunta-inst", cliente.id); } catch (e) {}
@@ -4210,7 +4233,7 @@ function App() {
   // ---- Pendientes de hoy en Mensajes (sin los pospuestos) ----
   const alertasCobroVis = alertasPorCliente.filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
   const alertasMovilVis = alertasMovilPendientes(convergencias).filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
-  const instalacionesVis = tab === "alertas" ? clientesActivos.filter((c) => instalacionPorAvisar(c) && !estaPospuesto("inst-" + c.id)) : [];
+  const instalacionesVis = tab === "alertas" ? clientesActivos.filter((c) => (instalacionPorAvisar(c) || promoPorEnviar(c)) && !estaPospuesto("inst-" + c.id)) : [];
   const qMsj = searchAlertas.trim().toLowerCase();
   const instalacionesBus = qMsj ? instalacionesVis.filter((c) => String(c.nombre || "").toLowerCase().includes(qMsj) || String(c.telefono || "").includes(qMsj) || String(c.numeroSuscriptor || "").toLowerCase().includes(qMsj)) : instalacionesVis;
   const conteoMsj = (() => {
@@ -4310,8 +4333,8 @@ function App() {
     const cobros = [...alertasCobroVis.map((a) => ({ a, mov: false })), ...alertasMovilVis.map((a) => ({ a, mov: true }))];
     cobros.sort((x, y) => (enComision(x.a, x.mov) ? 0 : 1) - (enComision(y.a, y.mov) ? 0 : 1));
     cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + (mov ? a.milestone.tag : a.milestone.label) }));
-    [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada).localeCompare(String(y.instalacionProgramada)))
-      .forEach((c) => items.push({ t: "in", id: c.id, link: whatsappLink(c, { texto: textoInstalacion(c) }), nombre: c.nombre, et: "🔧 Info de instalación" }));
+    [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada || x.fechaInstalacion).localeCompare(String(y.instalacionProgramada || y.fechaInstalacion)))
+      .forEach((c) => items.push(itemInstalacion(c)));
     const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
     const pv = [];
     dv.filas.forEach((f) => f.numeros.forEach((n) => { if (n.estado === "pendiente") pv.push({ f, n }); }));
@@ -4341,7 +4364,7 @@ function App() {
   function marcarItemCadena(it) {
     if (it.t === "ch") marcarEnviadoSeguro(it.id, it.key, "cadena");
     else if (it.t === "cm") marcarMovilEnviadoSeguro(it.id, it.key, "cadena");
-    else if (it.t === "in") marcarInstalacionEnviada(it.id, true);
+    else if (it.t === "in") (it.key === "promo" ? marcarPromoEnviada(it.id) : marcarInstalacionEnviada(it.id, true));
     else if (it.t === "v") cambiarVentaMsg(it.id, it.k, it.ronda === "referido" ? { refAbiertoEn: new Date().toISOString() } : it.ronda === "movil4" ? { m4AbiertoEn: new Date().toISOString() } : { abiertoEn: new Date().toISOString() });
   }
   function avanzarCadena(marcar) {
@@ -5039,7 +5062,7 @@ function App() {
             const filas = [
               { ico: "💵", t: "Cobros", n: nCobros, sub: "recordatorios de pago", k: "cobros" },
               { ico: "💬", t: "Ventas", n: nVentas, sub: "mensajes para vender", k: "ventas" },
-              { ico: "🔧", t: "Instalación", n: nInstal, sub: "info de instalación sin enviar", k: "instalacion" },
+              { ico: "🔧", t: "Instalación", n: nInstal, sub: "mensajes de instalación por enviar", k: "instalacion" },
             ];
             return (
               <div className="bg-white rounded-xl border mb-3 overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
@@ -5138,12 +5161,12 @@ function App() {
             </div>
           )}
           {seccionMensajes === "instalacion" && (
-            <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
+            <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => { const cl = clientes.find((x) => x.id === id); if (cl && !instalacionPorAvisar(cl)) marcarPromoEnviada(id); else marcarInstalacionEnviada(id, true); }} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
           )}
           {["todos", "comision", "cobros"].includes(seccionMensajes) && (
           <div style={ { order: 1 } }>
           {seccionMensajes === "todos" && (
-            <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => marcarInstalacionEnviada(id, true)} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
+            <BloqueInstalacionHoy lista={instalacionesBus} onEnviarUno={enviarUno} onMarcar={(id) => { const cl = clientes.find((x) => x.id === id); if (cl && !instalacionPorAvisar(cl)) marcarPromoEnviada(id); else marcarInstalacionEnviada(id, true); }} onPosponer={posponerMensaje} modoResumen={seccionMensajes === "todos" && !searchAlertas.trim()} limite={seccionMensajes === "todos" && !searchAlertas.trim() ? 3 : lotesMsj.instalacion} onVerTodos={() => { setSeccionMensajes("instalacion"); window.scrollTo({ top: 0 }); } } onVerMas={() => setLotesMsj((p) => ({ ...p, instalacion: p.instalacion + 10 }))} />
           )}
           {["todos", "cobros"].includes(seccionMensajes) && (
           <AlertasTab
@@ -7133,29 +7156,32 @@ function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite
   const [posAbierto, setPosAbierto] = useState(null);
   const [abierta, setAbierta] = useState(null);
   const hoy = fechaLocalISO(new Date());
-  const ordenada = [...lista].sort((a, b) => String(a.instalacionProgramada).localeCompare(String(b.instalacionProgramada)));
+  const ordenada = [...lista].sort((a, b) => String(a.instalacionProgramada || a.fechaInstalacion).localeCompare(String(b.instalacionProgramada || b.fechaInstalacion)));
   if (ordenada.length === 0) return null;
   const visibles = typeof limite === "number" ? ordenada.slice(0, limite) : ordenada;
   const restantes = ordenada.length - visibles.length;
   return (
     <div className="mb-2">
-      <div className="text-[13px] font-extrabold uppercase mt-4 mb-2 mx-0.5" style={ { color: "#001E62", letterSpacing: ".04em" } }>🔧 Info de instalación ({ordenada.length})</div>
+      <div className="text-[13px] font-extrabold uppercase mt-4 mb-2 mx-0.5" style={ { color: "#001E62", letterSpacing: ".04em" } }>🔧 Instalación ({ordenada.length})</div>
       {visibles.map((c) => {
-        const f = c.instalacionProgramada;
-        const vencida = f < hoy;
-        const cuando = vencida ? "⚠ Ya venció" : f === hoy ? "📅 Se instala hoy" : f === addDays(hoy, 1) ? "📅 Se instala mañana" : "📅 " + fmtFechaDia(f);
+        const esPromo = !instalacionPorAvisar(c);
+        const f = esPromo ? c.fechaInstalacion : c.instalacionProgramada;
+        const vencida = !esPromo && f < hoy;
+        const cuando = esPromo ? (f === hoy ? "✅ Se instaló hoy" : "✅ Instalado " + fmtFechaDia(f)) : vencida ? "⚠ Ya venció" : f === hoy ? "📅 Se instala hoy" : f === addDays(hoy, 1) ? "📅 Se instala mañana" : "📅 " + fmtFechaDia(f);
+        const etiq = esPromo ? "🎁 Promo tras instalar" : "🔧 Info de instalación";
+        const textoMsg = esPromo ? textoPromo(c) : textoInstalacion(c);
         const abre = abierta === c.id;
         return (
           <div key={c.id} data-fila="" className="bg-white rounded-xl border mb-2 overflow-hidden" style={ { borderColor: "#DFE5EF", borderLeft: vencida ? "5px solid #B45309" : "1px solid #DFE5EF" } }>
             <div role="button" tabIndex={0} onClick={() => setAbierta(abre ? null : c.id)} aria-expanded={abre} className="flex items-center gap-2.5 cursor-pointer" style={ { minHeight: 60, padding: "8px 8px 8px 12px" } }>
               <div className="flex-1 min-w-0">
                 <div className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(c.nombre || "")}</div>
-                <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>🔧 Info de instalación · <span style={ { fontWeight: 700, color: vencida || f === hoy ? "#9B1C1C" : "#9A4A06" } }>{cuando}</span></div>
+                <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>{etiq} · <span style={ { fontWeight: 700, color: vencida || f === hoy ? "#9B1C1C" : "#9A4A06" } }>{cuando}</span></div>
               </div>
               <button
                 type="button"
                 aria-label={"Enviar por WhatsApp a " + tituloEs(c.nombre || "")}
-                onClick={(e) => { e.stopPropagation(); onEnviarUno({ t: "in", id: c.id, link: whatsappLink(c, { texto: textoInstalacion(c) }), nombre: c.nombre, et: "🔧 Info de instalación" }); } }
+                onClick={(e) => { e.stopPropagation(); onEnviarUno(itemInstalacion(c)); } }
                 className="flex items-center justify-center shrink-0 rounded-xl"
                 style={ { width: 48, height: 48, background: "#1FA855", color: "#fff", fontSize: 22, border: 0 } }
               >
@@ -7164,11 +7190,11 @@ function BloqueInstalacionHoy({ lista, onEnviarUno, onMarcar, onPosponer, limite
             </div>
             {abre && (
               <div className="mf-abrir px-3 pb-3" style={ { borderTop: "1px solid #EEF1F7" } }>
-                <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>{textoInstalacion(c)}</div>
+                <div className="text-sm rounded-md p-3 mt-2" style={ { background: "#F3F6FB", color: "#1F2937", whiteSpace: "pre-wrap" } }>{textoMsg}</div>
                 <div className="flex items-stretch gap-1.5 mt-3">
                   <button
                     type="button"
-                    onClick={(e) => confirmarAccion(e, "¿Confirmas que ya enviaste la info de instalación?", () => onMarcar(c.id), { si: "✓ Sí, ya la envié" })}
+                    onClick={(e) => confirmarAccion(e, esPromo ? "¿Confirmas que ya enviaste el mensaje?" : "¿Confirmas que ya enviaste la info de instalación?", () => onMarcar(c.id), { si: "✓ Sí, ya la envié" })}
                     className="flex-1 text-[13px] font-semibold px-2 rounded-md"
                     style={ { background: "#001E62", color: "#fff", minHeight: 46, whiteSpace: "nowrap" } }
                   >
