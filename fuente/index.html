@@ -6936,10 +6936,49 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-// Avance de la comisión para la barra fija de abajo: la escalera de escalones (● dónde estás con lo marcado,
-// → el siguiente) y una línea de ingresos. Se recalcula al marcar clientes.
+// Avance compacto para la barra fija: dos recuadros (clientes → siguiente escalón, ingresos → 100%).
 function AvanceRescate({ pcRef, pcHoy, tramo, ing, baseHoy, baseSim }) {
-  const navy = "#001E62", mu = "#5A6680", verde = "#166534", naranja = "#B45309", azul = "#0072CE", cell = "#E3EDFA";
+  const navy = "#001E62", azul = "#0072CE", cell = "#E3EDFA", mu = "#5A6680";
+  const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
+  const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pcRef + 1e-9) || null;
+  const tAct = TABLA_POSICION_NUEVA.filter((t) => pcRef + 1e-9 >= t.min).slice(-1)[0] || null;
+  const alcanza = !!(sig && tramo && tramo.monto >= sig.monto - 1e-6);
+  const subeC = pcHoy != null && pcRef > pcHoy + 1e-9;
+  const baseAct = baseSim != null ? baseSim : baseHoy;
+  const tile = { flex: 1, minWidth: 0, background: cell, borderRadius: 12, padding: "8px 10px", color: navy };
+  const cap = (c) => ({ fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: c || mu, textTransform: "uppercase", whiteSpace: "nowrap" });
+  const grande = { fontSize: 20, fontWeight: 800, lineHeight: 1.15, whiteSpace: "nowrap" };
+  const peque = { fontSize: 11, color: mu, whiteSpace: "nowrap" };
+  let tIng = null;
+  if (ing && ing.meta > 0 && ing.pctRef != null) {
+    const pct = ing.pctRef;
+    const actual = (pct / 100) * ing.meta;
+    const falta = Math.max(0, ing.meta - actual);
+    const subeI = ing.pctHoy != null && pct > ing.pctHoy + 1e-9;
+    tIng = (
+      <div style={ tile }>
+        <div style={ cap(subeI ? azul : mu) }>💵 Ingresos {subeI ? "↑" : ""}{pct.toFixed(0)}%</div>
+        <div style={ grande }>{pct > 100 + 1e-9 ? "Acelerador ✓" : "Faltan " + d(falta)}</div>
+        <div style={ peque }>{d(actual)} de <b style={ { color: navy } }>{d(ing.meta)}</b></div>
+      </div>
+    );
+  }
+  return (
+    <div style={ { display: "flex", gap: 8, marginTop: 10, color: navy } }>
+      <div style={ tile }>
+        <div style={ cap(subeC ? azul : mu) }>📊 Clientes {subeC ? "↑" : ""}{pcRef.toFixed(0)}%</div>
+        <div style={ grande }>{!sig ? "Máximo" : alcanza ? "Faltan " + tramo.n : "No alcanzas"}</div>
+        <div style={ peque }>base {baseAct != null ? d(baseAct) : (tAct ? abrev(tAct.monto) : "—")}{sig ? <span> → <b style={ { color: navy } }>{abrev(sig.monto)}</b></span> : null}</div>
+      </div>
+      {tIng}
+    </div>
+  );
+}
+
+// Escalera completa de escalones (para el detalle de la barra): ● dónde estás con lo simulado, → el siguiente.
+function EscaleraRescateCompleta({ pcRef, pcHoy, tramo, ing, baseHoy, baseSim }) {
+  const navy = "#001E62", mu = "#5A6680", verde = "#0072CE", naranja = "#B45309", azul = "#0072CE", cell = "#E3EDFA";
   const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
   const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
   const pos = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
@@ -9636,14 +9675,18 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                     <div className="flex items-center justify-between gap-3">
                       <button type="button" onClick={() => setBarraComAbierta((v) => !v)} aria-expanded={barraComAbierta} className="text-left min-w-0 flex-1" style={ { background: "transparent", border: 0, padding: 0, minHeight: 64 } }>
                         <div className="flex items-center justify-between gap-2">
-                          <span className="text-sm font-extrabold shrink-0" style={ { color: "#001E62", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}` : "Simulación"}
-                            <span className="text-[11px] font-bold rounded-full px-2 py-0.5 ml-2" style={ { background: "#EEF3FB", color: "#001E62", whiteSpace: "nowrap" } }>{barraComAbierta ? "▼" : "▲ Detalle"}</span>
-                          </span>
-                          <span className="font-mono font-extrabold text-right" style={ { fontSize: 15, color: "#001E62" } }>
-                            {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
-                            {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
-                            {rescateSeleccionados.length > 0 && <span style={ { color: "#166534" } }> ({rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)})</span>}
-                          </span>
+                          <div style={ { minWidth: 0 } }>
+                            <div style={ { fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: "#5A6680", textTransform: "uppercase", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}, ganas` : "Simulación"}</div>
+                            <div className="font-mono font-extrabold" style={ { fontSize: 24, lineHeight: 1.1, color: rescateSeleccionados.length > 0 ? "#0072CE" : "#9AA6BD", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `${rescateGanancia >= 0 ? "+" : ""}$${Math.round(rescateGanancia)}` : "+$0"}</div>
+                          </div>
+                          <div style={ { textAlign: "right" } }>
+                            <div style={ { fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: "#5A6680", textTransform: "uppercase", whiteSpace: "nowrap" } }>Tu comisión</div>
+                            <div className="font-mono font-extrabold" style={ { whiteSpace: "nowrap", color: "#001E62", lineHeight: 1.2 } }>
+                              {rescateSeleccionados.length > 0 ? <span style={ { fontSize: 13, fontWeight: 600, color: "#5A6680" } }>{comisionConfirmadaHoy.completo ? "$" + Math.round(comisionConfirmadaHoy.total) : "—"} → </span> : null}
+                              <span style={ { fontSize: 20, color: rescateSeleccionados.length > 0 && rescateGanancia > 0.005 ? "#0072CE" : "#001E62" } }>{rescateSeleccionados.length > 0 ? (comisionSimulada.completo ? "$" + Math.round(comisionSimulada.total) : "—") : (comisionConfirmadaHoy.completo ? "$" + Math.round(comisionConfirmadaHoy.total) : "—")}</span>
+                            </div>
+                          </div>
+                          <span className="shrink-0 text-[11px] font-bold rounded-full px-2 py-1" style={ { background: "#EEF3FB", color: "#001E62" } }>{barraComAbierta ? "▼" : "▲"}</span>
                         </div>
                         {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (
                           <AvanceRescate
@@ -9654,6 +9697,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                             tramo={analisis ? analisis.tramo : null}
                             ing={{
                     meta: metaDineroHoy,
+                    pctHoy: comisionConfirmadaHoy.pctIngreso,
                     pctRef: rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctIngreso : comisionConfirmadaHoy.pctIngreso,
                   }}
                           />
@@ -9662,6 +9706,16 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                     </div>
                     {barraComAbierta && (
                       <div className="mt-3 pt-3 flex flex-col gap-3" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
+                        {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (
+                          <EscaleraRescateCompleta
+                            pcHoy={comisionConfirmadaHoy.pctClientesPonderado}
+                            baseHoy={comisionConfirmadaHoy.montoBase}
+                            baseSim={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.montoBase : null}
+                            pcRef={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado}
+                            tramo={analisis ? analisis.tramo : null}
+                            ing={{ meta: metaDineroHoy, pctRef: rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctIngreso : comisionConfirmadaHoy.pctIngreso }}
+                          />
+                        )}
                         {rescateSeleccionados.length > 0 && (
                           <div className="text-xs" style={ { color: "#5A6680" } }>
                             {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
@@ -9747,7 +9801,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
-      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 480 : 250 } } aria-hidden="true" />}
+      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 520 : 190 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
