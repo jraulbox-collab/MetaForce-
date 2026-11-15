@@ -6979,6 +6979,19 @@ function PanelRescate({ pcHoy, pcRef, tramo, nPend, nMarcados, conviene, esMaxim
 }
 
 // plegables, y la proyección al final.
+// Bono de ingresos (+10 puntos): se activa al pasar el 100% de la meta de ingresos.
+// Aproximado: cuántos clientes más hacen falta según lo que deja cada tipo en promedio.
+function clientesParaBonoIngresos(ingresosTotal, metaDinero, rpuHogar, rpuMovil) {
+  if (!metaDinero) return null;
+  const falta = metaDinero - ingresosTotal;
+  if (falta < 0) return { activo: true, falta: 0, cH: null, cM: null };
+  const cuantos = (r) => (r > 0 ? Math.floor(falta / r) + 1 : null);
+  return { activo: false, falta, cH: cuantos(rpuHogar), cM: cuantos(rpuMovil) };
+}
+// Tarjeta "Comisión del ciclo" en versión clara (fondo blanco) para el esquema nuevo del
+// período actual. Muestra los mismos números que la versión azul, ordenados para leerse
+// más fácil: fórmula en tres piezas, barra hacia el próximo escalón, tramos y detalle
+// plegables, y la proyección al final.
 function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaClientesHogar, metaClientesMovil, metaDinero, ingresosTotal, rpuHogar, rpuMovil, proyeccion, aunEsTemprano, onCambiarVista, onSimular }) {
   const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", pn: "#EEF3FB", blue: "#0072CE", cell: "#E3EDFA" };
   const pc = comision.pctClientesPonderado;
