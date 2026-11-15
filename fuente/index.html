@@ -1554,6 +1554,10 @@ function mesesDelSelector(base, seleccionado, todos) {
 // sin esperar a que confirmes. Si ese mismo mensaje vuelve a tocarle al mismo cliente, la app
 // pregunta antes de reenviarlo. Tipos: ch (cobro Hogar), cm (cobro móvil), in (instalación), v (venta).
 const APERTURAS_KEY = "mf_aperturas";
+// Texto del mensaje que va dentro del enlace de WhatsApp (para mostrarlo en el modo envío).
+function textoDeLink(link) {
+  try { return decodeURIComponent((String(link || "").split("text=")[1] || "").replace(/\+/g, " ")); } catch (e) { return ""; }
+}
 function claveEnvio(it) { return [it.t, it.id, it.key || it.k || "", it.ronda || ""].join("|"); }
 function leerAperturas() {
   try {
@@ -4761,8 +4765,8 @@ function App() {
           ))}
         </div>
       )}
-      {cadena && cadena.items[cadena.i] && (
-        <div className="fixed z-50 left-3 right-3 rounded-xl p-3" style={ { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } }>
+      {cadena && cadena.items[cadena.i] && ((cadena.items.length === 1 ? (x) => x : (x) => ReactDOM.createPortal(x, document.body))(
+        <div className={cadena.items.length === 1 ? "fixed z-50 left-3 right-3 rounded-xl p-3" : "fixed inset-0 flex flex-col"} style={ cadena.items.length === 1 ? { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } : { zIndex: 9999, background: "#001E62", paddingTop: "calc(16px + env(safe-area-inset-top))", paddingBottom: "calc(16px + env(safe-area-inset-bottom))", paddingLeft: 16, paddingRight: 16 } }>
           {cadena.items.length === 1 ? (
             <React.Fragment>
               <div className="text-sm font-bold text-white">¿Enviaste el mensaje a <button type="button" onClick={() => abrirFichaCadena(cadena.items[0])} className="font-bold underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0 } }>{tituloEs(cadena.items[0].nombre || "").split(" ").slice(0, 2).join(" ")} ›</button>?</div>
@@ -4774,17 +4778,35 @@ function App() {
             </React.Fragment>
           ) : (
             <React.Fragment>
-              <div className="text-sm font-bold text-white">Enviando {cadena.i + 1} de {cadena.items.length}: <button type="button" onClick={() => abrirFichaCadena(cadena.items[cadena.i])} className="font-bold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0 } }>{tituloEs(cadena.items[cadena.i].nombre || "")} ›</button></div>
-              <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.items[cadena.i].et} · Se abrió WhatsApp con el mensaje. ¿Lo enviaste?</div>
-              <div className="flex gap-2 mt-2 items-stretch">
-                <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
-                <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>No, saltar</button>
-                <button type="button" onClick={() => avanzarCadena(true)} className="text-sm font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 46, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0 } }>Sí, siguiente</button>
-              </div>
+              {(() => {
+                const it = cadena.items[cadena.i];
+                const pct = Math.round((cadena.i / cadena.items.length) * 100);
+                const msg = textoDeLink(it.link);
+                return (
+                  <React.Fragment>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="text-sm font-extrabold text-white">📤 Enviando {cadena.i + 1} de {cadena.items.length}</div>
+                      <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
+                    </div>
+                    <div className="rounded-full mt-3" style={ { height: 8, background: "#2B4585" } }><div className="rounded-full" style={ { height: 8, width: Math.max(4, pct) + "%", background: "#7CD992" } } /></div>
+                    <div className="mt-5">
+                      <div className="text-xs font-bold" style={ { color: "#B9C4E0" } }>{it.et}</div>
+                      <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
+                    </div>
+                    <div className="flex-1 min-h-0 overflow-auto rounded-xl mt-4 p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45 } }>{msg || "Mensaje listo en WhatsApp."}</div>
+                    <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Se abrió WhatsApp con este mensaje. ¿Lo enviaste?</div>
+                    <button type="button" onClick={() => abrirWhatsapp(it)} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp de nuevo</button>
+                    <div className="flex gap-2 mt-3 items-stretch">
+                      <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>⏭ No, saltar</button>
+                      <button type="button" onClick={() => avanzarCadena(true)} className="font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 56, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0, fontSize: 16 } }>✅ Sí, siguiente</button>
+                    </div>
+                  </React.Fragment>
+                );
+              })()}
             </React.Fragment>
           )}
         </div>
-      )}
+      ))}
       {barraEscondida && !barraOculta && ORDEN_SWIPE.includes(tab) && (
         <div
           className="md:hidden fixed z-40 flex items-center"
