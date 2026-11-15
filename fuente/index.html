@@ -6944,29 +6944,50 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-// Avance de la comisión (dos chips: clientes e ingresos). Va en la barra fija de abajo y se recalcula al marcar.
-function AvanceRescate({ pcRef, tramo, ing }) {
-  const navy = "#001E62", verde = "#166534", naranja = "#B45309";
+// Avance de la comisión para la barra fija de abajo: la escalera de escalones (● dónde estás con lo marcado,
+// → el siguiente) y una línea de ingresos. Se recalcula al marcar clientes.
+function AvanceRescate({ pcRef, pcHoy, tramo, ing, baseHoy, baseSim }) {
+  const navy = "#001E62", mu = "#5A6680", verde = "#166534", naranja = "#B45309", azul = "#0072CE", cell = "#E3EDFA";
   const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
+  const pos = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
+  const tAct = TABLA_POSICION_NUEVA.filter((t) => pcRef + 1e-9 >= t.min).slice(-1)[0] || null;
   const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pcRef + 1e-9) || null;
   const alcanza = !!(sig && tramo && tramo.monto >= sig.monto - 1e-6);
-  const chip = { flex: "1 1 0", minWidth: 0, background: "#EEF3FB", borderRadius: 10, padding: "5px 8px", fontSize: 12, lineHeight: 1.25, color: navy };
+  const cruza = baseSim != null && baseHoy != null && baseSim !== baseHoy;
   let ingTxt = null;
   if (ing && ing.meta > 0 && ing.pctRef != null) {
     const pct = ing.pctRef;
     const falta = Math.max(0, ing.meta - (pct / 100) * ing.meta);
     ingTxt = (
-      <div style={ chip }>
-        <div style={ { fontWeight: 800 } }>💵 Ingresos {pct.toFixed(0)}%</div>
-        <div>{pct > 100 + 1e-9 ? <b style={ { color: verde } }>acelerador ✓</b> : <span>faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%</span>}</div>
+      <div style={ { fontSize: 12, marginTop: 6 } }>
+        <b>💵 Ingresos {pct.toFixed(0)}%</b> · {pct > 100 + 1e-9 ? <b style={ { color: verde } }>acelerador activo ✓</b> : <span>faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%</span>}
       </div>
     );
   }
   return (
-    <div className="flex gap-2 mt-2">
-      <div style={ chip }>
-        <div style={ { fontWeight: 800 } }>📊 Clientes {pcRef.toFixed(0)}%</div>
-        <div>{!sig ? <b>escalón máximo</b> : alcanza ? <span>faltan <b style={ { color: verde } }>{tramo.n}</b> para siguiente escalón</span> : <b style={ { color: naranja } }>no alcanzas siguiente escalón</b>}</div>
+    <div style={ { marginTop: 8, color: navy } }>
+      {cruza && <div style={ { fontSize: 12, fontWeight: 800, color: verde, marginBottom: 2 } }>Tu base pasaría de {d(baseHoy)} a {d(baseSim)}</div>}
+      <div style={ { position: "relative", height: 56, margin: "2px 18px 0" } } role="img" aria-label={"Escalera de escalones. Llevas " + pcRef.toFixed(1) + " por ciento de clientes."}>
+        <div style={ { position: "absolute", left: 0, right: 0, top: 20, height: 8, borderRadius: 4, background: cell } } />
+        {pcRef > pcHoy + 1e-9 && <div style={ { position: "absolute", left: 0, top: 20, height: 8, borderRadius: 4, background: "#86C79A", width: pos(pcRef) + "%" } } />}
+        <div style={ { position: "absolute", left: 0, top: 20, height: 8, borderRadius: 4, background: navy, width: pos(Math.min(pcRef, pcHoy)) + "%" } } />
+        {TABLA_POSICION_NUEVA.map((t) => {
+          const lograda = pcRef + 1e-9 >= t.min;
+          const esAct = tAct && t.min === tAct.min;
+          const esSig = sig && t.min === sig.min;
+          return (
+            <div key={t.min} style={ { position: "absolute", top: 0, width: 38, marginLeft: -19, textAlign: "center", left: pos(t.min) + "%" } }>
+              <div style={ { fontSize: 10, fontWeight: 700, color: mu, height: 13, lineHeight: "13px" } }>{t.max === Infinity ? t.min + "+" : t.min}</div>
+              <div style={ { width: 16, height: 16, boxSizing: "border-box", borderRadius: "50%", margin: "3px auto 0", border: "2px " + (esSig ? "dashed " + azul : "solid " + navy), background: lograda ? navy : "#fff", color: "#fff", fontSize: 9, lineHeight: "12px", fontWeight: 700 } }>{esAct ? "●" : lograda ? "✓" : ""}</div>
+              <div style={ { fontSize: 10, fontWeight: 700, color: esSig ? azul : navy, marginTop: 3, whiteSpace: "nowrap" } }>{abrev(t.monto)}{esSig ? " →" : ""}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={ { fontSize: 12 } }>
+        <b>Llevas {pcRef.toFixed(1)}%</b>
+        {!sig ? <span> · <b>escalón máximo</b></span> : <span> · siguiente escalón en <b>{sig.min}%</b>{alcanza ? <span> · faltan <b style={ { color: verde } }>{tramo.n}</b> cliente{tramo.n === 1 ? "" : "s"}</span> : <b style={ { color: naranja } }> · no alcanzas con los pendientes</b>}</span>}
       </div>
       {ingTxt}
     </div>
@@ -9699,6 +9720,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                           : comisionMaximaHoy.completo && <div className="text-xs font-bold" style={ { color: "#B45309" } }>Hasta {fmtMonto(comisionMaximaHoy.total)} si pagan todos</div>}
                         {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (
                           <AvanceRescate
+                            pcHoy={comisionConfirmadaHoy.pctClientesPonderado}
+                            baseHoy={comisionConfirmadaHoy.montoBase}
+                            baseSim={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.montoBase : null}
                             pcRef={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado}
                             tramo={analisis ? analisis.tramo : null}
                             ing={{
@@ -9781,7 +9805,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
-      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 480 : 250 } } aria-hidden="true" />}
+      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 520 : 330 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
