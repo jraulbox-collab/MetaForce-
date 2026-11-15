@@ -9455,21 +9455,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const chipsCliente = (c) => {
     const e = etiquetas.get(c.id) || { gain: 0, clave: false };
     const marcado = !!rescateSeleccion[c.id];
-    const tipo = e.clave
-      ? { t: "🔑 Clave", st: { background: "#E3EDFA", color: "#001E62", border: "1.5px solid #001E62" } }
-      : e.gain > 0.005
-      ? { t: "➕ Suma", st: { background: "#E9F7EF", color: "#166534", border: "1.5px solid #166534" } }
-      : { t: "◽ Suma al grupo", st: { background: "#F3F4F6", color: "#5A6680", border: "1.5px solid #9CA3AF" } };
-    const abierto = !!montoAbierto[c.id];
     return (
-      <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        {primerosIds.has(c.id) && !marcado && (
-          <span className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ { background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>💡 Te conviene</span>
-        )}
-        <button type="button" onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setMontoAbierto((p) => ({ ...p, [c.id]: !p[c.id] })); } } className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ tipo.st }>
-          {tipo.t}
-        </button>
-      </div>
+      <>
+        {primerosIds.has(c.id) && !marcado && <span aria-label="Te conviene" title="Te conviene">💡</span>}
+        {e.clave && <span aria-label="Clave" title="Clave">🔑</span>}
+      </>
     );
   };
   // Orden para sumar la mayor cantidad de pagos: primero los que aún no has contactado, luego los que
@@ -9516,29 +9506,30 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const filaCobro = (c) => {
     const movil = idsMovilHoy.has(c.id);
     const sel = !!rescateSeleccion[c.id];
-    const fechaCorta = movil ? "Línea Móvil" : c.fechaInstalacion ? new Date(c.fechaInstalacion + "T12:00:00").toLocaleDateString("es", { day: "numeric", month: "short" }).replace(".", "") : "";
-    const plan = Number(c.montoMensual) > 0 ? `${fmtMonto(c.montoMensual)}/mes` : "";
-    const ct = textoContacto(c.id);
+    const plan = Number(c.montoMensual) > 0 ? fmtMonto(c.montoMensual) : "";
+    const vence = textoVence(c, movil);
+    const fc = ultimoContacto && ultimoContacto[c.id];
+    const dc = fc ? Math.max(0, Math.round((Date.now() - new Date(fc).getTime()) / 86400000)) : null;
+    const g = etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0;
     return (
-      <label key={c.id} className="flex items-start gap-3 px-3 py-3 rounded-xl border cursor-pointer" style={ { borderColor: sel ? "#0072CE" : "#DFE5EF", background: sel ? "#E3EDFA" : "white" } }>
-        <input type="checkbox" checked={sel} onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))} style={ { width: 24, height: 24, marginTop: 2, flexShrink: 0 } } />
+      <label key={c.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl border cursor-pointer" style={ { borderColor: sel ? "#0072CE" : "#DFE5EF", background: sel ? "#E3EDFA" : "white" } }>
+        <input type="checkbox" checked={sel} onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))} style={ { width: 22, height: 22, flexShrink: 0 } } />
         <div className="flex-1 min-w-0">
-          <div className="flex items-start justify-between gap-2">
-            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-left font-extrabold underline underline-offset-2" style={ { color: "#0B4A99", fontSize: 17, lineHeight: 1.2 } }>{c.nombre}</button>
-            {(() => { const g = etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0; return <span className="shrink-0 font-mono font-extrabold" style={ { fontSize: 17, color: g > 0.005 ? "#166534" : "#9AA6BD" } }>{g > 0.005 ? "+" : ""}{fmtMonto(g)}</span>; })()}
+          <div className="flex items-baseline justify-between gap-2">
+            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-left font-extrabold truncate min-w-0" style={ { color: "#0B4A99", fontSize: 15, lineHeight: 1.25 } }>{tituloEs(c.nombre || "")}</button>
+            <span className="shrink-0 font-mono font-extrabold" style={ { fontSize: 15, color: g > 0.005 ? "#166534" : "#9AA6BD" } }>{g > 0.005 ? "+" : ""}{fmtMonto(g)}</span>
           </div>
-          <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs font-bold" style={ { color: "#5A6680" } }>
+          <div className="flex items-center flex-wrap gap-x-2 gap-y-0.5 text-xs font-bold" style={ { color: "#5A6680" } }>
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ movil ? { background: "#0E7C66", color: "#fff" } : { background: "#001E62", color: "#fff" } }>{movil ? "Móvil" : "Hogar"}</span>
             {plan && <span>{plan}</span>}
-            {fechaCorta && <span>· {fechaCorta}</span>}
-            {textoVence(c, movil) && <span style={ { color: textoVence(c, movil).c } }>· {textoVence(c, movil).t}</span>}
-            <span style={ { color: ct.c } }>· {ct.t}</span>
-            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (onContacto) onContacto(c); }} className="rounded-full font-bold px-2.5 py-1" style={ { background: "#EEF3FB", color: "#001E62", border: "1px solid #C5CEDF", fontSize: 11 } }>✓ Ya hablé</button>
+            {vence && <span style={ { color: vence.c } }>{vence.t}</span>}
+            <span style={ { color: dc === null ? "#B45309" : "#166534" } }>{dc === null ? "💬 nunca" : dc === 0 ? "💬 hoy" : `💬 ${dc} d`}</span>
+            {chipsCliente(c)}
+            <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (onContacto) onContacto(c); }} className="rounded-full font-bold px-2 py-0.5" style={ { background: "#EEF3FB", color: "#001E62", border: "1px solid #C5CEDF", fontSize: 10.5 } }>✓ hablé</button>
           </div>
-          {chipsCliente(c)}
         </div>
         {c.telefono && (
-          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" aria-label="Abrir chat de WhatsApp" onClick={(e) => { e.stopPropagation(); if (onContacto) onContacto(c); }} className="shrink-0 flex items-center justify-center rounded-xl" style={ { width: 48, height: 48, border: "2px solid #001E62", fontSize: 22 } }>💬</a>
+          <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" aria-label="Abrir chat de WhatsApp" onClick={(e) => { e.stopPropagation(); if (onContacto) onContacto(c); }} className="shrink-0 flex items-center justify-center rounded-full" style={ { width: 38, height: 38, border: "2px solid #001E62", fontSize: 18 } }>💬</a>
         )}
       </label>
     );
