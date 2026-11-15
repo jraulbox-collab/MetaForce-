@@ -2812,6 +2812,7 @@ function App() {
   // Bitácora de envíos: cada marca de "enviado" (y cada vez que otro dispositivo trae cambios)
   // queda anotada con fecha y dispositivo, para poder rastrear cualquier desajuste.
   const [envios, setEnvios, syncEnvios] = useListaNube("envios-churn", opcionesNube("envios", { nuevosAlPrincipio: true }));
+  const [ajustesBarrios, setAjustesBarrios] = useListaNube("barrios-ajustes", opcionesNube("barrios"));
   function registrarEnvio(datos) {
     setEnvios((prev) => [{ id: uid(), fecha: new Date().toISOString(), dispositivo: dispositivoActual(), ...datos }, ...prev].slice(0, 600));
   }
@@ -4914,6 +4915,7 @@ function App() {
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onAbrirBarrios={() => navegarA("barrios")}
             clientesBarrios={clientesCalc}
+            ajustesBarrios={ajustesBarrios}
             onVerClientes={(payload) => {
               setSaltarAMes({ ...payload, token: Date.now() });
               navegarA("clientes");
@@ -4972,6 +4974,8 @@ function App() {
         {tab === "barrios" && (
           <BarriosPantalla
             clientes={clientesCalc}
+            ajustes={ajustesBarrios}
+            onAjustes={setAjustesBarrios}
             onVolver={() => volverA("dashboard")}
             onVerCliente={(c) => { setOrigenDetalle("barrios"); setClienteDetalleId(c.id); navegarA("detalle"); }}
           />
@@ -6236,16 +6240,74 @@ function clavesBarrio(nombre) {
   sinParen.split(/\s+O\s+/i).forEach((t) => { if (t.trim().length >= 4) meter(t); });
   return [...set];
 }
+const ARTICULOS_BARRIO = /\b(DE|DEL|LA|LAS|EL|LOS)\b/g;
+// Mismo lugar escrito distinto: solo cambian "de/del/la/el" o un "(P)" al final.
+const claveFusion = (n) => normTexto(String(n).replace(/\(\s*P\s*\)/gi, " ")).replace(ARTICULOS_BARRIO, " ").replace(/\s+/g, " ").trim();
+// Parecido pero dudoso (con o sin Residencial/Barriada/paréntesis): se ofrece "Unir" a mano.
+const claveParecida = (n) => claveCortaBarrio(String(n).replace(/\([^)]*\)/g, " ")).replace(ARTICULOS_BARRIO, " ").replace(/\s+/g, " ").trim();
 function prepararBarrios(raw) {
-  const filas = raw.b.map((r) => ({ id: r[5], barrio: r[0], provincia: raw.p[r[1]], distrito: limpiarZona(raw.d[r[2]]), corregimiento: limpiarZona(raw.c[r[3]]), hhpp: r[4] }));
+  const crudas = raw.b.map((r) => ({ id: r[5], barrio: r[0], provincia: raw.p[r[1]], distrito: limpiarZona(raw.d[r[2]]), corregimiento: limpiarZona(raw.c[r[3]]), hhpp: r[4] }));
+  const grupos = new Map();
+  crudas.forEach((f) => {
+    const k = [f.provincia, f.distrito, f.corregimiento, claveFusion(f.barrio)].join("|");
+    const a = grupos.get(k);
+    if (a) a.push(f); else grupos.set(k, [f]);
+  });
+  const filas = [];
+  const aBase = new Map(); // id original -> id de la fila unida
+  grupos.forEach((g) => {
+    const rep = [...g].sort((x, y) => y.hhpp - x.hhpp)[0];
+    const f = { ...rep, hhpp: g.reduce((t, x) => t + x.hhpp, 0), ids: g.map((x) => x.id), partes: g.map((x) => ({ nombre: x.barrio, hhpp: x.hhpp })), nombres: g.map((x) => x.barrio) };
+    g.forEach((x) => aBase.set(x.id, f.id));
+    filas.push(f);
+  });
   const exacto = new Map();
   const corto = new Map();
-  const meter = (m, k, f) => { if (!k) return; const a = m.get(k); if (a) a.push(f); else m.set(k, [f]); };
-  filas.forEach((f) => { clavesBarrio(f.barrio).forEach((k) => { meter(exacto, k, f); meter(corto, k, f); }); });
-  return { filas, exacto, corto };
+  const parecidos = new Map();
+  const meter = (m, k, f) => { if (!k) return; const a = m.get(k); if (a) { if (a.indexOf(f) < 0) a.push(f); } else m.set(k, [f]); };
+  filas.forEach((f) => {
+    f.nombres.forEach((nm) => clavesBarrio(nm).forEach((k) => { meter(exacto, k, f); meter(corto, k, f); }));
+    f.grupoParecido = [f.provincia, f.distrito, f.corregimiento, claveParecida(f.barrio)].join("|");
+    meter(parecidos, f.grupoParecido, f);
+  });
+  return { filas, exacto, corto, parecidos, aBase };
 }
-function useBarrios() {
-  const [datos, setDatos] = useState(barriosPreparados);
+// Aplica tus ajustes: barrios unidos a mano y casas corregidas a mano. Devuelve las "entidades" finales.
+function aplicarAjustesBarrios(base, ajustes) {
+  const lista = Array.isArray(ajustes) ? ajustes : [];
+  const porBase = new Map(base.filas.map((f) => [f.id, f]));
+  const miembroDe = new Map();
+  lista.forEach((a) => { if (a && a.tipo === "union") (a.miembros || []).forEach((m) => { if (porBase.has(m) && porBase.has(a.principal)) miembroDe.set(m, a.principal); }); });
+  const casas = new Map(lista.filter((a) => a && a.tipo === "casas").map((a) => [a.barrioId, Number(a.casas)]));
+  const entidades = [];
+  const aEnt = new Map();
+  base.filas.forEach((f) => {
+    if (miembroDe.has(f.id)) return;
+    const uni = lista.find((a) => a && a.tipo === "union" && a.principal === f.id);
+    const miembros = uni ? (uni.miembros || []).map((m) => porBase.get(m)).filter(Boolean) : [];
+    const todos = [f, ...miembros];
+    const hhppArchivo = todos.reduce((t, x) => t + x.hhpp, 0);
+    const editada = casas.has(f.id) && Number.isFinite(casas.get(f.id));
+    const e = { ...f, hhppArchivo, hhpp: editada ? casas.get(f.id) : hhppArchivo, editada, unidos: miembros, todosNombres: todos.flatMap((x) => x.nombres).join(" ") };
+    entidades.push(e);
+    todos.forEach((x) => aEnt.set(x.id, e.id));
+  });
+  const porId = new Map(entidades.map((e) => [e.id, e]));
+  return { ...base, filas: entidades, aEnt, porId };
+}
+function parecidosDe(datos, e) {
+  const idsPropios = new Set([e.id, ...(e.unidos || []).map((x) => x.id)]);
+  const grupos = new Set([e.grupoParecido, ...(e.unidos || []).map((x) => x.grupoParecido)]);
+  const salida = [];
+  grupos.forEach((g) => (datos.parecidos.get(g) || []).forEach((f) => {
+    if (idsPropios.has(f.id)) return;
+    const ent = datos.porId.get(datos.aEnt.get(f.id));
+    if (ent && ent.id !== e.id && !salida.includes(ent)) salida.push(ent);
+  }));
+  return salida;
+}
+function useBarrios(ajustes) {
+  const [base, setDatos] = useState(barriosPreparados);
   const [error, setError] = useState(false);
   useEffect(() => {
     if (barriosPreparados) { setDatos(barriosPreparados); return undefined; }
@@ -6264,6 +6326,7 @@ function useBarrios() {
       .catch(() => { if (vivo) setError(true); });
     return () => { vivo = false; };
   }, []);
+  const datos = useMemo(() => (base ? aplicarAjustesBarrios(base, ajustes) : null), [base, ajustes]);
   return { datos, error };
 }
 // Busca el barrio de un cliente (lo que guardas en Observaciones) dentro del listado.
@@ -6297,7 +6360,7 @@ function estadisticasBarrios(clientes, datos) {
     if (r.estado === "sinBarrio") { sinBarrio.push(c); return; }
     if (r.estado === "sinMatch") { sinMatch.push({ c, barrio: r.barrio }); return; }
     if (r.estado === "ambiguo") { ambiguos.push({ c, barrio: r.barrio, n: r.candidatos.length }); return; }
-    const f = r.fila;
+    const f = datos.porId.get(datos.aEnt.get(r.fila.id)) || r.fila;
     let e = porId.get(f.id);
     if (!e) { e = { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0 }; porId.set(f.id, e); }
     e.clientes.push(c);
@@ -6318,8 +6381,8 @@ function estadisticasBarrios(clientes, datos) {
 const fmtPen = (p) => (p === null || p === undefined ? "—" : (p * 100 < 10 ? (p * 100).toFixed(1) : Math.round(p * 100)) + "%");
 const fmtNum = (n) => Number(n || 0).toLocaleString("es");
 
-function BarriosTarjeta({ clientes, onAbrir }) {
-  const { datos } = useBarrios();
+function BarriosTarjeta({ clientes, onAbrir, ajustes }) {
+  const { datos } = useBarrios(ajustes);
   const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos) : null), [clientes, datos]);
   const top = est ? [...est.conClientes].sort((a, b) => b.vendidos - a.vendidos).slice(0, 3) : [];
   return (
@@ -6348,8 +6411,34 @@ function BarriosTarjeta({ clientes, onAbrir }) {
   );
 }
 
-function BarriosPantalla({ clientes, onVolver, onVerCliente }) {
-  const { datos, error } = useBarrios();
+function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes }) {
+  const { datos, error } = useBarrios(ajustes);
+  const [editando, setEditando] = useState(null);
+  const [valorCasas, setValorCasas] = useState("");
+  const guardarCasas = (e, valor) => {
+    const n = parseInt(valor, 10);
+    onAjustes((prev) => {
+      const sin = prev.filter((a) => !(a.tipo === "casas" && a.barrioId === e.id));
+      return Number.isFinite(n) && n >= 0 ? [...sin, { id: "casas-" + e.id, tipo: "casas", barrioId: e.id, casas: n }] : sin;
+    });
+    setEditando(null);
+  };
+  const unir = (e, otro) => {
+    onAjustes((prev) => {
+      const heredados = prev.filter((a) => a.tipo === "union" && a.principal === otro.id).flatMap((a) => a.miembros || []);
+      const sin = prev.filter((a) => !(a.tipo === "union" && (a.principal === otro.id || a.principal === e.id)) && !(a.tipo === "casas" && a.barrioId === otro.id));
+      const actuales = prev.filter((a) => a.tipo === "union" && a.principal === e.id).flatMap((a) => a.miembros || []);
+      const miembros = [...new Set([...actuales, otro.id, ...(otro.ids || []).filter((x) => x !== otro.id), ...heredados])];
+      return [...sin, { id: "union-" + e.id, tipo: "union", principal: e.id, miembros }];
+    });
+  };
+  const separar = (e, m) => {
+    onAjustes((prev) => prev.flatMap((a) => {
+      if (!(a.tipo === "union" && a.principal === e.id)) return [a];
+      const resto = (a.miembros || []).filter((x) => x !== m.id);
+      return resto.length ? [{ ...a, miembros: resto }] : [];
+    }));
+  };
   const [busca, setBusca] = useState("");
   const [alcance, setAlcance] = useState("mios");
   const [prov, setProv] = useState("");
@@ -6364,7 +6453,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente }) {
     let base = alcance === "mios" ? est.conClientes : datos.filas.map((f) => mapa.get(f.id) || { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0, libres: f.hhpp, pen: 0 });
     if (prov) base = base.filter((e) => e.provincia === prov);
     const q = normTexto(busca);
-    if (q) base = base.filter((e) => normTexto(`${e.barrio} ${e.corregimiento} ${e.distrito}`).includes(q));
+    if (q) base = base.filter((e) => normTexto(`${e.todosNombres || e.barrio} ${e.corregimiento} ${e.distrito}`).includes(q));
     const clave = { clientes: (e) => e.vendidos, casas: (e) => e.hhpp, pen: (e) => (e.pen === null ? -1 : e.pen), libres: (e) => e.libres }[orden];
     return [...base].sort((a, b) => clave(b) - clave(a) || b.vendidos - a.vendidos || b.hhpp - a.hhpp);
   }, [datos, est, alcance, prov, busca, orden]);
@@ -6423,6 +6512,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente }) {
                       <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
                     </div>
                     <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{[e.corregimiento, e.distrito, e.provincia.charAt(0) + e.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}</div>
+                    {e.vendidos > 0 && e.vendidos >= e.hhpp && <div className="text-xs font-bold mb-2" style={ { color: "#B45309" } }>⚠ Casas desactualizadas: tienes {e.vendidos} clientes y el archivo dice {fmtNum(e.hhpp)}</div>}
                     <div className="flex items-end gap-4 text-xs font-bold" style={ { color: "#5A6680" } }>
                       <span><span className="block text-lg font-extrabold tabular-nums" style={ { color: "#001E62" } }>{e.vendidos}</span>clientes</span>
                       <span><span className="block text-lg font-extrabold tabular-nums" style={ { color: "#001E62" } }>{fmtNum(e.hhpp)}</span>casas</span>
@@ -6437,6 +6527,47 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente }) {
                       <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>
                         ✓ Pagaron {e.pagaron} · 📦 Instalados {e.instalados} · ✕ Bajas {e.bajas} · 🏠 Casas libres {fmtNum(e.libres)}
                       </div>
+                      <div className="rounded-lg p-3 my-2" style={ { background: "#F3F6FB" } }>
+                        <div className="text-xs font-bold mb-1" style={ { color: "#001E62" } }>🏠 Casas (HHPP): {fmtNum(e.hhpp)}{e.editada ? " · ✎ corregidas por ti" : ""}</div>
+                        {(e.partes && e.partes.length > 1 || (e.unidos || []).length > 0) && (
+                          <div className="text-xs mb-1" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>
+                            Archivo: {[...(e.partes || [{ nombre: e.barrio, hhpp: e.hhpp }]), ...(e.unidos || []).flatMap((u) => u.partes || [{ nombre: u.barrio, hhpp: u.hhpp }])].map((x) => `${x.nombre} ${fmtNum(x.hhpp)}`).join(" + ")}
+                          </div>
+                        )}
+                        {editando === e.id ? (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <input type="number" inputMode="numeric" min="0" value={valorCasas} onChange={(ev) => setValorCasas(ev.target.value)} className="rounded-md border outline-none px-3" style={ { height: 44, width: 120, borderColor: "#DFE5EF", background: "#fff" } } placeholder="Casas" />
+                            <button type="button" onClick={() => guardarCasas(e, valorCasas)} className="text-sm font-bold rounded-md px-4 text-white" style={ { minHeight: 44, background: "#166534" } }>Guardar</button>
+                            <button type="button" onClick={() => setEditando(null)} className="text-sm font-bold rounded-md px-3 border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>Cancelar</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <button type="button" onClick={() => { setEditando(e.id); setValorCasas(String(e.hhpp)); }} className="text-xs font-bold rounded-md px-3 border" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>✎ Editar casas</button>
+                            {e.editada && <button type="button" onClick={() => guardarCasas(e, "")} className="text-xs font-bold rounded-md px-3 border" style={ { minHeight: 40, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>Volver al valor del archivo ({fmtNum(e.hhppArchivo)})</button>}
+                          </div>
+                        )}
+                      </div>
+                      {(e.unidos || []).map((u) => (
+                        <div key={u.id} className="flex items-center justify-between gap-2 text-xs py-1" style={ { color: "#374151" } }>
+                          <span style={ { overflowWrap: "anywhere" } }>🔗 Unido: <b>{u.barrio}</b> · {fmtNum(u.hhpp)} casas</span>
+                          <button type="button" onClick={() => separar(e, u)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#DFE5EF", background: "#fff" } }>Separar</button>
+                        </div>
+                      ))}
+                      {(() => {
+                        const par = parecidosDe(datos, e);
+                        if (par.length === 0) return null;
+                        return (
+                          <div className="mb-2">
+                            <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>Parecidos en este corregimiento</div>
+                            {par.map((o) => (
+                              <div key={o.id} className="flex items-center justify-between gap-2 text-xs py-1">
+                                <span style={ { overflowWrap: "anywhere" } }><b>{o.barrio}</b> · {fmtNum(o.hhpp)} casas</span>
+                                <button type="button" onClick={() => unir(e, o)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Unir</button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
                       {e.clientes.length === 0 ? <div className="text-xs" style={ { color: "#5A6680" } }>Todavía no tienes clientes aquí.</div> : e.clientes.map(cliente)}
                     </div>
                   )}
@@ -7902,7 +8033,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onAbrirComision, onIrAVentas, onVerCliente, ultimoContacto, onContacto, onAbrirBarrios, clientesBarrios }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onAbrirComision, onIrAVentas, onVerCliente, ultimoContacto, onContacto, onAbrirBarrios, clientesBarrios, ajustesBarrios }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -10363,7 +10494,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         </div>
       ))}
 
-      {onAbrirBarrios && bloqueOrd("barrios", "Barrios", <BarriosTarjeta clientes={clientesBarrios || clientes} onAbrir={onAbrirBarrios} />)}
+      {onAbrirBarrios && bloqueOrd("barrios", "Barrios", <BarriosTarjeta clientes={clientesBarrios || clientes} onAbrir={onAbrirBarrios} ajustes={ajustesBarrios} />)}
 
       {onIrAVentas && bloqueOrd("ventas", "Ventas por mensajes", (() => {
         const vh = calcularVentasHoy(clientes, convergencias, Date.now());
