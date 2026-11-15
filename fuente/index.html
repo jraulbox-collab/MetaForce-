@@ -6491,11 +6491,21 @@ function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
 function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes }) {
   const { datos, error } = useBarrios(ajustes);
   const [formNuevo, setFormNuevo] = useState(null);
+  const [vista, setVista] = useState("vender");
+  const [provSel, setProvSel] = useState("centrales");
+  const [busca, setBusca] = useState("");
+  const [filtroZona, setFiltroZona] = useState("todas");
+  const [zonaAbierta, setZonaAbierta] = useState(null);
+  const [abierto, setAbierto] = useState(null);
+  const [masAbierto, setMasAbierto] = useState(null);
+  const [verMas, setVerMas] = useState(30);
+  const [verSin, setVerSin] = useState(false);
   const guardarNuevo = (d) => {
     onAjustes((prev) => [...prev, { id: "nuevo-" + uid(), tipo: "nuevo", ...d }]);
     setFormNuevo(null);
     setBusca(d.barrio);
-    setAlcance("todos");
+    setVista("buscar");
+    setProvSel("todas");
   };
   const borrarNuevo = (e) => onAjustes((prev) => prev.filter((a) => a.id !== e.ajusteId && !(a.tipo === "union" && (a.principal === e.id || (a.miembros || []).includes(e.id)))));
   const unir = (e, otro) => {
@@ -6514,26 +6524,33 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
       return resto.length ? [{ ...a, miembros: resto }] : [];
     }));
   };
-  const [busca, setBusca] = useState("");
-  const [alcance, setAlcance] = useState("mios");
-  const [prov, setProv] = useState("");
-  const [orden, setOrden] = useState("clientes");
-  const [abierto, setAbierto] = useState(null);
-  const [verMas, setVerMas] = useState(60);
-  const [verSin, setVerSin] = useState(false);
   const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos) : null), [clientes, datos]);
-  const lista = useMemo(() => {
+  const enAlcance = (e) => provSel === "todas" || (provSel === "centrales" ? PROV_CENTRALES.includes(e.provincia) : e.provincia === provSel);
+  // Todos los barrios con sus números (los que no tienen clientes tuyos, en cero).
+  const todos = useMemo(() => {
     if (!datos || !est) return [];
     const mapa = new Map(est.filas.map((e) => [e.id, e]));
-    let base = alcance === "mios" ? est.conClientes : datos.filas.map((f) => mapa.get(f.id) || { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0, libres: f.hhpp, pen: 0 });
-    if (prov) base = base.filter((e) => e.provincia === prov);
+    return datos.filas.map((f) => mapa.get(f.id) || { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0, libres: f.hhpp, pen: 0 });
+  }, [datos, est]);
+  // Zonas (corregimientos) ordenadas por casas libres: dónde hay más cobertura sin cliente tuyo.
+  const zonas = useMemo(() => {
+    const m = new Map();
+    todos.filter(enAlcance).forEach((e) => {
+      const k = [e.provincia, e.distrito, e.corregimiento].join("|");
+      let z = m.get(k);
+      if (!z) { z = { k, corregimiento: e.corregimiento, distrito: e.distrito, provincia: e.provincia, barrios: [], casas: 0, libres: 0, vendidos: 0 }; m.set(k, z); }
+      z.barrios.push(e); z.casas += e.hhpp; z.libres += e.libres; z.vendidos += e.vendidos;
+    });
+    return [...m.values()].filter((z) => z.libres >= 100).map((z) => ({ ...z, barrios: [...z.barrios].sort((a, b) => b.libres - a.libres) })).sort((a, b) => b.libres - a.libres);
+  }, [todos, provSel]);
+  const zonasVis = zonas.filter((z) => (filtroZona === "ya" ? z.vendidos > 0 : filtroZona === "nuevas" ? z.vendidos === 0 : true));
+  const mios = useMemo(() => (est ? est.conClientes.filter(enAlcance).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp) : []), [est, provSel]);
+  const resultados = useMemo(() => {
     const q = normTexto(busca);
-    if (q) base = base.filter((e) => normTexto(`${e.todosNombres || e.barrio} ${e.corregimiento} ${e.distrito}`).includes(q));
-    const clave = { clientes: (e) => e.vendidos, casas: (e) => e.hhpp, pen: (e) => (e.pen === null ? -1 : e.pen), libres: (e) => e.libres }[orden];
-    return [...base].sort((a, b) => clave(b) - clave(a) || b.vendidos - a.vendidos || b.hhpp - a.hhpp);
-  }, [datos, est, alcance, prov, busca, orden]);
-  const provincias = datos ? [...new Set(datos.filas.map((f) => f.provincia))].sort((a, b) => (PROV_CENTRALES.includes(b) ? 1 : 0) - (PROV_CENTRALES.includes(a) ? 1 : 0) || a.localeCompare(b)) : [];
-  const maxPen = lista.reduce((m, e) => Math.max(m, e.pen || 0), 0) || 1;
+    if (!q) return [];
+    return todos.filter(enAlcance).filter((e) => normTexto(`${e.todosNombres || e.barrio} ${e.corregimiento} ${e.distrito}`).includes(q)).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp);
+  }, [todos, busca, provSel]);
+  const provincias = datos ? [...new Set(datos.filas.map((f) => f.provincia))].sort() : [];
   const chip = (activo, texto, alPulsar) => (
     <button type="button" onClick={alPulsar} className="shrink-0 rounded-full font-bold text-sm px-3" style={ { minHeight: 40, border: "1.5px solid " + (activo ? "#001E62" : "#DFE5EF"), background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{texto}</button>
   );
@@ -6546,105 +6563,149 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
       </span>
     </button>
   );
+  const lugar = (e) => [e.corregimiento, e.distrito, e.provincia.charAt(0) + e.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ");
+  const tarjetaBarrio = (e) => {
+    const abre = abierto === e.id;
+    const mas = masAbierto === e.id;
+    const par = abre && mas ? parecidosDe(datos, e) : [];
+    return (
+      <div key={e.id} className="rounded-xl border bg-white" style={ { borderColor: abre ? "#0072CE" : "#DFE5EF" } }>
+        <button type="button" onClick={() => setAbierto(abre ? null : e.id)} aria-expanded={abre} className="w-full text-left p-3">
+          <div className="flex items-start justify-between gap-2">
+            <span className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{e.barrio}{e.nuevo && <span className="ml-2 text-[10px] font-bold rounded-full px-2 py-0.5" style={ { background: "#E3EDFA", color: "#0072CE" } }>NUEVO</span>}</span>
+            <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
+          </div>
+          <div className="text-xs" style={ { color: "#5A6680" } }>{lugar(e)}</div>
+          <div className="text-sm font-bold mt-1" style={ { color: "#001E62" } }>
+            {e.vendidos} cliente{e.vendidos === 1 ? "" : "s"} · {fmtNum(e.hhpp)} casas{e.vendidos > 0 ? " · " + fmtPen(e.pen) : ""}
+          </div>
+          {e.vendidos >= 3 && <div className="text-xs font-bold mt-1" style={ { color: e.pagaron / e.vendidos >= 0.6 ? "#166534" : "#B45309" } }>💰 Pagaron la 1ra factura {e.pagaron} de {e.vendidos}</div>}
+          {e.bajas > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ {e.bajas} baja{e.bajas === 1 ? "" : "s"} (cancelados o penalizados)</div>}
+        </button>
+        {abre && (
+          <div className="px-3 pb-3">
+            {e.clientes.length === 0 ? <div className="text-xs pb-2" style={ { color: "#5A6680" } }>Todavía no tienes clientes aquí.</div> : e.clientes.map(cliente)}
+            {e.vendidos > 0 && e.vendidos >= e.hhpp && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ Tienes {e.vendidos} clientes y el archivo dice {fmtNum(e.hhpp)} casas: puede estar desactualizado.</div>}
+            <button type="button" onClick={() => setMasAbierto(mas ? null : e.id)} className="text-xs font-bold rounded-md px-3 border mt-2" style={ { minHeight: 40, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>{mas ? "Menos" : "Más"}</button>
+            {mas && (
+              <div className="rounded-lg p-3 mt-2" style={ { background: "#F3F6FB" } }>
+                {((e.partes && e.partes.length > 1) || (e.unidos || []).length > 0) && (
+                  <div className="text-xs mb-2" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>Archivo: {[...(e.partes || []), ...(e.unidos || []).flatMap((u) => u.partes || [])].map((x) => `${x.nombre} ${fmtNum(x.hhpp)}`).join(" + ")}</div>
+                )}
+                {(e.unidos || []).map((u) => (
+                  <div key={u.id} className="flex items-center justify-between gap-2 text-xs py-1">
+                    <span style={ { overflowWrap: "anywhere" } }>🔗 Unido: <b>{u.barrio}</b> · {fmtNum(u.hhpp)} casas</span>
+                    <button type="button" onClick={() => separar(e, u)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#DFE5EF", background: "#fff" } }>Separar</button>
+                  </div>
+                ))}
+                {par.length > 0 && <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>Parecidos en este corregimiento</div>}
+                {par.map((o) => (
+                  <div key={o.id} className="flex items-center justify-between gap-2 text-xs py-1">
+                    <span style={ { overflowWrap: "anywhere" } }><b>{o.barrio}</b> · {fmtNum(o.hhpp)} casas</span>
+                    <button type="button" onClick={() => unir(e, o)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Unir</button>
+                  </div>
+                ))}
+                {par.length === 0 && (e.unidos || []).length === 0 && !e.nuevo && <div className="text-xs" style={ { color: "#5A6680" } }>No hay barrios parecidos para unir.</div>}
+                {e.nuevo && <button type="button" onClick={() => borrarNuevo(e)} className="text-xs font-bold rounded-md px-3 border mt-1" style={ { minHeight: 40, borderColor: "#B45309", color: "#B45309", background: "#fff" } }>🗑 Borrar este barrio</button>}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const tarjetaZona = (z) => {
+    const abre = zonaAbierta === z.k;
+    const top = z.barrios.slice(0, 3);
+    return (
+      <div key={z.k} className="rounded-xl border bg-white" style={ { borderColor: abre ? "#0072CE" : "#DFE5EF" } }>
+        <button type="button" onClick={() => setZonaAbierta(abre ? null : z.k)} aria-expanded={abre} className="w-full text-left p-3">
+          <div className="flex items-start justify-between gap-2">
+            <span className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{z.corregimiento || z.distrito}</span>
+            <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
+          </div>
+          <div className="text-xs" style={ { color: "#5A6680" } }>{[z.distrito, z.provincia.charAt(0) + z.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}</div>
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            <span className="text-sm font-extrabold" style={ { color: "#001E62" } }>🏠 {fmtNum(z.libres)} casas libres</span>
+            <span className="text-xs" style={ { color: "#5A6680" } }>en {z.barrios.length} barrios</span>
+          </div>
+          <div className="mt-1">
+            {z.vendidos > 0
+              ? <span className="text-xs font-bold rounded-full px-2 py-0.5" style={ { background: "#E7F5EC", color: "#166534" } }>✓ Ya vendes aquí · {z.vendidos} cliente{z.vendidos === 1 ? "" : "s"}</span>
+              : <span className="text-xs font-bold rounded-full px-2 py-0.5" style={ { background: "#E3EDFA", color: "#0072CE" } }>🆕 Zona nueva</span>}
+          </div>
+          <div className="text-xs mt-2" style={ { color: "#374151", overflowWrap: "anywhere" } }>Empieza por: {top.map((b) => `${b.barrio} (${fmtNum(b.libres)})`).join(" · ")}</div>
+        </button>
+        {abre && (
+          <div className="px-3 pb-3">
+            {z.barrios.slice(0, 12).map((b) => (
+              <div key={b.id} className="flex items-center justify-between gap-2 text-sm py-2" style={ { borderTop: "1px solid #EEF2F9" } }>
+                <span className="font-bold min-w-0" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.barrio}</span>
+                <span className="text-xs font-bold shrink-0" style={ { color: "#5A6680" } }>{fmtNum(b.libres)} libres{b.vendidos > 0 ? ` · ${b.vendidos} tuyo${b.vendidos === 1 ? "" : "s"}` : ""}</span>
+              </div>
+            ))}
+            {z.barrios.length > 12 && <div className="text-xs pt-2" style={ { color: "#5A6680" } }>…y {z.barrios.length - 12} barrios más en esta zona. Búscalos en “Buscar”.</div>}
+          </div>
+        )}
+      </div>
+    );
+  };
+  const resumen = est ? `${fmtNum(est.conClientes.length)} barrios · ${fmtNum(est.totalVendidos)} clientes · ${fmtPen(est.penGlobal)} de las casas` : "";
   return (
     <div className="max-w-2xl">
       <button onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>← Volver al Dashboard</button>
       <h1 className="text-2xl font-semibold mb-1">🏘️ Barrios</h1>
-      <p className="text-sm mb-3" style={ { color: "#5A6680" } }>Tus clientes por barrio y las casas (HHPP) de cada uno.</p>
+      {resumen && <p className="text-sm font-bold mb-3" style={ { color: "#5A6680" } }>{resumen}</p>}
       {!datos && !error && <div className="rounded-xl border bg-white p-4 text-sm" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Cargando la lista de barrios…</div>}
       {error && <div className="rounded-xl border bg-white p-4 text-sm" style={ { borderColor: "#DFE5EF", color: "#B45309" } }>⚠ No se pudo cargar la lista de barrios. Revisa tu conexión e inténtalo de nuevo.</div>}
       {datos && est && (
         <>
-          <div className="grid gap-2 mb-3" style={ { gridTemplateColumns: "repeat(3, minmax(0, 1fr))" } }>
-            {[[fmtNum(est.conClientes.length), "barrios con clientes"], [fmtNum(est.totalVendidos), "clientes en esos barrios"], [fmtPen(est.penGlobal), "de las casas ya son tuyas"]].map(([n, t]) => (
-              <div key={t} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
-                <div className="text-xl font-extrabold tabular-nums" style={ { color: "#001E62" } }>{n}</div>
-                <div className="text-[11px] leading-tight" style={ { color: "#5A6680" } }>{t}</div>
-              </div>
-            ))}
-          </div>
-          <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setVerMas(60); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" className="w-full rounded-xl border outline-none px-3 mb-2" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
-          {formNuevo ? <FormBarrioNuevo datos={datos} inicial={formNuevo} onGuardar={guardarNuevo} onCancelar={() => setFormNuevo(null)} /> : (
-            <button type="button" onClick={() => setFormNuevo({})} className="w-full rounded-xl border font-bold text-sm mb-2" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Agregar barrio</button>
-          )}
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
-            {chip(alcance === "mios", "Mis barrios", () => { setAlcance("mios"); setVerMas(60); })}
-            {chip(alcance === "todos", "Todos los barrios", () => { setAlcance("todos"); setVerMas(60); })}
-            <span style={ { width: 1, alignSelf: "stretch", background: "#DFE5EF" } } />
-            {chip(!prov, "Todas", () => { setProv(""); setVerMas(60); })}
-            {provincias.map((p) => chip(prov === p, p.charAt(0) + p.slice(1).toLowerCase(), () => { setProv(prov === p ? "" : p); setVerMas(60); }))}
+            {chip(vista === "vender", "🎯 Dónde vender", () => { setVista("vender"); setVerMas(30); })}
+            {chip(vista === "mios", "🏘️ Mis barrios", () => { setVista("mios"); setVerMas(30); })}
+            {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
           </div>
-          <div className="flex items-center gap-2 overflow-x-auto mb-3" style={ { scrollbarWidth: "none" } }>
-            <span className="text-xs font-bold shrink-0" style={ { color: "#5A6680" } }>Ordenar por</span>
-            {[["clientes", "Clientes"], ["casas", "Casas"], ["pen", "Penetración"], ["libres", "Casas libres"]].map(([k, t]) => chip(orden === k, t, () => setOrden(k)))}
-          </div>
-          {lista.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>{alcance === "mios" ? "Ningún barrio de tus clientes coincide con esta búsqueda." : "Ningún barrio coincide con esta búsqueda."}</div>}
-          <div className="flex flex-col gap-2">
-            {lista.slice(0, verMas).map((e) => {
-              const abre = abierto === e.id;
-              return (
-                <div key={e.id} className="rounded-xl border bg-white" style={ { borderColor: abre ? "#0072CE" : "#DFE5EF" } }>
-                  <button type="button" onClick={() => setAbierto(abre ? null : e.id)} aria-expanded={abre} className="w-full text-left p-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{e.barrio}{e.nuevo && <span className="ml-2 text-[10px] font-bold rounded-full px-2 py-0.5" style={ { background: "#E3EDFA", color: "#0072CE" } }>NUEVO</span>}</span>
-                      <span aria-hidden="true" style={ { color: "#5A6680" } }>{abre ? "▲" : "▼"}</span>
-                    </div>
-                    <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{[e.corregimiento, e.distrito, e.provincia.charAt(0) + e.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}</div>
-                    {e.vendidos > 0 && e.vendidos >= e.hhpp && <div className="text-xs font-bold mb-2" style={ { color: "#B45309" } }>⚠ Casas desactualizadas: tienes {e.vendidos} clientes y el archivo dice {fmtNum(e.hhpp)}</div>}
-                    <div className="flex items-end gap-4 text-xs font-bold" style={ { color: "#5A6680" } }>
-                      <span><span className="block text-lg font-extrabold tabular-nums" style={ { color: "#001E62" } }>{e.vendidos}</span>clientes</span>
-                      <span><span className="block text-lg font-extrabold tabular-nums" style={ { color: "#001E62" } }>{fmtNum(e.hhpp)}</span>casas</span>
-                      <span className="flex-1 min-w-0">
-                        <span className="block text-lg font-extrabold tabular-nums" style={ { color: "#166534" } }>{fmtPen(e.pen)}</span>
-                        <span className="block rounded-full overflow-hidden" style={ { height: 6, background: "#EEF3FB" } }><span className="block" style={ { height: 6, width: Math.max(2, ((e.pen || 0) / maxPen) * 100) + "%", background: "#166534" } } /></span>
-                      </span>
-                    </div>
-                  </button>
-                  {abre && (
-                    <div className="px-3 pb-3">
-                      <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>
-                        ✓ Pagaron {e.pagaron} · 📦 Instalados {e.instalados} · ✕ Bajas {e.bajas} · 🏠 Casas libres {fmtNum(e.libres)}
-                      </div>
-                      <div className="rounded-lg p-3 my-2" style={ { background: "#F3F6FB" } }>
-                        <div className="text-xs font-bold mb-1" style={ { color: "#001E62" } }>🏠 Casas (HHPP): {fmtNum(e.hhpp)}{e.nuevo ? " · 🆕 barrio agregado por ti" : ""}</div>
-                        {(e.partes && e.partes.length > 1 || (e.unidos || []).length > 0) && (
-                          <div className="text-xs mb-1" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>
-                            Archivo: {[...(e.partes || [{ nombre: e.barrio, hhpp: e.hhpp }]), ...(e.unidos || []).flatMap((u) => u.partes || [{ nombre: u.barrio, hhpp: u.hhpp }])].map((x) => `${x.nombre} ${fmtNum(x.hhpp)}`).join(" + ")}
-                          </div>
-                        )}
-                      </div>
-                      {e.nuevo && <button type="button" onClick={() => borrarNuevo(e)} className="text-xs font-bold rounded-md px-3 border mb-2" style={ { minHeight: 40, borderColor: "#B45309", color: "#B45309", background: "#fff" } }>🗑 Borrar este barrio</button>}
-                      {(e.unidos || []).map((u) => (
-                        <div key={u.id} className="flex items-center justify-between gap-2 text-xs py-1" style={ { color: "#374151" } }>
-                          <span style={ { overflowWrap: "anywhere" } }>🔗 Unido: <b>{u.barrio}</b> · {fmtNum(u.hhpp)} casas</span>
-                          <button type="button" onClick={() => separar(e, u)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#DFE5EF", background: "#fff" } }>Separar</button>
-                        </div>
-                      ))}
-                      {(() => {
-                        const par = parecidosDe(datos, e);
-                        if (par.length === 0) return null;
-                        return (
-                          <div className="mb-2">
-                            <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>Parecidos en este corregimiento</div>
-                            {par.map((o) => (
-                              <div key={o.id} className="flex items-center justify-between gap-2 text-xs py-1">
-                                <span style={ { overflowWrap: "anywhere" } }><b>{o.barrio}</b> · {fmtNum(o.hhpp)} casas</span>
-                                <button type="button" onClick={() => unir(e, o)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Unir</button>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })()}
-                      {e.clientes.length === 0 ? <div className="text-xs" style={ { color: "#5A6680" } }>Todavía no tienes clientes aquí.</div> : e.clientes.map(cliente)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {lista.length > verMas && (
-            <button type="button" onClick={() => setVerMas(verMas + 60)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({lista.length - verMas} barrios)</button>
+          <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
+            <option value="centrales">Provincias centrales</option>
+            <option value="todas">Todas las provincias</option>
+            {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
+          </select>
+
+          {vista === "vender" && (
+            <>
+              <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Zonas con más casas que ya tienen red de Tigo y todavía sin cliente tuyo. Dentro de cada zona, empieza por los barrios de arriba.</p>
+              <div className="flex items-center gap-2 overflow-x-auto mb-3" style={ { scrollbarWidth: "none" } }>
+                {chip(filtroZona === "todas", "Todas", () => setFiltroZona("todas"))}
+                {chip(filtroZona === "ya", "Ya vendo aquí", () => setFiltroZona("ya"))}
+                {chip(filtroZona === "nuevas", "Zonas nuevas", () => setFiltroZona("nuevas"))}
+              </div>
+              {zonasVis.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay zonas con este filtro.</div>}
+              <div className="flex flex-col gap-2">{zonasVis.slice(0, verMas).map(tarjetaZona)}</div>
+              {zonasVis.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({zonasVis.length - verMas} zonas)</button>}
+            </>
           )}
+
+          {vista === "mios" && (
+            <>
+              {mios.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no hay clientes en barrios de esta provincia.</div>}
+              <div className="flex flex-col gap-2">{mios.slice(0, verMas).map(tarjetaBarrio)}</div>
+              {mios.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({mios.length - verMas} barrios)</button>}
+            </>
+          )}
+
+          {vista === "buscar" && (
+            <>
+              <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setVerMas(30); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" className="w-full rounded-xl border outline-none px-3 mb-2" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
+              {formNuevo ? <FormBarrioNuevo datos={datos} inicial={formNuevo} onGuardar={guardarNuevo} onCancelar={() => setFormNuevo(null)} /> : (
+                <button type="button" onClick={() => setFormNuevo({})} className="w-full rounded-xl border font-bold text-sm mb-3" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Agregar barrio</button>
+              )}
+              {!busca.trim() && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Escribe el nombre de un barrio, corregimiento o distrito.</div>}
+              {busca.trim() && resultados.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Ningún barrio coincide{provSel !== "todas" ? ". Prueba con “Todas las provincias”." : "."}</div>}
+              <div className="flex flex-col gap-2">{resultados.slice(0, verMas).map(tarjetaBarrio)}</div>
+              {resultados.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({resultados.length - verMas} barrios)</button>}
+            </>
+          )}
+
           <div className="mt-4 rounded-xl border bg-white" style={ { borderColor: nSin > 0 ? "#B45309" : "#DFE5EF" } }>
             <button type="button" onClick={() => setVerSin(!verSin)} aria-expanded={verSin} className="w-full text-left p-3 flex items-center justify-between gap-2" style={ { minHeight: 52 } }>
               <span className="text-sm font-extrabold" style={ { color: nSin > 0 ? "#B45309" : "#166534" } }>{nSin > 0 ? `⚠ ${nSin} cliente${nSin === 1 ? "" : "s"} sin coincidencia` : "✓ Todos tus clientes coinciden con un barrio"}</span>
@@ -6653,7 +6714,12 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
             {verSin && nSin > 0 && (
               <div className="px-3 pb-3">
                 <div className="text-xs mb-1" style={ { color: "#5A6680" } }>Toca el cliente y corrige su barrio en Observaciones para que entre en las estadísticas. Ya coinciden {est.cruzados} de {clientes.length} clientes.</div>
-                {est.sinMatch.map((x) => <div key={x.c.id}>{cliente(x.c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Barrio guardado: “{x.barrio}” · no está en el listado</div><button type="button" onClick={() => { const z = leerBloqueTigo(x.c.observaciones).zona || ""; const [d0, c0] = z.split("·").map((t) => limpiarZona(t)); const f0 = d0 ? datos.filas.find((f) => normTexto(f.distrito) === normTexto(d0)) : null; setFormNuevo({ nombre: x.barrio, provincia: f0 ? f0.provincia : "", distrito: f0 ? f0.distrito : "", corregimiento: f0 && c0 && datos.filas.some((f) => f.distrito === f0.distrito && normTexto(f.corregimiento) === normTexto(c0)) ? datos.filas.find((f) => f.distrito === f0.distrito && normTexto(f.corregimiento) === normTexto(c0)).corregimiento : "" }); window.scrollTo(0, 0); }} className="text-xs font-bold rounded-md px-3 border mb-2" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Crear este barrio</button></div>)}
+                {est.sinMatch.map((x) => (
+                  <div key={x.c.id}>{cliente(x.c)}
+                    <div className="text-xs pb-1" style={ { color: "#B45309" } }>Barrio guardado: “{x.barrio}” · no está en el listado</div>
+                    <button type="button" onClick={() => { const z = leerBloqueTigo(x.c.observaciones).zona || ""; const [d0, c0] = z.split("·").map((t) => limpiarZona(t)); const f0 = d0 ? datos.filas.find((f) => normTexto(f.distrito) === normTexto(d0)) : null; const g0 = f0 && c0 ? datos.filas.find((f) => f.distrito === f0.distrito && normTexto(f.corregimiento) === normTexto(c0)) : null; setVista("buscar"); setFormNuevo({ nombre: x.barrio, provincia: f0 ? f0.provincia : "", distrito: f0 ? f0.distrito : "", corregimiento: g0 ? g0.corregimiento : "" }); window.scrollTo(0, 0); }} className="text-xs font-bold rounded-md px-3 border mb-2" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Crear este barrio</button>
+                  </div>
+                ))}
                 {est.ambiguos.map((x) => <div key={x.c.id}>{cliente(x.c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Barrio “{x.barrio}” · hay {x.n} con ese nombre; falta el corregimiento</div></div>)}
                 {est.sinBarrio.map((c) => <div key={c.id}>{cliente(c)}<div className="text-xs pb-1" style={ { color: "#B45309" } }>Sin barrio guardado</div></div>)}
               </div>
