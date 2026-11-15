@@ -6212,7 +6212,7 @@ function diasDeVentaPeriodo(periodoKey, hoy) {
 // El listado (provincia, distrito, corregimiento, barrio y HHPP = casas) vive en datos/barrios.json y
 // se descarga solo la primera vez que se necesita; después queda guardado en el teléfono.
 const BARRIOS_URL = "datos/barrios.json";
-const BARRIOS_CACHE = "mf_barrios_v2";
+const BARRIOS_CACHE = "mf_barrios_v3";
 const PROV_CENTRALES = ["COCLE", "HERRERA", "LOS SANTOS", "VERAGUAS"];
 let barriosPreparados = null;
 function limpiarZona(s) {
@@ -6221,14 +6221,27 @@ function limpiarZona(s) {
 function normTexto(s) {
   return String(s || "").toUpperCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^A-Z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 }
-const PREFIJOS_BARRIO = /^(BARRIADA|BDA|BARRIO|URBANIZACION|URB|LOTIFICACION|RESIDENCIAL|RES|COMUNIDAD|SECTOR)\s+/;
-const claveCortaBarrio = (s) => normTexto(s).replace(PREFIJOS_BARRIO, "");
+const PREFIJOS_BARRIO = /^(BARRIADA|BDA|BARRIO|URBANIZACION|URB|LOTIFICACION|RESIDENCIAL|RES|COMUNIDAD|SECTOR|PH|P H|PROPIEDAD HORIZONTAL)\s+/;
+const claveCortaBarrio = (s) => normTexto(s).replace(/\bNO\b/g, "").replace(/\s+/g, " ").trim().replace(PREFIJOS_BARRIO, "");
+// Todas las formas con que un barrio puede venir escrito: completo, sin prefijo, sin "(P)" ni paréntesis,
+// el nombre dentro del paréntesis y cada lado de "X o Y".
+function clavesBarrio(nombre) {
+  const base = String(nombre || "");
+  const set = new Set();
+  const meter = (t) => { const e = normTexto(t); if (e) set.add(e); const c = claveCortaBarrio(t); if (c) set.add(c); };
+  meter(base);
+  const sinParen = base.replace(/\([^)]*\)/g, " ");
+  meter(sinParen);
+  (base.match(/\(([^)]{4,})\)/g) || []).forEach((m) => meter(m.slice(1, -1)));
+  sinParen.split(/\s+O\s+/i).forEach((t) => { if (t.trim().length >= 4) meter(t); });
+  return [...set];
+}
 function prepararBarrios(raw) {
   const filas = raw.b.map((r) => ({ id: r[5], barrio: r[0], provincia: raw.p[r[1]], distrito: limpiarZona(raw.d[r[2]]), corregimiento: limpiarZona(raw.c[r[3]]), hhpp: r[4] }));
   const exacto = new Map();
   const corto = new Map();
   const meter = (m, k, f) => { if (!k) return; const a = m.get(k); if (a) a.push(f); else m.set(k, [f]); };
-  filas.forEach((f) => { meter(exacto, normTexto(f.barrio), f); meter(corto, claveCortaBarrio(f.barrio), f); });
+  filas.forEach((f) => { clavesBarrio(f.barrio).forEach((k) => { meter(exacto, k, f); meter(corto, k, f); }); });
   return { filas, exacto, corto };
 }
 function useBarrios() {
@@ -6261,7 +6274,9 @@ function cruzarBarrio(c, datos) {
   const partes = String(b.zona || "").split("·").map((x) => x.trim());
   const dis = partes[0] || "";
   const cor = partes[1] || "";
-  let f = datos.exacto.get(normTexto(barrio)) || datos.corto.get(claveCortaBarrio(barrio)) || [];
+  // Primero el nombre tal cual; solo si no aparece, el nombre sin prefijo (Bda., Urb., Res.…).
+  let f = datos.exacto.get(normTexto(barrio)) || datos.exacto.get(claveCortaBarrio(barrio)) || [];
+  f = [...new Set(f)];
   if (!f.length) return { estado: "sinMatch", barrio };
   if (cor) { const x = f.filter((r) => normTexto(r.corregimiento) === normTexto(limpiarZona(cor))); if (x.length) f = x; }
   if (f.length > 1 && dis) { const x = f.filter((r) => normTexto(r.distrito) === normTexto(limpiarZona(dis))); if (x.length) f = x; }
