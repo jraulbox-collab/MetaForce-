@@ -6952,9 +6952,7 @@ function AvanceRescate({ pcRef, pcHoy, tramo, ing, baseHoy, baseSim }) {
     const pct = ing.pctRef;
     const falta = Math.max(0, ing.meta - (pct / 100) * ing.meta);
     ingTxt = (
-      <div style={ { fontSize: 12, marginTop: 6 } }>
-        <b>💵 Ingresos {pct.toFixed(0)}%</b> · {pct > 100 + 1e-9 ? <b style={ { color: verde } }>acelerador activo ✓</b> : <span>faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%</span>}
-      </div>
+      <span> · <b>💵 {pct.toFixed(0)}%</b> {pct > 100 + 1e-9 ? <b style={ { color: verde } }>acelerador ✓</b> : <span>faltan <b style={ { color: naranja } }>{d(falta)}</b></span>}</span>
     );
   }
   return (
@@ -6979,9 +6977,8 @@ function AvanceRescate({ pcRef, pcHoy, tramo, ing, baseHoy, baseSim }) {
       </div>
       <div style={ { fontSize: 12 } }>
         <b>Llevas {pcRef.toFixed(1)}%</b>
-        {!sig ? <span> · <b>escalón máximo</b></span> : <span> · siguiente escalón en <b>{sig.min}%</b>{alcanza ? <span> · faltan <b style={ { color: verde } }>{tramo.n}</b> cliente{tramo.n === 1 ? "" : "s"}</span> : <b style={ { color: naranja } }> · no alcanzas con los pendientes</b>}</span>}
+        {!sig ? <span> · <b>escalón máximo</b></span> : <span> · siguiente escalón en <b>{sig.min}%</b>{alcanza ? <span> · faltan <b style={ { color: verde } }>{tramo.n}</b> cliente{tramo.n === 1 ? "" : "s"}</span> : <b style={ { color: naranja } }> · no alcanzas con los pendientes</b>}</span>}{ingTxt}
       </div>
-      {ingTxt}
     </div>
   );
 }
@@ -8462,6 +8459,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     memoriaCobros.rescateSeleccion = rescateSeleccion; // solo la herramienta guarda lo marcado (el Dashboard de fondo no debe pisarlo)
   }
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
+  const [ordenRescate, setOrdenRescate] = useState("suma");
+  const [filtroRescate, setFiltroRescate] = useState({ sin: false, hogar: false, movil: false });
   // Vista de la tarjeta de comisión (nueva = fondo blanco, actual = azul oscuro). Se
   // recuerda la última que elegiste en este teléfono; si no hay nada guardado, la nueva.
   const [vistaComision, setVistaComisionEstado] = useState(() => {
@@ -9468,7 +9467,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           <span className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ { background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>💡 Te conviene</span>
         )}
         <button type="button" onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setMontoAbierto((p) => ({ ...p, [c.id]: !p[c.id] })); } } className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ tipo.st }>
-          {tipo.t} · {e.gain >= 0 ? "+" : ""}{fmtMonto(e.gain)}
+          {tipo.t}
         </button>
       </div>
     );
@@ -9485,8 +9484,19 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     const x = claveCobro(a), y = claveCobro(b);
     return x.contactado - y.contactado || String(x.venc).localeCompare(String(y.venc)) || String(x.f).localeCompare(String(y.f));
   });
-  const vencidosVista = porAporte(rescateVencidosOrdenados);
-  const enPlazoVista = porAporte(rescateEnPlazoOrdenados);
+  const ordenarFiltrar = (arr) => {
+    let r = [...arr];
+    if (filtroRescate.sin) r = r.filter((c) => !(ultimoContacto && ultimoContacto[c.id]));
+    if (filtroRescate.hogar !== filtroRescate.movil) r = r.filter((c) => (idsMovilHoy.has(c.id) ? filtroRescate.movil : filtroRescate.hogar));
+    const gana = (c) => (etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0);
+    const venc = (c) => claveCobro(c).venc;
+    if (ordenRescate === "suma") r.sort((a, b) => gana(b) - gana(a) || String(venc(a)).localeCompare(String(venc(b))));
+    else if (ordenRescate === "vence") r.sort((a, b) => String(venc(a)).localeCompare(String(venc(b))));
+    else r = porAporte(r);
+    return r;
+  };
+  const vencidosVista = ordenarFiltrar(rescateVencidosOrdenados);
+  const enPlazoVista = ordenarFiltrar(rescateEnPlazoOrdenados);
   // Texto corto de cuándo fue el último contacto con el cliente (según la bitácora de envíos).
   const textoContacto = (id) => {
     const f = ultimoContacto && ultimoContacto[id];
@@ -9513,7 +9523,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       <label key={c.id} className="flex items-start gap-3 px-3 py-3 rounded-xl border cursor-pointer" style={ { borderColor: sel ? "#0072CE" : "#DFE5EF", background: sel ? "#E3EDFA" : "white" } }>
         <input type="checkbox" checked={sel} onChange={(e) => setRescateSeleccion((prev) => ({ ...prev, [c.id]: e.target.checked }))} style={ { width: 24, height: 24, marginTop: 2, flexShrink: 0 } } />
         <div className="flex-1 min-w-0">
-          <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-left font-extrabold underline underline-offset-2" style={ { color: "#0B4A99", fontSize: 17, lineHeight: 1.2 } }>{c.nombre}</button>
+          <div className="flex items-start justify-between gap-2">
+            <button type="button" onClick={(e) => abrirClienteDesdeLista(e, c)} className="text-left font-extrabold underline underline-offset-2" style={ { color: "#0B4A99", fontSize: 17, lineHeight: 1.2 } }>{c.nombre}</button>
+            {(() => { const g = etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0; return <span className="shrink-0 font-mono font-extrabold" style={ { fontSize: 17, color: g > 0.005 ? "#166534" : "#9AA6BD" } }>{g > 0.005 ? "+" : ""}{fmtMonto(g)}</span>; })()}
+          </div>
           <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1 text-xs font-bold" style={ { color: "#5A6680" } }>
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ movil ? { background: "#0E7C66", color: "#fff" } : { background: "#001E62", color: "#fff" } }>{movil ? "Móvil" : "Hogar"}</span>
             {plan && <span>{plan}</span>}
@@ -9538,83 +9551,45 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           <div className="text-sm mt-1">Todos tus clientes de este ciclo ya pagaron su 1ra factura. No te queda nadie por cobrar.</div>
         </div>
       )}
-      {enRiesgoHoy.length > 0 && rescateDiasRestantes !== null && rescateDiasRestantes <= 3 && (
-        <div className="rounded-lg p-3 mb-4 text-sm font-semibold" style={ { background: "#FFF3DC", color: "#B45309", border: "1px solid #F3E3C3" } }>
-          ⏳ {rescateDiasRestantes <= 0 ? "Hoy vence el plazo" : rescateDiasRestantes === 1 ? "Queda 1 día" : `Quedan ${rescateDiasRestantes} días`} para cobrar {enRiesgoHoy.length === 1 ? "a 1 cliente" : `a ${enRiesgoHoy.length} clientes`}.
-        </div>
-      )}
 
       {/* Sección 1: facturas pendientes que hay que cobrar para que cuenten en la comisión */}
       {(!periodoRescateActivo || rescateCandidatos.length > 0) && (
       <div className="rounded-xl border mb-4 bg-white" style={ { borderColor: "#DFE5EF", overflow: vista === "cobros" ? "visible" : "hidden" } }>
-      {periodoRescateActivo && comisionConfirmadaHoy.completo && (() => {
-        const mesPago = mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0];
-        const nPendCom = rescateEnPlazo.length + movilesPendientesHoy.length;
-        const totalCiclo = clientesDelPeriodoHoy.length + (esNuevoHoy ? convergenciasPeriodoHoy.length : 0);
-        const nPagaron = clientesConfirmadosHoy.length + (esNuevoHoy ? convergenciasPeriodoHoy.filter((c) => c.f1_estado === "pagada").length : 0);
-        const nFaltan = Math.max(0, totalCiclo - nPagaron);
-        return (
-          <button
-            type="button"
-            onClick={() => setTarjetaComAbierta((v) => !v)}
-            aria-expanded={tarjetaComAbierta}
-            className="w-full text-left px-4 pt-3 pb-3"
-            style={ { background: "#fff" } }
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-extrabold" style={ { color: "#001E62" } }>💰 Asegurar comisión de {mesPago}</span>
-              <span className="text-sm" style={ { color: "#001E62", transform: tarjetaComAbierta ? "rotate(180deg)" : "none", transition: "transform .2s" } } aria-hidden="true">▾</span>
-            </div>
-            <div className="flex items-end justify-between gap-3 mt-2">
-              <div>
-                <div className="text-xs" style={ { color: "#5A6680" } }>Confirmado</div>
-                <div className="font-mono" style={ { fontSize: 32, fontWeight: 700, lineHeight: 1.1, color: "#001E62" } }>{fmtMonto(comisionConfirmadaHoy.total)}</div>
-              </div>
-              {nPendCom > 0 && comisionMaximaHoy.completo && (
-                <div className="text-right">
-                  <div className="text-xs" style={ { color: "#5A6680" } }>Hasta, si pagan {nPendCom === 1 ? "el pendiente" : `los ${nPendCom}`}</div>
-                  <div className="font-mono" style={ { fontSize: 22, fontWeight: 700, lineHeight: 1.2, color: "#B45309" } }>{fmtMonto(comisionMaximaHoy.total)}</div>
+      {(tarjetaComAbierta || !(periodoRescateActivo && comisionConfirmadaHoy.completo)) && (
+      <div>
+      <div className="px-4 pt-3 pb-2">
+        {(() => {
+          const mesPago = periodoRescateActivo ? mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0] : "";
+          const nPend = enRiesgoHoy.length;
+          const lim = periodoRescateActivo ? fechaLimitePrimeraFactura(periodoRescateActivo) : null;
+          const venc = lim ? fmtFechaLarga(fechaLocalISO(lim)) : null;
+          const urgente = rescateDiasRestantes !== null && rescateDiasRestantes <= 7;
+          const dTxt = rescateDiasRestantes === null ? "" : rescateDiasRestantes <= 0 ? "Vence hoy" : rescateDiasRestantes === 1 ? "Queda 1 día" : `${rescateDiasRestantes} días`;
+          return (
+            <>
+              {periodoRescateActivo && comisionConfirmadaHoy.completo && (
+                <div className="text-sm" style={ { color: "#001E62" } }>
+                  <b>💰 {mesPago}</b> · confirmado <b className="font-mono">{fmtMonto(comisionConfirmadaHoy.total)}</b>
+                  {comisionMaximaHoy.completo && comisionMaximaHoy.total > comisionConfirmadaHoy.total + 0.005 ? <span> · hasta <b className="font-mono" style={ { color: "#B45309" } }>{fmtMonto(comisionMaximaHoy.total)}</b></span> : null}
                 </div>
               )}
-            </div>
-            <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-              {nFaltan > 0 ? `${nPagaron} de ${totalCiclo} clientes ya pagaron · faltan ${nFaltan}` : `✓ ${totalCiclo} de ${totalCiclo} clientes ya pagaron`}
-            </div>
-          </button>
-        );
-      })()}
-      {(tarjetaComAbierta || !(periodoRescateActivo && comisionConfirmadaHoy.completo)) && (
-      <div style={ { borderTop: periodoRescateActivo && comisionConfirmadaHoy.completo ? "1px solid #DFE5EF" : "none" } }>
-      <div className="px-4 py-3">
-        {enRiesgoHoy.length > 0 ? (
-          <>
-            <div className="text-sm font-bold" style={ { color: "#001E62" } }>
-              <span style={ { color: "#B45309", fontSize: 32, fontWeight: 800, lineHeight: 1 } }>{enRiesgoHoy.length}</span> por cobrar
-            </div>
-            <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>
-              Si no pagan, no cuentan
-              {periodoRescateActivo && fechaLimitePrimeraFactura(periodoRescateActivo) ? ` · vence el ${fmtFechaLarga(fechaLocalISO(fechaLimitePrimeraFactura(periodoRescateActivo)))}` : ""}
-              {rescateDiasRestantes !== null && (
-                <React.Fragment>
-                  {" · "}
-                  <span className="px-2 py-0.5 rounded-full" style={ rescateDiasRestantes <= 7 ? { color: "#B45309", background: "#FFF3DC", fontWeight: 700 } : { color: "#0072CE", background: "#E3EDFA", fontWeight: 600 } }>
-                    {rescateDiasRestantes <= 7 ? "⏳ " : ""}
-                    {rescateDiasRestantes <= 0 ? "vence hoy" : rescateDiasRestantes === 1 ? "queda 1 día" : `quedan ${rescateDiasRestantes} días`}
-                  </span>
-                </React.Fragment>
+              {nPend > 0 ? (
+                <div className="text-sm mt-1" style={ { color: urgente ? "#B45309" : "#5A6680", fontWeight: urgente ? 700 : 500 } }>
+                  ⏳ {dTxt}{venc ? ` (vence ${venc})` : ""} · {nPend} pendiente{nPend === 1 ? "" : "s"}
+                </div>
+              ) : (
+                <div className="text-sm font-bold" style={ { color: "#001E62" } }>✓ Todos pagaron su 1ra factura</div>
               )}
-            </div>
-          </>
-        ) : (
-          <div className="text-sm font-bold" style={ { color: "#001E62" } }>✓ Todos pagaron su 1ra factura</div>
-        )}
+            </>
+          );
+        })()}
       </div>
       {enRiesgoHoy.length > 0 && (
         <div className="px-4 pb-3">
           <button
             type="button"
             onClick={() => setMostrarRevisionDiaria(true)}
-            className="w-full py-3 rounded-lg text-white font-semibold text-sm"
+            className="w-full py-2.5 rounded-lg text-white font-semibold text-sm"
             style={ { background: "#001E62" } }
           >
             {pendientesHoy.length > 0
@@ -9666,7 +9641,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   conviene={analisis ? analisis.primeros : []}
                   esMaximo={!analisis || analisis.esMaximo}
                   onMarcar={marcarPrimeros}
-                  dias={rescateDiasRestantes}
+                  dias={null}
                   ganaConviene={(() => {
                     if (!analisis || analisis.primeros.length === 0) return 0;
                     try {
@@ -9691,17 +9666,16 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   <>
                     <div className="flex items-center justify-between gap-3">
                       <button type="button" onClick={() => setBarraComAbierta((v) => !v)} aria-expanded={barraComAbierta} className="text-left min-w-0 flex-1" style={ { background: "transparent", border: 0, padding: 0, minHeight: 64 } }>
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-extrabold" style={ { color: "#001E62", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}` : "Simulación"}</span>
-                          <span className="text-[11px] font-bold rounded-full px-2 py-0.5" style={ { background: "#EEF3FB", color: "#001E62", whiteSpace: "nowrap" } }>{barraComAbierta ? "▼ Ocultar" : "▲ Detalle"}</span>
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-extrabold shrink-0" style={ { color: "#001E62", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}` : "Simulación"}
+                            <span className="text-[11px] font-bold rounded-full px-2 py-0.5 ml-2" style={ { background: "#EEF3FB", color: "#001E62", whiteSpace: "nowrap" } }>{barraComAbierta ? "▼" : "▲ Detalle"}</span>
+                          </span>
+                          <span className="font-mono font-extrabold text-right" style={ { fontSize: 15, color: "#001E62" } }>
+                            {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
+                            {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
+                            {rescateSeleccionados.length > 0 && <span style={ { color: "#166534" } }> ({rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)})</span>}
+                          </span>
                         </div>
-                        <div className="font-mono font-extrabold mt-0.5" style={ { fontSize: 20, color: "#001E62", whiteSpace: "nowrap" } }>
-                          {comisionConfirmadaHoy.completo ? fmtMonto(comisionConfirmadaHoy.total) : "—"}
-                          {rescateSeleccionados.length > 0 && <span> → {comisionSimulada.completo ? fmtMonto(comisionSimulada.total) : "—"}</span>}
-                        </div>
-                        {rescateSeleccionados.length > 0
-                          ? <div className="text-sm font-extrabold" style={ { color: "#166534" } }>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""} <span className="text-xs font-bold" style={ { color: "#5A6680" } }>a tu comisión</span></div>
-                          : comisionMaximaHoy.completo && <div className="text-xs font-bold" style={ { color: "#B45309" } }>Hasta {fmtMonto(comisionMaximaHoy.total)} si pagan todos</div>}
                         {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (
                           <AvanceRescate
                             pcHoy={comisionConfirmadaHoy.pctClientesPonderado}
@@ -9734,21 +9708,29 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   </>
                 )}
               </div>
-              {rescateProximoTramo && (
-                <p className="text-xs mb-3" style={ { color: "#0072CE" } }>
-                  📏 Te falta {rescateProximoTramo.pctFalta.toFixed(1)}% para llegar a la base de {fmtMonto(rescateProximoTramo.montoSiguiente)}.
-                </p>
-              )}
-              {rescateCombinacionMinima && rescateCombinacionMinima.length < rescateCandidatos.length && (
-                <button
-                  type="button"
-                  onClick={marcarCombinacionMinima}
-                  className="text-xs font-medium px-3 py-1.5 rounded-md mb-3"
-                  style={ { background: "#E3EDFA", color: "#0072CE" } }
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <select
+                  value={ordenRescate}
+                  onChange={(e) => setOrdenRescate(e.target.value)}
+                  aria-label="Ordenar"
+                  className="text-xs font-bold rounded-full px-3"
+                  style={ { minHeight: 34, border: "1.5px solid #001E62", color: "#001E62", background: "#fff" } }
                 >
-                  ✨ Marcar la combinación mínima ({rescateCombinacionMinima.length} cliente{rescateCombinacionMinima.length === 1 ? "" : "s"})
-                </button>
-              )}
+                  <option value="suma">↕ Más suma</option>
+                  <option value="vence">↕ Vence antes</option>
+                  <option value="sin">↕ Sin contactar</option>
+                </select>
+                {[["sin", "💬 Sin contactar"], ["hogar", "Hogar"], ["movil", "Móvil"]].map(([k, t]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    onClick={() => setFiltroRescate((f) => ({ ...f, [k]: !f[k] }))}
+                    aria-pressed={!!filtroRescate[k]}
+                    className="text-xs font-bold rounded-full px-3"
+                    style={ { minHeight: 34, border: "1.5px solid #001E62", color: filtroRescate[k] ? "#fff" : "#001E62", background: filtroRescate[k] ? "#001E62" : "#fff" } }
+                  >{t}</button>
+                ))}
+              </div>
 
               {rescateVencidosOrdenados.length > 0 && (
                 <>
@@ -9763,7 +9745,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
               {rescateEnPlazoOrdenados.length > 0 && (
                 <>
-                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo{rescateDiasRestantes !== null && rescateDiasRestantes >= 0 ? ` · quedan ${rescateDiasRestantes} día${rescateDiasRestantes === 1 ? "" : "s"}` : ""} — conviene asegurarlos ya</div>
+                  <div className="text-xs font-semibold mb-1.5" style={ { color: "#B45309" } }>⏳ Todavía en plazo</div>
                   <div className="flex flex-col gap-2 mb-4">
                     {enPlazoVista.map((c) => (
                       filaCobro(c)
@@ -9783,7 +9765,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
-      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 520 : 330 } } aria-hidden="true" />}
+      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 480 : 250 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
