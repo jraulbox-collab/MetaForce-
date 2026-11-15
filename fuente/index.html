@@ -6944,60 +6944,55 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
-// Panel compacto y siempre visible de la herramienta de rescate: una línea por cosa, sin explicaciones.
-function PanelRescate({ pcRef, tramo, nPend, nMarcados, conviene, esMaximo, onMarcar, dias, totalHoy, totalSim, totalMax, ganancia, ganaConviene, ing, comRef }) {
-  const navy = "#001E62", mu = "#5A6680", verde = "#166534", naranja = "#B45309";
+// Avance de la comisión (dos chips: clientes e ingresos). Va en la barra fija de abajo y se recalcula al marcar.
+function AvanceRescate({ pcRef, tramo, ing }) {
+  const navy = "#001E62", verde = "#166534", naranja = "#B45309";
   const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
-  const nombre = (c) => tituloEs(c.nombre || "").split(" ").slice(0, 2).join(" ");
-  const tAct = TABLA_POSICION_NUEVA.filter((t) => pcRef + 1e-9 >= t.min).slice(-1)[0] || null;
   const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pcRef + 1e-9) || null;
   const alcanza = !!(sig && tramo && tramo.monto >= sig.monto - 1e-6);
-  const fila = { display: "flex", gap: 8, alignItems: "baseline", padding: "7px 0", borderTop: "1px solid #DFE5EF", fontSize: 14, lineHeight: 1.35 };
-  const ico = { width: 22, flexShrink: 0, textAlign: "center" };
-  let txtIng = null;
+  const chip = { flex: "1 1 0", minWidth: 0, background: "#EEF3FB", borderRadius: 10, padding: "5px 8px", fontSize: 12, lineHeight: 1.25, color: navy };
+  let ingTxt = null;
   if (ing && ing.meta > 0 && ing.pctRef != null) {
     const pct = ing.pctRef;
     const falta = Math.max(0, ing.meta - (pct / 100) * ing.meta);
-    txtIng = pct > 100 + 1e-9
-      ? <span><b>Ingresos:</b> {pct.toFixed(0)}% · <b style={ { color: verde } }>acelerador activo ✓</b></span>
-      : <span><b>Ingresos:</b> {pct.toFixed(0)}% ({d((pct / 100) * ing.meta)} de {d(ing.meta)}) · faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%</span>;
+    ingTxt = (
+      <div style={ chip }>
+        <div style={ { fontWeight: 800 } }>💵 Ingresos {pct.toFixed(0)}%</div>
+        <div>{pct > 100 + 1e-9 ? <b style={ { color: verde } }>acelerador ✓</b> : <span>faltan <b style={ { color: naranja } }>{d(falta)}</b> para 100%</span>}</div>
+      </div>
+    );
   }
   return (
+    <div className="flex gap-2 mt-2">
+      <div style={ chip }>
+        <div style={ { fontWeight: 800 } }>📊 Clientes {pcRef.toFixed(0)}%</div>
+        <div>{!sig ? <b>escalón máximo</b> : alcanza ? <span>faltan <b style={ { color: verde } }>{tramo.n}</b> para siguiente escalón</span> : <b style={ { color: naranja } }>no alcanzas siguiente escalón</b>}</div>
+      </div>
+      {ingTxt}
+    </div>
+  );
+}
+
+// Consejos de arriba de la lista: a quién le conviene que pague y el plazo.
+function PanelRescate({ nPend, conviene, esMaximo, onMarcar, dias, ganaConviene }) {
+  const navy = "#001E62", mu = "#5A6680", verde = "#166534", naranja = "#B45309";
+  const d = (n) => "$" + Math.round(n).toLocaleString("en-US");
+  const nombre = (c) => tituloEs(c.nombre || "").split(" ").slice(0, 2).join(" ");
+  const fila = { display: "flex", gap: 8, alignItems: "center", padding: "7px 0", fontSize: 14, lineHeight: 1.35 };
+  const hayConviene = conviene.length > 0 && !esMaximo;
+  if (!hayConviene && (dias === null || dias === undefined)) return null;
+  return (
     <div className="rounded-xl mb-3" style={ { background: "#F7FAFE", border: "1px solid #C9DBF3", padding: "4px 12px", color: navy } }>
-      <div style={ { ...fila, borderTop: 0 } }>
-        <span style={ ico } aria-hidden="true">💰</span>
-        <span>
-          <b>Comisión:</b> {nMarcados > 0 && totalSim != null
-            ? <span>{d(totalHoy)} → <b>{d(totalSim)}</b> <b style={ { color: verde } }>({ganancia >= 0 ? "+" : ""}{d(ganancia)})</b> con {nMarcados} marcado{nMarcados === 1 ? "" : "s"}</span>
-            : <span>{d(totalHoy)}</span>}
-          {totalMax != null && totalMax > totalHoy + 0.5 ? <span style={ { color: mu } }> · máximo {d(totalMax)}</span> : null}
-        </span>
-      </div>
-      <div style={ fila }>
-        <span style={ ico } aria-hidden="true">📊</span>
-        <span>
-          <b>Clientes:</b> {pcRef.toFixed(0)}% · base {tAct ? d(tAct.monto) : "—"}
-          {!sig ? <span> · <b>escalón máximo</b></span>
-            : alcanza ? <span> · faltan <b style={ { color: verde } }>{tramo.n}</b> para siguiente escalón</span>
-            : <span> · <b style={ { color: naranja } }>no alcanzas el siguiente escalón</b></span>}
-        </span>
-      </div>
-      {txtIng && (
+      {hayConviene && (
         <div style={ fila }>
-          <span style={ ico } aria-hidden="true">💵</span>
-          {txtIng}
-        </div>
-      )}
-      {conviene.length > 0 && !esMaximo && (
-        <div style={ fila }>
-          <span style={ ico } aria-hidden="true">💡</span>
+          <span aria-hidden="true">💡</span>
           <span className="flex-1"><b>Te conviene que paguen:</b> {conviene.map(nombre).join(", ")}{ganaConviene > 0.5 ? <b style={ { color: verde } }> (+{d(ganaConviene)})</b> : null}</span>
           <button type="button" onClick={onMarcar} className="shrink-0 font-bold rounded-lg px-2.5 text-xs" style={ { minHeight: 34, background: "#fff", color: navy, border: "2px solid " + navy } }>Marcar</button>
         </div>
       )}
       {dias !== null && dias !== undefined && (
-        <div style={ { ...fila, color: dias <= 7 ? naranja : mu, fontWeight: dias <= 7 ? 700 : 400 } }>
-          <span style={ ico } aria-hidden="true">⏳</span>
+        <div style={ { ...fila, color: dias <= 7 ? naranja : mu, fontWeight: dias <= 7 ? 700 : 400, borderTop: hayConviene ? "1px solid #DFE5EF" : 0 } }>
+          <span aria-hidden="true">⏳</span>
           <span>{dias <= 0 ? "Vence hoy" : dias === 1 ? "Queda 1 día" : "Quedan " + dias + " días"}{nPend ? " · " + nPend + " pendiente" + (nPend === 1 ? "" : "s") : ""}</span>
         </div>
       )}
@@ -9457,10 +9452,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     return (
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
         {primerosIds.has(c.id) && !marcado && (
-          <span className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ { background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>⭐ Cóbrale primero</span>
+          <span className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ { background: "#FFF3DC", color: "#B45309", border: "1.5px solid #B45309" } }>💡 Te conviene</span>
         )}
         <button type="button" onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); setMontoAbierto((p) => ({ ...p, [c.id]: !p[c.id] })); } } className="font-extrabold rounded-full px-2.5 py-1 text-xs" style={ tipo.st }>
-          {tipo.t}{abierto ? ` · ${e.gain >= 0 ? "+" : ""}${fmtMonto(e.gain)} ${marcado ? "aporta" : "si lo marcas"}` : ""}
+          {tipo.t} · {e.gain >= 0 ? "+" : ""}{fmtMonto(e.gain)}
         </button>
       </div>
     );
@@ -9486,6 +9481,15 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     const d = Math.max(0, Math.round((Date.now() - new Date(f).getTime()) / 86400000));
     return { t: d === 0 ? "💬 Contactado hoy" : d === 1 ? "💬 Contactado ayer" : `💬 Contactado hace ${d} días`, c: "#166534" };
   };
+  const textoVence = (c, movil) => {
+    try {
+      if (movil || !parseInt(c.cicloFacturacion, 10)) return null;
+      const v = vencimientoPrimeraFacturaHogar(c);
+      if (!v) return null;
+      const dd = Math.round((new Date(v + "T12:00:00").getTime() - new Date(fechaLocalISO(new Date()) + "T12:00:00").getTime()) / 86400000);
+      return dd < 0 ? { t: `venció hace ${-dd} d`, c: "#B45309" } : dd === 0 ? { t: "vence hoy", c: "#B45309" } : { t: `vence en ${dd} d`, c: "#5A6680" };
+    } catch (e) { return null; }
+  };
   const filaCobro = (c) => {
     const movil = idsMovilHoy.has(c.id);
     const sel = !!rescateSeleccion[c.id];
@@ -9501,6 +9505,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={ movil ? { background: "#0E7C66", color: "#fff" } : { background: "#001E62", color: "#fff" } }>{movil ? "Móvil" : "Hogar"}</span>
             {plan && <span>{plan}</span>}
             {fechaCorta && <span>· {fechaCorta}</span>}
+            {textoVence(c, movil) && <span style={ { color: textoVence(c, movil).c } }>· {textoVence(c, movil).t}</span>}
             <span style={ { color: ct.c } }>· {ct.t}</span>
             <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); if (onContacto) onContacto(c); }} className="rounded-full font-bold px-2.5 py-1" style={ { background: "#EEF3FB", color: "#001E62", border: "1px solid #C5CEDF", fontSize: 11 } }>✓ Ya hablé</button>
           </div>
@@ -9644,18 +9649,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             <div className="bg-white border-t border-gray-200 p-4">
               {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && rescateCandidatos.length > 0 ? (
                 <PanelRescate
-                  pcRef={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado}
-                  tramo={analisis ? analisis.tramo : null}
                   nPend={rescateCandidatos.length}
-                  nMarcados={rescateSeleccionados.length}
                   conviene={analisis ? analisis.primeros : []}
                   esMaximo={!analisis || analisis.esMaximo}
                   onMarcar={marcarPrimeros}
                   dias={rescateDiasRestantes}
-                  totalHoy={comisionConfirmadaHoy.total}
-                  totalSim={comisionSimulada.completo ? comisionSimulada.total : null}
-                  totalMax={comisionMaximaHoy.completo ? comisionMaximaHoy.total : null}
-                  ganancia={rescateGanancia}
                   ganaConviene={(() => {
                     if (!analisis || analisis.primeros.length === 0) return 0;
                     try {
@@ -9664,14 +9662,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                       return con.completo ? con.total - ref.total : 0;
                     } catch (e) { return 0; }
                   })()}
-                  comRef={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada : comisionConfirmadaHoy}
-                  ing={{
-                    meta: metaDineroHoy,
-                    pctRef: rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctIngreso : comisionConfirmadaHoy.pctIngreso,
-                    pctMax: comisionMaximaHoy.completo ? comisionMaximaHoy.pctIngreso : null,
-                    rpuH: clientesDelPeriodoHoy.length ? clientesDelPeriodoHoy.reduce((a, c) => a + (Number(c.montoMensual) || 0), 0) / clientesDelPeriodoHoy.length : 38,
-                    rpuM: resumenMovilesConfirmadoHoy.cantidad ? costoPlanesMovilesPeriodoHoy / resumenMovilesConfirmadoHoy.cantidad : 20,
-                  }}
                 />
               ) : (
               <p className="text-xs mb-2" style={ { color: "#5A6680" } }>
@@ -9707,6 +9697,16 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                         {rescateSeleccionados.length > 0
                           ? <div className="text-sm font-extrabold" style={ { color: "#166534" } }>{rescateGanancia >= 0 ? "+" : ""}{fmtMonto(rescateGanancia)}{rescateMinimo > 0 && rescateGanancia > 0 ? ` (${(rescateGanancia / rescateMinimo).toFixed(1)}x)` : ""} <span className="text-xs font-bold" style={ { color: "#5A6680" } }>a tu comisión</span></div>
                           : comisionMaximaHoy.completo && <div className="text-xs font-bold" style={ { color: "#B45309" } }>Hasta {fmtMonto(comisionMaximaHoy.total)} si pagan todos</div>}
+                        {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (
+                          <AvanceRescate
+                            pcRef={rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado}
+                            tramo={analisis ? analisis.tramo : null}
+                            ing={{
+                    meta: metaDineroHoy,
+                    pctRef: rescateSeleccionados.length > 0 && comisionSimulada.completo ? comisionSimulada.pctIngreso : comisionConfirmadaHoy.pctIngreso,
+                  }}
+                          />
+                        )}
                       </button>
                       {rescateSeleccionados.length > 0 && (
                         <button type="button" onClick={() => setRescateConfirmando(true)} className="shrink-0 rounded-xl text-white font-extrabold px-4 flex flex-col items-center justify-center" style={ { minHeight: 56, minWidth: 116, background: "#001E62", lineHeight: 1.15 } }>
@@ -9781,7 +9781,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
-      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 440 : 200 } } aria-hidden="true" />}
+      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 480 : 250 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
