@@ -2813,6 +2813,7 @@ function App() {
   // queda anotada con fecha y dispositivo, para poder rastrear cualquier desajuste.
   const [envios, setEnvios, syncEnvios] = useListaNube("envios-churn", opcionesNube("envios", { nuevosAlPrincipio: true }));
   const [ajustesBarrios, setAjustesBarrios] = useListaNube("barrios-ajustes", opcionesNube("barrios"));
+  const [barrioInicial, setBarrioInicial] = useState(null);
   function registrarEnvio(datos) {
     setEnvios((prev) => [{ id: uid(), fecha: new Date().toISOString(), dispositivo: dispositivoActual(), ...datos }, ...prev].slice(0, 600));
   }
@@ -4913,7 +4914,7 @@ function App() {
             onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
             onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; comisionPasoSimple.current = true; try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} setComisionAbierta(true); } }
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
-            onAbrirBarrios={() => navegarA("barrios")}
+            onAbrirBarrios={() => { setBarrioInicial(null); navegarA("barrios"); }}
             clientesBarrios={clientesCalc}
             ajustesBarrios={ajustesBarrios}
             onVerClientes={(payload) => {
@@ -4976,7 +4977,9 @@ function App() {
             clientes={clientesCalc}
             ajustes={ajustesBarrios}
             onAjustes={setAjustesBarrios}
-            onVolver={() => volverA("dashboard")}
+            inicial={barrioInicial}
+            volverLabel={barrioInicial ? "← Volver a la ficha" : "← Volver al Dashboard"}
+            onVolver={() => volverA(barrioInicial ? "detalle" : "dashboard")}
             onVerCliente={(c) => { setOrigenDetalle("barrios"); setClienteDetalleId(c.id); navegarA("detalle"); }}
           />
         )}
@@ -5005,6 +5008,8 @@ function App() {
             onEnviarInfoInstalacion={enviarInfoInstalacion}
             onMarcarInstalacionEnviada={marcarInstalacionEnviada}
             onEliminar={(id) => setConfirmDelete(id)}
+            ajustesBarrios={ajustesBarrios}
+            onAbrirBarrio={(b) => { setBarrioInicial(b); navegarA("barrios"); }}
             envios={envios}
             onRegistrarContacto={(c, canal, nota) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "ficha", canal, nota: nota || "" })}
           />
@@ -6490,10 +6495,10 @@ function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
   );
 }
 
-function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes }) {
+function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes, inicial, volverLabel }) {
   const { datos, error } = useBarrios(ajustes);
-  const [formNuevo, setFormNuevo] = useState(null);
-  const [vista, setVista] = useState("hoy");
+  const [formNuevo, setFormNuevo] = useState(inicial && inicial.sinCoincidencia ? { nombre: inicial.barrio } : null);
+  const [vista, setVista] = useState(inicial ? "buscar" : "hoy");
   const [rutaKey, setRutaKey] = useState(null);
   const [periodoStat, setPeriodoStat] = useState("30");
   const [statAbierto, setStatAbierto] = useState(null);
@@ -6501,10 +6506,10 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
   const [provOtras, setProvOtras] = useState("todas");
   const provSel = vista === "vender" ? provVender : provOtras;
   const setProvSel = vista === "vender" ? setProvVender : setProvOtras;
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(inicial ? inicial.barrio || "" : "");
   const [filtroZona, setFiltroZona] = useState("todas");
   const [zonaAbierta, setZonaAbierta] = useState(null);
-  const [abierto, setAbierto] = useState(null);
+  const [abierto, setAbierto] = useState(inicial && !inicial.sinCoincidencia ? inicial.id : null);
   const [masAbierto, setMasAbierto] = useState(null);
   const [verMas, setVerMas] = useState(30);
   const [verSin, setVerSin] = useState(false);
@@ -6731,7 +6736,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
   const resumen = est ? `${fmtNum(est.conClientes.length)} barrios · ${fmtNum(est.totalVendidos)} clientes` : "";
   return (
     <div className="max-w-2xl">
-      <button onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>← Volver al Dashboard</button>
+      <button onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>{volverLabel || "← Volver al Dashboard"}</button>
       <h1 className="text-2xl font-semibold mb-1">🏘️ Barrios</h1>
       {resumen && <p className="text-sm font-bold mb-3" style={ { color: "#5A6680" } }>{resumen}</p>}
       {!datos && !error && <div className="rounded-xl border bg-white p-4 text-sm" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Cargando la lista de barrios…</div>}
@@ -13689,7 +13694,10 @@ function ClienteDetalle({
   onEliminar,
   envios,
   onRegistrarContacto,
+  ajustesBarrios,
+  onAbrirBarrio,
 }) {
+  const { datos: datosBarrios } = useBarrios(ajustesBarrios);
   const [formContacto, setFormContacto] = useState(false);
   const [canalContacto, setCanalContacto] = useState("whatsapp");
   const [notaContacto, setNotaContacto] = useState("");
@@ -13979,6 +13987,34 @@ function ClienteDetalle({
           <div className="font-medium">{cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"}</div>
         </div>
       </div>
+
+      {(() => {
+        if (!datosBarrios || !cliente.observaciones) return null;
+        const r = cruzarBarrio(cliente, datosBarrios);
+        if (r.estado === "sinBarrio") return null;
+        const caja = "block w-full text-left bg-white rounded-lg border shadow-sm px-4 py-3 mb-4";
+        if (r.estado === "ok") {
+          const e = datosBarrios.porId.get(datosBarrios.aEnt.get(r.fila.id)) || r.fila;
+          return (
+            <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio(e)} className={caja} style={ { borderColor: "#DFE5EF", minHeight: 52 } }>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-bold" style={ { color: "#001E62", overflowWrap: "anywhere" } }>🏘️ {e.barrio}{e.arpuAlto ? " ⭐" : ""}</span>
+                <span aria-hidden="true" style={ { color: "#001E62", fontSize: 18 } }>›</span>
+              </div>
+              <div className="text-xs" style={ { color: "#5A6680" } }>{[e.corregimiento, e.distrito].filter(Boolean).join(", ")} · {fmtNum(e.hhpp)} casas · {etiquetaTamano(e.hhpp)}</div>
+            </button>
+          );
+        }
+        return (
+          <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio({ barrio: r.barrio, sinCoincidencia: true })} className={caja} style={ { borderColor: "#B45309", minHeight: 52 } }>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-sm font-bold" style={ { color: "#B45309", overflowWrap: "anywhere" } }>⚠ Barrio sin coincidencia: “{r.barrio}”</span>
+              <span aria-hidden="true" style={ { color: "#B45309", fontSize: 18 } }>›</span>
+            </div>
+            <div className="text-xs" style={ { color: "#5A6680" } }>{r.estado === "ambiguo" ? `Hay ${r.candidatos.length} barrios con ese nombre; falta el corregimiento.` : "No está en el listado. Tócalo para buscarlo o crearlo."}</div>
+          </button>
+        );
+      })()}
 
 
       {cliente.observaciones && (
