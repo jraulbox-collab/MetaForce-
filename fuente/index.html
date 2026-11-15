@@ -1,6 +1,30 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
+<meta name="mf-build" content="__MF_BUILD__">
+<script>
+// Auto-actualización: al abrir la app (o volver a ella) revisa si hay una versión nueva y la carga sola.
+(function () {
+  try {
+    var m = document.querySelector('meta[name="mf-build"]');
+    if (!m || m.content.indexOf("__MF") === 0) return;
+    var actual = m.content;
+    function revisar() {
+      fetch(location.pathname + "?_=" + Date.now(), { cache: "no-store" })
+        .then(function (r) { return r.text(); })
+        .then(function (t) {
+          var x = t.match(/name="mf-build" content="([^"]+)"/);
+          if (x && x[1] !== actual && location.search.indexOf("v=" + x[1]) < 0) {
+            location.replace(location.pathname + "?v=" + x[1]);
+          }
+        })
+        .catch(function () {});
+    }
+    revisar();
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) revisar(); });
+  } catch (e) {}
+})();
+</script>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>MetaForce</title>

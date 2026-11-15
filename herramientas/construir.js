@@ -13,6 +13,7 @@ const codigo = fuente.slice(i + ABRE.length, j);
 const r = esbuild.transformSync(codigo, { loader: "jsx", jsx: "transform", target: "es2020", minify: true, legalComments: "none" });
 let salida = fuente.slice(0, i) + "<script>" + r.code.replace(/<\/script/gi, "<\\/script") + fuente.slice(j);
 salida = salida.replace(/<script src="https:\/\/cdnjs\.cloudflare\.com\/ajax\/libs\/babel-standalone\/[^"]+"><\/script>\n?/, "");
+salida = salida.replace("__MF_BUILD__", String(Date.now()));
 const destino = process.argv[2] || "index.html"; // ej: node construir.js prueba/index.html
 fs.mkdirSync(path.dirname(path.join(raiz, destino)), { recursive: true });
 fs.writeFileSync(path.join(raiz, destino), salida);
