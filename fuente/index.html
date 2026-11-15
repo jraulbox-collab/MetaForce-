@@ -6557,38 +6557,40 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
     });
     return [...m.values()].filter((z) => z.casas >= 100).map((z) => ({ ...z, barrios: [...z.barrios].sort((a, b) => b.hhpp - a.hhpp) })).sort((a, b) => b.casas - a.casas);
   }, [todos, provSel]);
-  const visitas = useMemo(() => {
-    const m = new Map();
-    (ajustes || []).forEach((a) => { if (a && a.tipo === "visita") m.set(a.barrioId, a.fecha); });
-    return m;
-  }, [ajustes]);
-  const diasDesde = (iso) => Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-  const marcarVisita = (e) => onAjustes((prev) => [...prev.filter((a) => !(a.tipo === "visita" && a.barrioId === e.id)), { id: "visita-" + e.id, tipo: "visita", barrioId: e.id, fecha: new Date().toISOString() }]);
-  const quitarVisita = (e) => onAjustes((prev) => prev.filter((a) => !(a.tipo === "visita" && a.barrioId === e.id)));
-  // Ruta de hoy: zonas de Herrera y Los Santos con los mejores barrios para visitar, sin repetir los que ya visitaste.
+  // Ruta de hoy: zonas de Herrera y Los Santos con los mejores barrios. Solo suma puntos (nunca resta).
   const rutas = useMemo(() => {
     const porZona = new Map();
     const pagados = new Map();
+    const ventasZona = new Map();
+    const hace30 = Date.now() - 30 * 86400000;
+    const vendidoReciente = (c) => !c.cancelado && !c.penalizado && c.creadoEn && new Date(c.creadoEn).getTime() >= hace30;
     todos.forEach((e) => {
       if (!PROV_VENDER.includes(e.provincia)) return;
       const k = [e.provincia, e.distrito, e.corregimiento].join("|");
       if (e.hhpp >= 30) { const a = porZona.get(k); if (a) a.push(e); else porZona.set(k, [e]); }
-      e.clientes.forEach((c) => { if (!c.cancelado && !c.penalizado && c.f1_estado === "pagada") { const a = pagados.get(k); if (a) a.push({ c, e }); else pagados.set(k, [{ c, e }]); } });
+      e.clientes.forEach((c) => {
+        if (!c.cancelado && !c.penalizado && c.f1_estado === "pagada") { const a = pagados.get(k); if (a) a.push({ c, e }); else pagados.set(k, [{ c, e }]); }
+        if (vendidoReciente(c)) ventasZona.set(k, (ventasZona.get(k) || 0) + 1);
+      });
     });
     return [...porZona.entries()].map(([k, lista]) => {
       const barrios = lista.map((e) => {
-        const v = visitas.get(e.id);
-        const reciente = !!v && diasDesde(v) < 7;
         const vecino = (pagados.get(k) || []).find((x) => x.e.id !== e.id);
-        const propios = e.pagaron > 0;
-        const score = e.hhpp * (e.arpuAlto ? 1.25 : 1) * (vecino || propios ? 1.3 : 1);
-        return { e, score, reciente, v, vecino: vecino ? vecino.c : null };
+        const propias = e.clientes.filter(vendidoReciente).length;
+        const zonaVende = (ventasZona.get(k) || 0) - propias > 0;
+        const motivos = [];
+        let score = Math.min(40, e.hhpp / 25);
+        if (e.arpuAlto) { score += 20; motivos.push("⭐ ARPU alto: más ingreso por cliente"); }
+        if (e.pagaron > 0) { score += 20; motivos.push(`👥 Ya tienes ${e.pagaron} cliente${e.pagaron === 1 ? " que pagó" : "s que pagaron"} aquí`); }
+        else if (vecino) { score += 12; motivos.push(`👥 Vecino de ${primerNombre(vecino.c)}, que ya pagó en esta zona`); }
+        if (propias > 0) { score += Math.min(30, propias * 10); motivos.push(`📈 ${propias} venta${propias === 1 ? "" : "s"} tuya${propias === 1 ? "" : "s"} aquí en 30 días`); }
+        if (zonaVende) { score += 10; motivos.push("🧭 Te está yendo bien en esta zona"); }
+        return { e, score, motivos };
       }).sort((a, b) => b.score - a.score);
-      const top = barrios.filter((b) => !b.reciente).slice(0, 5);
-      const visitados = barrios.filter((b) => b.reciente);
-      return { k, corregimiento: lista[0].corregimiento, distrito: lista[0].distrito, provincia: lista[0].provincia, top, visitados, total: top.reduce((t, b) => t + b.score, 0) };
+      const top = barrios.slice(0, 5);
+      return { k, corregimiento: lista[0].corregimiento, distrito: lista[0].distrito, provincia: lista[0].provincia, top, total: top.reduce((t, b) => t + b.score, 0) };
     }).sort((a, b) => b.total - a.total);
-  }, [todos, visitas]);
+  }, [todos]);
   // Estadísticas: ventas por período, quién paga la 1ra factura, bajas y avance por zona.
   const stats = useMemo(() => {
     if (!est) return null;
@@ -6762,7 +6764,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
             if (!r) return <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay barrios para recomendar.</div>;
             return (
               <>
-                <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Ruta sugerida para hoy en Herrera y Los Santos. Visita los barrios en este orden.</p>
+                <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Ruta sugerida para hoy en Herrera y Los Santos. Visita los barrios en este orden; abajo ves por qué.</p>
                 <div className="rounded-xl border bg-white p-3 mb-3" style={ { borderColor: "#0072CE" } }>
                   <div className="text-xs font-bold" style={ { color: "#0072CE" } }>📍 HOY VE A</div>
                   <div className="font-extrabold text-lg" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{r.corregimiento || r.distrito}</div>
@@ -6776,27 +6778,13 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
                         <span className="font-extrabold text-sm shrink-0" style={ { color: "#0072CE" } }>{i + 1}.</span>
                         <div className="min-w-0 flex-1">
                           <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.e.barrio}</div>
-                          <div className="text-xs font-bold" style={ { color: "#5A6680" } }>🏠 {fmtNum(b.e.hhpp)} casas · {etiquetaTamano(b.e.hhpp)}{b.e.arpuAlto ? " · ⭐ ARPU alto" : ""}</div>
-                          {b.e.pagaron > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#166534" } }>👥 Ya tienes {b.e.pagaron} cliente{b.e.pagaron === 1 ? " que pagó" : "s que pagaron"} aquí</div>}
-                          {b.e.pagaron === 0 && b.vecino && <div className="text-xs font-bold mt-1" style={ { color: "#166534" } }>👥 Vecino de {primerNombre(b.vecino)}, que ya pagó en esta zona</div>}
-                          <button type="button" onClick={() => { setRutaKey(r.k); marcarVisita(b.e); }} className="text-xs font-bold rounded-md px-3 border mt-2" style={ { minHeight: 40, borderColor: "#166534", color: "#166534", background: "#fff" } }>✓ Ya visité</button>
+                          <div className="text-xs font-bold" style={ { color: "#5A6680" } }>🏠 {fmtNum(b.e.hhpp)} casas · {etiquetaTamano(b.e.hhpp)}</div>
+                          {b.motivos.map((m) => <div key={m} className="text-xs font-bold mt-1" style={ { color: "#166534" } }>{m}</div>)}
                         </div>
                       </div>
                     </div>
                   ))}
                 </div>
-                {r.top.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#166534" } }>✓ Ya visitaste todos los barrios grandes de esta zona. Toca “Otra zona”.</div>}
-                {r.visitados.length > 0 && (
-                  <div className="mt-3">
-                    <div className="text-xs font-bold mb-1" style={ { color: "#5A6680" } }>Visitados esta semana</div>
-                    {r.visitados.map((b) => (
-                      <div key={b.e.id} className="flex items-center justify-between gap-2 text-xs py-1">
-                        <span style={ { overflowWrap: "anywhere" } }>✓ <b>{b.e.barrio}</b> · {diasDesde(b.v) === 0 ? "hoy" : `hace ${diasDesde(b.v)} día${diasDesde(b.v) === 1 ? "" : "s"}`}</span>
-                        <button type="button" onClick={() => quitarVisita(b.e)} className="font-bold rounded-md px-3 border shrink-0" style={ { minHeight: 40, borderColor: "#DFE5EF", color: "#374151", background: "#fff" } }>Deshacer</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
               </>
             );
           })()}
