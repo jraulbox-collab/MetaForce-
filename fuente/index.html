@@ -6917,6 +6917,59 @@ function ocultosDashboardNormal(cfg) {
   return cfg && Array.isArray(cfg.ocultos) ? cfg.ocultos.filter((id) => ORDEN_DASHBOARD_BASE.includes(id) && id !== "comision") : [];
 }
 
+// Escalera de comisión para la herramienta de rescate: ● = donde estás hoy (confirmado),
+// ⭐ = hasta donde llegarías con los clientes marcados (o con todos, si no has marcado ninguno).
+function EscaleraRescate({ pcHoy, pcFin, esMaximo, pcRef, tramo, nPend, nMarcados }) {
+  const navy = "#001E62", mu = "#5A6680", cell = "#E3EDFA", verde = "#166534";
+  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
+  const pos = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
+  const tr = (pc) => TABLA_POSICION_NUEVA.filter((t) => pc + 1e-9 >= t.min).slice(-1)[0] || null;
+  const tHoy = tr(pcHoy);
+  const tFin = tr(pcFin);
+  const sube = pcFin > pcHoy + 1e-9;
+  const sig = TABLA_POSICION_NUEVA.find((t) => t.min > pcRef + 1e-9) || null;
+  const montoHoy = tHoy ? tHoy.monto : 0;
+  const montoFin = tFin ? tFin.monto : 0;
+  return (
+    <div>
+      <div className="text-[11px] font-bold uppercase tracking-wide" style={ { color: mu } }>Tu escalera de comisión</div>
+      <div style={ { position: "relative", height: 62, margin: "8px 16px 4px" } } role="img" aria-label={"Escalera: hoy " + pcHoy.toFixed(0) + " por ciento, " + (esMaximo ? "con todos" : "con los marcados") + " " + pcFin.toFixed(0) + " por ciento."}>
+        <div style={ { position: "absolute", left: 0, right: 0, top: 21, height: 8, borderRadius: 4, background: cell } } />
+        {sube && <div style={ { position: "absolute", left: 0, top: 21, height: 8, borderRadius: 4, background: "#86C79A", width: pos(pcFin) + "%" } } />}
+        <div style={ { position: "absolute", left: 0, top: 21, height: 8, borderRadius: 4, background: navy, width: pos(pcHoy) + "%" } } />
+        {TABLA_POSICION_NUEVA.map((t) => {
+          const esHoy = tHoy && t.min === tHoy.min;
+          const esFin = sube && tFin && t.min === tFin.min;
+          const lograda = pcHoy + 1e-9 >= t.min;
+          const ganada = !lograda && sube && pcFin + 1e-9 >= t.min;
+          const esSig = !!sig && t.min === sig.min;
+          return (
+            <div key={t.min} style={ { position: "absolute", top: 0, width: 38, marginLeft: -19, textAlign: "center", left: pos(t.min) + "%" } }>
+              <div style={ { fontSize: 10, fontWeight: 700, color: mu, height: 14, lineHeight: "14px" } }>{t.max === Infinity ? t.min + "+" : t.min}</div>
+              <div style={ { width: 16, height: 16, boxSizing: "border-box", borderRadius: "50%", margin: "3px auto 0", border: "2px " + (esSig ? "dashed #0072CE" : "solid " + (ganada || esFin ? verde : navy)), background: lograda ? navy : ganada ? "#86C79A" : "#fff", color: "#fff", fontSize: 9, lineHeight: "12px", fontWeight: 700 } }>{esHoy ? "●" : esFin ? "⭐" : lograda ? "✓" : ""}</div>
+              <div style={ { fontSize: 10, fontWeight: 700, color: esFin || ganada ? verde : esSig ? "#0072CE" : navy, marginTop: 4, whiteSpace: "nowrap" } }>{abrev(t.monto)}{esFin || esSig ? " →" : ""}</div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="text-xs mt-1" style={ { color: navy, lineHeight: 1.4 } }>
+        <span style={ { fontWeight: 700 } }>● Hoy:</span> {pcHoy.toFixed(0)}% · base {montoHoy ? "$" + montoHoy : "—"}
+        {sube
+          ? <span> · <span style={ { fontWeight: 700, color: verde } }>⭐ {esMaximo ? "Si pagan todos" : "Con los marcados"}:</span> {pcFin.toFixed(0)}% · base {montoFin ? "$" + montoFin : "—"}{montoFin > montoHoy ? <span style={ { fontWeight: 700, color: verde } }> (+${montoFin - montoHoy})</span> : <span> (mismo escalón)</span>}</span>
+          : <span> · rescatar no te cambia de escalón</span>}
+      </div>
+      <div className="text-xs mt-2 rounded-lg px-3 py-2" style={ { background: "#EEF3FB", color: navy, lineHeight: 1.4 } }>
+        {!sig ? <span style={ { fontWeight: 700 } }>🏆 Ya estás en el escalón más alto.</span> : (
+          <span>
+            <span style={ { fontWeight: 700 } }>→ Siguiente: {abrev(sig.monto)} (+${sig.monto - (tr(pcRef) ? tr(pcRef).monto : 0)})</span> · te faltan {Math.max(0.1, sig.min - pcRef).toFixed(1)} puntos.
+            {" "}{tramo && tramo.monto >= sig.monto - 1e-6 ? <span style={ { fontWeight: 700, color: verde } }>Cobrando {tramo.n === 1 ? "1 cliente más" : tramo.n + " clientes más"}{nMarcados > 0 ? " (además de los marcados)" : ""} llegas{nPend ? " (tienes " + nPend + " pendientes)" : ""}.</span> : <span style={ { fontWeight: 700, color: "#B45309" } }>Ni cobrando todos los pendientes llegas este mes.</span>}
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // Bono de ingresos (+10 puntos): se activa al pasar el 100% de la meta de ingresos.
 // Aproximado: cuántos clientes más hacen falta según lo que deja cada tipo en promedio.
 function clientesParaBonoIngresos(ingresosTotal, metaDinero, rpuHogar, rpuMovil) {
@@ -9596,6 +9649,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                     </div>
                     {barraComAbierta && (
                       <div className="mt-3 pt-3 flex flex-col gap-3" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
+                        {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (() => {
+                          const fin = rescateSeleccionados.length > 0 ? comisionSimulada : comisionMaximaHoy;
+                          if (!fin || !fin.completo || fin.pctClientesPonderado == null) return null;
+                          return <EscaleraRescate pcHoy={comisionConfirmadaHoy.pctClientesPonderado} pcFin={fin.pctClientesPonderado} esMaximo={rescateSeleccionados.length === 0} pcRef={rescateSeleccionados.length > 0 ? comisionSimulada.pctClientesPonderado : comisionConfirmadaHoy.pctClientesPonderado} tramo={analisis ? analisis.tramo : null} nPend={rescateCandidatos.length} nMarcados={rescateSeleccionados.length} />;
+                        })()}
                         {analisis && (
                           <>
                             <div className="flex gap-2.5 text-sm" style={ { lineHeight: 1.35 } }>
