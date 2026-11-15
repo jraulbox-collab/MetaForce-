@@ -6417,30 +6417,79 @@ const fmtPen = (p) => (p === null || p === undefined ? "—" : (p * 100 < 10 ? (
 const fmtNum = (n) => Number(n || 0).toLocaleString("es");
 const etiquetaTamano = (h) => (h >= 300 ? "Grande" : h >= 100 ? "Mediano" : "Pequeño");
 
+// Zonas de Herrera y Los Santos con sus mejores barrios (solo suma puntos). Sirve al Dashboard y a la pantalla Barrios.
+function calcularRutas(todos) {
+    const porZona = new Map();
+    const pagados = new Map();
+    const ventasZona = new Map();
+    const hace30 = Date.now() - 30 * 86400000;
+    const vendidoReciente = (c) => !c.cancelado && !c.penalizado && c.creadoEn && new Date(c.creadoEn).getTime() >= hace30;
+    todos.forEach((e) => {
+      if (!PROV_VENDER.includes(e.provincia)) return;
+      const k = [e.provincia, e.distrito, e.corregimiento].join("|");
+      if (e.hhpp >= 30) { const a = porZona.get(k); if (a) a.push(e); else porZona.set(k, [e]); }
+      e.clientes.forEach((c) => {
+        if (!c.cancelado && !c.penalizado && c.f1_estado === "pagada") { const a = pagados.get(k); if (a) a.push({ c, e }); else pagados.set(k, [{ c, e }]); }
+        if (vendidoReciente(c)) ventasZona.set(k, (ventasZona.get(k) || 0) + 1);
+      });
+    });
+    return [...porZona.entries()].map(([k, lista]) => {
+      const barrios = lista.map((e) => {
+        const vecino = (pagados.get(k) || []).find((x) => x.e.id !== e.id);
+        const propias = e.clientes.filter(vendidoReciente).length;
+        const zonaVende = (ventasZona.get(k) || 0) - propias > 0;
+        const motivos = [];
+        let score = Math.min(40, e.hhpp / 25);
+        if (e.arpuAlto) { score += 20; motivos.push("⭐ ARPU alto: más ingreso por cliente"); }
+        if (e.pagaron > 0) { score += 20; motivos.push(`👥 Ya tienes ${e.pagaron} cliente${e.pagaron === 1 ? " que pagó" : "s que pagaron"} aquí`); }
+        else if (vecino) { score += 12; motivos.push(`👥 Vecino de ${primerNombre(vecino.c)}, que ya pagó en esta zona`); }
+        if (propias > 0) { score += Math.min(30, propias * 10); motivos.push(`📈 ${propias} venta${propias === 1 ? "" : "s"} tuya${propias === 1 ? "" : "s"} aquí en 30 días`); }
+        if (zonaVende) { score += 10; motivos.push("🧭 Te está yendo bien en esta zona"); }
+        return { e, score, motivos };
+      }).sort((a, b) => b.score - a.score);
+      const top = barrios.slice(0, 5);
+      return { k, corregimiento: lista[0].corregimiento, distrito: lista[0].distrito, provincia: lista[0].provincia, km: kmDesdeBase(lista[0].provincia, lista[0].distrito, lista[0].corregimiento), top, total: top.reduce((t, b) => t + b.score, 0) };
+    }).sort((a, b) => b.total - a.total);
+}
+function todosLosBarrios(datos, est) {
+  const mapa = new Map(est.filas.map((e) => [e.id, e]));
+  return datos.filas.map((f) => mapa.get(f.id) || { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0, libres: f.hhpp, pen: 0 });
+}
+
+function elegirIdeas(rutas, ronda) {
+    const grupo = (f) => rutas.filter((z) => f(z.km == null ? 30 : z.km));
+    const tramos = [{ n: "📍 Cerca", l: grupo((k) => k <= 15) }, { n: "🚗 Media distancia", l: grupo((k) => k > 15 && k <= 40) }, { n: "🛣️ Lejos", l: grupo((k) => k > 40) }];
+    return tramos.filter((t) => t.l.length).map((t) => ({ etiqueta: t.n, zona: t.l[ronda % t.l.length], de: t.l.length }));
+}
+
 function BarriosTarjeta({ clientes, onAbrir, ajustes }) {
   const { datos } = useBarrios(ajustes);
   const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos) : null), [clientes, datos]);
-  const top = est ? [...est.conClientes].sort((a, b) => b.vendidos - a.vendidos).slice(0, 3) : [];
+  const idea = useMemo(() => {
+    if (!datos || !est) return null;
+    const ideas = elegirIdeas(calcularRutas(todosLosBarrios(datos, est)), 0);
+    return ideas.length ? ideas[0] : null;
+  }, [datos, est]);
+  const z = idea ? idea.zona : null;
+  const sin = est ? est.sinMatch.length + est.ambiguos.length + est.sinBarrio.length : 0;
   return (
     <button type="button" onClick={onAbrir} className="block w-full text-left bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
-      <div className="flex items-center justify-between gap-2 mb-3">
-        <h2 className="font-semibold text-sm">🏘️ Barrios donde vendo</h2>
+      <div className="flex items-center justify-between gap-2 mb-2">
+        <h2 className="font-semibold text-sm">📍 Hoy ve a</h2>
         <span aria-hidden="true" style={ { color: "#001E62", fontSize: 18 } }>›</span>
       </div>
-      {!est ? <div className="text-xs" style={ { color: "#5A6680" } }>Cargando…</div> : (
+      {!est ? <div className="text-xs" style={ { color: "#5A6680" } }>Cargando…</div> : !z ? <div className="text-xs" style={ { color: "#5A6680" } }>Toca para ver ideas de barrios.</div> : (
         <>
-          <div className="grid gap-4 mb-3" style={ { gridTemplateColumns: "repeat(2, minmax(0, 1fr))" } }>
-            {[[fmtNum(est.conClientes.length), "barrios"], [fmtNum(est.totalVendidos), "clientes"]].map(([n, t]) => (
-              <div key={t} className="min-w-0"><div className="text-2xl font-extrabold tabular-nums" style={ { color: "#001E62" } }>{n}</div><div className="text-xs" style={ { color: "#5A6680" } }>{t}</div></div>
-            ))}
-          </div>
-          {top.map((e) => (
-            <div key={e.id} className="flex items-center justify-between gap-2 text-sm py-1" style={ { borderTop: "1px solid #EEF2F9" } }>
-              <span className="font-bold min-w-0" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{e.barrio}</span>
-              <span className="text-xs font-bold shrink-0" style={ { color: "#5A6680" } }>{e.vendidos} cliente{e.vendidos === 1 ? "" : "s"} · {fmtNum(e.hhpp)} casas</span>
+          <div className="font-extrabold text-lg" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{limpiarZona(z.corregimiento) || limpiarZona(z.distrito)}</div>
+          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{[limpiarZona(z.distrito), z.provincia.charAt(0) + z.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}{z.km != null ? ` · a ~${z.km} km de ${PUNTO_BASE.nombre}` : ""}</div>
+          {z.top.slice(0, 3).map((b) => (
+            <div key={b.e.id} className="py-1" style={ { borderTop: "1px solid #EEF2F9" } }>
+              <div className="font-bold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.e.barrio}</div>
+              {b.motivos[0] && <div className="text-xs font-bold" style={ { color: "#166534" } }>{b.motivos[0]}</div>}
             </div>
           ))}
-          {est.sinMatch.length + est.ambiguos.length + est.sinBarrio.length > 0 && <div className="text-xs font-bold mt-2" style={ { color: "#B45309" } }>⚠ {est.sinMatch.length + est.ambiguos.length + est.sinBarrio.length} sin coincidencia</div>}
+          <div className="text-xs font-bold mt-2" style={ { color: "#0072CE" } }>Toca para ver 3 ideas →</div>
+          {sin > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ {sin} cliente{sin === 1 ? "" : "s"} sin barrio</div>}
         </>
       )}
     </button>
@@ -6553,49 +6602,12 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
   // Todos los barrios con sus números (los que no tienen clientes tuyos, en cero).
   const todos = useMemo(() => {
     if (!datos || !est) return [];
-    const mapa = new Map(est.filas.map((e) => [e.id, e]));
-    return datos.filas.map((f) => mapa.get(f.id) || { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0, libres: f.hhpp, pen: 0 });
+    return todosLosBarrios(datos, est);
   }, [datos, est]);
   // Ruta de hoy: zonas de Herrera y Los Santos con los mejores barrios. Solo suma puntos (nunca resta).
-  const rutas = useMemo(() => {
-    const porZona = new Map();
-    const pagados = new Map();
-    const ventasZona = new Map();
-    const hace30 = Date.now() - 30 * 86400000;
-    const vendidoReciente = (c) => !c.cancelado && !c.penalizado && c.creadoEn && new Date(c.creadoEn).getTime() >= hace30;
-    todos.forEach((e) => {
-      if (!PROV_VENDER.includes(e.provincia)) return;
-      const k = [e.provincia, e.distrito, e.corregimiento].join("|");
-      if (e.hhpp >= 30) { const a = porZona.get(k); if (a) a.push(e); else porZona.set(k, [e]); }
-      e.clientes.forEach((c) => {
-        if (!c.cancelado && !c.penalizado && c.f1_estado === "pagada") { const a = pagados.get(k); if (a) a.push({ c, e }); else pagados.set(k, [{ c, e }]); }
-        if (vendidoReciente(c)) ventasZona.set(k, (ventasZona.get(k) || 0) + 1);
-      });
-    });
-    return [...porZona.entries()].map(([k, lista]) => {
-      const barrios = lista.map((e) => {
-        const vecino = (pagados.get(k) || []).find((x) => x.e.id !== e.id);
-        const propias = e.clientes.filter(vendidoReciente).length;
-        const zonaVende = (ventasZona.get(k) || 0) - propias > 0;
-        const motivos = [];
-        let score = Math.min(40, e.hhpp / 25);
-        if (e.arpuAlto) { score += 20; motivos.push("⭐ ARPU alto: más ingreso por cliente"); }
-        if (e.pagaron > 0) { score += 20; motivos.push(`👥 Ya tienes ${e.pagaron} cliente${e.pagaron === 1 ? " que pagó" : "s que pagaron"} aquí`); }
-        else if (vecino) { score += 12; motivos.push(`👥 Vecino de ${primerNombre(vecino.c)}, que ya pagó en esta zona`); }
-        if (propias > 0) { score += Math.min(30, propias * 10); motivos.push(`📈 ${propias} venta${propias === 1 ? "" : "s"} tuya${propias === 1 ? "" : "s"} aquí en 30 días`); }
-        if (zonaVende) { score += 10; motivos.push("🧭 Te está yendo bien en esta zona"); }
-        return { e, score, motivos };
-      }).sort((a, b) => b.score - a.score);
-      const top = barrios.slice(0, 5);
-      return { k, corregimiento: lista[0].corregimiento, distrito: lista[0].distrito, provincia: lista[0].provincia, km: kmDesdeBase(lista[0].provincia, lista[0].distrito, lista[0].corregimiento), top, total: top.reduce((t, b) => t + b.score, 0) };
-    }).sort((a, b) => b.total - a.total);
-  }, [todos]);
+  const rutas = useMemo(() => calcularRutas(todos), [todos]);
   // 3 ideas para hoy: una cerca, una a distancia media y una lejos, rotando con "Dame otras ideas".
-  const ideas = useMemo(() => {
-    const grupo = (f) => rutas.filter((z) => f(z.km == null ? 30 : z.km));
-    const tramos = [{ n: "📍 Cerca", l: grupo((k) => k <= 15) }, { n: "🚗 Media distancia", l: grupo((k) => k > 15 && k <= 40) }, { n: "🛣️ Lejos", l: grupo((k) => k > 40) }];
-    return tramos.filter((t) => t.l.length).map((t) => ({ etiqueta: t.n, zona: t.l[ronda % t.l.length], de: t.l.length }));
-  }, [rutas, ronda]);
+  const ideas = useMemo(() => elegirIdeas(rutas, ronda), [rutas, ronda]);
   // Estadísticas: ventas por período, quién paga la 1ra factura, bajas y avance por zona.
   const stats = useMemo(() => {
     if (!est) return null;
