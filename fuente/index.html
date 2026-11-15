@@ -6495,6 +6495,8 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
   const [formNuevo, setFormNuevo] = useState(null);
   const [vista, setVista] = useState("hoy");
   const [rutaKey, setRutaKey] = useState(null);
+  const [periodoStat, setPeriodoStat] = useState("30");
+  const [statAbierto, setStatAbierto] = useState(null);
   const [provVender, setProvVender] = useState("centrales");
   const [provOtras, setProvOtras] = useState("todas");
   const provSel = vista === "vender" ? provVender : provOtras;
@@ -6581,6 +6583,44 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
       return { k, corregimiento: lista[0].corregimiento, distrito: lista[0].distrito, provincia: lista[0].provincia, top, visitados, total: top.reduce((t, b) => t + b.score, 0) };
     }).sort((a, b) => b.total - a.total);
   }, [todos, visitas]);
+  // Estadísticas: ventas por período, quién paga la 1ra factura, bajas y avance por zona.
+  const stats = useMemo(() => {
+    if (!est) return null;
+    const hoyISO = fechaLocalISO(new Date());
+    const dentro = (c) => {
+      if (periodoStat === "todo") return true;
+      if (!c.creadoEn) return false;
+      if (periodoStat === "mes") return fechaLocalISO(c.creadoEn).slice(0, 7) === hoyISO.slice(0, 7);
+      return Date.now() - new Date(c.creadoEn).getTime() <= 30 * 86400000;
+    };
+    const venc = (c) => (c.facturas && c.facturas[0] && c.facturas[0].vencimiento) || null;
+    const noPaga = (c) => !c.cancelado && !c.penalizado && c.f1_estado !== "pagada" && venc(c) && venc(c) < hoyISO;
+    const filas = est.filas.map((e) => {
+      const activos = e.clientes.filter((c) => !c.cancelado && !c.penalizado);
+      return {
+        e,
+        ventas: activos.filter(dentro).length,
+        pagaron: activos.filter((c) => c.f1_estado === "pagada").length,
+        morosos: e.clientes.filter(noPaga),
+        total: activos.length,
+        bajas: e.clientes.filter((c) => c.cancelado || c.penalizado),
+      };
+    });
+    const zonasM = new Map();
+    filas.forEach((f) => {
+      const k = [f.e.provincia, f.e.distrito, f.e.corregimiento].join("|");
+      const z = zonasM.get(k) || { k, nombre: f.e.corregimiento || f.e.distrito, lugar: f.e.distrito, clientes: 0, ventas: 0 };
+      z.clientes += f.total; z.ventas += f.ventas; zonasM.set(k, z);
+    });
+    const por = (arr, fn) => [...arr].sort((a, b) => fn(b) - fn(a));
+    return {
+      masVentas: por(filas.filter((f) => f.ventas > 0), (f) => f.ventas).slice(0, 8),
+      pagan: por(filas.filter((f) => f.pagaron > 0), (f) => f.pagaron).slice(0, 8),
+      nopagan: por(filas.filter((f) => f.morosos.length > 0), (f) => f.morosos.length).slice(0, 12),
+      bajas: por(filas.filter((f) => f.bajas.length > 0), (f) => f.bajas.length).slice(0, 8),
+      zonas: por([...zonasM.values()].filter((z) => z.clientes > 0), (z) => z.ventas * 1000 + z.clientes).slice(0, 8),
+    };
+  }, [est, periodoStat]);
   const zonasVis = zonas.filter((z) => (filtroZona === "ya" ? z.vendidos > 0 : filtroZona === "nuevas" ? z.vendidos === 0 : true));
   const mios = useMemo(() => (est ? est.conClientes.filter(enAlcance).sort((a, b) => b.vendidos - a.vendidos || b.hhpp - a.hhpp) : []), [est, provSel]);
   const resultados = useMemo(() => {
@@ -6701,10 +6741,11 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
             {chip(vista === "hoy", "📍 Hoy", () => { setVista("hoy"); setVerMas(30); })}
             {chip(vista === "vender", "🎯 Zonas", () => { setVista("vender"); setVerMas(30); })}
+            {chip(vista === "stats", "📊 Estadísticas", () => { setVista("stats"); setVerMas(30); })}
             {chip(vista === "mios", "🏘️ Mis barrios", () => { setVista("mios"); setVerMas(30); })}
             {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
           </div>
-          {vista !== "hoy" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
+          {vista !== "hoy" && vista !== "stats" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
             <option value="centrales">Herrera y Los Santos</option>
             <option value="todas">Todas las provincias</option>
             {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
@@ -6730,7 +6771,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
                         <div className="min-w-0 flex-1">
                           <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.e.barrio}</div>
                           <div className="text-xs font-bold" style={ { color: "#5A6680" } }>🏠 {fmtNum(b.e.hhpp)} casas · {etiquetaTamano(b.e.hhpp)}{b.e.arpuAlto ? " · ⭐ ARPU alto" : ""}</div>
-                          {b.e.pagaron > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#166534" } }>👥 Ya tienes {b.e.pagaron} cliente{b.e.pagaron === 1 ? "" : "s"} que pagó aquí</div>}
+                          {b.e.pagaron > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#166534" } }>👥 Ya tienes {b.e.pagaron} cliente{b.e.pagaron === 1 ? " que pagó" : "s que pagaron"} aquí</div>}
                           {b.e.pagaron === 0 && b.vecino && <div className="text-xs font-bold mt-1" style={ { color: "#166534" } }>👥 Vecino de {primerNombre(b.vecino)}, que ya pagó en esta zona</div>}
                           <button type="button" onClick={() => { setRutaKey(r.k); marcarVisita(b.e); }} className="text-xs font-bold rounded-md px-3 border mt-2" style={ { minHeight: 40, borderColor: "#166534", color: "#166534", background: "#fff" } }>✓ Ya visité</button>
                         </div>
@@ -6767,6 +6808,44 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes 
               {zonasVis.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({zonasVis.length - verMas} zonas)</button>}
             </>
           )}
+
+          {vista === "stats" && stats && (() => {
+            const bloque = (titulo, nota, filas, vacio) => (
+              <div className="mb-4">
+                <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>{titulo}</div>
+                {nota && <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{nota}</div>}
+                {filas.length === 0 ? <div className="rounded-xl border bg-white p-3 text-xs" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>{vacio}</div> : <div className="flex flex-col gap-2">{filas}</div>}
+              </div>
+            );
+            const fila = (clave, nombre, sub, valor, color, clientesLista) => {
+              const abre = statAbierto === clave;
+              return (
+                <div key={clave} className="rounded-xl border bg-white" style={ { borderColor: abre ? "#0072CE" : "#DFE5EF" } }>
+                  <button type="button" onClick={() => clientesLista && setStatAbierto(abre ? null : clave)} className="w-full text-left p-3 flex items-center justify-between gap-2" style={ { minHeight: 52 } }>
+                    <span className="min-w-0"><span className="block font-bold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{nombre}</span><span className="block text-xs" style={ { color: "#5A6680" } }>{sub}</span></span>
+                    <span className="text-sm font-extrabold shrink-0" style={ { color } }>{valor}</span>
+                  </button>
+                  {abre && clientesLista && <div className="px-3 pb-2">{clientesLista.map(cliente)}</div>}
+                </div>
+              );
+            };
+            const lugarCorto = (e) => [e.corregimiento, e.distrito].filter(Boolean).join(" · ");
+            const rotulo = periodoStat === "30" ? "últimos 30 días" : periodoStat === "mes" ? "este mes" : "en total";
+            return (
+              <>
+                <div className="flex items-center gap-2 overflow-x-auto mb-3" style={ { scrollbarWidth: "none" } }>
+                  {chip(periodoStat === "30", "Últimos 30 días", () => setPeriodoStat("30"))}
+                  {chip(periodoStat === "mes", "Este mes", () => setPeriodoStat("mes"))}
+                  {chip(periodoStat === "todo", "Todo", () => setPeriodoStat("todo"))}
+                </div>
+                {bloque(`🏆 Donde más vendí · ${rotulo}`, null, stats.masVentas.map((f) => fila("v" + f.e.id, f.e.barrio, lugarCorto(f.e), `${f.ventas} venta${f.ventas === 1 ? "" : "s"}`, "#001E62", null)), "Todavía no hay ventas en barrios conocidos en este período.")}
+                {bloque("⚠ Barrios que no pagan la 1ra factura", "Clientes cuya 1ra factura ya venció y no la han pagado. Toca para ver quiénes.", stats.nopagan.map((f) => fila("n" + f.e.id, f.e.barrio, `${lugarCorto(f.e)} · ${f.total} cliente${f.total === 1 ? "" : "s"}`, `${f.morosos.length} sin pagar`, "#B45309", f.morosos)), "✓ Ninguna 1ra factura vencida sin pagar.")}
+                {bloque("💰 Barrios donde más pagan", "Clientes que ya pagaron su 1ra factura.", stats.pagan.map((f) => fila("p" + f.e.id, f.e.barrio, lugarCorto(f.e), `${f.pagaron} de ${f.total}`, "#166534", null)), "Todavía no hay 1ras facturas pagadas en barrios conocidos.")}
+                {bloque("✕ Bajas por barrio", "Cancelados o penalizados.", stats.bajas.map((f) => fila("b" + f.e.id, f.e.barrio, lugarCorto(f.e), `${f.bajas.length} baja${f.bajas.length === 1 ? "" : "s"}`, "#B45309", f.bajas)), "Sin bajas. ✓")}
+                {bloque(`📍 Avance por zona · ${rotulo}`, null, stats.zonas.map((z) => fila("z" + z.k, z.nombre, z.lugar, `${z.ventas} venta${z.ventas === 1 ? "" : "s"} · ${z.clientes} cliente${z.clientes === 1 ? "" : "s"}`, "#001E62", null)), "Todavía no hay clientes por zona.")}
+              </>
+            );
+          })()}
 
           {vista === "mios" && (
             <>
