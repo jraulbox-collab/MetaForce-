@@ -12547,8 +12547,16 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           })()}
           {subVista === "clientes" && visiblesFinal.length > 0 && (
             <React.Fragment>
-              {(conteoG.porInstalar > 0 || chipGrupo === "porInstalar") && chipM(chipGrupo === "porInstalar", "Por instalar " + conteoG.porInstalar, () => setChipGrupo(chipGrupo === "porInstalar" ? "todos" : "porInstalar"), true)}
-              {(conteoG.instalados > 0 || chipGrupo === "instalados") && chipM(chipGrupo === "instalados", "Instalados " + conteoG.instalados, () => setChipGrupo(chipGrupo === "instalados" ? "todos" : "instalados"), true)}
+              {(() => {
+                const esInst = chipGrupo === "porInstalar" || chipGrupo === "instalados";
+                if (!esInst && conteoG.porInstalar === 0 && conteoG.instalados === 0) return null;
+                const dosOpc = conteoG.porInstalar > 0 && conteoG.instalados > 0;
+                if (!esInst && !dosOpc) {
+                  const k = conteoG.porInstalar > 0 ? "porInstalar" : "instalados";
+                  return chipM(false, (k === "porInstalar" ? "Por instalar " : "Instalados ") + conteoG[k], () => setChipGrupo(k), true);
+                }
+                return chipM(esInst, esInst ? (chipGrupo === "porInstalar" ? "⏳ Por instalar" : "✓ Instalados") : "🔧 Instalación ▾", () => { if (esInst) { setChipGrupo("todos"); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "inst" ? null : "inst"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true);
+              })()}
               {esFact || factOpts.length >= 2
                 ? chipM(esFact, esFact ? (filtroEstado === "pago1" ? "💵 ✓ Pagó" : "💵 ⏱ Aún no la paga") : "💵 1ra factura ▾", () => { if (esFact) { setFiltroEstado(""); setGrupoAbierto(null); } else { setGrupoAbierto(grupoAbierto === "fact" ? null : "fact"); setMesPanelAbierto(false); setMasPanelAbierto(false); } }, true)
                 : factOpts.length === 1 && chipM(false, "💵 " + factOpts[0][1] + " " + factOpts[0][2], () => alternarEstado(factOpts[0][0]), true)}
@@ -12563,6 +12571,12 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           )}
           {chipM(masPanelAbierto || filtrosAbiertos, "⋯ Más" + (filtrosPanelActivos > 0 ? " (" + filtrosPanelActivos + ")" : ""), () => { setMasPanelAbierto((v) => !v); setMesPanelAbierto(false); setGrupoAbierto(null); }, false, { order: 1 })}
         </div>
+        {grupoAbierto === "inst" && (
+          <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
+            {conteoG.porInstalar > 0 && <button type="button" onClick={() => { setChipGrupo("porInstalar"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>⏳ Por instalar · {conteoG.porInstalar}</button>}
+            {conteoG.instalados > 0 && <button type="button" onClick={() => { setChipGrupo("instalados"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>✓ Instalados · {conteoG.instalados}</button>}
+          </div>
+        )}
         {grupoAbierto === "fact" && (
           <div className="mf-abrir mt-2 bg-white rounded-xl border p-2 flex flex-col" style={ { borderColor: "#DFE5EF", boxShadow: "0 8px 24px rgba(0,30,98,0.12)" } }>
             {nPago1 > 0 && <button type="button" onClick={() => { alternarEstado("pago1"); setGrupoAbierto(null); } } className="text-left font-semibold px-3" style={ { minHeight: 46, color: "#001E62" } }>✓ Pagó su 1ra factura · {nPago1}</button>}
@@ -13312,7 +13326,28 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                       </div>
                     )
                   )}
-                  {GRUPOS.filter((g) => chipGrupo !== "faltaAbono" && chipGrupo !== "faltaInfo" && chipGrupo !== "faltaCiclo" && (chipGrupo === "todos" || chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
+                  {chipGrupo === "todos" && (() => {
+                    const porIngreso = (a, b) => String(b.creadoEn || "").localeCompare(String(a.creadoEn || ""));
+                    const activos = visiblesFinal.filter((c) => grupoDe(c) !== "cancelados").sort(porIngreso);
+                    const cancelados = visiblesFinal.filter((c) => grupoDe(c) === "cancelados").sort(porIngreso);
+                    return (
+                      <>
+                        {activos.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>Por fecha de ingreso · {activos.length}</div>
+                            {activos.map(tarjeta)}
+                          </div>
+                        )}
+                        {cancelados.length > 0 && (
+                          <div className="flex flex-col gap-2">
+                            <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>Cancelados (no cuentan) · {cancelados.length}</div>
+                            {cancelados.map(tarjeta)}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+                  {GRUPOS.filter((g) => chipGrupo !== "todos" && chipGrupo !== "faltaAbono" && chipGrupo !== "faltaInfo" && chipGrupo !== "faltaCiclo" && (chipGrupo === g.k) && conteoG[g.k] > 0).map((g) => (
                     <div key={g.k} className="flex flex-col gap-2">
                       <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>{g.t} · {conteoG[g.k]}</div>
                       {(() => {
