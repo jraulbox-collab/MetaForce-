@@ -4536,6 +4536,9 @@ function App() {
       if ((lado === "izq" && dx < 0) || (lado === "der" && dx > 0)) return;
       if (deslizarRef.current) deslizarRef.current(dx < 0 ? 1 : -1);
     }
+    // Gesto de deslizar para cambiar de pestaña: desactivado a pedido del usuario.
+    const GESTO_DESLIZAR_ACTIVO = false;
+    if (!GESTO_DESLIZAR_ACTIVO) return;
     window.addEventListener("touchstart", alTocar, { passive: true });
     window.addEventListener("touchend", alSoltar, { passive: true });
     const alCancelar = () => { ok = false; setPistaSwipe(null); };
