@@ -13198,7 +13198,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                         <span className="text-[10.5px] font-extrabold rounded-md px-1.5 py-0.5" style={ { background: "#EAF0FB", color: "#0B4A99", border: "1px solid #CFE0F7" } }>Hogar</span>
                       </div>
                       <div className="flex items-center justify-between text-xs mt-1 mb-2" style={ { color: "#5A6680" } }>
-                        <span className="min-w-0 truncate">{plan}{c.creadoEn ? <span style={ { color: "#8A94A8" } }> · ingresó {fmtFecha(fechaLocalISO(c.creadoEn))}</span> : null}</span>
+                        <span className="min-w-0 truncate">{plan}{c.creadoEn ? <span style={ { color: "#8A94A8" } }> · ingresado {fmtFecha(fechaLocalISO(c.creadoEn))}</span> : null}</span>
                         <span className="font-bold ml-2 shrink-0" style={ { color: "#001E62" } }>{c.montoMensual ? fmtMonto(c.montoMensual) : "—"}</span>
                       </div>
                       <div className="rounded-lg px-2.5 py-1.5 text-xs font-bold" style={ estiloEstado[est.cls] }>{est.txt}</div>
