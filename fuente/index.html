@@ -13334,7 +13334,10 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                       <>
                         {activos.length > 0 && (
                           <div className="flex flex-col gap-2">
-                            <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>Por fecha de ingreso · {activos.length}</div>
+                            <div className="text-[11px] font-extrabold uppercase tracking-wider mt-2 px-0.5" style={ { color: "#5A6680" } }>
+                              {activos.length} clientes
+                              <span style={ { color: "#001E62" } }> · ✓ {activos.filter((c) => !!c.fechaInstalacion).length} instalados · ⏳ {activos.filter((c) => !c.fechaInstalacion).length} por instalar</span>
+                            </div>
                             {activos.map(tarjeta)}
                           </div>
                         )}
