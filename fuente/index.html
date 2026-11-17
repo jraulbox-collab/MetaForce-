@@ -11563,7 +11563,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
 
   function diasTexto(triggerDate) {
     const dias = daysFromToday(triggerDate);
-    if (dias === 0) return "Vence hoy";
+    if (dias === 0) return "Toca hoy";
     const abs = Math.abs(dias);
     return `Atrasada hace ${abs} día${abs === 1 ? "" : "s"}`;
   }
@@ -11747,7 +11747,9 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                               <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(cliente.nombre || "")}</span>
-                              {!esMovil && milestone.n === 1 && <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#0072CE", color: "#FFFFFF" } }>🆕 1ª</span>}
+                              {(esMovil || milestone.n === 1)
+                                ? <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#001E62", color: "#FFFFFF", border: "1.5px solid #001E62" } }>1ª factura</span>
+                                : milestone.n ? <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#FFFFFF", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>{milestone.n}ª factura</span> : null}
                             </div>
                             <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>
                               {esMovil ? milestone.tag : `${milestone.tag} ${milestone.label}`} · <span style={ { fontWeight: 700, color: atrasada || dias === 0 ? "#9B1C1C" : "#9A4A06" } }>{atrasada ? "⚠ " : dias === 0 ? "📅 " : ""}{diasTexto(milestone.triggerDate)}</span>
