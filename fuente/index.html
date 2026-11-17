@@ -4242,24 +4242,6 @@ function App() {
     e.target.value = "";
   }
 
-  const navItems = [
-    { key: "dashboard", label: "Dashboard", icon: "chart" },
-    { key: "clientes", label: "Clientes", icon: "users" },
-    { key: "alertas", label: "Mensajes", icon: "cash", badge: conteoMsj ? conteoMsj.total : stats.alHoy },
-    { key: "precierre", label: "Precierre", icon: "receipt" },
-    { key: "historial", label: "Historial", icon: "clock" },
-  ];
-
-  // Barra inferior del celular: se esconde al bajar, reaparece al subir un poco, y se oculta en el formulario de cliente.
-  const barraOculta = tab === "nuevo";
-  const [barraEscondida, setBarraEscondida] = useState(false);
-  const avisoGuardado = !enLinea
-    ? "Sin conexión — se guardará al reconectar"
-    : estadoGuardado === "error"
-    ? "Error al guardar — revisa tu conexión"
-    : "";
-  const barraFuera = barraOculta || barraEscondida;
-  const bottomFab = barraFuera ? (avisoGuardado ? 72 : 24) : (avisoGuardado ? 150 : 86);
   // ---- Pendientes de hoy en Mensajes (sin los pospuestos) ----
   const alertasCobroVis = alertasPorCliente.filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
   const alertasMovilVis = alertasMovilPendientes(convergencias).filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
@@ -4279,6 +4261,24 @@ function App() {
     const hayComision = !!perCom && (clientesActivos.some((c) => c.f1_estado !== "pagada" && c.fechaInstalacion && periodoDelCliente(c) === perCom.pp) || (esquemaNuevo(perCom.pp) && convergencias.some((c) => c.f1_estado !== "pagada" && periodoDelMovil(c) === perCom.pp && movilCuentaParaComision(c))));
     return { nCobros, nVentas, nInstal, hayComision, total: nCobros + nVentas + nInstal };
   })();
+  const navItems = [
+    { key: "dashboard", label: "Dashboard", icon: "chart" },
+    { key: "clientes", label: "Clientes", icon: "users" },
+    { key: "alertas", label: "Mensajes", icon: "cash", badge: conteoMsj ? conteoMsj.total : stats.alHoy },
+    { key: "precierre", label: "Precierre", icon: "receipt" },
+    { key: "historial", label: "Historial", icon: "clock" },
+  ];
+
+  // Barra inferior del celular: se esconde al bajar, reaparece al subir un poco, y se oculta en el formulario de cliente.
+  const barraOculta = tab === "nuevo";
+  const [barraEscondida, setBarraEscondida] = useState(false);
+  const avisoGuardado = !enLinea
+    ? "Sin conexión — se guardará al reconectar"
+    : estadoGuardado === "error"
+    ? "Error al guardar — revisa tu conexión"
+    : "";
+  const barraFuera = barraOculta || barraEscondida;
+  const bottomFab = barraFuera ? (avisoGuardado ? 72 : 24) : (avisoGuardado ? 150 : 86);
   // Si estás en un filtro que se quedó sin nada, vuelve solo a "Todos".
   useEffect(() => {
     if (!conteoMsj) return;
