@@ -1601,6 +1601,16 @@ function anotarApertura(it) {
 function quitarApertura(it) {
   try { const o = leerAperturas(); delete o[claveEnvio(it)]; localStorage.setItem(APERTURAS_KEY, JSON.stringify(o)); } catch (e) {}
 }
+// Limpieza única (17-nov-2026): quita los avisos "Abierto hoy · ¿ya lo enviaste?" que quedaron pendientes.
+(function () {
+  try {
+    if (!localStorage.getItem("mf_limpieza_aperturas_1117")) {
+      localStorage.removeItem(APERTURAS_KEY);
+      sessionStorage.removeItem("mf-revisar");
+      localStorage.setItem("mf_limpieza_aperturas_1117", "1");
+    }
+  } catch (e) {}
+})();
 // El mismo enlace pero sin el mensaje escrito: para mirar el chat y ver si ya salió.
 function linkSoloChat(link) { return String(link || "").split("?")[0]; }
 function textoApertura(iso) {
@@ -4337,6 +4347,16 @@ function App() {
     registrarEnvio({ tipo: "abrir", clienteId: it.id, nombre: it.nombre || "", key: it.key || it.k || it.t, origen: "app" });
     window.location.href = it.link;
   }
+  // Venta en la cadena: copia el mensaje y abre el chat SIN texto, para pegarlo solo si te conviene.
+  function abrirVentaCopiando(it) {
+    anotarApertura(it);
+    registrarEnvio({ tipo: "abrir", clienteId: it.id, nombre: it.nombre || "", key: it.key || it.k || it.t, origen: "app" });
+    if (cadena && cadena.pausa) guardarCadena({ ...cadena, pausa: false });
+    const abrir = () => { window.location.href = linkSoloChat(it.link); };
+    try {
+      Promise.resolve(navigator.clipboard.writeText(textoDeLink(it.link))).catch(() => {}).then(abrir);
+    } catch (e) { abrir(); }
+  }
   function revisarSi(it) {
     marcarItemCadena(it);
     quitarApertura(it);
@@ -4359,13 +4379,14 @@ function App() {
     const pv = [];
     dv.filas.forEach((f) => f.numeros.forEach((n) => { if (n.estado === "pendiente") pv.push({ f, n }); }));
     [...pv.filter((x) => x.n.tipo === "referido"), ...pv.filter((x) => x.n.tipo !== "referido")].forEach(({ f, n }) =>
-      items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta" }));
+      items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta", ultimo: n.ultimoISO || "" }));
     if (!items.length) return;
     setResumenCadena(null);
     // Los que ya se abrieron antes no entran a la cadena: se revisan al final.
     const nuevos = items.filter((it) => !aperturaDe(it));
     guardarRevisar(items.filter((it) => aperturaDe(it) && it.t !== "ch" && it.t !== "cm"));
     if (!nuevos.length) return;
+    if (nuevos[0].t === "v" && nuevos.length > 1) { guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0, pausa: true }); return; }
     guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0 });
     abrirWhatsapp(nuevos[0]);
   }
@@ -4400,7 +4421,8 @@ function App() {
       if (c.items.length > 1) setResumenCadena({ total: c.items.length, env });
       return;
     }
-    guardarCadena({ ...c, i, env, sal });
+    if (c.items[i].t === "v") { guardarCadena({ ...c, i, env, sal, pausa: true }); return; }
+    guardarCadena({ ...c, i, env, sal, pausa: false });
     setTimeout(() => { abrirWhatsapp(c.items[i]); }, 350);
   }
   // Toca el nombre en la barra de envío: abre la ficha del cliente y la barra se queda visible.
@@ -4803,6 +4825,30 @@ function App() {
                 const it = cadena.items[cadena.i];
                 const pct = Math.round((cadena.i / cadena.items.length) * 100);
                 const msg = textoDeLink(it.link);
+                if (it.t === "v" && cadena.pausa) {
+                  const hace = it.ultimo ? (fechaLocalISO(new Date(it.ultimo)) === fechaLocalISO(new Date()) ? "hoy" : (() => { const d = -daysFromToday(fechaLocalISO(new Date(it.ultimo))); return d === 1 ? "hace 1 día" : "hace " + d + " días"; })()) : "";
+                  return (
+                    <React.Fragment>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-extrabold text-white">📤 Enviando {cadena.i + 1} de {cadena.items.length}</div>
+                        <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
+                      </div>
+                      <div className="rounded-full mt-3" style={ { height: 8, background: "#2B4585" } }><div className="rounded-full" style={ { height: 8, width: Math.max(4, pct) + "%", background: "#7CD992" } } /></div>
+                      <div className="mt-5">
+                        <div className="text-xs font-bold" style={ { color: "#B9C4E0" } }>{it.et}</div>
+                        <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
+                        <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía"}</div>
+                      </div>
+                      <div className="flex-1 min-h-0 overflow-auto rounded-xl mt-4 p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45 } }>{msg || "Mensaje listo."}</div>
+                      <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Al abrir WhatsApp, este mensaje se copia para que lo pegues si te conviene.</div>
+                      <button type="button" onClick={() => abrirVentaCopiando(it)} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
+                      <div className="flex gap-2 mt-3 items-stretch">
+                        <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>⏭ Saltar por ahora</button>
+                        <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>🚫 No escribirle más</button>
+                      </div>
+                    </React.Fragment>
+                  );
+                }
                 return (
                   <React.Fragment>
                     <div className="flex items-center justify-between gap-3">
@@ -4815,8 +4861,8 @@ function App() {
                       <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
                     </div>
                     <div className="flex-1 min-h-0 overflow-auto rounded-xl mt-4 p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45 } }>{msg || "Mensaje listo en WhatsApp."}</div>
-                    <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Se abrió WhatsApp con este mensaje. ¿Lo enviaste?</div>
-                    <button type="button" onClick={() => abrirWhatsapp(it)} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp de nuevo</button>
+                    <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>{it.t === "v" ? "El mensaje quedó copiado. ¿Lo enviaste?" : "Se abrió WhatsApp con este mensaje. ¿Lo enviaste?"}</div>
+                    <button type="button" onClick={() => (it.t === "v" ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp de nuevo</button>
                     <div className="flex gap-2 mt-3 items-stretch">
                       <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>⏭ No, saltar</button>
                       <button type="button" onClick={() => avanzarCadena(true)} className="font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 56, flex: "1.4 1 0", background: "#fff", color: "#001E62", border: 0, fontSize: 16 } }>✅ Sí, siguiente</button>
