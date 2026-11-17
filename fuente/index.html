@@ -4343,6 +4343,7 @@ function App() {
   }
   // Abre WhatsApp y anota la apertura ANTES de salir de la app.
   function abrirWhatsapp(it) {
+    if (cadena && cadena.pausa) guardarCadena({ ...cadena, pausa: false });
     anotarApertura(it);
     registrarEnvio({ tipo: "abrir", clienteId: it.id, nombre: it.nombre || "", key: it.key || it.k || it.t, origen: "app" });
     window.location.href = it.link;
@@ -4359,6 +4360,10 @@ function App() {
   }
   function revisarSi(it) {
     marcarItemCadena(it);
+    quitarApertura(it);
+    guardarRevisar(revisar.filter((x) => claveEnvio(x) !== claveEnvio(it)));
+  }
+  function revisarLuego(it) {
     quitarApertura(it);
     guardarRevisar(revisar.filter((x) => claveEnvio(x) !== claveEnvio(it)));
   }
@@ -4386,7 +4391,7 @@ function App() {
     const nuevos = items.filter((it) => !aperturaDe(it));
     guardarRevisar(items.filter((it) => aperturaDe(it) && it.t !== "ch" && it.t !== "cm"));
     if (!nuevos.length) return;
-    if (nuevos[0].t === "v" && nuevos.length > 1) { guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0, pausa: true }); return; }
+    if (nuevos.length > 1) { guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0, pausa: true }); return; }
     guardarCadena({ items: nuevos, i: 0, env: 0, sal: 0 });
     abrirWhatsapp(nuevos[0]);
   }
@@ -4421,9 +4426,7 @@ function App() {
       if (c.items.length > 1) setResumenCadena({ total: c.items.length, env });
       return;
     }
-    if (c.items[i].t === "v") { guardarCadena({ ...c, i, env, sal, pausa: true }); return; }
-    guardarCadena({ ...c, i, env, sal, pausa: false });
-    setTimeout(() => { abrirWhatsapp(c.items[i]); }, 350);
+    guardarCadena({ ...c, i, env, sal, pausa: true });
   }
   // Toca el nombre en la barra de envío: abre la ficha del cliente y la barra se queda visible.
   function abrirFichaCadena(it) {
@@ -4803,6 +4806,8 @@ function App() {
                 <button type="button" onClick={() => { window.location.href = linkSoloChat(it.link); } } className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>👁 Ver el chat</button>
                 <button type="button" onClick={() => revisarSi(it)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } }>✓ Sí, lo envié</button>
                 <button type="button" onClick={() => revisarNo(it)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#92400E", border: "1.5px solid #B45309" } }>↻ No, enviar otra vez</button>
+                <button type="button" onClick={() => revisarLuego(it)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>⏸ Todavía no</button>
+                
               </div>
             </div>
           ))}
@@ -4825,8 +4830,9 @@ function App() {
                 const it = cadena.items[cadena.i];
                 const pct = Math.round((cadena.i / cadena.items.length) * 100);
                 const msg = textoDeLink(it.link);
-                if (it.t === "v" && cadena.pausa) {
-                  const hace = it.ultimo ? (fechaLocalISO(new Date(it.ultimo)) === fechaLocalISO(new Date()) ? "hoy" : (() => { const d = -daysFromToday(fechaLocalISO(new Date(it.ultimo))); return d === 1 ? "hace 1 día" : "hace " + d + " días"; })()) : "";
+                if (cadena.pausa) {
+                  const esV = it.t === "v";
+                  const hace = esV && it.ultimo ? (fechaLocalISO(new Date(it.ultimo)) === fechaLocalISO(new Date()) ? "hoy" : (() => { const d = -daysFromToday(fechaLocalISO(new Date(it.ultimo))); return d === 1 ? "hace 1 día" : "hace " + d + " días"; })()) : "";
                   return (
                     <React.Fragment>
                       <div className="flex items-center justify-between gap-3">
@@ -4837,14 +4843,14 @@ function App() {
                       <div className="mt-5">
                         <div className="text-xs font-bold" style={ { color: "#B9C4E0" } }>{it.et}</div>
                         <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
-                        <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía"}</div>
+                        <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{esV && (hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía")}</div>
                       </div>
                       <div className="flex-1 min-h-0 overflow-auto rounded-xl mt-4 p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45 } }>{msg || "Mensaje listo."}</div>
-                      <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Al abrir WhatsApp, este mensaje se copia para que lo pegues si te conviene.</div>
-                      <button type="button" onClick={() => abrirVentaCopiando(it)} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
+                      <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>{esV ? "Al abrir WhatsApp, este mensaje se copia para que lo pegues si te conviene." : "Al abrir WhatsApp, el chat se abre con este mensaje escrito, listo para enviar."}</div>
+                      <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
                       <div className="flex gap-2 mt-3 items-stretch">
                         <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>⏭ Saltar por ahora</button>
-                        <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>🚫 No escribirle más</button>
+                        {esV && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>🚫 No escribirle más</button>}
                       </div>
                     </React.Fragment>
                   );
@@ -5265,6 +5271,7 @@ function App() {
             onEnviarUno={enviarUno}
             onRevisarSi={revisarSi}
             onRevisarNo={revisarNo}
+            onRevisarLuego={revisarLuego}
             alertasHoy={alertasCobroVis}
             alertasMovil={alertasMovilVis}
             onMarcarMovil={marcarMovilEnviadoSeguro}
@@ -11432,7 +11439,7 @@ function HistorialComisionChart({ data, periodoActivo, periodoActual, onSelect, 
   );
 }
 
-function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer, limite, modoResumen, onVerTodos, onVerMas, onEnviarUno, onRevisarSi, onRevisarNo }) {
+function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onPagoMovil, onVerMovil, proximos, alertasTodas, onMarcar, onCopiarSuscriptor, copiedSubKey, onPagoRealizado, onVerDetalle, search, setSearch, filtroTipo, setFiltroTipo, onPosponer, limite, modoResumen, onVerTodos, onVerMas, onEnviarUno, onRevisarSi, onRevisarNo, onRevisarLuego }) {
   const [posAbierto, setPosAbierto] = useState(null);
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
@@ -11777,6 +11784,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                               <button type="button" onClick={() => verChatCopiando(itemEnvio, milestone.texto)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>👁 Ver el chat + copiar mensaje</button>
                               <button type="button" onClick={() => onRevisarSi(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#001E62", color: "#fff", border: "1.5px solid #001E62" } }>✓ Sí, lo envié</button>
                               <button type="button" onClick={() => onRevisarNo(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#92400E", border: "1.5px solid #B45309" } }>↻ No, enviar otra vez</button>
+                              {onRevisarLuego && <button type="button" onClick={() => onRevisarLuego(itemEnvio)} className="text-sm font-bold rounded-lg px-3" style={ { minHeight: 44, background: "#fff", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>⏸ Todavía no</button>}
                             </div>
                           </div>
                         )}
