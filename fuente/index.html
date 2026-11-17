@@ -11167,11 +11167,14 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
           {modoDias === "ing" ? "Por fecha de ingreso" + (cerrado ? "" : " · día " + hoy) : cerrado ? "Período cerrado" : "Día " + hoy + " · últimas ventas que cuentan: día " + lim}
         </div>
         {menuAbierto === "opc" && (
+          <div aria-hidden="true" onClick={() => setMenuAbierto(null)} style={ { position: "fixed", top: 0, right: 0, bottom: 0, left: 0, zIndex: 10 } } />
+        )}
+        {menuAbierto === "opc" && (
           <div className="absolute z-20 right-0 top-12 bg-white rounded-xl p-2" style={ { border: "1px solid #CBD5E1", boxShadow: "0 8px 24px rgba(0,30,98,.18)", width: "260px", maxWidth: "calc(100vw - 48px)" } }>
             <div className="text-[11px] font-bold uppercase px-1 pb-1" style={ { color: "#5A6680" } }>Ver por</div>
             <div className="flex gap-1.5">
               {[["ing", "Ingreso"], ["ins", "Instalación"]].map(([k, n]) => (
-                <button key={k} type="button" onClick={() => { cambiarVista({ m: k }, true); setDiaSel(null); } } className="flex-1 rounded-lg text-sm font-bold" style={ { height: 44, background: modoDias === k ? "#001E62" : "#F3F6FB", color: modoDias === k ? "white" : "#374151", border: "1px solid " + (modoDias === k ? "#001E62" : "#DFE5EF") } }>{(modoDias === k ? "✓ " : "") + n}</button>
+                <button key={k} type="button" onClick={() => { cambiarVista({ m: k }); setDiaSel(null); } } className="flex-1 rounded-lg text-sm font-bold" style={ { height: 44, background: modoDias === k ? "#001E62" : "#F3F6FB", color: modoDias === k ? "white" : "#374151", border: "1px solid " + (modoDias === k ? "#001E62" : "#DFE5EF") } }>{(modoDias === k ? "✓ " : "") + n}</button>
               ))}
             </div>
             <div className="text-[11px] font-bold uppercase px-1 pt-2.5 pb-1" style={ { color: "#5A6680" } }>Período</div>
