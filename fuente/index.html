@@ -11372,6 +11372,17 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
         })}
       </div>
 
+      {(() => {
+        // Total de ventas Hogar ingresadas = instaladas + por instalar (solo si hay pendientes).
+        const pendientesHogar = hogar.filter((c) => !c.fechaInstalacion).length;
+        if (pendientesHogar <= 0) return null;
+        return (
+          <div className="mt-2.5" style={ { fontSize: 12, color: "#4A5878", background: "#E3EDFA", borderRadius: 8, padding: "8px 10px" } }>
+            Hogar ingresadas: <b style={ { color: "#001E62" } }>{hogar.length}</b> · incluye <b style={ { color: "#001E62" } }>{pendientesHogar} por instalar</b>
+          </div>
+        );
+      })()}
+
     </div>
   );
 }
