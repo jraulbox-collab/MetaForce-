@@ -4245,7 +4245,7 @@ function App() {
   const navItems = [
     { key: "dashboard", label: "Dashboard", icon: "chart" },
     { key: "clientes", label: "Clientes", icon: "users" },
-    { key: "alertas", label: "Mensajes", icon: "cash", badge: stats.alHoy },
+    { key: "alertas", label: "Mensajes", icon: "cash", badge: conteoMsj ? conteoMsj.total : stats.alHoy },
     { key: "precierre", label: "Precierre", icon: "receipt" },
     { key: "historial", label: "Historial", icon: "clock" },
   ];
@@ -4263,11 +4263,11 @@ function App() {
   // ---- Pendientes de hoy en Mensajes (sin los pospuestos) ----
   const alertasCobroVis = alertasPorCliente.filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
   const alertasMovilVis = alertasMovilPendientes(convergencias).filter((a) => !estaPospuesto("cobro-" + a.cliente.id + "-" + a.milestone.key));
-  const instalacionesVis = tab === "alertas" ? clientesActivos.filter((c) => (instalacionPorAvisar(c) || promoPorEnviar(c)) && !estaPospuesto("inst-" + c.id)) : [];
+  const instalacionesVis = clientesActivos.filter((c) => (instalacionPorAvisar(c) || promoPorEnviar(c)) && !estaPospuesto("inst-" + c.id));
   const qMsj = searchAlertas.trim().toLowerCase();
   const instalacionesBus = qMsj ? instalacionesVis.filter((c) => String(c.nombre || "").toLowerCase().includes(qMsj) || String(c.telefono || "").includes(qMsj) || String(c.numeroSuscriptor || "").toLowerCase().includes(qMsj)) : instalacionesVis;
   const conteoMsj = (() => {
-    if (tab !== "alertas") return null;
+    if (!loaded) return null;
     const nCobros = alertasCobroVis.length + alertasMovilVis.length;
     const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
     const itemsV = [];
@@ -4764,7 +4764,7 @@ function App() {
         {[
           { key: "dashboard", label: "Inicio", icon: "home" },
           { key: "clientes", label: "Clientes", icon: "users" },
-          { key: "alertas", label: "Mensajes", icon: "cash", badge: stats.alHoy },
+          { key: "alertas", label: "Mensajes", icon: "cash", badge: conteoMsj ? conteoMsj.total : stats.alHoy },
           { key: "precierre", label: "Precierre", icon: "receipt" },
         ].map((item) => (
           <button
@@ -4776,7 +4776,7 @@ function App() {
             <span className="mf-tab-ico">
               <IconoBarra name={item.icon} />
               {!!item.badge && (
-                <span key={item.badge} className="mf-badge" aria-label={`${item.badge} cobros pendientes`}>
+                <span key={item.badge} className="mf-badge" aria-label={`${item.badge} mensajes por enviar`}>
                   {item.badge > 9 ? "9+" : item.badge}
                 </span>
               )}
@@ -5023,6 +5023,7 @@ function App() {
             onConfirmarRescate={confirmarRescate}
             onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
             onIrAMensajes={() => { setSeccionMensajes("todos"); setTab("alertas"); }}
+            msgHoy={conteoMsj}
             onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; comisionPasoSimple.current = true; try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} setComisionAbierta(true); } }
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onAbrirBarrios={() => { setBarrioInicial(null); navegarA("barrios"); }}
@@ -8504,7 +8505,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -9842,10 +9843,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayPorInst = listaPorInstalar.length > 0;
         // Mensajes por enviar hoy: recordatorios de cobro + mensajes de venta, en una sola fila.
         const nRecMsg = onIrACobros ? nRec : 0;
-        const nMensajes = nRecMsg + nVentas;
+        const nMensajes = msgHoy ? msgHoy.total : nRecMsg + nVentas;
         const hayMsg = nMensajes > 0;
-        const hayArriba = hayCobros || hayVentas;
-        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst) return null;
+        const hayArriba = hayCobros || hayVentas || hayMsg;
+        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst && !hayMsg) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
           <LineaMatchPendiente
@@ -9865,14 +9866,14 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             {hayMsg && (
               <button
                 type="button"
-                onClick={nRecMsg > 0 && nVentas > 0 && onIrAMensajes ? onIrAMensajes : nRecMsg > 0 ? onIrACobros : onIrAVentas}
+                onClick={onIrAMensajes || (nRecMsg > 0 ? onIrACobros : onIrAVentas)}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
                 style={ { background: "transparent", color: "#fff", border: 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-bold">{plural(nMensajes, "mensaje por enviar hoy", "mensajes por enviar hoy")}</span>
-                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{[nRecMsg > 0 ? plural(nRecMsg, "recordatorio de cobro", "recordatorios de cobro") : "", nVentas > 0 ? (nRecMsg > 0 ? nVentas + " de venta" : plural(nVentas, "mensaje de venta", "mensajes de venta")) : ""].filter(Boolean).join(" · ")}</span>
+                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{(msgHoy ? [msgHoy.nCobros > 0 ? plural(msgHoy.nCobros, "cobro", "cobros") : "", msgHoy.nVentas > 0 ? plural(msgHoy.nVentas, "venta", "ventas") : "", msgHoy.nInstal > 0 ? plural(msgHoy.nInstal, "instalación", "instalaciones") : ""] : [nRecMsg > 0 ? plural(nRecMsg, "cobro", "cobros") : "", nVentas > 0 ? plural(nVentas, "venta", "ventas") : ""]).filter(Boolean).join(" · ")}</span>
                 </span>
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
