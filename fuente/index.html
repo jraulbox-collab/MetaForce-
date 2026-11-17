@@ -4410,7 +4410,7 @@ function App() {
     if (esMov) {
       const m = (convergencias || []).find((x) => x.id === it.id);
       if (!m) return;
-      setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: m.id, volverA: "alertas" }, token: Date.now() });
+      setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: m.id, volverA: "alertas", ficha: true }, token: Date.now() });
       navegarA("clientes");
     } else {
       setOrigenDetalle("alertas");
@@ -5194,7 +5194,7 @@ function App() {
               onCerrar={(id, k) => cambiarVentaMsg(id, k, { cerrado: true })}
               onVerCliente={(c) => { setOrigenDetalle("alertas"); setClienteDetalleId(c.id); navegarA("detalle"); } }
               onVerMovil={(c) => {
-                setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "alertas" }, token: Date.now() });
+                setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "alertas", ficha: true }, token: Date.now() });
                 navegarA("clientes");
               } }
             />
@@ -5224,7 +5224,7 @@ function App() {
             onPagoMovil={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
             proximos={recordatoriosProximos(clientesActivos, convergencias, 3)}
             onVerMovil={(c) => {
-              setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "alertas" }, token: Date.now() });
+              setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: "alertas", ficha: true }, token: Date.now() });
               navegarA("clientes");
             } }
             alertasTodas={alertasHoy}
@@ -8915,7 +8915,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
     e.stopPropagation();
     if (idsMovilHoy.has(c.id)) {
       memoriaDashboard.retorno = true;
-      onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: vista === "cobros" ? "comision" : "dashboard" } });
+      onVerClientes({ periodo: periodoComision(fechaActivacionMovil(c) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: c.id, volverA: vista === "cobros" ? "comision" : "dashboard", ficha: true } });
     }
     else onVerCliente(c);
   };
@@ -12114,6 +12114,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [saltarAMes]);
+  const [fichaMovilAbierta, setFichaMovilAbierta] = useState(false);
   const rangoActivo = !!(fechaDesde || fechaHasta);
   const [copiedCell, setCopiedCell] = useState(null);
   const [papeleraAbierta, setPapeleraAbierta] = useState(false);
@@ -12495,6 +12496,8 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
 
   return (
     <div>
+      {!fichaMovilAbierta && (
+      <>
       <div className="md:hidden mb-3" data-no-swipe="" style={ { paddingTop: 4 } }>
         <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
@@ -12704,6 +12707,9 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
         ))}
       </div>
 
+      </>
+      )}
+
       {exportarAbierto && <ExportarModal clientes={clientes} clientesMovil={clientesMovil || []} onCerrar={() => setExportarAbierto(false)} />}
       {subVista === "movil" ? (
         <ClientesMovilPanel
@@ -12725,6 +12731,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           onChipAplicado={() => setChipMovilSalto(null)}
           chipExt={chipMovilTop}
           setChipExt={setChipMovilTop}
+          onFichaAbierta={setFichaMovilAbierta}
         />
       ) : (
         <>
@@ -13943,6 +13950,14 @@ function ClienteDetalle({
       )}
       <p className="text-sm mb-3" style={ { color: "#5A6680" } }>{planLabel(cliente)}</p>
 
+      {(() => {
+        if (!String(cliente.telefono || "").replace(/\D/g, "")) return null;
+        const url = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`;
+        return (
+          <a href={url} onClick={(e) => { e.preventDefault(); window.location.href = url; }} className="w-full mb-3 flex items-center justify-center text-sm font-bold rounded-lg text-white" style={ { minHeight: 44, background: "#128C4A" } }>💬 Escribirle por WhatsApp</a>
+        );
+      })()}
+
       {(cliente.penalizado || mostrarPenalizar) && (
       <div className="mb-3">
         {cliente.penalizado ? (
@@ -14410,7 +14425,162 @@ function pasaChipMovil(c, chip) {
   return true;
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar, chipInicial, onChipAplicado, chipExt, setChipExt }) {
+// Ficha de un Cliente Móvil (solo lectura): venta, facturación, match, contacto y mensajes.
+// "Editar cliente" abre el formulario de siempre; al guardar o cancelar se vuelve a esta ficha.
+function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, onEliminar }) {
+  const [menu, setMenu] = useState(false);
+  const [copiado, setCopiado] = useState(null);
+  const hoyISO = fechaLocalISO(new Date());
+  const fch = movilFechasPrimeraFactura(c);
+  const tipo = tipoClienteMovil(c);
+  const pagada = c.f1_estado === "pagada";
+  const periodo = periodoDelMovil(c);
+  const nuevo = !!periodo && esquemaNuevo(periodo);
+  const limite = nuevo ? fechaLimitePrimeraFactura(periodo) : null;
+  const vencidoPlazo = !pagada && !!limite && hoyISO > fechaLocalISO(limite);
+  const sinConfirmarCiclo = cicloPorConfirmar(c);
+  const sinSalir = !pagada && !!fch && hoyISO < fch.llegaISO;
+  const mi = matchInfo(c);
+  const extras = [c.telefonoAdicional, c.telefonoAdicional2].filter(Boolean);
+  const pad = (n) => String(n).padStart(2, "0");
+  const numWa = String(c.telefono || "").replace(/\D/g, "") ? telefonoWhatsapp(c.telefono) : "";
+  const irWa = (url) => (e) => { e.preventDefault(); window.location.href = url; };
+  const AMBAR = ["#FFF3DC", "#B45309", "#B45309"], VERDE = ["#E3F5EA", "#0F5A2B", "#166534"], AZUL = ["#E3EDFA", "#0072CE", "#0072CE"], GRIS = ["#F1F4F9", "#4A5878", "#DFE5EF"];
+  const chip = (t, col) => <span className="inline-block text-xs font-medium rounded-full px-2.5 py-0.5" style={ { background: col[0], color: col[1], border: "1px solid " + col[2] } }>{t}</span>;
+  const filas = (arr) => arr.filter(Boolean).map(([k, v], i) => (
+    <div key={k} className="flex justify-between gap-3 py-1.5 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+      <span style={ { color: "#5A6680" } }>{k}</span>
+      <span className="text-right" style={ { color: "#111827" } }>{v}</span>
+    </div>
+  ));
+  const tarjeta = (titulo, hijos) => (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-3">
+      <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>{titulo}</h2>
+      {hijos}
+    </div>
+  );
+  const botonCls = "block w-full text-center text-sm font-bold rounded-lg mt-2";
+  const botonEstilo = { minHeight: 40, lineHeight: "37px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62" };
+  const elegirCiclo = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${c.nombre} es el ${pad(n)}?`, () => { onEditar(c.id, { cicloConfirmado: true, cicloManual: n === (movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo ? null : n }); }, { si: "✓ Sí, es ese ciclo" });
+  const hayContacto = extras.length > 0 || !!c.barrio;
+  return (
+    <div className="max-w-2xl">
+      <button type="button" onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>{volverLabel || "← Volver a Clientes"}</button>
+      <div className="flex items-center justify-between gap-2 mb-1">
+        <h1 className="text-2xl font-semibold break-words min-w-0">{c.nombre}</h1>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <button type="button" onClick={() => onEditarForm(c)} className="text-sm font-medium px-4 py-2 rounded-md border" style={ { borderColor: "#DFE5EF", color: "#374151" } }>Editar cliente</button>
+          <button type="button" onClick={() => setMenu(!menu)} aria-label="Más acciones" aria-expanded={menu} className="text-base font-bold rounded-md border" style={ { borderColor: "#DFE5EF", color: "#374151", background: "white", width: 40, height: 38 } }>⋯</button>
+        </div>
+      </div>
+      {menu && (
+        <div className="mb-3 rounded-lg border bg-white overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
+          <button type="button" onClick={() => { setMenu(false); onEliminar(c.id); } } className="w-full text-left text-sm font-medium px-4" style={ { color: "#B45309", minHeight: 44 } }>🗑 Eliminar cliente</button>
+        </div>
+      )}
+      <p className="text-sm mb-3" style={ { color: "#5A6680" } }>{etiquetaTipoMovil(tipo)}{c.planNombre ? " · " + c.planNombre : ""}</p>
+
+      {numWa && (
+        <a href={`https://wa.me/${numWa}`} onClick={irWa(`https://wa.me/${numWa}`)} className="w-full mb-3 flex items-center justify-center text-sm font-bold rounded-lg text-white" style={ { minHeight: 44, background: "#128C4A" } }>💬 Escribirle por WhatsApp</a>
+      )}
+
+      {tarjeta("Venta", filas([
+        ["Línea Tigo", c.telefono || "—"],
+        ["Tipo de venta", etiquetaTipoMovil(tipo)],
+        c.esPortabilidad && ["Portabilidad", "Sí"],
+        ["Activación", fechaActivacionMovil(c) ? fmtFechaDia(fechaActivacionMovil(c)) : "—"],
+        ["Paga el cliente", c.montoPlan != null ? fmtMonto(c.montoPlan) : chip("Falta el monto del plan", AMBAR)],
+      ]))}
+
+      {nuevo && fch && tarjeta("Facturación", (
+        <>
+          {filas([
+            ["Ciclo", sinConfirmarCiclo ? chip("Sin confirmar · sugerido " + pad(fch.ciclo), AMBAR) : c.cicloConfirmado ? chip(pad(fch.ciclo) + " · confirmado", VERDE) : pad(fch.ciclo)],
+            ["1ra factura", pagada ? chip("Pagada", VERDE) : sinSalir ? chip("Aún no sale · ~" + fmtFechaDia(fch.llegaISO), GRIS) : chip("Pendiente", AMBAR)],
+            !pagada && !!limite && ["Fecha límite", fmtFechaDia(fechaLocalISO(limite)) + (vencidoPlazo ? " · venció" : "")],
+            !pagada && ["Pedirle el pago antes del", fmtFechaDia(fch.metaISO)],
+          ])}
+          {vencidoPlazo && <div className="mt-2">{chip("⛔ No cuenta (venció el plazo)", AMBAR)}</div>}
+          {sinConfirmarCiclo && (
+            <div className="flex gap-2 mt-2">
+              {[4, 19].map((n) => (
+                <button key={n} type="button" onClick={() => elegirCiclo(n)} className="flex-1 text-sm font-bold rounded-lg" style={ { minHeight: 40, border: "1.5px solid #001E62", background: "#fff", color: "#001E62" } }>Ciclo {pad(n)}{fch.ciclo === n ? " · sugerido" : ""}</button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => confirmarAccion(null, pagada ? `¿Quitar la marca de 1ra factura pagada a ${c.nombre}?` : `¿Confirmas que ${c.nombre} ya pagó su 1ra factura?`, () => { onEditar(c.id, pagada ? { f1_estado: "", f1_pagadaEn: null } : { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() }); }, { si: pagada ? "Sí, quitar la marca" : "✓ Sí, ya pagó" })}
+            className={botonCls}
+            style={botonEstilo}
+          >{pagada ? "Quitar marca de 1ra factura pagada" : "Marcar 1ra factura pagada"}</button>
+          {c.cicloConfirmado && !pagada && (
+            <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${c.nombre}?`, () => onEditar(c.id, { cicloConfirmado: false }), { si: "Sí, quitarla" })} className="block w-full text-center text-xs font-semibold mt-2" style={ { color: "#5A6680", minHeight: 32 } }>Quitar confirmación del ciclo</button>
+          )}
+        </>
+      ))}
+
+      {tipo === "matchdigital" && tarjeta("Match Digital", (
+        <>
+          {filas([
+            ["Estado", mi ? chip(String(mi.texto).replace(/^[^A-Za-zÁÉÍÓÚáéíóú]+/, ""), AMBAR) : chip("Confirmado", VERDE)],
+            !!c.titularTelefono && ["Teléfono del titular", c.titularTelefono],
+            !!c.titularCorreo && ["Correo del titular", c.titularCorreo],
+            !!c.titularCedula && ["Cédula (informativa)", c.titularCedula],
+          ])}
+          {mi && mi.nivel !== "vencido" && !!c.titularTelefono && (() => {
+            const url = `https://wa.me/${telefonoWhatsapp(c.titularTelefono)}?text=${encodeURIComponent(textoMatchTitular(c))}`;
+            return <a href={url} onClick={irWa(url)} className={botonCls} style={botonEstilo}>Recordar al titular por WhatsApp</a>;
+          })()}
+          {mi && (
+            <button type="button" onClick={() => confirmarAccion(null, `¿Confirmas que el titular ya aprobó el match de ${c.nombre}?`, () => onEditar(c.id, { matchConfirmado: true }), { si: "✓ Sí, ya aprobó" })} className={botonCls} style={botonEstilo}>Marcar match aceptado</button>
+          )}
+        </>
+      ))}
+
+      {hayContacto && tarjeta("Contacto", filas([
+        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", extras.join(" · ")],
+        !!c.barrio && ["Barrio", c.barrio],
+      ]))}
+
+      {nuevo && !pagada && !!c.telefono && !!fch && !vencidoPlazo && tarjeta("Mensajes", (
+        <div>
+          {HITOS_MOVIL.map((h, i) => {
+            const enviado = !!c[`aviso_${h.key}`];
+            const fecha = fch[h.fecha];
+            const disponible = fecha <= hoyISO;
+            const texto = h.texto(c, fch);
+            const url = whatsappLink(c, { texto });
+            const estado = enviado ? chip("Enviado", VERDE)
+              : sinConfirmarCiclo ? chip("Retenido · confirma el ciclo", GRIS)
+              : disponible ? chip(fecha === hoyISO ? "Toca hoy" : "Listo para enviar", AZUL)
+              : chip("Programado · " + fmtFechaDia(fecha), GRIS);
+            return (
+              <div key={h.key} className="py-2.5" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold" style={ { color: "#001E62" } }>{h.tag}</span>
+                  {estado}
+                </div>
+                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>{h.label}</div>
+                {!enviado && disponible && !sinConfirmarCiclo && (
+                  <>
+                    <div className="flex gap-2 mt-2">
+                      <button type="button" onClick={async () => { const ok = await copiarTextoPrecierre(texto); if (ok) { setCopiado(h.key); setTimeout(() => setCopiado(null), 1800); } }} className="flex-1 text-sm font-bold rounded-lg" style={ { minHeight: 40, border: "1.5px solid #001E62", background: "#fff", color: "#001E62" } }>{copiado === h.key ? "Copiado ✓" : "Copiar"}</button>
+                      <a href={url} onClick={irWa(url)} className="flex-1 text-center text-sm font-bold rounded-lg text-white" style={ { minHeight: 40, lineHeight: "40px", background: "#128C4A" } }>Enviar por WhatsApp</a>
+                    </div>
+                    <button type="button" onClick={() => onEditar(c.id, { [`aviso_${h.key}`]: true })} className="block w-full text-center text-xs font-semibold mt-1" style={ { color: "#5A6680", minHeight: 32 } }>Marcar como enviado</button>
+                  </>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar, chipInicial, onChipAplicado, chipExt, setChipExt, onFichaAbierta }) {
   const [chipMovilLocal, setChipMovilLocal] = useState(chipInicial || "todos");
   const chipMovil = chipExt !== undefined ? chipExt : chipMovilLocal;
   const setChipMovil = setChipExt || setChipMovilLocal;
@@ -14473,7 +14643,36 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
     setTimeout(() => setLineaCopiada((k) => (k === clave ? null : k)), 1500);
   }
   const [editingId, setEditingId] = useState(null);
-  const [formAbierto, setFormAbierto] = useState(!!abrirForm);
+  const [formAbierto, setFormAbierto] = useState(!!abrirForm && !(prefill && prefill.ficha));
+  // Ficha del cliente móvil abierta (solo lectura). fichaVolver = pestaña a la que regresa "Volver" (si vino de otra).
+  const [fichaId, setFichaId] = useState(null);
+  const fichaVolver = useRef(null);
+  function abrirFicha(c, volver) {
+    fichaVolver.current = volver || null;
+    setFichaId(c.id);
+    try { window.history.pushState({ ...(window.history.state || {}), fichaMovil: c.id }, ""); } catch (e) {}
+    try { window.scrollTo(0, 0); } catch (e) {}
+  }
+  function cerrarFicha() {
+    const v = fichaVolver.current;
+    fichaVolver.current = null;
+    setFichaId(null);
+    if (v && onVolverAPrecierre) { onVolverAPrecierre(v); return; }
+    try { if (window.history.state && window.history.state.fichaMovil) window.history.back(); } catch (e) {}
+  }
+  useEffect(() => {
+    if (!fichaId) return;
+    function onPop(e) { const st = e.state; if (!st || !st.fichaMovil) { fichaVolver.current = null; setFichaId(null); } }
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [fichaId]);
+  useEffect(() => {
+    if (fichaId && !(clientesMovil || []).some((x) => x.id === fichaId)) setFichaId(null);
+  }, [fichaId, clientesMovil]);
+  useEffect(() => {
+    if (onFichaAbierta) onFichaAbierta(!!fichaId && !formAbierto);
+  }, [fichaId, formAbierto]);
+  useEffect(() => () => { if (onFichaAbierta) onFichaAbierta(false); }, []);
   // El mes se elige arriba, en la fila compartida con Hogar (mesActivo). Aquí solo se muestra ese mes.
   const mesVisto = mesActivo || periodoComision(fechaLocalISO(new Date()));
   const meses = useMemo(() => periodosRecientes(4), []);
@@ -14487,6 +14686,11 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   useEffect(() => {
     if (abrirForm) {
       const aEditar = prefill && prefill.editarId ? clientesMovil.find((x) => x.id === prefill.editarId) : null;
+      if (aEditar && prefill.ficha) {
+        abrirFicha(aEditar, prefill.volverA || null);
+        if (onFormAbierto) onFormAbierto();
+        return;
+      }
       if (aEditar) {
         setNombre(aEditar.nombre);
         setTelefono(aEditar.telefono);
@@ -14639,6 +14843,30 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const campoCls = "w-full px-3 py-2.5 sm:py-2 rounded-md border text-base sm:text-sm outline-none";
   const etiquetaCls = "text-xs font-medium block mb-1";
 
+
+  const fichaCliente = fichaId ? (clientesMovil || []).find((x) => x.id === fichaId) : null;
+  if (fichaCliente && !formAbierto) {
+    const v = fichaVolver.current;
+    const etiquetaVolver = v === "alertas" ? "← Volver a Mensajes" : v === "dashboard" ? "← Volver al Dashboard" : v === "comision" ? "← Volver a la comisión" : "← Volver a Clientes";
+    return (
+      <>
+        <FichaClienteMovil
+          c={fichaCliente}
+          volverLabel={etiquetaVolver}
+          onVolver={cerrarFicha}
+          onEditarForm={startEdit}
+          onEditar={onEditar}
+          onEliminar={(id) => setConfirmarEliminarMovil(id)}
+        />
+        {confirmarEliminarMovil && (
+          <ConfirmModal
+            onCancel={() => setConfirmarEliminarMovil(null)}
+            onConfirm={() => { onEliminar(confirmarEliminarMovil); setConfirmarEliminarMovil(null); setFichaId(null); } }
+          />
+        )}
+      </>
+    );
+  }
   return (
     <div>
       {formAbierto && (
@@ -15091,7 +15319,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                       <div key={c.id} className="px-4 py-3 border-t" style={ { borderColor: "#F0F0EF" } }>
                         <button
                           type="button"
-                          onClick={() => startEdit(c)}
+                          onClick={() => abrirFicha(c, null)}
                           className="block text-left text-lg sm:text-base font-bold break-words hover:underline"
                           style={ { color: "#001E62" } }
                           title="Abrir ficha"
