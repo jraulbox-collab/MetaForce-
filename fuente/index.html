@@ -4985,6 +4985,7 @@ function App() {
             onDescartarCliente={cancelarCliente}
             onConfirmarRescate={confirmarRescate}
             onIrACobros={() => { setSeccionMensajes("cobros"); setTab("alertas"); }}
+            onIrAMensajes={() => { setSeccionMensajes("todos"); setTab("alertas"); }}
             onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; comisionPasoSimple.current = true; try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} setComisionAbierta(true); } }
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onAbrirBarrios={() => { setBarrioInicial(null); navegarA("barrios"); }}
@@ -8470,7 +8471,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onAbrirComision, onIrAVentas, onVerCliente, ultimoContacto, onContacto, onAbrirBarrios, clientesBarrios, ajustesBarrios }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, onAbrirComision, onIrAVentas, onVerCliente, ultimoContacto, onContacto, onAbrirBarrios, clientesBarrios, ajustesBarrios }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -9828,6 +9829,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayVentas = nVentas > 0 || nSeg > 0;
         const listaPorInstalar = esActual ? clientes.filter((c) => !c.fechaInstalacion && !c.penalizado && !c.cancelado) : [];
         const hayPorInst = listaPorInstalar.length > 0;
+        // Mensajes por enviar hoy: recordatorios de cobro + mensajes de venta, en una sola fila.
+        const nRecMsg = onIrACobros ? nRec : 0;
+        const nMensajes = nRecMsg + nVentas;
+        const hayMsg = nMensajes > 0;
+        const hayArriba = hayCobros || hayVentas;
         if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
@@ -9845,17 +9851,17 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         return (
           <div className="mb-4 rounded-xl overflow-hidden" style={ { background: "#001E62", color: "#fff" } }>
             {matchVencido && lineaMatch(false)}
-            {hayCobros && nRec > 0 && (
+            {hayMsg && (
               <button
                 type="button"
-                onClick={onIrACobros}
+                onClick={nRecMsg > 0 && nVentas > 0 && onIrAMensajes ? onIrAMensajes : nRecMsg > 0 ? onIrACobros : onIrAVentas}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
                 style={ { background: "transparent", color: "#fff", border: 0 } }
               >
-                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔔</span>
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
                 <span className="min-w-0 flex-1">
-                  <span className="block text-sm font-bold">{plural(nRec, "recordatorio por enviar", "recordatorios por enviar")}</span>
-                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>Ir a Mensajes</span>
+                  <span className="block text-sm font-bold">{plural(nMensajes, "mensaje por enviar hoy", "mensajes por enviar hoy")}</span>
+                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{[nRecMsg > 0 ? plural(nRecMsg, "recordatorio de cobro", "recordatorios de cobro") : "", nVentas > 0 ? (nRecMsg > 0 ? nVentas + " de venta" : plural(nVentas, "mensaje de venta", "mensajes de venta")) : ""].filter(Boolean).join(" · ")}</span>
                 </span>
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
@@ -9865,7 +9871,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 type="button"
                 onClick={onAbrirComision || onIrACobros}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: nRec > 0 ? "1px solid rgba(255,255,255,.18)" : 0 } }
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: hayMsg ? "1px solid rgba(255,255,255,.18)" : 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💰</span>
                 <span className="min-w-0 flex-1">
@@ -9878,24 +9884,24 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             {hayAbono && (
               <LineaAbonoPendiente
                 clientes={clientes}
-                conSeparador={hayCobros || matchVencido}
+                conSeparador={hayArriba || matchVencido}
                 onVer={() => onVerClientes({ chipGrupo: "faltaAbono", todosLosMeses: true })}
               />
             )}
             {hayInfo && (
               <LineaInfoInstalacionPendiente
                 clientes={clientes}
-                conSeparador={hayCobros || matchVencido || hayAbono}
+                conSeparador={hayArriba || matchVencido || hayAbono}
                 onVer={() => onVerClientes({ chipGrupo: "faltaInfo", todosLosMeses: true })}
               />
             )}
-            {!matchVencido && lineaMatch(hayCobros || hayAbono || hayInfo)}
+            {!matchVencido && lineaMatch(hayArriba || hayAbono || hayInfo)}
             {hayCiclo && (
               <button
                 type="button"
                 onClick={() => onVerClientes({ periodo: periodoComision(fechaActivacionMovil(sinCiclo[0]) || fechaLocalISO(new Date())), subVista: "movil", chipMovil: "cicloPendiente" })}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayInfo || hayMatch) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayArriba || hayAbono || hayInfo || hayMatch) ? "1px solid rgba(255,255,255,.18)" : 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔄</span>
                 <span className="min-w-0 flex-1">
@@ -9910,7 +9916,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 type="button"
                 onClick={() => onVerClientes({ chipGrupo: "faltaCiclo", todosLosMeses: true })}
                 className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayInfo || hayMatch || hayCiclo) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayArriba || hayAbono || hayInfo || hayMatch || hayCiclo) ? "1px solid rgba(255,255,255,.18)" : 0 } }
               >
                 <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔄</span>
                 <span className="min-w-0 flex-1">
@@ -9920,22 +9926,10 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
             )}
-            {hayVentas && (
-              <button
-                type="button"
-                onClick={onIrAVentas}
-                className="w-full text-left flex items-center gap-3 px-4 py-3"
-                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayCobros || hayAbono || hayMatch || hayInfo || hayCiclo || hayCicloHogar) ? "1px solid rgba(255,255,255,.18)" : 0 } }
-              >
-                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">💬</span>
-                <span className="min-w-0 flex-1 text-sm font-bold">{[nVentas > 0 ? `${nVentas} para escribir hoy` : "", nSeg > 0 ? `🔥 ${nSeg} por cerrar` : ""].filter(Boolean).join(" · ")}</span>
-                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
-              </button>
-            )}
             {hayPorInst && (
               <PanelPorInstalar
                 enTarjeta
-                conSeparador={hayCobros || hayAbono || hayInfo || hayMatch || hayVentas}
+                conSeparador={hayArriba || hayAbono || hayInfo || hayMatch}
                 porInstalar={listaPorInstalar}
                 onMarcarInstalado={onMarcarInstalado}
                 onReprogramar={onReprogramarInstalacion}
