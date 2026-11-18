@@ -7613,6 +7613,7 @@ function BloqueAbonoInicial({ cliente, onMarcar }) {
 // y sin fecha agendada, todo a la vista y ordenado por urgencia.
 function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCopiarMensaje, copiedKey, onVerCliente, enTarjeta, conSeparador }) {
   const [abierto, setAbierto] = useState(null); // null = automático: se abre solo si hay vencidas
+  const [, setTocado] = useState(0); // fuerza redibujar al anotar que abriste WhatsApp
   const hoy = fechaLocalISO(new Date());
   const manana = addDays(hoy, 1);
   const porHora = (a, b) => horaInicioFranja(a.franjaInstalacion) - horaInicioFranja(b.franjaInstalacion);
@@ -7638,11 +7639,20 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
     { k: "mas", t: "Más adelante", l: g.mas },
     { k: "sin", t: "Sin fecha agendada", l: g.sin },
   ].filter((x) => x.l.length > 0);
-  const visible = abierto === null ? g.vencidas.length > 0 : abierto;
+  const visible = abierto === true; // siempre empieza minimizada; se abre con un toque
   const partes = [];
   if (g.vencidas.length) partes.push(`${g.vencidas.length} ${g.vencidas.length === 1 ? "vencida" : "vencidas"}`);
   if (g.hoy.length) partes.push(`hoy ${g.hoy.length}`);
   if (g.manana.length) partes.push(`mañana ${g.manana.length}`);
+  // Línea de la tarjeta: el primero de hoy (hora · nombre · barrio) y, aparte, el resto del resumen.
+  const proximoHoy = g.hoy[0];
+  const nombreCorto = (c) => { const w = nombreBonito(c.nombre).split(/\s+/).filter(Boolean); return w.length > 1 ? w[0] + " " + w[1].charAt(0) + "." : (w[0] || ""); };
+  const lineaProximo = proximoHoy ? ["Hoy", proximoHoy.franjaInstalacion ? franjaCorta(proximoHoy.franjaInstalacion).split(" - ")[0] : "", nombreCorto(proximoHoy), leerBloqueTigo(proximoHoy.observaciones).barrio].filter(Boolean).join(" · ") + (g.hoy.length > 1 ? ` (+${g.hoy.length - 1})` : "") : "";
+  const resumenTarjeta = [];
+  if (g.vencidas.length) resumenTarjeta.push(`⚠ ${g.vencidas.length} ${g.vencidas.length === 1 ? "vencida" : "vencidas"}`);
+  if (g.manana.length) resumenTarjeta.push(`mañana ${g.manana.length}`);
+  if (g.mas.length) resumenTarjeta.push(`más adelante ${g.mas.length}`);
+  if (g.sin.length) resumenTarjeta.push(`${g.sin.length} sin fecha`);
 
   function fila(c, k) {
     const barrio = leerBloqueTigo(c.observaciones).barrio;
@@ -7658,18 +7668,22 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
     const sub = [detalle, plan].filter(Boolean).join(" · ");
     // Recordatorio por WhatsApp: solo para instalaciones de hoy y mañana.
     const recordar = k === "hoy" || k === "manana";
+    const itRec = { t: "in", id: c.id, key: "rec-" + (c.instalacionProgramada || "") };
+    const abiertoRec = recordar ? aperturaDe(itRec) : "";
     return (
       <div key={c.id} className="px-3 py-2" style={ { borderTop: "1px solid #EEF2F9" } }>
         <div className="flex items-center gap-2">
           <button type="button" onClick={() => onVerCliente(c)} className="flex-1 min-w-0 text-left" title="Abrir ficha">
             <span className="block text-[13px] font-bold underline underline-offset-2" style={ { color: "#0072CE", overflowWrap: "anywhere" } }>{nombreBonito(c.nombre)}</span>
             {sub ? <span className="block text-[11.5px]" style={ { color: "#5A6680" } }>{sub}</span> : null}
+            {abiertoRec ? <span className="block text-[11.5px] font-bold" style={ { color: "#001E62" } }>✓ WhatsApp abierto {textoApertura(abiertoRec)}</span> : null}
           </button>
           {recordar ? (
             <a
               href={whatsappLink(c, { texto: textoInstalacion(c) })}
               target="_blank"
               rel="noopener noreferrer"
+              onClick={() => { anotarApertura(itRec); setTocado((n) => n + 1); }}
               aria-label={"Enviar recordatorio de instalación por WhatsApp a " + nombreBonito(c.nombre)}
               title="Enviar recordatorio por WhatsApp"
               className="shrink-0 flex items-center justify-center rounded-[9px]"
@@ -7696,7 +7710,13 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
           {enTarjeta ? <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🔧</span> : <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className="shrink-0"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.6 2.6-2.4-.6-.6-2.4z" /></svg>}
           <span className="min-w-0">
             {enTarjeta ? <span className="block text-sm font-bold">Por instalar · {porInstalar.length}</span> : "Por instalar · " + porInstalar.length}
-            {partes.length > 0 ? <span className={enTarjeta ? "block text-xs font-normal mt-0.5" : "block text-[11.5px] font-semibold"} style={ { color: enTarjeta ? "#B9C4E0" : "#5A6680" } }>{partes.join(" · ")}</span> : null}
+            {enTarjeta ? (
+              <>
+                {g.vencidas.length > 0 ? <span className="block text-xs font-extrabold mt-0.5" style={ { color: "#FFD28A" } }>⚠ {g.vencidas.length} {g.vencidas.length === 1 ? "vencida" : "vencidas"} · confirma si ya se instalaron</span> : null}
+                {lineaProximo ? <span className="block text-xs font-semibold mt-0.5" style={ { color: "#fff", overflowWrap: "anywhere" } }>{lineaProximo}</span> : null}
+                {resumenTarjeta.filter((x) => !x.startsWith("⚠")).length > 0 ? <span className="block text-xs font-normal mt-0.5" style={ { color: "#B9C4E0" } }>{resumenTarjeta.filter((x) => !x.startsWith("⚠")).join(" · ")}</span> : null}
+              </>
+            ) : (partes.length > 0 ? <span className="block text-[11.5px] font-semibold" style={ { color: "#5A6680" } }>{partes.join(" · ")}</span> : null)}
           </span>
         </span>
         <span className="shrink-0" style={ enTarjeta ? { fontSize: 18, display: "inline-block", transform: visible ? "rotate(-90deg)" : "rotate(90deg)", transition: "transform .2s ease" } : { color: "#5A6680" } } aria-hidden={enTarjeta ? "true" : undefined}>{enTarjeta ? "›" : (visible ? "Ocultar ▴" : "Mostrar ▾")}</span>
