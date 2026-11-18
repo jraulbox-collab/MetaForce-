@@ -4381,12 +4381,20 @@ function App() {
     const enComision = (a, mov) => (mov ? a.cliente.f1_estado !== "pagada" && movilCuentaParaComision(a.cliente) : a.cliente.f1_estado !== "pagada" && clienteCuentaParaComision(a.cliente));
     const cobros = [...alertasCobroVis.map((a) => ({ a, mov: false })), ...alertasMovilVis.map((a) => ({ a, mov: true }))];
     cobros.sort((x, y) => (enComision(x.a, x.mov) ? 0 : 1) - (enComision(y.a, y.mov) ? 0 : 1));
+    const ultimoContactoDe = (id) => {
+      let r = "";
+      (envios || []).forEach((e) => {
+        if (!e || e.clienteId !== id || !e.fecha || (e.tipo !== "marcar" && e.tipo !== "abrir" && e.tipo !== "contacto")) return;
+        if (e.fecha > r) r = e.fecha;
+      });
+      return r ? fechaLocalISO(new Date(r)) : "";
+    };
     const infoCobro = (a, mov) => {
       const c = a.cliente;
       const n = mov ? 1 : ((a.factura && a.factura.n) || (a.milestone && a.milestone.n) || 1);
       const previas = [];
       for (let k = 1; k < n; k++) previas.push({ k, ok: c["f" + k + "_estado"] === "pagada" });
-      return { n, previas, vence: a.factura && a.factura.vencimiento ? a.factura.vencimiento : "", monto: Number(c.montoMensual) || 0, plan: mov ? "" : planParaCliente(c), contacto: ultimoContacto[c.id] || "" };
+      return { n, previas, vence: a.factura && a.factura.vencimiento ? a.factura.vencimiento : "", monto: Number(c.montoMensual) || 0, plan: mov ? "" : planParaCliente(c), contacto: ultimoContactoDe(c.id) };
     };
     cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + (mov ? a.milestone.tag : a.milestone.label), info: infoCobro(a, mov) }));
     [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada || x.fechaInstalacion).localeCompare(String(y.instalacionProgramada || y.fechaInstalacion)))
