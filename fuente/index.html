@@ -4163,11 +4163,17 @@ function App() {
 
   // Guarda en un cliente existente lo que viene en el texto de Tigo: fecha y horario de
   // instalación (sigue pendiente de instalación) y los datos extra en Observaciones.
-  function guardarOrdenInstalacion(clienteId, d) {
+  async function guardarOrdenInstalacion(clienteId, d) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes || !d || !d.fecha) return;
+    // Cliente que estaba cancelado y nunca se instaló: con una fecha nueva, pregunta si se reactiva.
+    let reactivar = false;
+    if (antes.cancelado && !antes.fechaInstalacion) {
+      reactivar = await pedirConfirmacion(`${antes.nombre} estaba cancelado.\n\n¿Reactivarlo con esta nueva fecha de instalación?`, { si: "✓ Sí, reactivar", no: "No, dejarlo cancelado" });
+    }
     const despues = {
       ...antes,
+      ...(reactivar ? { cancelado: false, fechaCancelacion: "", motivoCancelacion: "" } : {}),
       instalacionProgramada: d.fecha,
       franjaInstalacion: d.franja || "",
       ...(d.fecha !== antes.instalacionProgramada ? { instalacionEnviadaEn: "" } : {}),
@@ -14242,6 +14248,12 @@ function ClienteDetalle({
           onMarcarEnviada={onMarcarInstalacionEnviada}
           ultimaApertura={((envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === "info-instalacion" && e.tipo === "abrir").sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0] || {}).fecha || ""}
         />
+      )}
+
+      {cliente.cancelado && !cliente.fechaInstalacion && !cliente.penalizado && !!onGuardarOrden && (
+        <div className="mb-3">
+          <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta="Pegar texto de Tigo para reactivarlo" />
+        </div>
       )}
 
       {riesgo && (
