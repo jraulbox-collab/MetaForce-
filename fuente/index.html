@@ -3011,9 +3011,21 @@ function App() {
   const [filtroTipoAlertas, setFiltroTipoAlertas] = useState("");
   const [copiedKey, setCopiedKey] = useState(null);
   // Cliente al que acabas de abrirle WhatsApp con la info de instalación: al volver se pregunta si la enviaste.
-  const [preguntaInst, setPreguntaInst] = useState(() => {
-    try { return window.sessionStorage.getItem("mf-pregunta-inst") || null; } catch (e) { return null; }
+  // Mensajes de info de instalación que abriste en WhatsApp y todavía no confirmaste (se guardan en el teléfono:
+  // sobreviven aunque la app se cierre o se recargue, y la pregunta vuelve a salir).
+  const [pendInst, setPendInst] = useState(() => {
+    try {
+      const l = JSON.parse(window.localStorage.getItem("mf-pend-inst") || "[]") || [];
+      const viejo = window.sessionStorage.getItem("mf-pregunta-inst");
+      if (viejo && !l.some((x) => x.id === viejo)) l.push({ id: viejo, en: Date.now() });
+      return l.filter((x) => x && x.id && Date.now() - x.en < 4 * 86400000);
+    } catch (e) { return []; }
   });
+  useEffect(() => {
+    try { window.localStorage.setItem("mf-pend-inst", JSON.stringify(pendInst)); window.sessionStorage.removeItem("mf-pregunta-inst"); } catch (e) {}
+  }, [pendInst]);
+  // La pregunta es por el primero que siga pendiente de verdad (cliente existente y sin envío marcado).
+  const preguntaInst = loaded ? ((pendInst.find((x) => { const c = clientes.find((k) => k.id === x.id); return c && !c.instalacionEnviadaEn; }) || {}).id || null) : null;
 
   // Persiste la pestaña activa para que al refrescar la página quede donde
   // estaba, en vez de volver siempre al Dashboard. "detalle" y "nuevo" no se
@@ -4192,14 +4204,13 @@ function App() {
   }
   // Abre WhatsApp con el mensaje de instalación y deja pendiente la pregunta "¿Lo enviaste?".
   function enviarInfoInstalacion(cliente) {
-    try { window.sessionStorage.setItem("mf-pregunta-inst", cliente.id); } catch (e) {}
-    setPreguntaInst(cliente.id);
+    setPendInst((prev) => [...prev.filter((x) => x.id !== cliente.id), { id: cliente.id, en: Date.now() }]);
+    try { window.localStorage.setItem("mf-pend-inst", JSON.stringify([...pendInst.filter((x) => x.id !== cliente.id), { id: cliente.id, en: Date.now() }])); } catch (e) {}
     window.location.href = whatsappLink(cliente, { texto: textoInstalacion(cliente) });
   }
   function responderPreguntaInst(enviado) {
     if (enviado && preguntaInst) marcarInstalacionEnviada(preguntaInst, true);
-    try { window.sessionStorage.removeItem("mf-pregunta-inst"); } catch (e) {}
-    setPreguntaInst(null);
+    setPendInst((prev) => prev.filter((x) => x.id !== preguntaInst));
   }
 
   function copiarMensajeInstalacion(cliente) {
