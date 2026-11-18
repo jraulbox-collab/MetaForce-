@@ -4376,26 +4376,60 @@ function App() {
     guardarRevisar(revisar.filter((x) => claveEnvio(x) !== claveEnvio(it)));
     enviarUno(it);
   }
+  const ultimoContactoDe = (id) => {
+    let r = "";
+    (envios || []).forEach((e) => {
+      if (!e || e.clienteId !== id || !e.fecha || (e.tipo !== "marcar" && e.tipo !== "abrir" && e.tipo !== "contacto")) return;
+      if (e.fecha > r) r = e.fecha;
+    });
+    return r ? fechaLocalISO(new Date(r)) : "";
+  };
+  const infoCobro = (a, mov) => {
+    const c = a.cliente;
+    const n = mov ? 1 : ((a.factura && a.factura.n) || (a.milestone && a.milestone.n) || 1);
+    const previas = [];
+    for (let k = 1; k < n; k++) previas.push({ k, ok: c["f" + k + "_estado"] === "pagada" });
+    return { n, previas, vence: a.factura && a.factura.vencimiento ? a.factura.vencimiento : "", monto: Number(c.montoMensual) || 0, plan: mov ? "" : planParaCliente(c), contacto: ultimoContactoDe(c.id) };
+  };
+  const lazyInfo = (it) => {
+    if (it.t !== "ch" && it.t !== "cm") return null;
+    const a = (it.t === "cm" ? alertasMovilVis : alertasCobroVis).find((x) => x.cliente.id === it.id && x.milestone.key === it.key);
+    return a ? infoCobro(a, it.t === "cm") : null;
+  };
+  const franjaCobro = (it) => {
+    const inf0 = it.info || lazyInfo(it);
+    if (!inf0) return null;
+    return (
+      (() => {
+        const inf = inf0;
+
+                      const orden = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta", 5: "5ta", 6: "6ta" };
+                      const sinPagar = inf.previas.filter((x) => !x.ok).map((x) => orden[x.k] || x.k + "ª");
+                      const dias = inf.contacto ? Math.max(0, -daysFromToday(inf.contacto)) : null;
+                      const txtContacto = dias === null ? "Sin contacto registrado" : dias === 0 ? "Hoy" : dias === 1 ? "Hace 1 día" : "Hace " + dias + " días";
+                      return (
+                        <div className="mt-3 rounded-xl px-3 py-2" style={ { background: "#0A2C7A", color: "#fff", fontSize: 13, lineHeight: 1.5 } }>
+                          <div className="font-extrabold" style={ { color: inf.n === 1 ? "#FFD27A" : "#B9C4E0" } }>
+                            {inf.n === 1 ? "💰 1ra factura · cuenta para tu comisión" : "🔁 " + (orden[inf.n] || inf.n + "ª") + " factura · seguimiento"}
+                          </div>
+                          {inf.n > 1 && (
+                            <div>{sinPagar.length === 0 ? "✅ Pagó " + inf.previas.map((x) => orden[x.k]).join(" y ") : "⚠ Sin pagar: " + sinPagar.join(" y ")}</div>
+                          )}
+                          <div>
+                            {inf.vence ? "📅 Vence " + fmtFecha(inf.vence) : ""}{inf.vence && inf.monto ? " · " : ""}{inf.monto ? "💵 " + fmtMonto(inf.monto) : ""}
+                          </div>
+                          <div>💬 {txtContacto}</div>
+                          {inf.plan ? <div className="truncate" style={ { color: "#B9C4E0" } }>{inf.plan}</div> : null}
+                        </div>
+                      );
+                          })()
+    );
+  };
   function iniciarCadena() {
     const items = [];
     const enComision = (a, mov) => (mov ? a.cliente.f1_estado !== "pagada" && movilCuentaParaComision(a.cliente) : a.cliente.f1_estado !== "pagada" && clienteCuentaParaComision(a.cliente));
     const cobros = [...alertasCobroVis.map((a) => ({ a, mov: false })), ...alertasMovilVis.map((a) => ({ a, mov: true }))];
     cobros.sort((x, y) => (enComision(x.a, x.mov) ? 0 : 1) - (enComision(y.a, y.mov) ? 0 : 1));
-    const ultimoContactoDe = (id) => {
-      let r = "";
-      (envios || []).forEach((e) => {
-        if (!e || e.clienteId !== id || !e.fecha || (e.tipo !== "marcar" && e.tipo !== "abrir" && e.tipo !== "contacto")) return;
-        if (e.fecha > r) r = e.fecha;
-      });
-      return r ? fechaLocalISO(new Date(r)) : "";
-    };
-    const infoCobro = (a, mov) => {
-      const c = a.cliente;
-      const n = mov ? 1 : ((a.factura && a.factura.n) || (a.milestone && a.milestone.n) || 1);
-      const previas = [];
-      for (let k = 1; k < n; k++) previas.push({ k, ok: c["f" + k + "_estado"] === "pagada" });
-      return { n, previas, vence: a.factura && a.factura.vencimiento ? a.factura.vencimiento : "", monto: Number(c.montoMensual) || 0, plan: mov ? "" : planParaCliente(c), contacto: ultimoContactoDe(c.id) };
-    };
     cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + (mov ? a.milestone.tag : a.milestone.label), info: infoCobro(a, mov) }));
     [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada || x.fechaInstalacion).localeCompare(String(y.instalacionProgramada || y.fechaInstalacion)))
       .forEach((c) => items.push(itemInstalacion(c)));
@@ -4864,7 +4898,12 @@ function App() {
                         <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
                         <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{esV && (hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía")}</div>
                       </div>
-                      <div className="flex-1 min-h-0 overflow-auto rounded-xl mt-4 p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45 } }>{msg || "Mensaje listo."}</div>
+                      {franjaCobro(it)}
+                      <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 5, overflow: "hidden" } }>{msg || "Mensaje listo."}</div></div>
+                      {(it.info || lazyInfo(it)) && (
+                        <button type="button" onClick={() => setMsgAbiertoI(msgAbiertoI === cadena.i ? -1 : cadena.i)} className="mt-1 text-xs font-extrabold" style={ { color: "#B9C4E0", background: "transparent", border: 0, minHeight: 28 } }>{msgAbiertoI === cadena.i ? "Ocultar mensaje ▴" : "Ver mensaje completo ▾"}</button>
+                      )}
+                      {(it.info || lazyInfo(it)) && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
                       <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>{esV ? "Al abrir WhatsApp, este mensaje se copia para que lo pegues si te conviene." : "Al abrir WhatsApp, el chat se abre con este mensaje escrito, listo para enviar."}</div>
                       <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
                       <div className="flex gap-2 mt-3 items-stretch">
@@ -4885,33 +4924,12 @@ function App() {
                       <div className="text-xs font-bold" style={ { color: "#B9C4E0" } }>{it.et}</div>
                       <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
                     </div>
-                    {it.info && (() => {
-                      const inf = it.info;
-                      const orden = { 1: "1ra", 2: "2da", 3: "3ra", 4: "4ta", 5: "5ta", 6: "6ta" };
-                      const sinPagar = inf.previas.filter((x) => !x.ok).map((x) => orden[x.k] || x.k + "ª");
-                      const dias = inf.contacto ? Math.max(0, -daysFromToday(inf.contacto)) : null;
-                      const txtContacto = dias === null ? "Sin contacto registrado" : dias === 0 ? "Hoy" : dias === 1 ? "Hace 1 día" : "Hace " + dias + " días";
-                      return (
-                        <div className="mt-3 rounded-xl px-3 py-2" style={ { background: "#0A2C7A", color: "#fff", fontSize: 13, lineHeight: 1.5 } }>
-                          <div className="font-extrabold" style={ { color: inf.n === 1 ? "#FFD27A" : "#B9C4E0" } }>
-                            {inf.n === 1 ? "💰 1ra factura · cuenta para tu comisión" : "🔁 " + (orden[inf.n] || inf.n + "ª") + " factura · seguimiento"}
-                          </div>
-                          {inf.n > 1 && (
-                            <div>{sinPagar.length === 0 ? "✅ Pagó " + inf.previas.map((x) => orden[x.k]).join(" y ") : "⚠ Sin pagar: " + sinPagar.join(" y ")}</div>
-                          )}
-                          <div>
-                            {inf.vence ? "📅 Vence " + fmtFecha(inf.vence) : ""}{inf.vence && inf.monto ? " · " : ""}{inf.monto ? "💵 " + fmtMonto(inf.monto) : ""}
-                          </div>
-                          <div>💬 {txtContacto}</div>
-                          {inf.plan ? <div className="truncate" style={ { color: "#B9C4E0" } }>{inf.plan}</div> : null}
-                        </div>
-                      );
-                    })()}
-                    <div className="mt-3 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !it.info ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !it.info ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 5, overflow: "hidden" } }>{msg || "Mensaje listo en WhatsApp."}</div></div>
-                    {it.info && (
+                    {franjaCobro(it)}
+                    <div className="mt-3 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 5, overflow: "hidden" } }>{msg || "Mensaje listo en WhatsApp."}</div></div>
+                    {(it.info || lazyInfo(it)) && (
                       <button type="button" onClick={() => setMsgAbiertoI(msgAbiertoI === cadena.i ? -1 : cadena.i)} className="mt-1 text-xs font-extrabold" style={ { color: "#B9C4E0", background: "transparent", border: 0, minHeight: 28 } }>{msgAbiertoI === cadena.i ? "Ocultar mensaje ▴" : "Ver mensaje completo ▾"}</button>
                     )}
-                    {it.info && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
+                    {(it.info || lazyInfo(it)) && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
                     <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>{it.t === "v" ? "El mensaje quedó copiado. ¿Lo enviaste?" : "Se abrió WhatsApp con este mensaje. ¿Lo enviaste?"}</div>
                     <button type="button" onClick={() => (it.t === "v" ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp de nuevo</button>
                     <div className="flex gap-2 mt-3 items-stretch">
