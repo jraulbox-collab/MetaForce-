@@ -4204,6 +4204,7 @@ function App() {
   }
   // Abre WhatsApp con el mensaje de instalación y deja pendiente la pregunta "¿Lo enviaste?".
   function enviarInfoInstalacion(cliente) {
+    registrarEnvio({ tipo: "abrir", clienteId: cliente.id, nombre: cliente.nombre || "", key: "info-instalacion", origen: "ficha" });
     setPendInst((prev) => [...prev.filter((x) => x.id !== cliente.id), { id: cliente.id, en: Date.now() }]);
     try { window.localStorage.setItem("mf-pend-inst", JSON.stringify([...pendInst.filter((x) => x.id !== cliente.id), { id: cliente.id, en: Date.now() }])); } catch (e) {}
     window.location.href = whatsappLink(cliente, { texto: textoInstalacion(cliente) });
@@ -13786,7 +13787,7 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
 
 // Bloque "Instalación" de la ficha de un cliente Hogar pendiente: fecha y horario programados,
 // pegar el texto de Tigo y el mensaje listo para copiar y enviarle al cliente.
-function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono, onEnviarInfo, onMarcarEnviada }) {
+function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono, onEnviarInfo, onMarcarEnviada, ultimaApertura }) {
   const prog = cliente.instalacionProgramada;
   const vencida = !!prog && prog < fechaLocalISO(new Date());
   const hoyISO = fechaLocalISO(new Date());
@@ -13836,6 +13837,9 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
       {prog && tieneTel && !enviada && onEnviarInfo && (
         <div className="mt-2.5 rounded-lg p-3" style={ { background: "#FFF6E3", border: "1px solid #F0D9AE" } }>
           <div className="text-[13px] font-bold" style={ { color: "#B45309" } }>! Falta enviarle la info de instalación</div>
+          {ultimaApertura && (
+            <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>💬 Abriste WhatsApp con la info · {fmtFechaHora(ultimaApertura)} · ¿ya la enviaste?</div>
+          )}
           <button
             type="button"
             onClick={() => onEnviarInfo(cliente)}
@@ -14201,6 +14205,7 @@ function ClienteDetalle({
           onMarcarAbono={onMarcarAbono}
           onEnviarInfo={onEnviarInfoInstalacion}
           onMarcarEnviada={onMarcarInstalacionEnviada}
+          ultimaApertura={((envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === "info-instalacion" && e.tipo === "abrir").sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0] || {}).fecha || ""}
         />
       )}
 
