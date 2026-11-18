@@ -196,6 +196,18 @@ function dispositivoActual() {
   return "computadora";
 }
 
+// Aplica sobre la versión actual del cliente SOLO los campos que cambiaron entre `antes` y `despues`,
+// para que una marca (abono, info enviada, etc.) nunca pise otros datos con una copia vieja.
+function aplicarCambios(actual, antes, despues) {
+  const f = { ...actual };
+  new Set([...Object.keys(antes || {}), ...Object.keys(despues || {})]).forEach((k) => {
+    if (jsonDe((antes || {})[k]) === jsonDe((despues || {})[k])) return;
+    if (k in despues) f[k] = despues[k];
+    else delete f[k];
+  });
+  return f;
+}
+
 // Mezcla de 3 vías de listas de objetos con "id": base = última versión sincronizada,
 // local = lo que hay en esta pantalla, remoto = lo que hay en la nube ahora.
 function mezclarListasPorId(base, local, remoto, nuevosAlPrincipio) {
@@ -3466,7 +3478,7 @@ function App() {
         despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
       }
     }
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
@@ -3496,7 +3508,7 @@ function App() {
       const total = +((Number(antes.montoMensual) || 0) + (Number(r.monto1raFactura) || 0)).toFixed(2);
       despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
     }
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
@@ -3514,7 +3526,7 @@ function App() {
         despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
       }
     }
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
@@ -3548,7 +3560,7 @@ function App() {
     const antes = clientes.find((c) => c.id === id);
     if (!antes) return;
     const despues = { ...antes, nombre: nuevo };
-    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: id });
   }
   function cambiarFechaActivacionMovilDesdeOrden(id, fechaISO) {
@@ -4062,7 +4074,7 @@ function App() {
     const antes = clientes.find((c) => c.id === id);
     if (!antes) return;
     const despues = { ...antes, cancelado: true, fechaCancelacion: fecha, motivoCancelacion: motivo };
-    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: antes.nombre, antes, despues, refId: id });
   }
 
@@ -4073,7 +4085,7 @@ function App() {
     const despues = penalizado
       ? { ...antes, penalizado: true, motivoPenalizacion: (motivo || "").trim(), fechaPenalizacion: fechaLocalISO(new Date()) }
       : { ...antes, penalizado: false, motivoPenalizacion: "", fechaPenalizacion: "" };
-    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({
       entidad: "cliente",
       tipo: "editar",
@@ -4089,7 +4101,7 @@ function App() {
     const antes = clientes.find((c) => c.id === id);
     if (!antes) return;
     const despues = { ...antes, cancelado: false, fechaCancelacion: "", motivoCancelacion: "" };
-    actualizarClientes((prev) => prev.map((c) => (c.id === id ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === id ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: antes.nombre, antes, despues, refId: id });
   }
 
@@ -4162,7 +4174,7 @@ function App() {
       tecnologia: d.tecnologia || antes.tecnologia || "",
       observaciones: aplicarBloqueObservaciones(antes.observaciones, bloqueObservacionTigo(d)),
     };
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
@@ -4171,7 +4183,7 @@ function App() {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes || !fechaISO) return;
     const despues = { ...antes, instalacionProgramada: fechaISO, franjaInstalacion: franja || "", ...(fechaISO !== antes.instalacionProgramada ? { instalacionEnviadaEn: "" } : {}) };
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
@@ -4183,7 +4195,7 @@ function App() {
     const ok = await pedirConfirmacion(recibido ? `¿Confirmas que ${quien} ya hizo su abono?` : `¿Quitar la marca de abono a ${quien}?`, { si: recibido ? "✓ Sí, ya abonó" : "Sí, quitar la marca" });
     if (!ok) return;
     const despues = { ...antes, abonoInicial: recibido, abonoFecha: recibido ? new Date().toISOString() : "" };
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
 
@@ -4192,14 +4204,14 @@ function App() {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes) return;
     const despues = { ...antes, instalacionEnviadaEn: enviado ? new Date().toISOString() : "" };
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
   function marcarPromoEnviada(clienteId) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes) return;
     const despues = { ...antes, promoEnviadaEn: new Date().toISOString() };
-    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? despues : c)));
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
   // Abre WhatsApp con el mensaje de instalación y deja pendiente la pregunta "¿Lo enviaste?".
