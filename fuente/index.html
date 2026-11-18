@@ -5188,7 +5188,7 @@ function App() {
             );
           })()}
           {(() => {
-            const { nCobros, nVentas, nInstal, total } = conteoMsj;
+            const { nCobros, nVentas, nInstal, total } = conteoMsj || { nCobros: 0, nVentas: 0, nInstal: 0, total: 0 };
             const filas = [
               { ico: "💵", t: "Cobros", n: nCobros, sub: "recordatorios de pago", k: "cobros" },
               { ico: "💬", t: "Ventas", n: nVentas, sub: "mensajes para vender", k: "ventas" },
@@ -5218,7 +5218,7 @@ function App() {
               </div>
             );
           })()}
-          {conteoMsj.total > 0 && [conteoMsj.nCobros, conteoMsj.nVentas, conteoMsj.nInstal].filter((n) => n > 0).length > 1 && (
+          {conteoMsj && conteoMsj.total > 0 && [conteoMsj.nCobros, conteoMsj.nVentas, conteoMsj.nInstal].filter((n) => n > 0).length > 1 && (
           <div className="flex gap-2 mb-4 overflow-x-auto" role="tablist" data-no-swipe="" style={ { WebkitOverflowScrolling: "touch" } }>
             {[["todos", "Todos", conteoMsj.total], ["cobros", "💵 Cobros", conteoMsj.nCobros], ["ventas", "💬 Ventas", conteoMsj.nVentas], ["instalacion", "🔧 Instalación", conteoMsj.nInstal]].filter(([k, , n]) => k === "todos" || n > 0).map(([k, t, n]) => (
               <button
@@ -5235,7 +5235,7 @@ function App() {
             ))}
           </div>
           )}
-          {conteoMsj.total > 0 && (
+          {conteoMsj && conteoMsj.total > 0 && (
             <CampoBuscar
               value={searchAlertas}
               onChange={(t) => { setSearchAlertas(t); setLotesMsj({ cobros: 10, instalacion: 10 }); } }
