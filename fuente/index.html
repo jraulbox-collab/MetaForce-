@@ -5060,7 +5060,10 @@ function App() {
           <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } }>
             <div className="bg-white w-full max-w-md p-5" style={ { borderRadius: "22px 22px 0 0", paddingBottom: "calc(20px + env(safe-area-inset-bottom))", color: "#001E62" } }>
               <div className="text-base font-bold">¿Le enviaste la info de instalación?</div>
-              <div className="text-sm mt-1" style={ { color: "#5A6680" } }>{cp.nombre}</div>
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <div className="text-sm min-w-0 truncate" style={ { color: "#5A6680" } }>{cp.nombre}</div>
+                <button type="button" onClick={() => { try { navigator.clipboard?.writeText(textoInstalacion(cp)).catch(() => {}); } catch (e) {} window.location.href = `https://wa.me/${telefonoWhatsapp(cp.telefono)}`; }} className="shrink-0 text-xs font-bold rounded-lg px-3" style={ { minHeight: 34, background: "#E3EDFA", color: "#001E62" } }>💬 Ver chat · copia el mensaje</button>
+              </div>
               <div className="flex gap-2 mt-4">
                 <button type="button" onClick={() => responderPreguntaInst(true)} className="flex-1 font-bold rounded-xl text-white" style={ { minHeight: 52, background: "#001E62" } }>✓ Sí, la envié</button>
                 <button type="button" onClick={() => responderPreguntaInst(false)} className="flex-1 font-bold rounded-xl" style={ { minHeight: 52, border: "2px solid #001E62", color: "#001E62", background: "#fff" } }>No todavía</button>
