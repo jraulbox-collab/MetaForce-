@@ -6830,7 +6830,21 @@ function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
 // ---------- Descubrir barrios: eliges cuánto manejar, te sugiere barrios nuevos y después anotas cómo te fue ----------
 const TIEMPOS_DESCUBRIR = [10, 20, 30, 40, 50, 60, 90];
 const COMPETENCIA_OPC = ["Más Móvil", "Otra", "Ninguna"];
-const SERVICIOS_PROSPECTO = ["Internet", "TV", "Celular"];
+const RANGOS_PAGO = [["25-30", 27.5], ["31-35", 33], ["36-40", 38], ["41-48", 44.5]];
+const QUIEN_NUMERO = ["Señora", "Esposo", "Otro"];
+// Un prospecto puede tener varios WhatsApp (por ejemplo la señora y el esposo que paga). Los guardados antes traen solo "whatsapp".
+function numerosProspecto(pr) {
+  if (Array.isArray(pr.telefonos) && pr.telefonos.length) return pr.telefonos;
+  return pr.whatsapp ? [{ numero: pr.whatsapp, quien: "", paga: false }] : [];
+}
+const textoNumeros = (pr) => numerosProspecto(pr).map((n) => n.numero + (n.quien ? " (" + n.quien + ")" : "") + (n.paga ? " 💳 paga" : "")).join(" · ");
+function infoProspecto(pr) {
+  if (pr.tiene === "no") return " · Sin servicio";
+  if (pr.tiene !== "si") return "";
+  const comp = pr.compania || "Con servicio";
+  const tipo = pr.tipo === "internet_tv" ? "Internet + TV" + (pr.cajasTV ? " (" + pr.cajasTV + (pr.cajasTV === 1 ? " caja" : " cajas") + ")" : "") : pr.tipo === "internet" ? "Solo internet" : "";
+  return " · " + comp + (tipo ? " · " + tipo : "") + (pr.pagaRango ? " · $" + pr.pagaRango : pr.paga > 0 ? " · $" + pr.paga : "");
+}
 const OPINION_OPC = [
   ["contentos", "😊 Contentos con su proveedor"],
   ["velocidad", "⚡ Quieren más velocidad"],
@@ -6920,8 +6934,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
   const dig8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
   const telClientes = useMemo(() => new Set((clientesTodos || []).filter((c) => c && !c.eliminado).map((c) => dig8(c.telefono)).filter((d) => d.length >= 7)), [clientesTodos]);
   const esCliente = (pr) => {
-    const d = dig8(pr.whatsapp);
-    if (d.length >= 7 && telClientes.has(d)) return true;
+    if (numerosProspecto(pr).some((n) => { const d = dig8(n.numero); return d.length >= 7 && telClientes.has(d); })) return true;
     const ent = entPorId.get(pr.barrioId); const n = normTexto(pr.nombre);
     return !!(ent && n && (ent.clientes || []).some((c) => !c.eliminado && normTexto(c.nombre) === n));
   };
@@ -7010,7 +7023,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
                   <div className="text-xs font-extrabold mb-1" style={ { color: "#001E62" } }>👥 Prospectos del barrio ({prosDeBarrio(v.barrioId).length})</div>
                   {prosDeBarrio(v.barrioId).map((pr) => (
                     <div key={pr.id} className="flex items-center gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#E3EDFA" } }>
-                      <div className="min-w-0 flex-1 text-xs" style={ { color: "#001E62", overflowWrap: "anywhere" } }><span className="font-extrabold">{pr.nombre}</span> · {pr.whatsapp}{pr.tiene === "si" ? " · " + (pr.compania === "Otra" && pr.otraNombre ? pr.otraNombre : pr.compania || "Con servicio") : pr.tiene === "no" ? " · Sin servicio" : ""}{pr.paga > 0 ? " · $" + pr.paga : ""}{esCliente(pr) ? " · ✅ Ya es cliente" : ""}</div>
+                      <div className="min-w-0 flex-1 text-xs" style={ { color: "#001E62", overflowWrap: "anywhere" } }><span className="font-extrabold">{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCliente(pr) ? " · ✅ Ya es cliente" : ""}</div>
                       <button type="button" onClick={() => quitarProspecto(pr.id)} aria-label={"Quitar a " + pr.nombre} className="shrink-0 rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 36, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
                     </div>
                   ))}
@@ -7096,7 +7109,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
                 <details key={g.barrioId} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
                   <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {pend.length} {pend.length === 1 ? "prospecto" : "prospectos"}{conv > 0 ? " · ✅ " + conv + (conv === 1 ? " ya es cliente" : " ya son clientes") : ""}</summary>
                   <div className="mt-2">{pend.map((pr) => (
-                    <div key={pr.id} className="text-xs mb-1" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {pr.whatsapp}{pr.tiene === "si" ? " · " + (pr.compania === "Otra" && pr.otraNombre ? pr.otraNombre : pr.compania || "Con servicio") : pr.tiene === "no" ? " · Sin servicio" : ""}{(pr.servicios || []).length ? " · " + pr.servicios.join(", ") : ""}{pr.paga > 0 ? " · $" + pr.paga : ""}</div>
+                    <div key={pr.id} className="text-xs mb-1" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}</div>
                   ))}{pend.length === 0 && <div className="text-xs" style={ { color: "#5A6680" } }>Todos ya son clientes.</div>}</div>
                 </details>
               );
@@ -7111,25 +7124,35 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
 function ProspectoBarrioForm({ onGuardar, onCancelar }) {
   const [tiene, setTiene] = useState("");
   const [compania, setCompania] = useState("");
-  const [otraNombre, setOtraNombre] = useState("");
-  const [servicios, setServicios] = useState([]);
-  const [paga, setPaga] = useState("");
+  const [tipo, setTipo] = useState("");
+  const [cajas, setCajas] = useState(0);
+  const [rango, setRango] = useState("");
   const [nombre, setNombre] = useState("");
-  const [whatsapp, setWhatsapp] = useState("");
+  const [nums, setNums] = useState([{ numero: "", quien: "", paga: false }]);
   const [intento, setIntento] = useState(false);
   const chipM = (activo, texto, onClick, key) => (
     <button key={key} type="button" onClick={onClick} className="rounded-full text-xs font-bold px-3" style={ { minHeight: 40, border: "2px solid #001E62", background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{activo ? "✓ " : ""}{texto}</button>
   );
   const etq = (t) => <div className="text-xs font-extrabold mt-3 mb-1" style={ { color: "#001E62" } }>{t}</div>;
-  const alternar = (k) => setServicios(servicios.includes(k) ? servicios.filter((x) => x !== k) : [...servicios, k]);
-  const digitos = String(whatsapp).replace(/\D/g, "");
-  const faltaNombre = !nombre.trim(); const faltaWa = digitos.length < 7;
+  const dig = (t) => String(t || "").replace(/\D/g, "");
+  const ponerNum = (i, cambio) => setNums(nums.map((n, j) => (j === i ? { ...n, ...cambio } : n)));
+  const faltaNombre = !nombre.trim();
+  const faltaWa = dig(nums[0].numero).length < 7;
+  const extraMal = nums.slice(1).some((n) => n.numero.trim() && dig(n.numero).length < 7);
   const guardar = () => {
     setIntento(true);
-    if (faltaNombre || faltaWa) return;
-    onGuardar({ nombre: nombre.trim(), whatsapp: whatsapp.trim(), tiene: tiene || null, compania: tiene === "si" ? compania || null : tiene === "no" ? "Ninguna" : null, otraNombre: tiene === "si" && compania === "Otra" ? otraNombre.trim() : "", servicios: tiene === "si" ? servicios : [], paga: tiene === "si" && paga !== "" ? Number(paga) : null });
+    if (faltaNombre || faltaWa || extraMal) return;
+    const telefonos = nums.filter((n) => dig(n.numero).length >= 7).map((n) => ({ numero: n.numero.trim(), quien: n.quien, paga: !!n.paga }));
+    const r = RANGOS_PAGO.find((x) => x[0] === rango);
+    onGuardar({
+      nombre: nombre.trim(), whatsapp: telefonos[0].numero, telefonos,
+      tiene: tiene || null, compania: tiene === "si" ? compania || null : tiene === "no" ? "Ninguna" : null,
+      tipo: tiene === "si" ? tipo || null : null, cajasTV: tiene === "si" && tipo === "internet_tv" && cajas ? cajas : null,
+      pagaRango: tiene === "si" && r ? r[0] : null, paga: tiene === "si" && r ? r[1] : null,
+    });
   };
   const campo = { minHeight: 44, borderColor: "#DFE5EF" };
+  const marcado = (mal) => ({ ...campo, borderColor: mal ? "#001E62" : "#DFE5EF", borderWidth: mal ? 2 : 1 });
   return (
     <div className="mt-2">
       <div className="text-xs font-bold" style={ { color: "#5A6680" } }>Preguntas rápidas (todas opcionales)</div>
@@ -7139,20 +7162,37 @@ function ProspectoBarrioForm({ onGuardar, onCancelar }) {
         <>
           {etq("¿Con qué compañía?")}
           <div className="flex flex-wrap gap-2">{["Más Móvil", "Otra"].map((k) => chipM(compania === k, k, () => setCompania(compania === k ? "" : k), k))}</div>
-          {compania === "Otra" && <input type="text" value={otraNombre} onChange={(e) => setOtraNombre(e.target.value)} placeholder="¿Cuál? (opcional)" className="w-full rounded-lg border outline-none px-3 text-sm mt-2" style={ campo } />}
           {etq("¿Qué tiene?")}
-          <div className="flex flex-wrap gap-2">{SERVICIOS_PROSPECTO.map((k) => chipM(servicios.includes(k), k, () => alternar(k), k))}</div>
-          {etq("¿Cuánto paga al mes? ($)")}
-          <input type="number" inputMode="decimal" value={paga} onChange={(e) => setPaga(e.target.value)} placeholder="Ej. 30" className="rounded-lg border outline-none px-3 text-sm" style={ { ...campo, width: 120 } } />
+          <div className="flex flex-wrap gap-2">{[["internet", "Solo internet"], ["internet_tv", "Internet + TV"]].map(([k, t]) => chipM(tipo === k, t, () => { setTipo(tipo === k ? "" : k); if (k !== "internet_tv") setCajas(0); }, k))}</div>
+          {tipo === "internet_tv" && (
+            <>
+              {etq("¿Cuántas cajas de TV tiene?")}
+              <div className="flex flex-wrap gap-2">{[1, 2, 3, 4].map((n) => chipM(cajas === n, n === 4 ? "4 o más" : String(n), () => setCajas(cajas === n ? 0 : n), n))}</div>
+            </>
+          )}
+          {etq("¿Cuánto paga al mes?")}
+          <div className="flex flex-wrap gap-2">{RANGOS_PAGO.map(([k]) => chipM(rango === k, "$" + k, () => setRango(rango === k ? "" : k), k))}</div>
         </>
       )}
       <div className="text-xs font-bold mt-4" style={ { color: "#5A6680" } }>Datos del prospecto (obligatorios)</div>
       {etq("Nombre")}
-      <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" className="w-full rounded-lg border outline-none px-3 text-sm" style={ { ...campo, borderColor: intento && faltaNombre ? "#001E62" : "#DFE5EF", borderWidth: intento && faltaNombre ? 2 : 1 } } />
+      <input type="text" value={nombre} onChange={(e) => setNombre(e.target.value)} placeholder="Nombre" className="w-full rounded-lg border outline-none px-3 text-sm" style={ marcado(intento && faltaNombre) } />
       {intento && faltaNombre && <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>⚠️ Falta el nombre</div>}
       {etq("WhatsApp")}
-      <input type="tel" inputMode="tel" value={whatsapp} onChange={(e) => setWhatsapp(e.target.value)} placeholder="Ej. 6000-0000" className="w-full rounded-lg border outline-none px-3 text-sm" style={ { ...campo, borderColor: intento && faltaWa ? "#001E62" : "#DFE5EF", borderWidth: intento && faltaWa ? 2 : 1 } } />
-      {intento && faltaWa && <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>⚠️ Falta el WhatsApp</div>}
+      {nums.map((n, i) => (
+        <div key={i} className="mb-2">
+          <div className="flex gap-2">
+            <input type="tel" inputMode="tel" value={n.numero} onChange={(e) => ponerNum(i, { numero: e.target.value })} placeholder={i === 0 ? "Ej. 6000-0000" : "Otro número"} className="flex-1 min-w-0 rounded-lg border outline-none px-3 text-sm" style={ marcado(intento && (i === 0 ? faltaWa : n.numero.trim() && dig(n.numero).length < 7)) } />
+            {i > 0 && <button type="button" onClick={() => setNums(nums.filter((_, j) => j !== i))} aria-label="Quitar este número" className="shrink-0 rounded-lg font-bold text-sm" style={ { minHeight: 44, minWidth: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>}
+          </div>
+          <div className="flex flex-wrap gap-2 mt-1">
+            {QUIEN_NUMERO.map((q) => chipM(n.quien === q, q, () => ponerNum(i, { quien: n.quien === q ? "" : q }), q))}
+            {chipM(n.paga, "💳 Paga", () => setNums(nums.map((m, j) => ({ ...m, paga: j === i ? !m.paga : false }))), "paga")}
+          </div>
+          {intento && (i === 0 ? faltaWa : n.numero.trim() && dig(n.numero).length < 7) && <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>⚠️ {i === 0 ? "Falta el WhatsApp" : "Este número está incompleto"}</div>}
+        </div>
+      ))}
+      <button type="button" onClick={() => setNums([...nums, { numero: "", quien: "", paga: false }])} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>➕ Otro número</button>
       <div className="flex gap-2 mt-3">
         <button type="button" onClick={guardar} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 48, background: "#001E62", border: 0 } }>💾 Guardar prospecto</button>
         <button type="button" onClick={onCancelar} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 48, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>Cancelar</button>
