@@ -7325,14 +7325,25 @@ function mensajeProspecto(pr) {
   const bar = pr.barrio ? tituloEs(pr.barrio) : "";
   return "Hola" + (nombre ? " " + nombre : "") + ", buenas. Le habla José Severino, su asesor de Tigo. " + (bar ? "Estuve por " + bar + " y conversamos un ratito. " : "Conversamos hace poco. ") + "Le escribo para dejarle mi número, y si le parece le reviso qué plan de internet le conviene más para su casa, sin compromiso. ¿Le cuento?";
 }
+// Nombre para guardar el contacto en WhatsApp: "Nombre - Barrio - Prospecto".
+function nombreContactoProspecto(pr) {
+  return [tituloEs(String(pr.nombre || "").trim()), pr.barrio ? tituloEs(pr.barrio) : "", "Prospecto"].filter(Boolean).join(" - ");
+}
 function WhatsAppProspecto({ pr }) {
+  const [copiado, setCopiado] = useState(false);
   const nums = numerosProspecto(pr).filter((n) => String(n.numero || "").replace(/\D/g, "").length >= 7).sort((a, b) => (b.paga ? 1 : 0) - (a.paga ? 1 : 0));
-  if (nums.length === 0) return null;
+  const copiar = () => {
+    const t = nombreContactoProspecto(pr);
+    const listo = () => { setCopiado(true); setTimeout(() => setCopiado(false), 2000); };
+    const respaldo = () => { try { const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); listo(); } catch (e) {} };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(listo).catch(respaldo); else respaldo();
+  };
   return (
     <div className="w-full flex flex-wrap gap-2 mt-1">
       {nums.map((n, i) => (
         <a key={i} href={"https://wa.me/" + telefonoWhatsapp(n.numero) + "?text=" + encodeURIComponent(mensajeProspecto(pr))} className="flex-1 flex items-center justify-center rounded-lg font-bold text-xs" style={ { minHeight: 40, minWidth: 110, border: "2px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none" } }>💬 {nums.length > 1 ? (n.quien || "Número " + (i + 1)) + (n.paga ? " 💳" : "") : "WhatsApp"}</a>
       ))}
+      <button type="button" onClick={copiar} aria-label={"Copiar nombre de contacto de " + pr.nombre} className="flex-1 flex items-center justify-center rounded-lg font-bold text-xs" style={ { minHeight: 40, minWidth: 110, border: "2px solid #001E62", background: copiado ? "#001E62" : "#fff", color: copiado ? "#fff" : "#001E62" } }>{copiado ? "✓ Copiado" : "📋 Copiar nombre"}</button>
     </div>
   );
 }
