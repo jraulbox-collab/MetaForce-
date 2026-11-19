@@ -5500,20 +5500,28 @@ function App() {
             setMostrarSelectorNuevo(false);
           } }
           barriosRecorrido={ordenarRecorrido((visitasBarrios || []).filter((v) => v && v.estado === "en curso")).orden.map((x) => x.v)}
-          onProspecto={(v) => { setMostrarSelectorNuevo(false); setProspectoDe(v); }}
+          onProspecto={(v) => { setMostrarSelectorNuevo(false); setProspectoDe(v || { elegir: true }); }}
         />
       )}
       {prospectoDe && (
         <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } } role="dialog" aria-modal="true" aria-label="Agregar prospecto">
           <div className="bg-white w-full max-w-md overflow-y-auto p-4" style={ { borderRadius: "22px 22px 0 0", maxHeight: "92vh", paddingBottom: "calc(20px + env(safe-area-inset-bottom))", color: "#001E62" } }>
             <div className="flex items-center justify-between gap-2">
-              <div className="font-extrabold text-base min-w-0" style={ { overflowWrap: "anywhere" } }>👥 Prospecto · {prospectoDe.barrio}</div>
+              <div className="font-extrabold text-base min-w-0" style={ { overflowWrap: "anywhere" } }>👥 Prospecto{prospectoDe.elegir ? " · ¿En qué barrio?" : " · " + prospectoDe.barrio}</div>
               <button type="button" onClick={() => setProspectoDe(null)} aria-label="Cerrar" className="shrink-0 rounded-lg font-bold" style={ { minHeight: 40, minWidth: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
             </div>
+            {prospectoDe.elegir ? (
+              <ElegirBarrioProspecto
+                ajustes={ajustesBarrios}
+                recientes={(() => { const m = new Map(); [...(prospectosBarrios || []), ...(visitasBarrios || [])].sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).forEach((x) => { if (x && x.barrioId && !m.has(x.barrioId)) m.set(x.barrioId, x); }); return [...m.values()].slice(0, 4); })()}
+                onElegir={(b) => { const act = (visitasBarrios || []).find((v) => v && v.estado === "en curso" && v.barrioId === b.barrioId); setProspectoDe({ id: act ? act.id : null, barrioId: b.barrioId, barrio: b.barrio, provincia: b.provincia, distrito: b.distrito, corregimiento: b.corregimiento }); }}
+              />
+            ) : (
             <ProspectoBarrioForm
               onGuardar={(pr) => { const v = prospectoDe; setProspectosBarrios((prev) => [...prev, { id: "pro-" + uid(), visitaId: v.id, barrioId: v.barrioId, barrio: v.barrio, provincia: v.provincia, distrito: v.distrito, corregimiento: v.corregimiento, fecha: new Date().toISOString(), ...pr }]); setProspectoDe(null); }}
               onCancelar={() => setProspectoDe(null)}
             />
+            )}
           </div>
         </div>
       )}
@@ -18439,6 +18447,38 @@ function SkeletonCargando() {
   );
 }
 
+// Escoger el barrio de un prospecto cuando no hay recorrido: los usados hace poco, o buscar por nombre.
+function ElegirBarrioProspecto({ ajustes, recientes, onElegir }) {
+  const { datos, error } = useBarrios(ajustes);
+  const [q, setQ] = useState("");
+  const nq = normTexto(q);
+  const resultados = useMemo(() => {
+    if (!datos || nq.length < 2) return [];
+    return datos.filas.filter((f) => PROV_VENDER.includes(f.provincia) && (normTexto(f.barrio).includes(nq) || claveCortaBarrio(f.barrio).includes(nq))).slice(0, 8);
+  }, [datos, nq]);
+  const btn = { minHeight: 48, border: "2px solid #001E62", background: "#fff", color: "#001E62" };
+  return (
+    <div className="mt-2">
+      {recientes.length > 0 && (
+        <>
+          <div className="text-xs font-extrabold mt-2 mb-1" style={ { color: "#001E62" } }>Usados hace poco</div>
+          <div className="flex flex-col gap-2">{recientes.map((r) => (
+            <button key={r.barrioId} type="button" onClick={() => onElegir(r)} className="text-left rounded-lg px-3 font-bold text-sm" style={ btn }><span style={ { overflowWrap: "anywhere" } }>{r.barrio}</span> <span className="text-xs font-normal" style={ { color: "#5A6680" } }>· {limpiarZona(r.corregimiento)}</span></button>
+          ))}</div>
+        </>
+      )}
+      <div className="text-xs font-extrabold mt-3 mb-1" style={ { color: "#001E62" } }>Buscar otro barrio</div>
+      <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Escribe el nombre del barrio" className="w-full rounded-lg border outline-none px-3 text-sm" style={ { minHeight: 44, borderColor: "#DFE5EF" } } />
+      {!datos && !error && <div className="text-xs mt-2" style={ { color: "#5A6680" } }>Cargando barrios…</div>}
+      {error && <div className="text-xs font-bold mt-2" style={ { color: "#001E62" } }>⚠️ No se pudo cargar la lista de barrios. Revisa tu conexión.</div>}
+      {nq.length >= 2 && datos && resultados.length === 0 && <div className="text-xs mt-2" style={ { color: "#5A6680" } }>No encontré ese barrio en Herrera ni Los Santos.</div>}
+      <div className="flex flex-col gap-2 mt-2">{resultados.map((f) => (
+        <button key={f.id} type="button" onClick={() => onElegir({ barrioId: f.id, barrio: f.barrio, provincia: f.provincia, distrito: f.distrito, corregimiento: f.corregimiento })} className="text-left rounded-lg px-3 py-2 font-bold text-sm" style={ btn }><span style={ { overflowWrap: "anywhere" } }>{f.barrio}</span><span className="block text-xs font-normal" style={ { color: "#5A6680" } }>{limpiarZona(f.corregimiento)} · {limpiarZona(f.distrito)}</span></button>
+      ))}</div>
+    </div>
+  );
+}
+
 function SelectorNuevoModal({ onClose, onHogar, onConvergencia, barriosRecorrido, onProspecto }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
@@ -18462,6 +18502,17 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia, barriosRecorrido
               </span>
             </button>
           ))}
+          <button
+            onClick={() => onProspecto(null)}
+            className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
+            style={ { borderColor: "#DFE5EF" } }
+          >
+            <span className="text-xl" aria-hidden="true">👥</span>
+            <span>
+              <span className="block text-sm font-semibold">{(barriosRecorrido || []).length ? "Prospecto en otro barrio" : "Prospecto"}</span>
+              <span className="block text-xs" style={ { color: "#5A6680" } }>Escoges el barrio y lo anotas</span>
+            </span>
+          </button>
           <button
             onClick={onHogar}
             className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
