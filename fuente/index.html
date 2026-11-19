@@ -7398,13 +7398,17 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
               <span className="min-w-0">{pr.barrioId ? <>🏘️ {tituloEs(pr.barrio)}{zonaProspecto(pr) && <span className="font-normal"> · {tituloEs(zonaProspecto(pr))}</span>}</> : "📍 Sin barrio"} <span className="font-normal">· {fmtFechaDia(fechaLocalISO(pr.fecha)).replace(/^[a-záéíóú]+\.? /i, "")}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</span></span>
               {!pr.barrioId && !esCli(pr) && asignando !== pr.id && <button type="button" onClick={() => setAsignando(pr.id)} className="shrink-0 rounded-lg font-bold" style={ { minHeight: 28, padding: "0 8px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62", fontSize: 11 } }>📍 Asignar</button>}
             </div>
-            {numerosProspecto(pr).map((n, i, arr) => (
-              <div key={i} className="flex items-center gap-2 mt-1">
-                <span className="text-sm min-w-0" style={ { color: "#374151", overflowWrap: "anywhere" } }>📞 {n.numero}{n.quien ? " · " + n.quien : arr.length > 1 ? " · Sin etiqueta" : ""}{n.paga ? " 💳" : ""}</span>
-                {!esCli(pr) && String(n.numero || "").replace(/\D/g, "").length >= 7 && <BotonWaNumero pr={pr} n={n} />}
-              </div>
-            ))}
-            {infoProspecto(pr) && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>{infoProspecto(pr).replace(/^ · /, "")}</div>}
+            {(() => {
+              const nw = !esCli(pr) ? numerosConWa(pr).sort((x, y) => (y.paga ? 1 : 0) - (x.paga ? 1 : 0)) : [];
+              const info = infoProspecto(pr).replace(/^ · /, "");
+              if (!info && nw.length === 0) return null;
+              return (
+                <div className="flex items-center justify-between gap-2 mt-1">
+                  <span className="text-xs min-w-0" style={ { color: "#374151", overflowWrap: "anywhere" } }>{info}</span>
+                  <span className="inline-flex flex-wrap items-center justify-end gap-1 shrink-0">{nw.map((n, i) => <BotonWaNumero key={i} pr={pr} n={n} etiqueta={nw.length > 1 ? (n.quien || i + 1) + (n.paga ? " 💳" : "") : ""} />)}</span>
+                </div>
+              );
+            })()}
             {asignando === pr.id && (
               <>
                 <ElegirBarrioProspecto ajustes={ajustes} recientes={[]} onElegir={(b) => asignar(pr.id, b)} />
@@ -7434,7 +7438,7 @@ function ProspectosPorBarrio({ prospectos, clientes, onProspectos }) {
     </div>
   ) : (
     <div key={pr.id} className="flex items-center gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#F3F6FB" } }>
-      <div className="min-w-0 flex-1 text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><button type="button" onClick={() => setEditando(pr.id)} className="font-extrabold text-left" style={ { color: "#001E62", background: "none", border: 0, padding: 0 } }>{pr.nombre} ✏️</button> · {textoNumeros(pr)}{infoProspecto(pr)}</div>
+      <div className="min-w-0 flex-1 text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><button type="button" onClick={() => setEditando(pr.id)} className="font-extrabold text-left" style={ { color: "#001E62", background: "none", border: 0, padding: 0 } }>{pr.nombre} ✏️</button>{infoProspecto(pr)}</div>
       <WhatsAppProspecto pr={pr} />
     </div>
   );
