@@ -13879,7 +13879,7 @@ function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, e
 
 // Bloque "Instalación" de la ficha de un cliente Hogar pendiente: fecha y horario programados,
 // pegar el texto de Tigo y el mensaje listo para copiar y enviarle al cliente.
-function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono, onEnviarInfo, onMarcarEnviada, ultimaApertura }) {
+function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje, copiado, onMarcarInstalado, onMarcarAbono, onEnviarInfo, onMarcarEnviada, ultimaApertura, verMas = false }) {
   const prog = cliente.instalacionProgramada;
   const vencida = !!prog && prog < fechaLocalISO(new Date());
   const hoyISO = fechaLocalISO(new Date());
@@ -13894,7 +13894,6 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
     return ahora.getHours() * 60 + ahora.getMinutes() > h * 60 + parseInt(u[2], 10);
   })();
   const [fechaInst, setFechaInst] = useState(null); // null = cerrado; si no, la fecha elegida para marcarlo instalado
-  const [verMas, setVerMas] = useState(false);
   const abonoRecibido = cliente.abonoInicial !== false;
   const marcada = cliente.abonoFecha ? new Date(cliente.abonoFecha) : null;
   const tieneTel = !!String(cliente.telefono || "").replace(/\D/g, "");
@@ -13909,10 +13908,9 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
           className="text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap"
           style={ vencida ? { color: "#B91C1C", background: "#FDECEC" } : { color: "#B45309", background: "#FFF3DC" } }
         >
-          {vencida ? "Vencida, sin confirmar" : franjaPasada ? "Ya pasó la hora" : "Pendiente de instalación"}
+          {vencida ? "Vencida, sin confirmar" : franjaPasada ? "⏰ ¿Se instaló?" : "Pendiente de instalación"}
         </span>
       </div>
-      {franjaPasada && <div className="text-[13px] font-bold mt-1.5" style={ { color: "#B45309" } }>⏰ Ya pasó la franja de hoy · ¿Se instaló?</div>}
       {prog ? (
         <p className="text-sm mt-1.5" style={ { color: "#374151" } }>
           Programada: <strong>{fmtFechaDia(prog)}</strong>{cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : ""}
@@ -13921,20 +13919,12 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
         <p className="text-xs mt-1.5 mb-2" style={ { color: "#5A6680" } }>Todavía sin fecha. Pega el texto de Tigo para cargarla.</p>
       )}
       {!prog && <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta="Pegar texto de Tigo" />}
-      {onMarcarAbono && abonoRecibido && (
-        <div className="flex items-center justify-between gap-2 mt-2" style={ { minHeight: 32 } }>
-          <span className="text-[13px] font-semibold" style={ { color: "#001E62" } }>
-            ✓ Abono recibido{marcada && !isNaN(marcada.getTime()) ? " · " + fmtFechaDia(fechaLocalISO(marcada)) : ""}
-          </span>
-          <button type="button" onClick={() => onMarcarAbono(cliente.id, false)} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Quitar</button>
-        </div>
-      )}
-      {prog && tieneTel && enviada && onMarcarEnviada && (
-        <div className="flex items-center justify-between gap-2 mt-1" style={ { minHeight: 32 } }>
-          <span className="text-[13px] font-semibold" style={ { color: "#001E62" } }>
-            ✓ Info de instalación enviada · {fmtFechaDia(fechaLocalISO(enviadaEn))}, {horaEnv}
-          </span>
-          <button type="button" onClick={() => onMarcarEnviada(cliente.id, false)} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Quitar</button>
+      {(onMarcarAbono || (prog && tieneTel && enviada)) && (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[13px] font-semibold" style={ { color: "#001E62" } }>
+          {onMarcarAbono && (abonoRecibido
+            ? <span>✓ Abono</span>
+            : <button type="button" onClick={() => onMarcarAbono(cliente.id, true)} className="font-bold" style={ { color: "#B45309", minHeight: 32 } }>⚠ Sin abono · toca si ya abonó</button>)}
+          {prog && tieneTel && enviada && <span>✓ Info enviada</span>}
         </div>
       )}
       {prog && tieneTel && !enviada && onEnviarInfo && (
@@ -13973,17 +13963,6 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
           >
             ✓ Ya instalado
           </button>
-          {prog && (
-            <button
-              type="button"
-              onClick={() => setVerMas(!verMas)}
-              aria-expanded={verMas}
-              className="text-sm font-semibold rounded-md px-4"
-              style={ { minHeight: 44, border: "1px solid #DFE5EF", color: "#374151", background: "white" } }
-            >
-              Más {verMas ? "▴" : "▾"}
-            </button>
-          )}
         </div>
       )}
       {onMarcarInstalado && fechaInst !== null && (
@@ -14095,6 +14074,7 @@ function ClienteDetalle({
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
   const [verObs, setVerObs] = useState(false);
   const [menuAcciones, setMenuAcciones] = useState(false);
+  const [masInst, setMasInst] = useState(false); // opciones extra de la instalación (desde el menú ⋯)
 
   if (!cliente) {
     return (
@@ -14146,6 +14126,31 @@ function ClienteDetalle({
       </div>
       {menuAcciones && onEliminar && (
         <div className="mb-3 rounded-lg border bg-white overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
+          {mostrarInst && !!cliente.instalacionProgramada && (
+            <>
+              <button
+                type="button"
+                onClick={() => { setMasInst(!masInst); setMenuAcciones(false); } }
+                className="w-full text-left text-sm font-medium px-4"
+                style={ { color: "#001E62", minHeight: 44 } }
+              >
+                🔧 Opciones de instalación{masInst ? " (ocultar)" : ""}
+              </button>
+              <div style={ { height: 1, background: "#EEF2F9" } } />
+            </>
+          )}
+          {mostrarInst && !!onMarcarAbono && cliente.abonoInicial !== false && (
+            <>
+              <button type="button" onClick={() => { onMarcarAbono(cliente.id, false); setMenuAcciones(false); } } className="w-full text-left text-sm font-medium px-4" style={ { color: "#374151", minHeight: 44 } }>↩ Quitar “Abono”</button>
+              <div style={ { height: 1, background: "#EEF2F9" } } />
+            </>
+          )}
+          {mostrarInst && !!onMarcarInstalacionEnviada && !!cliente.instalacionEnviadaEn && (
+            <>
+              <button type="button" onClick={() => { onMarcarInstalacionEnviada(cliente.id, false); setMenuAcciones(false); } } className="w-full text-left text-sm font-medium px-4" style={ { color: "#374151", minHeight: 44 } }>↩ Quitar “Info enviada”</button>
+              <div style={ { height: 1, background: "#EEF2F9" } } />
+            </>
+          )}
           {!cliente.penalizado && (
             <button
               type="button"
@@ -14180,13 +14185,6 @@ function ClienteDetalle({
       )}
       <p className="text-sm mb-3" style={ { color: "#5A6680" } }>{planLabel(cliente)}</p>
 
-      {(() => {
-        if (!String(cliente.telefono || "").replace(/\D/g, "")) return null;
-        const url = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`;
-        return (
-          <a href={url} onClick={(e) => { e.preventDefault(); window.location.href = url; }} className="w-full mb-3 flex items-center justify-center text-sm font-bold rounded-lg text-white" style={ { minHeight: 44, background: "#128C4A" } }>💬 Escribirle por WhatsApp</a>
-        );
-      })()}
 
       {(cliente.penalizado || mostrarPenalizar) && (
       <div className="mb-3">
@@ -14300,6 +14298,7 @@ function ClienteDetalle({
           onMarcarAbono={onMarcarAbono}
           onEnviarInfo={onEnviarInfoInstalacion}
           onMarcarEnviada={onMarcarInstalacionEnviada}
+          verMas={masInst}
           ultimaApertura={((envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === "info-instalacion" && e.tipo === "abrir").sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)))[0] || {}).fecha || ""}
         />
       )}
@@ -14319,9 +14318,9 @@ function ClienteDetalle({
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-        <div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Número de suscriptor</div>
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 grid gap-x-3 gap-y-3 text-sm" style={ { gridTemplateColumns: "repeat(6, minmax(0, 1fr))" } }>
+        <div style={ { gridColumn: "span 3", order: 1 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>Suscriptor</div>
           <div className="font-medium flex items-center gap-1.5">
             <span>{cliente.numeroSuscriptor || "—"}</span>
             {cliente.numeroSuscriptor && (
@@ -14337,21 +14336,32 @@ function ClienteDetalle({
           </div>
         </div>
         {cliente.cuentaTigo && (
-          <div>
+          <div style={ { gridColumn: "span 6", order: 9 } }>
             <div className="text-xs" style={ { color: "#5A6680" } }>Número de cuenta (Tigo)</div>
             <div className="font-medium">{cliente.cuentaTigo}</div>
           </div>
         )}
-        <div>
+        <div style={ { gridColumn: "span 3", order: 2 } }>
           <div className="text-xs" style={ { color: "#5A6680" } }>Teléfono</div>
-          <div className="font-medium">{cliente.telefono || "—"}</div>
+          <div className="font-medium flex items-center gap-1.5">
+            {cliente.telefono || "—"}
+            {String(cliente.telefono || "").replace(/\D/g, "") && (
+              <a href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`} onClick={(e) => { e.preventDefault(); window.location.href = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`; }} aria-label="Escribirle por WhatsApp" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>💬</a>
+            )}
+            {String(cliente.telefono || "").replace(/\D/g, "") && (
+              <a href={`tel:+507${String(cliente.telefono).replace(/\D/g, "").slice(-8)}`} aria-label="Llamar" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>📞</a>
+            )}
+          </div>
         </div>
-        <div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Ciclo de facturación</div>
+        {cliente.cicloFacturacion && cicloLabel !== "—" && (
+        <div style={ { gridColumn: "span 2", order: 6 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>Ciclo</div>
           <div className="font-medium">{cicloLabel}</div>
         </div>
-        <div className={!cliente.fechaInstalacion && cliente.instalacionProgramada ? "col-span-2" : ""}>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Fecha de instalación</div>
+        )}
+        {!(mostrarInst && cliente.instalacionProgramada && !cliente.fechaInstalacion) && (
+        <div style={ { gridColumn: cliente.fechaInstalacion ? "span 2" : "span 6", order: 8 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>Instalación</div>
           <div className="font-medium">
             {cliente.fechaInstalacion
               ? fmtFechaDia(cliente.fechaInstalacion)
@@ -14360,19 +14370,17 @@ function ClienteDetalle({
               : "—"}
           </div>
         </div>
-        <div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Monto mensual recurrente</div>
+        )}
+        <div style={ { gridColumn: "span 2", order: 3 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>Mensual</div>
           <div className="font-medium">{fmtMonto(cliente.montoMensual)}</div>
         </div>
-        <div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Monto 1ra factura</div>
+        <div style={ { gridColumn: "span 2", order: 4 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>1ra factura</div>
           <div className="font-medium">{fmtMonto(cliente.monto1raFactura)}</div>
-          {cliente.fechaInstalacion && cliente.fecha1raFactura && vencimientoPrimeraFacturaHogar(cliente) && (
-            <div className="text-xs" style={ { color: "#5A6680" } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>
-          )}
         </div>
-        <div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Estado de pago</div>
+        <div style={ { gridColumn: "span 2", order: 5 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>Pago</div>
           <div>
             {(() => {
               const r = resumenPagoCliente(cliente);
@@ -14384,8 +14392,11 @@ function ClienteDetalle({
             })()}
           </div>
         </div>
-        <div>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Fecha de ingreso</div>
+        {cliente.fechaInstalacion && cliente.fecha1raFactura && vencimientoPrimeraFacturaHogar(cliente) && (
+            <div className="text-xs" style={ { color: "#5A6680", gridColumn: "span 6", order: 5 } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>
+          )}
+        <div style={ { gridColumn: "span 2", order: 7 } }>
+          <div className="text-xs" style={ { color: "#5A6680" } }>Ingreso</div>
           <div className="font-medium">{cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"}</div>
         </div>
       </div>
