@@ -7329,22 +7329,27 @@ function mensajeProspecto(pr) {
 function nombreContactoProspecto(pr) {
   return [tituloEs(String(pr.nombre || "").trim()), pr.barrio ? tituloEs(pr.barrio) : "", "Prospecto"].filter(Boolean).join(" - ");
 }
-function WhatsAppProspecto({ pr }) {
+const botonChico = { minHeight: 34, minWidth: 34, padding: "0 8px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none", fontSize: 12 };
+function BotonWaNumero({ pr, n, etiqueta }) {
+  return <a href={"https://wa.me/" + telefonoWhatsapp(n.numero) + "?text=" + encodeURIComponent(mensajeProspecto(pr))} aria-label={"WhatsApp a " + pr.nombre + (n.quien ? " (" + n.quien + ")" : "")} className="inline-flex items-center justify-center rounded-lg font-bold shrink-0" style={ botonChico }>💬{etiqueta ? " " + etiqueta : ""}</a>;
+}
+function BotonCopiarProspecto({ pr }) {
   const [copiado, setCopiado] = useState(false);
-  const nums = numerosProspecto(pr).filter((n) => String(n.numero || "").replace(/\D/g, "").length >= 7).sort((a, b) => (b.paga ? 1 : 0) - (a.paga ? 1 : 0));
   const copiar = () => {
     const t = nombreContactoProspecto(pr);
     const listo = () => { setCopiado(true); setTimeout(() => setCopiado(false), 2000); };
     const respaldo = () => { try { const ta = document.createElement("textarea"); ta.value = t; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); listo(); } catch (e) {} };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(t).then(listo).catch(respaldo); else respaldo();
   };
-  const bs = { minHeight: 36, minWidth: 36, padding: "0 8px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none", fontSize: 12 };
+  return <button type="button" onClick={copiar} aria-label={"Copiar nombre de contacto de " + pr.nombre} className="inline-flex items-center justify-center rounded-lg font-bold shrink-0" style={ { ...botonChico, background: copiado ? "#001E62" : "#fff", color: copiado ? "#fff" : "#001E62" } }>{copiado ? "✓" : "📋"}</button>;
+}
+const numerosConWa = (pr) => numerosProspecto(pr).filter((n) => String(n.numero || "").replace(/\D/g, "").length >= 7);
+function WhatsAppProspecto({ pr }) {
+  const nums = numerosConWa(pr).sort((a, b) => (b.paga ? 1 : 0) - (a.paga ? 1 : 0));
   return (
     <span className="inline-flex flex-wrap items-center gap-1 shrink-0">
-      {nums.map((n, i) => (
-        <a key={i} href={"https://wa.me/" + telefonoWhatsapp(n.numero) + "?text=" + encodeURIComponent(mensajeProspecto(pr))} aria-label={"WhatsApp a " + pr.nombre + (n.quien ? " (" + n.quien + ")" : "")} className="inline-flex items-center justify-center rounded-lg font-bold" style={ bs }>💬{nums.length > 1 ? " " + (n.quien || i + 1) + (n.paga ? " 💳" : "") : ""}</a>
-      ))}
-      <button type="button" onClick={copiar} aria-label={"Copiar nombre de contacto de " + pr.nombre} className="inline-flex items-center justify-center rounded-lg font-bold" style={ { ...bs, background: copiado ? "#001E62" : "#fff", color: copiado ? "#fff" : "#001E62" } }>{copiado ? "✓" : "📋"}</button>
+      {nums.map((n, i) => <BotonWaNumero key={i} pr={pr} n={n} etiqueta={nums.length > 1 ? (n.quien || i + 1) + (n.paga ? " 💳" : "") : ""} />)}
+      <BotonCopiarProspecto pr={pr} />
     </span>
   );
 }
@@ -7382,19 +7387,22 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
           </div>
         ) : (
           <div key={pr.id} className="rounded-lg border bg-white px-3 py-2" style={ { borderColor: "#DFE5EF" } }>
-            <div className="flex items-start gap-2">
-              <div className="min-w-0 flex-1">
-                <button type="button" onClick={() => setEditando(pr.id)} className="text-left font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere", lineHeight: 1.2, background: "none", border: 0, padding: 0 } }>{pr.nombre}{esCli(pr) ? " · ✅ Cliente" : ""} <span style={ { fontSize: 12 } }>✏️</span></button>
-                <div className="text-xs font-bold" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>{pr.barrioId ? "🏘️ " + pr.barrio : "📍 Sin barrio"} · {fmtFechaDia(fechaLocalISO(pr.fecha))}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</div>
-                {numerosProspecto(pr).map((n, i, arr) => <div key={i} className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }>📞 {n.numero} · {n.quien || (arr.length > 1 ? "Sin etiqueta" : "WhatsApp")}{n.paga ? " 💳" : ""}</div>)}
-                {infoProspecto(pr) && <div className="text-xs" style={ { color: "#374151" } }>{infoProspecto(pr).replace(/^ · /, "")}</div>}
-              </div>
-              <div className="flex items-center gap-1 shrink-0">
-                {!esCli(pr) && <WhatsAppProspecto pr={pr} />}
-                <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 32, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
-              </div>
+            <div className="flex items-center gap-1">
+              <button type="button" onClick={() => setEditando(pr.id)} className="min-w-0 flex-1 text-left font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere", lineHeight: 1.2, background: "none", border: 0, padding: 0 } }>{pr.nombre}{esCli(pr) ? " · ✅ Cliente" : ""} <span style={ { fontSize: 12 } }>✏️</span></button>
+              {!esCli(pr) && <BotonCopiarProspecto pr={pr} />}
+              <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-xs shrink-0" style={ { minHeight: 34, minWidth: 34, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
             </div>
-            {!pr.barrioId && !esCli(pr) && asignando !== pr.id && <button type="button" onClick={() => setAsignando(pr.id)} className="mt-1 rounded-lg font-bold text-xs px-3" style={ { minHeight: 32, border: "1.5px solid #001E62", background: "#fff", color: "#001E62" } }>📍 Asignar barrio</button>}
+            <div className="flex items-center gap-2 text-xs font-bold" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>
+              <span className="min-w-0">{pr.barrioId ? "🏘️ " + pr.barrio : "📍 Sin barrio"} · {fmtFechaDia(fechaLocalISO(pr.fecha)).replace(/^[a-záéíóú]+\.? /i, "")}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</span>
+              {!pr.barrioId && !esCli(pr) && asignando !== pr.id && <button type="button" onClick={() => setAsignando(pr.id)} className="shrink-0 rounded-lg font-bold" style={ { minHeight: 28, padding: "0 8px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62", fontSize: 11 } }>📍 Asignar</button>}
+            </div>
+            {numerosProspecto(pr).map((n, i, arr) => (
+              <div key={i} className="flex items-center justify-between gap-2 mt-0.5">
+                <span className="text-xs min-w-0" style={ { color: "#374151", overflowWrap: "anywhere" } }>📞 {n.numero}{n.quien ? " · " + n.quien : arr.length > 1 ? " · Sin etiqueta" : ""}{n.paga ? " 💳" : ""}</span>
+                {!esCli(pr) && String(n.numero || "").replace(/\D/g, "").length >= 7 && <BotonWaNumero pr={pr} n={n} />}
+              </div>
+            ))}
+            {infoProspecto(pr) && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>{infoProspecto(pr).replace(/^ · /, "")}</div>}
             {asignando === pr.id && (
               <>
                 <ElegirBarrioProspecto ajustes={ajustes} recientes={[]} onElegir={(b) => asignar(pr.id, b)} />
