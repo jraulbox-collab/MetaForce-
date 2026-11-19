@@ -6488,10 +6488,19 @@ function kmEntrePuntos(a, b) {
   return 2 * 6371 * Math.asin(Math.sqrt(x));
 }
 // Minutos aproximados: línea recta x 1.3 por las curvas; lento en la ciudad, más rápido en carretera.
-function minutosManejo(kmRecta) {
+// Calibrado con tiempos reales de Waze desde la oficina (Las Tablas 40 min, Ocú 58 min, Pedasí 1 h 15 min).
+// Hacia el lado de Los Santos (al este de la oficina) la autopista es rápida hasta Las Tablas y después se hace más lenta.
+function minutosManejo(kmRecta, este = false) {
   const km = kmRecta * 1.3;
-  const h = Math.min(km, 5) / 30 + Math.max(0, Math.min(km, 30) - 5) / 55 + Math.max(0, km - 30) / 65;
+  const h = este
+    ? Math.min(km, 3) / 30 + Math.max(0, Math.min(km, 49.3) - 3) / 80 + Math.max(0, km - 49.3) / 53
+    : Math.min(km, 5) / 30 + Math.max(0, Math.min(km, 30) - 5) / 55 + Math.max(0, km - 30) / 65;
   return Math.max(3, Math.round((h * 60) / 5) * 5);
+}
+// Minutos entre dos puntos [lat, lon]: usa el modelo del este solo si los dos puntos están al este de la oficina.
+function minutosEntre(a, b) {
+  const este = a[1] >= PUNTO_BASE.lon - 0.01 && b[1] >= PUNTO_BASE.lon - 0.01;
+  return minutosManejo(kmEntrePuntos(a, b), este);
 }
 const fmtMinutos = (m) => (m >= 60 ? Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min");
 const PROV_VENDER = ["HERRERA", "LOS SANTOS"];
@@ -6918,8 +6927,8 @@ function ordenarRecorrido(visitas) {
     while (resto.length) { let m = 0; let km = Infinity; resto.forEach((x, i) => { const d = dist(actual, x.pos); if (d < km) { km = d; m = i; } }); const x = resto.splice(m, 1)[0]; mejorSeq.push(x); actual = x.pos; }
   }
   const orden = []; let actual = base; let total = 0;
-  (mejorSeq || []).forEach((x) => { const leg = minutosManejo(dist(actual, x.pos)); total += leg; orden.push({ ...x, leg }); actual = x.pos; });
-  if (orden.length) total += minutosManejo(dist(actual, base));
+  (mejorSeq || []).forEach((x) => { const leg = minutosEntre(actual, x.pos); total += leg; orden.push({ ...x, leg }); actual = x.pos; });
+  if (orden.length) total += minutosEntre(actual, base);
   sin.forEach((x) => orden.push({ ...x, leg: null }));
   return { orden, total: orden.length > 1 ? total : null };
 }
@@ -6974,7 +6983,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
     return todos.filter((e) => PROV_VENDER.includes(e.provincia) && e.hhpp >= 40 && !(e.vendidos > 0) && !visitadosIds.has(e.id)).map((e) => {
       const pos = posZonaBarrio(e.provincia, e.distrito, e.corregimiento);
       if (!pos) return null;
-      return { e, pos, min: minutosManejo(kmEntrePuntos(base, pos)), score: puntajeCandidatoBarrio(e, contexto) };
+      return { e, pos, min: minutosEntre(base, pos), score: puntajeCandidatoBarrio(e, contexto) };
     }).filter(Boolean);
   }, [todos, visitadosIds, contexto]);
   const recomendados = useMemo(() => {
@@ -7082,7 +7091,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
       <div className="rounded-xl border bg-white p-3 mb-3" style={ { borderColor: "#DFE5EF" } }>
         <div className="font-extrabold text-sm mb-2" style={ { color: "#001E62" } }>⏱️ ¿Cuánto quieres manejar?</div>
         <div className="flex flex-wrap gap-2">{TIEMPOS_DESCUBRIR.map((m) => chipBtn(mins === m, m === 90 ? "1 h 30 min" : m === 60 ? "1 hora" : m + " min", () => { setMins(mins === m ? null : m); setVerMasRec(false); }, m))}</div>
-        <div className="text-xs mt-2" style={ { color: "#5A6680" } }>Desde {PUNTO_BASE.nombre}. Son tiempos aproximados (línea recta x 1.3, con tráfico de ciudad).</div>
+        <div className="text-xs mt-2" style={ { color: "#5A6680" } }>Desde {PUNTO_BASE.nombre}. Son tiempos aproximados, calibrados con Waze (Las Tablas, Ocú y Pedasí).</div>
       </div>
       {mins && (
         <div className="mb-3">
