@@ -6997,7 +6997,7 @@ function numerosProspecto(pr) {
   if (Array.isArray(pr.telefonos) && pr.telefonos.length) return pr.telefonos;
   return pr.whatsapp ? [{ numero: pr.whatsapp, quien: "", paga: false }] : [];
 }
-const textoNumeros = (pr) => numerosProspecto(pr).map((n) => n.numero + (n.quien ? " (" + n.quien + ")" : "") + (n.paga ? " 💳 paga" : "")).join(" · ");
+const textoNumeros = (pr) => { const nn = numerosProspecto(pr); return nn.map((n) => n.numero + (n.quien ? " (" + n.quien + ")" : nn.length > 1 ? " (sin etiqueta)" : "") + (n.paga ? " 💳 paga" : "")).join(" · "); };
 function infoProspecto(pr) {
   if (pr.tiene === "no") return " · Sin servicio";
   if (pr.tiene !== "si") return "";
@@ -7355,6 +7355,7 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
   const [q, setQ] = useState("");
   const [verClientes, setVerClientes] = useState(false);
   const [verArchivados, setVerArchivados] = useState(false);
+  const [editando, setEditando] = useState(null);
   const nq = normTexto(q);
   const dq = nq.replace(/\D/g, "");
   const todosP = prospectos || [];
@@ -7364,6 +7365,7 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
   const nConv = todosP.filter((x) => esCli(x)).length; const nPend = todosP.length - nConv - nArch;
   const nSin = todosP.filter((x) => !x.barrioId && !esCli(x) && !prospectoArchivado(x)).length;
   const quitar = (pid) => onProspectos((prev) => prev.filter((x) => x.id !== pid));
+  const guardarEdicion = (pid, datos) => { onProspectos((prev) => prev.map((x) => (x.id === pid ? { ...x, ...datos } : x))); setEditando(null); };
   const asignar = (pid, b) => { onProspectos((prev) => prev.map((x) => (x.id === pid ? { ...x, barrioId: b.barrioId, barrio: b.barrio, provincia: b.provincia, distrito: b.distrito, corregimiento: b.corregimiento } : x))); setAsignando(null); };
   return (
     <div>
@@ -7373,13 +7375,19 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
       {todosP.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no tienes prospectos. Anótalos con el botón ➕ cuando andes en un barrio.</div>}
       {todosP.length > 0 && visibles.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No encontré prospectos con eso.</div>}
       <div className="flex flex-col gap-2">
-        {visibles.map((pr) => (
+        {visibles.map((pr) => editando === pr.id ? (
+          <div key={pr.id} className="rounded-lg border bg-white px-3 py-2" style={ { borderColor: "#001E62", borderWidth: 2 } }>
+            <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>✏️ Editar prospecto</div>
+            <ProspectoBarrioForm inicial={pr} onGuardar={(d) => guardarEdicion(pr.id, d)} onCancelar={() => setEditando(null)} />
+          </div>
+        ) : (
           <div key={pr.id} className="rounded-lg border bg-white px-3 py-2" style={ { borderColor: "#DFE5EF" } }>
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
-                <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere", lineHeight: 1.2 } }>{pr.nombre}{esCli(pr) ? " · ✅ Cliente" : ""}</div>
+                <button type="button" onClick={() => setEditando(pr.id)} className="text-left font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere", lineHeight: 1.2, background: "none", border: 0, padding: 0 } }>{pr.nombre}{esCli(pr) ? " · ✅ Cliente" : ""} <span style={ { fontSize: 12 } }>✏️</span></button>
                 <div className="text-xs font-bold" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>{pr.barrioId ? "🏘️ " + pr.barrio : "📍 Sin barrio"} · {fmtFechaDia(fechaLocalISO(pr.fecha))}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</div>
-                <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }>{textoNumeros(pr)}{infoProspecto(pr)}</div>
+                {numerosProspecto(pr).map((n, i, arr) => <div key={i} className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }>📞 {n.numero} · {n.quien || (arr.length > 1 ? "Sin etiqueta" : "WhatsApp")}{n.paga ? " 💳" : ""}</div>)}
+                {infoProspecto(pr) && <div className="text-xs" style={ { color: "#374151" } }>{infoProspecto(pr).replace(/^ · /, "")}</div>}
               </div>
               <div className="flex items-center gap-1 shrink-0">
                 {!esCli(pr) && <WhatsAppProspecto pr={pr} />}
@@ -7402,15 +7410,21 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
 }
 
 // Prospectos agrupados por barrio (pestaña Barrios): el barrio con el prospecto más reciente va primero.
-function ProspectosPorBarrio({ prospectos, clientes }) {
+function ProspectosPorBarrio({ prospectos, clientes, onProspectos }) {
+  const [editando, setEditando] = useState(null);
   const todosP = (prospectos || []).filter((x) => x && !prospectoEsCliente(x, clientes) && !prospectoArchivado(x));
   const porFecha = (a, b) => String(b.fecha).localeCompare(String(a.fecha));
   const grupos = [...new Map(todosP.filter((x) => x.barrioId).slice().sort(porFecha).map((x) => [x.barrioId, x])).values()].map((g) => ({ g, lista: todosP.filter((x) => x.barrioId === g.barrioId).sort(porFecha) }));
   const sin = todosP.filter((x) => !x.barrioId).sort(porFecha);
   if (todosP.length === 0) return <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no tienes prospectos. Anótalos con el botón ➕ cuando andes en un barrio.</div>;
-  const fila = (pr) => (
+  const fila = (pr) => editando === pr.id && onProspectos ? (
+    <div key={pr.id} className="rounded-lg px-2 py-2 mb-1" style={ { background: "#F3F6FB", border: "2px solid #001E62" } }>
+      <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>✏️ Editar prospecto</div>
+      <ProspectoBarrioForm inicial={pr} onGuardar={(d) => { onProspectos((prev) => prev.map((x) => (x.id === pr.id ? { ...x, ...d } : x))); setEditando(null); }} onCancelar={() => setEditando(null)} />
+    </div>
+  ) : (
     <div key={pr.id} className="flex items-center gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#F3F6FB" } }>
-      <div className="min-w-0 flex-1 text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}</div>
+      <div className="min-w-0 flex-1 text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><button type="button" onClick={() => setEditando(pr.id)} className="font-extrabold text-left" style={ { color: "#001E62", background: "none", border: 0, padding: 0 } }>{pr.nombre} ✏️</button> · {textoNumeros(pr)}{infoProspecto(pr)}</div>
       <WhatsAppProspecto pr={pr} />
     </div>
   );
@@ -7436,14 +7450,15 @@ function ProspectosPorBarrio({ prospectos, clientes }) {
   );
 }
 
-function ProspectoBarrioForm({ onGuardar, onCancelar }) {
-  const [tiene, setTiene] = useState("");
-  const [compania, setCompania] = useState("");
-  const [tipo, setTipo] = useState("");
-  const [cajas, setCajas] = useState(0);
-  const [paga, setPaga] = useState("");
-  const [nombre, setNombre] = useState("");
-  const [nums, setNums] = useState([{ numero: "", quien: "", paga: false }]);
+function ProspectoBarrioForm({ onGuardar, onCancelar, inicial }) {
+  const ini = inicial || null;
+  const [tiene, setTiene] = useState(ini && ini.tiene ? ini.tiene : "");
+  const [compania, setCompania] = useState(ini && ini.tiene === "si" && ini.compania ? ini.compania : "");
+  const [tipo, setTipo] = useState(ini && ini.tiene === "si" && ini.tipo ? ini.tipo : "");
+  const [cajas, setCajas] = useState(ini && ini.cajasTV ? ini.cajasTV : 0);
+  const [paga, setPaga] = useState(ini && ini.paga != null ? String(ini.paga) : "");
+  const [nombre, setNombre] = useState(ini ? ini.nombre || "" : "");
+  const [nums, setNums] = useState(ini && numerosProspecto(ini).length ? numerosProspecto(ini).map((n) => ({ numero: n.numero || "", quien: n.quien || "", paga: !!n.paga })) : [{ numero: "", quien: "", paga: false }]);
   const [intento, setIntento] = useState(false);
   const chipM = (activo, texto, onClick, key) => (
     <button key={key} type="button" onClick={onClick} className="rounded-full text-xs font-bold px-3" style={ { minHeight: 40, border: "2px solid #001E62", background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{activo ? "✓ " : ""}{texto}</button>
@@ -7508,7 +7523,7 @@ function ProspectoBarrioForm({ onGuardar, onCancelar }) {
       ))}
       <button type="button" onClick={() => setNums([...nums, { numero: "", quien: "", paga: false }])} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>➕ Otro número</button>
       <div className="flex gap-2 mt-3">
-        <button type="button" onClick={guardar} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 48, background: "#001E62", border: 0 } }>💾 Guardar prospecto</button>
+        <button type="button" onClick={guardar} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 48, background: "#001E62", border: 0 } }>{ini ? "💾 Guardar cambios" : "💾 Guardar prospecto"}</button>
         <button type="button" onClick={onCancelar} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 48, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>Cancelar</button>
       </div>
     </div>
@@ -7700,7 +7715,7 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
 
           {vista === "descubrir" && <DescubrirBarrios todos={todos} visitas={visitas || []} onVisitas={onVisitas || (() => {})} prospectos={prospectos || []} onProspectos={onProspectos || (() => {})} clientesTodos={clientes} ajustes={ajustes} />}
 
-          {vista === "prospectos" && <ProspectosPorBarrio prospectos={prospectos || []} clientes={clientes} />}
+          {vista === "prospectos" && <ProspectosPorBarrio prospectos={prospectos || []} clientes={clientes} onProspectos={onProspectos} />}
 
           {vista === "stats" && stats && (() => {
             const bloque = (titulo, nota, filas, vacio) => filas.length === 0 ? null : (
