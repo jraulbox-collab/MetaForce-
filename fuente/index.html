@@ -5224,6 +5224,7 @@ function App() {
             ajustesBarrios={ajustesBarrios}
             onAbrirBarrio={(b) => { setBarrioInicial(b); navegarA("barrios"); }}
             envios={envios}
+            onConfirmarCiclo={confirmarCicloHogar}
             onRegistrarContacto={(c, canal, nota, motivo) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "ficha", canal, nota: nota || "", motivo: motivo || "" })}
           />
         )}
@@ -14063,6 +14064,7 @@ function ClienteDetalle({
   onEliminar,
   envios,
   onRegistrarContacto,
+  onConfirmarCiclo,
   ajustesBarrios,
   onAbrirBarrio,
 }) {
@@ -14507,6 +14509,7 @@ function ClienteDetalle({
         return (
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-3 mb-3">
             <h2 className="text-sm font-semibold mb-1" style={ { color: "#001E62" } }>Mensajes</h2>
+            <CicloHogarConfirmar cliente={cliente} onConfirmar={onConfirmarCiclo} />
             {ms.map((m, i) => {
               const key = cliente.id + m.key;
               const evEnv = m.enviado ? (envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === m.key && e.tipo === "marcar").map((e) => e.fecha).sort().pop() : null;
