@@ -13919,11 +13919,15 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
         <p className="text-xs mt-1.5 mb-2" style={ { color: "#5A6680" } }>Todavía sin fecha. Pega el texto de Tigo para cargarla.</p>
       )}
       {!prog && <PegarOrdenTigo cliente={cliente} onAplicar={(d) => onGuardarOrden(cliente.id, d)} etiqueta="Pegar texto de Tigo" />}
-      {(onMarcarAbono || (prog && tieneTel && enviada)) && (
+      {onMarcarAbono && !abonoRecibido && (
+        <div className="mt-2.5 flex flex-col gap-2">
+          <div><EtiquetaAbono cliente={cliente} /></div>
+          <button type="button" onClick={() => onMarcarAbono(cliente.id, true)} className="w-full text-sm font-bold rounded-lg" style={ { minHeight: 44, border: "2px solid #001E62", color: "#001E62", background: "#fff" } }>Marcar abono recibido</button>
+        </div>
+      )}
+      {((onMarcarAbono && abonoRecibido) || (prog && tieneTel && enviada)) && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-[13px] font-semibold" style={ { color: "#001E62" } }>
-          {onMarcarAbono && (abonoRecibido
-            ? <span>✓ Abono</span>
-            : <button type="button" onClick={() => onMarcarAbono(cliente.id, true)} className="font-bold" style={ { color: "#B45309", minHeight: 32 } }>⚠ Sin abono · toca si ya abonó</button>)}
+          {onMarcarAbono && abonoRecibido && <span>✓ Abono</span>}
           {prog && tieneTel && enviada && <span>✓ Info enviada</span>}
         </div>
       )}
@@ -14281,7 +14285,7 @@ function ClienteDetalle({
   )}
 
 
-      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && !(mostrarInst && cliente.abonoInicial !== false) && (
+      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && !mostrarInst && (
         <BloqueAbonoInicial cliente={cliente} onMarcar={onMarcarAbono} />
       )}
 
