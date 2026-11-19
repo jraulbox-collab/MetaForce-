@@ -14076,6 +14076,7 @@ function ClienteDetalle({
   const [fechaCancel, setFechaCancel] = useState(() => fechaLocalISO(new Date()));
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
   const [verObs, setVerObs] = useState(false);
+  const [verHist, setVerHist] = useState(false);
   const [menuAcciones, setMenuAcciones] = useState(false);
   const [masInst, setMasInst] = useState(false); // opciones extra de la instalación (desde el menú ⋯)
 
@@ -14287,7 +14288,7 @@ function ClienteDetalle({
   )}
 
 
-      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && !mostrarInst && (
+      {!cliente.cancelado && !cliente.penalizado && onMarcarAbono && !mostrarInst && cliente.abonoInicial === false && (
         <BloqueAbonoInicial cliente={cliente} onMarcar={onMarcarAbono} />
       )}
 
@@ -14343,10 +14344,8 @@ function ClienteDetalle({
             cliente.cuentaTigo && ["Cuenta Tigo", cliente.cuentaTigo],
             ["Mensual", fmtMonto(cliente.montoMensual)],
             ["1ra factura", fmtMonto(cliente.monto1raFactura)],
-            ["Pago", <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block" style={ { color: r.color, background: r.bg } }>{r.texto}</span>],
             cliente.cicloFacturacion && cicloLabel !== "—" && ["Ciclo", cicloLabel],
             (cliente.fechaInstalacion || !(mostrarInst && cliente.instalacionProgramada)) && ["Instalación", cliente.fechaInstalacion ? fmtFechaDia(cliente.fechaInstalacion) + (() => { const d = Math.round((new Date(fechaLocalISO(new Date()) + "T12:00:00") - new Date(String(cliente.fechaInstalacion).slice(0, 10) + "T12:00:00")) / 86400000); return d > 0 ? " · hace " + d + (d === 1 ? " día" : " días") : d === 0 ? " · hoy" : ""; })() : cliente.instalacionProgramada ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "") : "—"],
-            ["Ingreso", cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"],
           ].filter(Boolean);
           return filasH.map(([k, v], i) => filaH(k, v, i));
         })()}
@@ -14518,12 +14517,12 @@ function ClienteDetalle({
                 : m.pendienteHoy ? chipM(String(m.triggerDate).slice(0, 10) === fechaLocalISO(new Date()) ? "Toca hoy" : "Listo para enviar", "#E3EDFA", "#0072CE")
                 : chipM("Programado · " + fmtFechaDia(String(m.triggerDate).slice(0, 10)), "#F1F4F9", "#4A5878");
               return (
-                <div key={m.key} className="py-2.5" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                <div key={m.key} className="py-2" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm font-semibold" style={ { color: "#001E62" } }>{m.tag} {m.corto || m.label}</span>
+                    <span className="text-sm font-semibold" style={ { color: "#001E62" } }>{m.tag} {m.corto || m.label}{m.fn > 1 ? " · " + ORDINAL[m.fn] : ""}</span>
                     {estado}
                   </div>
-                  <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>{ORDINAL[m.fn]} factura{m.corto ? " · " + m.label : ""}{evEnv ? " · enviado " + fmtFechaHora(evEnv) : ""}</div>
+                  {evEnv && <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>enviado {fmtFechaHora(evEnv)}</div>}
                   {!m.enviado && !espera && m.pendienteHoy && (
                     <>
                       <div className="mt-1"><FranjaPrimeraFactura milestone={m} cliente={cliente} /></div>
@@ -14567,8 +14566,10 @@ function ClienteDetalle({
         const mostrar = verTodosContactos ? lista : lista.slice(0, 5);
         return (
           <div className="mt-6">
-            <h2 className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Historial</h2>
-            <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4">
+            <button type="button" onClick={() => setVerHist(!verHist)} aria-expanded={verHist} className="w-full flex items-center justify-between bg-white rounded-lg border border-gray-200 shadow-sm px-4 text-sm font-semibold" style={ { color: "#001E62", minHeight: 44 } }>
+              <span>Historial</span><span style={ { color: "#5A6680" } }>{verHist ? "▴" : "▾"}</span>
+            </button>
+            {verHist && <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4 mt-2">
               {eventos.map(([k, v], i) => (
                 <div key={k} className="flex justify-between gap-3 py-2 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
                   <span style={ { color: "#5A6680" } }>{k}</span>
@@ -14584,7 +14585,7 @@ function ClienteDetalle({
               {lista.length > 5 && (
                 <button type="button" onClick={() => setVerTodosContactos(!verTodosContactos)} className="w-full text-xs font-bold py-3" style={ { color: "#0072CE", borderTop: "1px solid #EEF2F9" } }>{verTodosContactos ? "Ver menos" : "Ver todos (" + lista.length + ")"}</button>
               )}
-            </div>
+            </div>}
           </div>
         );
       })()}
