@@ -3136,6 +3136,7 @@ function App() {
   const [mostrarConfig, setMostrarConfig] = useState(false);
   const [saltarAMes, setSaltarAMes] = useState(null);
   const [mostrarSelectorNuevo, setMostrarSelectorNuevo] = useState(false);
+  const [prospectoDe, setProspectoDe] = useState(null);
   const importInputRef = useRef(null);
   const sonidoReproducidoRef = useRef(false);
 
@@ -5498,7 +5499,23 @@ function App() {
             setSaltarAMes({ subVista: "movil", abrirForm: true, token: Date.now() });
             setMostrarSelectorNuevo(false);
           } }
+          barriosRecorrido={ordenarRecorrido((visitasBarrios || []).filter((v) => v && v.estado === "en curso")).orden.map((x) => x.v)}
+          onProspecto={(v) => { setMostrarSelectorNuevo(false); setProspectoDe(v); }}
         />
+      )}
+      {prospectoDe && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center" style={ { background: "rgba(0,0,0,0.45)" } } role="dialog" aria-modal="true" aria-label="Agregar prospecto">
+          <div className="bg-white w-full max-w-md overflow-y-auto p-4" style={ { borderRadius: "22px 22px 0 0", maxHeight: "92vh", paddingBottom: "calc(20px + env(safe-area-inset-bottom))", color: "#001E62" } }>
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-extrabold text-base min-w-0" style={ { overflowWrap: "anywhere" } }>👥 Prospecto · {prospectoDe.barrio}</div>
+              <button type="button" onClick={() => setProspectoDe(null)} aria-label="Cerrar" className="shrink-0 rounded-lg font-bold" style={ { minHeight: 40, minWidth: 40, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
+            </div>
+            <ProspectoBarrioForm
+              onGuardar={(pr) => { const v = prospectoDe; setProspectosBarrios((prev) => [...prev, { id: "pro-" + uid(), visitaId: v.id, barrioId: v.barrioId, barrio: v.barrio, provincia: v.provincia, distrito: v.distrito, corregimiento: v.corregimiento, fecha: new Date().toISOString(), ...pr }]); setProspectoDe(null); }}
+              onCancelar={() => setProspectoDe(null)}
+            />
+          </div>
+        </div>
       )}
       {mostrarConfig && (
         <ConfigModal
@@ -18422,7 +18439,7 @@ function SkeletonCargando() {
   );
 }
 
-function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
+function SelectorNuevoModal({ onClose, onHogar, onConvergencia, barriosRecorrido, onProspecto }) {
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-lg p-6 max-w-sm w-full">
@@ -18431,6 +18448,20 @@ function SelectorNuevoModal({ onClose, onHogar, onConvergencia }) {
           <button onClick={onClose} className="text-sm" style={ { color: "#5A6680" } }>✕</button>
         </div>
         <div className="flex flex-col gap-2">
+          {(barriosRecorrido || []).map((v, i) => (
+            <button
+              key={v.id}
+              onClick={() => onProspecto(v)}
+              className="text-left px-4 py-3 rounded-md border-2 flex items-center gap-3 hover:opacity-80"
+              style={ { borderColor: "#001E62", background: "#E3EDFA" } }
+            >
+              <span className="text-xl" aria-hidden="true">👥</span>
+              <span className="min-w-0">
+                <span className="block text-sm font-semibold" style={ { overflowWrap: "anywhere" } }>Prospecto · {v.barrio}</span>
+                <span className="block text-xs" style={ { color: "#5A6680" } }>{(barriosRecorrido || []).length > 1 && i === 0 ? "👉 Siguiente en tu recorrido" : "Barrio de tu recorrido de hoy"}</span>
+              </span>
+            </button>
+          ))}
           <button
             onClick={onHogar}
             className="text-left px-4 py-3 rounded-md border flex items-center gap-3 hover:opacity-80"
