@@ -6835,10 +6835,22 @@ const OPINION_OPC = [
   ["sininteres", "🚫 Sin interés"],
 ];
 const VOLVER_OPC = [["si", "👍 Sí"], ["tal", "🤔 Tal vez"], ["no", "👎 No"]];
-function estrellasVisita(v) {
+// Ventas que se registran en el barrio visitado dentro de los 30 días siguientes a la visita (sin contar el día de la visita).
+const DIAS_VENTA_POSTERIOR = 30;
+function ventasPosterioresVisita(v, ent) {
+  if (!v || !ent || !Array.isArray(ent.clientes)) return 0;
+  const dia = fechaLocalISO(v.fecha);
+  const tope = fechaLocalISO(new Date(new Date(v.fecha).getTime() + DIAS_VENTA_POSTERIOR * 86400000));
+  return ent.clientes.filter((c) => {
+    if (!c || c.eliminado || c.cancelado || c.penalizado) return false;
+    const f = c.creadoEn ? fechaLocalISO(c.creadoEn) : c.fechaIngreso;
+    return !!f && f > dia && f <= tope;
+  }).length;
+}
+function estrellasVisita(v, despues) {
   const r = v && v.reporte;
   if (!r || !(r.puertas > 0)) return null;
-  const tasa = r.ventas / r.puertas;
+  const tasa = ((r.ventas || 0) + (despues || 0)) / r.puertas;
   return Math.min(5, 1 + (tasa > 0 ? 1 : 0) + (tasa >= 0.1 ? 1 : 0) + (tasa >= 0.2 ? 1 : 0) + (r.volver === "si" ? 1 : 0));
 }
 function puntajeCandidatoBarrio(e, ctx) {
@@ -6858,13 +6870,15 @@ function DescubrirBarrios({ todos, visitas, onVisitas }) {
   const hechas = (visitas || []).filter((v) => v.estado === "hecha");
   const enCurso = (visitas || []).filter((v) => v.estado === "en curso");
   const visitadosIds = useMemo(() => new Set((visitas || []).map((v) => v.barrioId)), [visitas]);
+  const entPorId = useMemo(() => new Map(todos.map((e) => [e.id, e])), [todos]);
+  const despuesDe = (v) => ventasPosterioresVisita(v, entPorId.get(v.barrioId));
   const contexto = useMemo(() => {
     const clientesPorZona = new Map();
     todos.forEach((e) => { const k = [e.provincia, e.distrito, e.corregimiento].join("|"); clientesPorZona.set(k, (clientesPorZona.get(k) || 0) + (e.vendidos || 0)); });
     const visitasPorZona = new Map();
-    hechas.forEach((v) => { const k = [v.provincia, v.distrito, v.corregimiento].join("|"); const d = visitasPorZona.get(k) || { ventas: 0, noVolver: 0 }; d.ventas += (v.reporte && v.reporte.ventas) || 0; if (v.reporte && v.reporte.volver === "no") d.noVolver += 1; visitasPorZona.set(k, d); });
+    hechas.forEach((v) => { const k = [v.provincia, v.distrito, v.corregimiento].join("|"); const d = visitasPorZona.get(k) || { ventas: 0, noVolver: 0 }; d.ventas += ((v.reporte && v.reporte.ventas) || 0) + ventasPosterioresVisita(v, entPorId.get(v.barrioId)); if (v.reporte && v.reporte.volver === "no") d.noVolver += 1; visitasPorZona.set(k, d); });
     return { clientesPorZona, visitasPorZona };
-  }, [todos, hechas.length]);
+  }, [todos, hechas.length, entPorId]);
   const candidatos = useMemo(() => {
     const base = [PUNTO_BASE.lat, PUNTO_BASE.lon];
     return todos.filter((e) => PROV_VENDER.includes(e.provincia) && e.hhpp >= 40 && !(e.vendidos > 0) && !visitadosIds.has(e.id)).map((e) => {
@@ -6911,7 +6925,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas }) {
   const aprendido = (() => {
     if (hechas.length === 0) return null;
     const comp = {}; let precios = []; let puertas = 0; let ventas = 0;
-    hechas.forEach((v) => { const r = v.reporte || {}; puertas += r.puertas || 0; ventas += r.ventas || 0; (r.competencia || []).forEach((c) => { comp[c] = (comp[c] || 0) + 1; }); if (r.precio > 0) precios.push(Number(r.precio)); });
+    hechas.forEach((v) => { const r = v.reporte || {}; puertas += r.puertas || 0; ventas += (r.ventas || 0) + despuesDe(v); (r.competencia || []).forEach((c) => { comp[c] = (comp[c] || 0) + 1; }); if (r.precio > 0) precios.push(Number(r.precio)); });
     const topComp = Object.entries(comp).filter(([k]) => k !== "Ninguna").sort((a, b) => b[1] - a[1])[0];
     return { puertas, ventas, topComp: topComp ? topComp[0] : null, precio: precios.length ? precios.reduce((a, b) => a + b, 0) / precios.length : null };
   })();
@@ -6965,14 +6979,14 @@ function DescubrirBarrios({ todos, visitas, onVisitas }) {
           )}
           <div className="flex flex-col gap-2">
             {hechas.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map((v) => {
-              const r = v.reporte || {}; const est = estrellasVisita(v);
+              const r = v.reporte || {}; const desp = despuesDe(v); const est = estrellasVisita(v, desp);
               return (
                 <div key={v.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0"><div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{v.barrio}</div><div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(v.corregimiento)} · {fmtFechaHora(v.fecha)}</div></div>
                     {est && <span className="text-sm font-extrabold shrink-0" style={ { color: "#001E62" } }>⭐ {est}/5</span>}
                   </div>
-                  <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>🚪 {r.puertas || 0} puertas · ✅ {r.ventas || 0} ventas{r.puertas > 0 ? " (" + ((r.ventas / r.puertas) * 10).toFixed(1) + " por 10)" : ""}</div>
+                  <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>🚪 {r.puertas || 0} puertas · ✅ {r.ventas || 0} ventas{desp > 0 ? " + " + desp + " después" : ""}{r.puertas > 0 ? " (" + ((((r.ventas || 0) + desp) / r.puertas) * 10).toFixed(1) + " por 10)" : ""}</div>
                   {(r.competencia || []).length > 0 && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>🥊 {r.competencia.join(", ")}{r.precio > 0 ? " · pagan ~$" + r.precio : ""}</div>}
                   {(r.opinion || []).length > 0 && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>💬 {r.opinion.map((k) => (OPINION_OPC.find((o) => o[0] === k) || [0, k])[1]).join(" · ")}</div>}
                   {r.volver && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>🔁 ¿Volver? {(VOLVER_OPC.find((o) => o[0] === r.volver) || [0, r.volver])[1]}</div>}
