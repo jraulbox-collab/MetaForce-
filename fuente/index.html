@@ -5187,6 +5187,7 @@ function App() {
         {tab === "barrios" && (
           <BarriosPantalla
             clientes={clientesCalc}
+            clientesMovil={convergencias}
             ajustes={ajustesBarrios}
             onAjustes={setAjustesBarrios}
             inicial={barrioInicial}
@@ -6587,8 +6588,34 @@ function cruzarBarrio(c, datos) {
   if (f.every((r) => r.corregimiento === f[0].corregimiento && r.distrito === f[0].distrito)) return { estado: "ok", fila: f[0] };
   return { estado: "ambiguo", barrio, candidatos: f };
 }
+// Barrio de un cliente móvil: viene en su propio campo y a veces como "BARRIO-OTRO" o "X (Y)".
+// Se prueba cada pedazo contra la lista oficial, prefiriendo Herrera y Los Santos.
+function cruzarBarrioMovil(m, datos) {
+  const barrio = String((m && m.barrio) || "").trim();
+  if (!barrio) return { estado: "sinBarrio" };
+  const pedazos = new Set([barrio, ...barrio.split(/\s*-\s*/), ...(barrio.match(/\(([^)]{3,})\)/g) || []).map((x) => x.slice(1, -1)), barrio.replace(/\([^)]*\)/g, " ")]);
+  const porFila = new Map();
+  pedazos.forEach((t) => {
+    if (!String(t).trim()) return;
+    const f = datos.exacto.get(normTexto(t)) || datos.exacto.get(claveCortaBarrio(t)) || [];
+    f.forEach((r) => porFila.set(r.id, r));
+  });
+  let f = [...porFila.values()];
+  if (!f.length) return { estado: "sinMatch", barrio };
+  const cor = normTexto(limpiarZona(m.corregimiento || ""));
+  if (cor) { const x = f.filter((r) => normTexto(r.corregimiento) === cor); if (x.length) f = x; }
+  const mias = f.filter((r) => PROV_VENDER.includes(r.provincia));
+  if (mias.length) f = mias;
+  else return { estado: "otraZona", barrio };
+  const ids = new Set(f.map((r) => datos.aEnt.get(r.id) || r.id));
+  if (ids.size === 1) return { estado: "ok", fila: f[0] };
+  // Varios lugares con ese nombre: se toma el más cercano a Chitré, si hay uno que gane claramente.
+  const conKm = f.map((r) => ({ r, km: kmDesdeBase(r.provincia, r.distrito, r.corregimiento) })).filter((x) => x.km != null).sort((a, b) => a.km - b.km);
+  if (conKm.length && (conKm.length === 1 || conKm[1].km - conKm[0].km >= 5)) return { estado: "ok", fila: conKm[0].r, aprox: true };
+  return { estado: "ambiguo", barrio, candidatos: f };
+}
 // Estadísticas por barrio: clientes tuyos (sin contar bajas), casas (HHPP), penetración y casas libres.
-function estadisticasBarrios(clientes, datos) {
+function estadisticasBarrios(clientes, datos, clientesMovil) {
   const porId = new Map();
   const sinMatch = [];
   const ambiguos = [];
@@ -6610,12 +6637,24 @@ function estadisticasBarrios(clientes, datos) {
       if (c.f1_estado === "pagada") e.pagaron += 1;
     }
   });
-  const filas = [...porId.values()].map((e) => ({ ...e, libres: Math.max(0, e.hhpp - e.vendidos), pen: e.hhpp > 0 ? e.vendidos / e.hhpp : null }));
+  // Clientes móvil: no cuentan como vendidos ni cambian la penetración; solo marcan "aquí ya vendes móvil".
+  const movilPorRevisar = [];
+  (clientesMovil || []).forEach((m) => {
+    if (!m || m.eliminado || m.cancelado) return;
+    const r = cruzarBarrioMovil(m, datos);
+    if (r.estado === "sinMatch" || r.estado === "ambiguo") { movilPorRevisar.push({ m, barrio: r.barrio, estado: r.estado }); return; }
+    if (r.estado !== "ok") return;
+    const f = datos.porId.get(datos.aEnt.get(r.fila.id)) || r.fila;
+    let e = porId.get(f.id);
+    if (!e) { e = { ...f, clientes: [], vendidos: 0, instalados: 0, pagaron: 0, bajas: 0 }; porId.set(f.id, e); }
+    e.movil = (e.movil || 0) + 1;
+  });
+  const filas = [...porId.values()].map((e) => ({ ...e, movil: e.movil || 0, libres: Math.max(0, e.hhpp - e.vendidos), pen: e.hhpp > 0 ? e.vendidos / e.hhpp : null }));
   const conClientes = filas.filter((e) => e.vendidos > 0);
   const totalVendidos = conClientes.reduce((a, e) => a + e.vendidos, 0);
   const totalCasas = conClientes.reduce((a, e) => a + e.hhpp, 0);
   const cruzados = filas.reduce((a, e) => a + e.clientes.length, 0);
-  return { filas, conClientes, sinMatch, ambiguos, sinBarrio, totalVendidos, totalCasas, cruzados, penGlobal: totalCasas > 0 ? totalVendidos / totalCasas : null };
+  return { filas, conClientes, sinMatch, ambiguos, sinBarrio, movilPorRevisar, totalVendidos, totalCasas, cruzados, penGlobal: totalCasas > 0 ? totalVendidos / totalCasas : null };
 }
 const fmtPen = (p) => (p === null || p === undefined ? "—" : (p * 100 < 10 ? (p * 100).toFixed(1) : Math.round(p * 100)) + "%");
 const fmtNum = (n) => Number(n || 0).toLocaleString("es");
@@ -6647,6 +6686,7 @@ function calcularRutas(todos) {
         if (e.arpuAlto) { score += 20; motivos.push("⭐ ARPU alto: más ingreso por cliente"); }
         if (e.pagaron > 0) { score += 20; motivos.push(`👥 Ya tienes ${e.pagaron} cliente${e.pagaron === 1 ? " que pagó" : "s que pagaron"} aquí`); }
         else if (vecino) { score += 12; motivos.push(`👥 Vecino de ${primerNombre(vecino.c)}, que ya pagó en esta zona`); }
+        if (e.movil > 0) { score += Math.min(20, 8 + e.movil * 4); motivos.push(`📱 Ya tienes ${e.movil} cliente${e.movil === 1 ? "" : "s"} móvil aquí: ofrece Hogar`); }
         if (propias > 0) { score += Math.min(30, propias * 10); motivos.push(`📈 ${propias} venta${propias === 1 ? "" : "s"} tuya${propias === 1 ? "" : "s"} aquí en 30 días`); }
         if (zonaVende) { score += 10; motivos.push("🧭 Te está yendo bien en esta zona"); }
         return { e, score, motivos };
@@ -6666,9 +6706,9 @@ function elegirIdeas(rutas, ronda) {
     return tramos.filter((t) => t.l.length).map((t) => ({ etiqueta: t.n, zona: t.l[ronda % t.l.length], de: t.l.length }));
 }
 
-function BarriosTarjeta({ clientes, onAbrir, ajustes }) {
+function BarriosTarjeta({ clientes, clientesMovil, onAbrir, ajustes }) {
   const { datos } = useBarrios(ajustes);
-  const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos) : null), [clientes, datos]);
+  const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos, clientesMovil) : null), [clientes, clientesMovil, datos]);
   const idea = useMemo(() => {
     if (!datos || !est) return null;
     const ideas = elegirIdeas(calcularRutas(todosLosBarrios(datos, est)), 0);
@@ -6757,7 +6797,7 @@ function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
   );
 }
 
-function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes, inicial, volverLabel }) {
+function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajustes, onAjustes, inicial, volverLabel }) {
   const { datos, error } = useBarrios(ajustes);
   const [formNuevo, setFormNuevo] = useState(inicial && inicial.sinCoincidencia ? { nombre: inicial.barrio } : null);
   const [vista, setVista] = useState(inicial ? "buscar" : "hoy");
@@ -6799,7 +6839,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
       return resto.length ? [{ ...a, miembros: resto }] : [];
     }));
   };
-  const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos) : null), [clientes, datos]);
+  const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos, clientesMovil) : null), [clientes, clientesMovil, datos]);
   const enAlcance = (e) => provSel === "todas" || (provSel === "centrales" ? PROV_VENDER.includes(e.provincia) : e.provincia === provSel);
   // Todos los barrios con sus números (los que no tienen clientes tuyos, en cero).
   const todos = useMemo(() => {
@@ -6888,6 +6928,7 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
             {e.vendidos} cliente{e.vendidos === 1 ? "" : "s"} · 🏠 {fmtNum(e.hhpp)} casas · {etiquetaTamano(e.hhpp)}
           </div>
           )}
+          {!compacto && e.movil > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>📱 {e.movil} cliente{e.movil === 1 ? "" : "s"} móvil aquí</div>}
           {!compacto && e.vendidos >= 3 && <div className="text-xs font-bold mt-1" style={ { color: e.pagaron / e.vendidos >= 0.6 ? "#166534" : "#B45309" } }>💰 Pagaron la 1ra factura {e.pagaron} de {e.vendidos}</div>}
           {!compacto && e.bajas > 0 && <div className="text-xs font-bold mt-1" style={ { color: "#B45309" } }>⚠ {e.bajas} baja{e.bajas === 1 ? "" : "s"} (cancelados o penalizados)</div>}
         </button>
@@ -7032,6 +7073,16 @@ function BarriosPantalla({ clientes, onVolver, onVerCliente, ajustes, onAjustes,
               <div className="flex flex-col gap-2">{resultados.slice(0, verMas).map(tarjetaBarrio)}</div>
               {resultados.length > verMas && <button type="button" onClick={() => setVerMas(verMas + 30)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más ({resultados.length - verMas} barrios)</button>}
             </>
+          )}
+
+          {est.movilPorRevisar && est.movilPorRevisar.length > 0 && (
+            <div className="mt-4 rounded-xl border bg-white p-3" style={ { borderColor: "#B45309" } }>
+              <div className="text-sm font-bold" style={ { color: "#B45309" } }>⚠ Móvil por revisar · {est.movilPorRevisar.length}</div>
+              <div className="text-xs mb-1" style={ { color: "#5A6680" } }>Su barrio no coincide con la lista o cae en varios lugares.</div>
+              {est.movilPorRevisar.map((x, i) => (
+                <div key={x.m.id || i} className="text-xs py-1" style={ { borderTop: "1px solid #EEF2F9", color: "#001E62", overflowWrap: "anywhere" } }>📱 {x.m.nombre || "Cliente"} · “{x.barrio}” · {x.estado === "ambiguo" ? "varios lugares" : "no está en la lista"}</div>
+              ))}
+            </div>
           )}
 
           <div className="mt-4 rounded-xl border bg-white" style={ { borderColor: nSin > 0 ? "#B45309" : "#DFE5EF" } }>
@@ -11035,7 +11086,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         </div>
       ))}
 
-      {onAbrirBarrios && bloqueOrd("barrios", "Barrios", <BarriosTarjeta clientes={clientesBarrios || clientes} onAbrir={onAbrirBarrios} ajustes={ajustesBarrios} />)}
+      {onAbrirBarrios && bloqueOrd("barrios", "Barrios", <BarriosTarjeta clientes={clientesBarrios || clientes} clientesMovil={convergencias} onAbrir={onAbrirBarrios} ajustes={ajustesBarrios} />)}
 
       {onIrAVentas && bloqueOrd("ventas", "Ventas por mensajes", (() => {
         const vh = calcularVentasHoy(clientes, convergencias, Date.now());
@@ -13832,6 +13883,16 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
   const prog = cliente.instalacionProgramada;
   const vencida = !!prog && prog < fechaLocalISO(new Date());
   const hoyISO = fechaLocalISO(new Date());
+  // Hoy y ya pasó la hora final de la franja: se pregunta si se instaló.
+  const franjaPasada = (() => {
+    if (!prog || prog !== hoyISO) return false;
+    const ms = [...String(cliente.franjaInstalacion || "").matchAll(/(\d{1,2}):(\d{2})\s*([AaPp])\.?\s*[Mm]/g)];
+    if (!ms.length) return false;
+    const u = ms[ms.length - 1];
+    let h = parseInt(u[1], 10) % 12; if (/p/i.test(u[3])) h += 12;
+    const ahora = new Date();
+    return ahora.getHours() * 60 + ahora.getMinutes() > h * 60 + parseInt(u[2], 10);
+  })();
   const [fechaInst, setFechaInst] = useState(null); // null = cerrado; si no, la fecha elegida para marcarlo instalado
   const [verMas, setVerMas] = useState(false);
   const abonoRecibido = cliente.abonoInicial !== false;
@@ -13848,9 +13909,10 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
           className="text-xs font-medium px-2.5 py-0.5 rounded-full whitespace-nowrap"
           style={ vencida ? { color: "#B91C1C", background: "#FDECEC" } : { color: "#B45309", background: "#FFF3DC" } }
         >
-          {vencida ? "Vencida, sin confirmar" : "Pendiente de instalación"}
+          {vencida ? "Vencida, sin confirmar" : franjaPasada ? "Ya pasó la hora" : "Pendiente de instalación"}
         </span>
       </div>
+      {franjaPasada && <div className="text-[13px] font-bold mt-1.5" style={ { color: "#B45309" } }>⏰ Ya pasó la franja de hoy · ¿Se instaló?</div>}
       {prog ? (
         <p className="text-sm mt-1.5" style={ { color: "#374151" } }>
           Programada: <strong>{fmtFechaDia(prog)}</strong>{cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : ""}
@@ -13923,15 +13985,6 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
             </button>
           )}
         </div>
-      )}
-      {prog && tieneTel && enviada && fechaInst === null && (
-        <a
-          href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`}
-          className="flex items-center justify-center gap-2 w-full mt-2.5 text-sm font-bold rounded-md text-white"
-          style={ { minHeight: 48, background: "#128C4A", textDecoration: "none" } }
-        >
-          💬 Abrir chat con el cliente
-        </a>
       )}
       {onMarcarInstalado && fechaInst !== null && (
         <div className="mt-2.5 rounded-lg p-3" style={ { background: "#F3F6FB" } }>
@@ -14066,15 +14119,16 @@ function ClienteDetalle({
         {volverLabel || "← Volver a Clientes"}
       </button>
 
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-2xl font-semibold">{cliente.nombre}</h1>
+      <div className="flex items-start justify-between gap-2 mb-1">
+        <h1 className="text-xl font-semibold min-w-0" style={ { overflowWrap: "anywhere" } }>{cliente.nombre}</h1>
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => onEditar(cliente)}
-            className="text-sm font-medium px-4 py-2 rounded-md border"
+            aria-label="Editar cliente"
+            className="text-sm font-medium px-3 py-2 rounded-md border"
             style={ { borderColor: "#DFE5EF", color: "#374151" } }
           >
-            Editar cliente
+            ✏️ Editar
           </button>
           {onEliminar && (
             <button
