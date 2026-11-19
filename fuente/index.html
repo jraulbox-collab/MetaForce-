@@ -7325,6 +7325,8 @@ function mensajeProspecto(pr) {
   const bar = pr.barrio ? tituloEs(pr.barrio) : "";
   return "Hola" + (nombre ? " " + nombre : "") + ", buenas. Le habla José Severino, su asesor de Tigo. " + (bar ? "Estuve por " + bar + " y conversamos un ratito. " : "Conversamos hace poco. ") + "Le escribo para dejarle mi número, y si le parece le reviso qué plan de internet le conviene más para su casa, sin compromiso. ¿Le cuento?";
 }
+// Dónde queda el barrio del prospecto (hay barrios con el mismo nombre en varias zonas): "Corregimiento · Distrito".
+const zonaProspecto = (pr) => [limpiarZona(pr.corregimiento), limpiarZona(pr.distrito)].filter((x, i, a) => x && a.indexOf(x) === i).join(" · ");
 // Nombre para guardar el contacto en WhatsApp: "Nombre - Barrio - Prospecto".
 function nombreContactoProspecto(pr) {
   return [tituloEs(String(pr.nombre || "").trim()), pr.barrio ? tituloEs(pr.barrio) : "", "Prospecto"].filter(Boolean).join(" - ");
@@ -7393,7 +7395,7 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
               <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-xs shrink-0" style={ { minHeight: 34, minWidth: 34, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
             </div>
             <div className="flex items-center gap-2 text-xs font-bold" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>
-              <span className="min-w-0">{pr.barrioId ? "🏘️ " + pr.barrio : "📍 Sin barrio"} · {fmtFechaDia(fechaLocalISO(pr.fecha)).replace(/^[a-záéíóú]+\.? /i, "")}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</span>
+              <span className="min-w-0">{pr.barrioId ? "🏘️ " + pr.barrio + (zonaProspecto(pr) ? " (" + zonaProspecto(pr) + ")" : "") : "📍 Sin barrio"} · {fmtFechaDia(fechaLocalISO(pr.fecha)).replace(/^[a-záéíóú]+\.? /i, "")}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</span>
               {!pr.barrioId && !esCli(pr) && asignando !== pr.id && <button type="button" onClick={() => setAsignando(pr.id)} className="shrink-0 rounded-lg font-bold" style={ { minHeight: 28, padding: "0 8px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62", fontSize: 11 } }>📍 Asignar</button>}
             </div>
             {numerosProspecto(pr).map((n, i, arr) => (
@@ -7442,7 +7444,7 @@ function ProspectosPorBarrio({ prospectos, clientes, onProspectos }) {
       <div className="flex flex-col gap-2">
         {grupos.map(({ g, lista }, i) => (
           <details key={g.barrioId} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } } open={i === 0}>
-            <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {lista.length}</summary>
+            <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {lista.length}{zonaProspecto(g) && <span className="block text-xs font-bold" style={ { color: "#5A6680" } }>{zonaProspecto(g)}</span>}</summary>
             <div className="mt-2">{lista.map(fila)}</div>
           </details>
         ))}
