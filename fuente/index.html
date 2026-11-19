@@ -5224,7 +5224,7 @@ function App() {
             ajustesBarrios={ajustesBarrios}
             onAbrirBarrio={(b) => { setBarrioInicial(b); navegarA("barrios"); }}
             envios={envios}
-            onRegistrarContacto={(c, canal, nota) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "ficha", canal, nota: nota || "" })}
+            onRegistrarContacto={(c, canal, nota, motivo) => registrarEnvio({ tipo: "contacto", clienteId: c.id, nombre: c.nombre || "", origen: "ficha", canal, nota: nota || "", motivo: motivo || "" })}
           />
         )}
         {tab === "alertas" && (
@@ -12128,7 +12128,7 @@ function CicloHogarConfirmar({ cliente, onConfirmar }) {
     return (
       <div className="mt-2">
         <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${cliente.nombre}?`, () => onConfirmar(cliente.id, null), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
-          ✅ Ciclo {String(actual || "").padStart(2, "0")} confirmado
+          ✅ Ciclo {String(actual || "").padStart(2, "0")}
         </button>
       </div>
     );
@@ -13958,8 +13958,8 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
           <button
             type="button"
             onClick={() => setFechaInst(hoyISO)}
-            className="flex-1 text-sm font-bold rounded-md"
-            style={ { minHeight: 44, border: "2px solid #001E62", color: "#001E62", background: "white" } }
+            className="flex-1 text-base font-extrabold rounded-md"
+            style={ { minHeight: 52, border: "2px solid #001E62", color: "#fff", background: "#001E62" } }
           >
             ✓ Ya instalado
           </button>
@@ -14063,9 +14063,6 @@ function ClienteDetalle({
   onAbrirBarrio,
 }) {
   const { datos: datosBarrios } = useBarrios(ajustesBarrios);
-  const [formContacto, setFormContacto] = useState(false);
-  const [canalContacto, setCanalContacto] = useState("whatsapp");
-  const [notaContacto, setNotaContacto] = useState("");
   const [verTodosContactos, setVerTodosContactos] = useState(false);
   const [mostrarPenalizar, setMostrarPenalizar] = useState(false);
   const [motivoPenal, setMotivoPenal] = useState("");
@@ -14346,10 +14343,10 @@ function ClienteDetalle({
           <div className="font-medium flex items-center gap-1.5">
             {cliente.telefono || "—"}
             {String(cliente.telefono || "").replace(/\D/g, "") && (
-              <a href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`} onClick={(e) => { e.preventDefault(); window.location.href = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`; }} aria-label="Escribirle por WhatsApp" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>💬</a>
+              <a href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`} onClick={(e) => { e.preventDefault(); onRegistrarContacto && onRegistrarContacto(cliente, "whatsapp", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento"))); window.location.href = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`; }} aria-label="Escribirle por WhatsApp" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>💬</a>
             )}
             {String(cliente.telefono || "").replace(/\D/g, "") && (
-              <a href={`tel:+507${String(cliente.telefono).replace(/\D/g, "").slice(-8)}`} aria-label="Llamar" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>📞</a>
+              <a href={`tel:+507${String(cliente.telefono).replace(/\D/g, "").slice(-8)}`} onClick={() => onRegistrarContacto && onRegistrarContacto(cliente, "llamada", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento")))} aria-label="Llamar" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>📞</a>
             )}
           </div>
         </div>
@@ -14454,55 +14451,42 @@ function ClienteDetalle({
       {cliente.facturas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 text-center">
           <p className="text-sm" style={ { color: "#B45309" } }>
-            Este cliente está <strong>pendiente de instalación</strong>, todavía no tiene fecha cargada. Editalo para asignarle la fecha de instalación y así empezar a generar sus facturas.
+            {cliente.instalacionProgramada
+              ? <>Sus facturas aparecen cuando lo marques como <strong>instalado</strong>.</>
+              : <>Este cliente está <strong>pendiente de instalación</strong>, todavía no tiene fecha cargada. Editalo para asignarle la fecha de instalación y así empezar a generar sus facturas.</>}
           </p>
         </div>
       ) : (
       <div className="flex flex-col gap-2">
-        {cliente.facturas.filter((f) => f.n <= 3).map((f) => {
+        {cliente.facturas.filter((f) => f.n <= 3 && (f.n === 1 || !f.generada || String(f.generada).slice(0, 10) <= fechaLocalISO(new Date()))).map((f) => {
           const estadoFactura = cliente[`f${f.n}_estado`] || "";
           return (
             <div key={f.n} className="bg-white rounded-lg border border-gray-200 shadow-sm p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <div className="font-medium text-sm">{ORDINAL[f.n]} factura</div>
-                  <div className="text-xs" style={ { color: "#5A6680" } }>
-                    Generada: {fmtFecha(f.generada)} · Vence: {fmtFecha(f.vencimiento)}
-                  </div>
-                  {estadoFactura === "pagada" && (
-                    <div className="text-xs mt-0.5" style={ { color: "#0072CE" } }>
-                      {(() => {
-                        const marcada = fechaMarcadaPagada(cliente, f.n, historialCambios);
-                        return marcada ? `✓ Marcada como pagada el ${fmtFechaHora(marcada)}` : "✓ Marcada como pagada · sin fecha registrada";
-                      })()}
-                    </div>
-                  )}
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="font-bold text-sm" style={ { color: "#001E62" } }>{ORDINAL[f.n]} factura</div>
+                  <div className="text-xs" style={ { color: "#5A6680" } }>Vence <strong>{fmtFecha(f.vencimiento)}</strong> · generada {fmtFecha(f.generada)}</div>
                 </div>
-                {estadoFactura === "pagada" ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-medium px-3 py-1.5 rounded-full" style={ { background: "#E3EDFA", color: "#0072CE" } }>
-                      Pagada ✓
-                    </span>
-                    <button
-                      onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "")}
-                      className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                      style={ { borderColor: "#DFE5EF", color: "#374151" } }
-                    >
-                      Desmarcar
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")}
-                      className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                      style={ { background: "#001E62" } }
-                    >
-                      Marcar como pagada
-                    </button>
-                  </div>
-                )}
+                <span className="text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap" style={ estadoFactura === "pagada" ? { background: "#E3EDFA", color: "#001E62" } : { background: "#FFF3DC", color: "#B45309" } }>
+                  {estadoFactura === "pagada" ? "✓ Pagada" : "⏳ Pendiente"}
+                </span>
               </div>
+              {f.n === 1 && <div className="text-xs font-semibold mt-1.5" style={ { color: "#001E62" } }>💰 Esta cuenta para tu comisión</div>}
+              {estadoFactura === "pagada" ? (
+                <div className="flex items-center justify-between gap-2 mt-2">
+                  <span className="text-xs" style={ { color: "#5A6680" } }>
+                    {(() => {
+                      const marcada = fechaMarcadaPagada(cliente, f.n, historialCambios);
+                      return marcada ? `Marcada el ${fmtFechaHora(marcada)}` : "";
+                    })()}
+                  </span>
+                  <button onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "")} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Desmarcar</button>
+                </div>
+              ) : (
+                <button onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")} className="w-full mt-2.5 text-sm font-bold rounded-md text-white" style={ { background: "#001E62", minHeight: 44 } }>
+                  Marcar como pagada
+                </button>
+              )}
 
               {(() => {
                 const enviadosF = f.milestones.filter((m) => m.enviado).map((m) => {
@@ -14511,9 +14495,9 @@ function ClienteDetalle({
                 });
                 if (enviadosF.length === 0) return null;
                 return (
-                  <div className="mb-3 flex flex-col gap-1">
+                  <div className="mt-2.5 mb-1 flex flex-col gap-1">
                     {enviadosF.map(({ m, ev }) => (
-                      <div key={m.key} className="text-xs font-medium" style={ { color: "#166534" } }>
+                      <div key={m.key} className="text-xs font-medium" style={ { color: "#001E62" } }>
                         ✓ {m.label} · {ev ? "enviado " + fmtFechaHora(ev) : "enviado (sin fecha registrada)"}
                       </div>
                     ))}
@@ -14523,15 +14507,9 @@ function ClienteDetalle({
 
               {(() => {
                 const alertasActivas = f.milestones.filter((m) => m.pendienteHoy);
-                if (alertasActivas.length === 0) {
-                  return (
-                    <p className="text-xs" style={ { color: "#9CA3AF" } }>
-                      Sin alertas activas en esta factura por el momento.
-                    </p>
-                  );
-                }
+                if (alertasActivas.length === 0) return null;
                 return (
-                  <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-3 mt-3">
                     {alertasActivas.map((m) => {
                       const key = cliente.id + m.key;
                       return (
@@ -14578,44 +14556,43 @@ function ClienteDetalle({
             </div>
           );
         })}
+        {(() => {
+          const hoyF = fechaLocalISO(new Date());
+          const prox = cliente.facturas.find((f) => f.n > 1 && f.n <= 3 && f.generada && String(f.generada).slice(0, 10) > hoyF);
+          return prox ? <div className="text-xs" style={ { color: "#5A6680" } }>Próxima: {ORDINAL[prox.n]} factura, se genera el {fmtFecha(prox.generada)}.</div> : null;
+        })()}
       </div>
       )}
 
       {(() => {
+        // Historial automático: se anota solo al abrir WhatsApp o llamar desde la app, con el motivo.
         const CANAL = { whatsapp: "💬 WhatsApp", llamada: "📞 Llamada", visita: "🚶 Visita" };
-        const lista = (envios || []).filter((e) => e && e.clienteId === cliente.id && e.tipo === "contacto" && e.origen !== "clientes" && e.origen !== "comision").sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+        const MOTIVO = { cobro: "💵 Cobro", instalacion: "🔧 Instalación", venta: "📦 Venta o info", seguimiento: "🤝 Seguimiento", otro: "📝 Otro" };
+        const motivoDe = (e) => {
+          if (e.motivo && MOTIVO[e.motivo]) return e.motivo;
+          const k = String(e.key || "");
+          if (k === "info-instalacion" || /^rec-/.test(k)) return "instalacion";
+          if (k === "v" || /^venta|^promo/.test(k)) return "venta";
+          if (k) return "cobro";
+          return "seguimiento";
+        };
+        const lista = (envios || [])
+          .filter((e) => e && e.clienteId === cliente.id && e.fecha && ((e.tipo === "contacto" && e.origen !== "clientes" && e.origen !== "comision") || e.tipo === "abrir"))
+          .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
+        if (lista.length === 0) return null;
         const mostrar = verTodosContactos ? lista : lista.slice(0, 5);
         return (
           <div className="mt-6">
-            <div className="flex items-center justify-between gap-2 mb-2">
-              <h2 className="text-sm font-semibold">Contactos</h2>
-              <button type="button" onClick={() => setFormContacto(!formContacto)} className="text-xs font-bold rounded-md px-3" style={ { minHeight: 40, background: "#001E62", color: "#fff" } }>＋ Registrar contacto</button>
-            </div>
-            {formContacto && (
-              <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-2">
-                <div className="flex gap-2 flex-wrap mb-3">
-                  {Object.entries(CANAL).map(([k, t]) => (
-                    <button key={k} type="button" onClick={() => setCanalContacto(k)} className="rounded-full font-bold text-sm px-3" style={ { minHeight: 40, border: "1.5px solid " + (canalContacto === k ? "#001E62" : "#DFE5EF"), background: canalContacto === k ? "#001E62" : "#fff", color: canalContacto === k ? "#fff" : "#001E62" } }>{t}</button>
-                  ))}
-                </div>
-                <textarea value={notaContacto} onChange={(e) => setNotaContacto(e.target.value)} rows={2} placeholder="Nota (opcional): ej. dice que paga el viernes" className="w-full rounded-md border outline-none px-3 py-2 text-sm mb-3" style={ { borderColor: "#DFE5EF" } } />
-                <div className="flex gap-2">
-                  <button type="button" onClick={() => { onRegistrarContacto && onRegistrarContacto(cliente, canalContacto, notaContacto.trim()); setNotaContacto(""); setFormContacto(false); }} className="text-sm font-bold rounded-md px-4 text-white" style={ { minHeight: 44, background: "#166534" } }>Guardar</button>
-                  <button type="button" onClick={() => setFormContacto(false)} className="text-sm font-bold rounded-md px-4 border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#374151" } }>Cancelar</button>
-                </div>
-              </div>
-            )}
+            <h2 className="text-sm font-semibold mb-2">Contactos</h2>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4">
-              {lista.length === 0 ? (
-                <p className="text-xs py-4" style={ { color: "#5A6680" } }>Todavía no hay contactos registrados.</p>
-              ) : mostrar.map((e, i) => (
+              {mostrar.map((e, i) => (
                 <div key={e.id || i} className="py-2" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
-                  <div className="text-sm font-bold" style={ { color: "#001E62" } }>{CANAL[e.canal] || "💬 WhatsApp"} <span className="text-xs font-normal" style={ { color: "#5A6680" } }>· {fmtFechaHora(e.fecha)}</span></div>
+                  <div className="text-sm font-bold" style={ { color: "#001E62" } }>{CANAL[e.canal] || CANAL.whatsapp} · {MOTIVO[motivoDe(e)]} <span className="text-xs font-normal" style={ { color: "#5A6680" } }>· {fmtFechaHora(e.fecha)}</span></div>
                   {e.nota && <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }>{e.nota}</div>}
                 </div>
               ))}
               {lista.length > 5 && (
-                <button type="button" onClick={() => setVerTodosContactos(!verTodosContactos)} className="w-full text-xs font-bold py-3" style={ { color: "#0072CE", borderTop: "1px solid #EEF2F9" } }>{verTodosContactos ? "Ver menos" : `Ver todos (${lista.length})`}</button>
+                <button type="button" onClick={() => setVerTodosContactos(!verTodosContactos)} className="w-full text-xs font-bold py-3" style={ { color: "#0072CE", borderTop: "1px solid #EEF2F9" } }>{verTodosContactos ? "Ver menos" : "Ver todos (" + lista.length + ")"}</button>
               )}
             </div>
           </div>
@@ -14743,7 +14720,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
       {nuevo && fch && tarjeta("Facturación", (
         <>
           {filas([
-            ["Ciclo", sinConfirmarCiclo ? chip("Sin confirmar · sugerido " + pad(fch.ciclo), AMBAR) : c.cicloConfirmado ? chip(pad(fch.ciclo) + " · confirmado", VERDE) : pad(fch.ciclo)],
+            ["Ciclo", sinConfirmarCiclo ? chip("Sin confirmar · sugerido " + pad(fch.ciclo), AMBAR) : c.cicloConfirmado ? chip("✅ " + pad(fch.ciclo), VERDE) : pad(fch.ciclo)],
             ["1ra factura", pagada ? chip("Pagada", VERDE) : sinSalir ? chip("Aún no sale · ~" + fmtFechaDia(fch.llegaISO), GRIS) : chip("Pendiente", AMBAR)],
             !pagada && !!limite && ["Fecha límite", fmtFechaDia(fechaLocalISO(limite)) + (vencidoPlazo ? " · venció" : "")],
             !pagada && ["Pedirle el pago antes del", fmtFechaDia(fch.metaISO)],
@@ -15677,7 +15654,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                         {c.cicloConfirmado && c.f1_estado !== "pagada" && esquemaNuevo(m.key) && (
                           <div className="mt-1.5">
                             <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${c.nombre}?`, () => onEditar(c.id, { cicloConfirmado: false }), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
-                              ✅ Ciclo {String((movilFechasPrimeraFactura(c) || {}).ciclo || "").padStart(2, "0")} confirmado
+                              ✅ Ciclo {String((movilFechasPrimeraFactura(c) || {}).ciclo || "").padStart(2, "0")}
                             </button>
                           </div>
                         )}
