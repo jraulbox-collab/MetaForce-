@@ -6830,7 +6830,6 @@ function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
 // ---------- Descubrir barrios: eliges cuánto manejar, te sugiere barrios nuevos y después anotas cómo te fue ----------
 const TIEMPOS_DESCUBRIR = [10, 20, 30, 40, 50, 60, 90];
 const COMPETENCIA_OPC = ["Más Móvil", "Otra", "Ninguna"];
-const RANGOS_PAGO = [["25-30", 27.5], ["31-35", 33], ["36-40", 38], ["41-48", 44.5]];
 const QUIEN_NUMERO = ["Señora", "Esposo", "Otro"];
 // Un prospecto puede tener varios WhatsApp (por ejemplo la señora y el esposo que paga). Los guardados antes traen solo "whatsapp".
 function numerosProspecto(pr) {
@@ -6843,7 +6842,7 @@ function infoProspecto(pr) {
   if (pr.tiene !== "si") return "";
   const comp = pr.compania || "Con servicio";
   const tipo = pr.tipo === "internet_tv" ? "Internet + TV" + (pr.cajasTV ? " (" + pr.cajasTV + (pr.cajasTV === 1 ? " caja" : " cajas") + ")" : "") : pr.tipo === "internet" ? "Solo internet" : "";
-  return " · " + comp + (tipo ? " · " + tipo : "") + (pr.pagaRango ? " · $" + pr.pagaRango : pr.paga > 0 ? " · $" + pr.paga : "");
+  return " · " + comp + (tipo ? " · " + tipo : "") + (pr.paga > 0 ? " · $" + pr.paga : "");
 }
 const OPINION_OPC = [
   ["contentos", "😊 Contentos con su proveedor"],
@@ -7126,7 +7125,7 @@ function ProspectoBarrioForm({ onGuardar, onCancelar }) {
   const [compania, setCompania] = useState("");
   const [tipo, setTipo] = useState("");
   const [cajas, setCajas] = useState(0);
-  const [rango, setRango] = useState("");
+  const [paga, setPaga] = useState("");
   const [nombre, setNombre] = useState("");
   const [nums, setNums] = useState([{ numero: "", quien: "", paga: false }]);
   const [intento, setIntento] = useState(false);
@@ -7143,12 +7142,11 @@ function ProspectoBarrioForm({ onGuardar, onCancelar }) {
     setIntento(true);
     if (faltaNombre || faltaWa || extraMal) return;
     const telefonos = nums.filter((n) => dig(n.numero).length >= 7).map((n) => ({ numero: n.numero.trim(), quien: n.quien, paga: !!n.paga }));
-    const r = RANGOS_PAGO.find((x) => x[0] === rango);
     onGuardar({
       nombre: nombre.trim(), whatsapp: telefonos[0].numero, telefonos,
       tiene: tiene || null, compania: tiene === "si" ? compania || null : tiene === "no" ? "Ninguna" : null,
       tipo: tiene === "si" ? tipo || null : null, cajasTV: tiene === "si" && tipo === "internet_tv" && cajas ? cajas : null,
-      pagaRango: tiene === "si" && r ? r[0] : null, paga: tiene === "si" && r ? r[1] : null,
+      paga: tiene === "si" && paga !== "" && Number(paga) > 0 ? Number(paga) : null,
     });
   };
   const campo = { minHeight: 44, borderColor: "#DFE5EF" };
@@ -7171,7 +7169,7 @@ function ProspectoBarrioForm({ onGuardar, onCancelar }) {
             </>
           )}
           {etq("¿Cuánto paga al mes?")}
-          <div className="flex flex-wrap gap-2">{RANGOS_PAGO.map(([k]) => chipM(rango === k, "$" + k, () => setRango(rango === k ? "" : k), k))}</div>
+          <input type="number" inputMode="decimal" value={paga} onChange={(e) => setPaga(e.target.value)} placeholder="Ej. 32.50" className="rounded-lg border outline-none px-3 text-sm" style={ { minHeight: 44, borderColor: "#DFE5EF", width: 140 } } />
         </>
       )}
       <div className="text-xs font-bold mt-4" style={ { color: "#5A6680" } }>Datos del prospecto (obligatorios)</div>
