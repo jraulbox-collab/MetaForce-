@@ -5159,7 +5159,7 @@ function App() {
         )}
         {tab === "clientes" && (
           <div className="flex items-center gap-2 mb-3">
-            {[["clientes", "Clientes"], ["prospectos", "👥 Prospectos" + (prospectosBarrios && prospectosBarrios.length ? " (" + prospectosBarrios.filter((x) => !prospectoEsCliente(x, clientesActivos)).length + ")" : "")]].map(([k, t]) => (
+            {[["clientes", "Clientes"], ["prospectos", "👥 Prospectos" + (prospectosBarrios && prospectosBarrios.length ? " (" + prospectosBarrios.filter((x) => !prospectoEsCliente(x, clientesActivos) && !prospectoArchivado(x)).length + ")" : "")]].map(([k, t]) => (
               <button key={k} type="button" onClick={() => setVistaClientes(k)} className="rounded-full text-sm font-bold px-4" style={ { minHeight: 44, border: "2px solid #001E62", background: vistaClientes === k ? "#001E62" : "#fff", color: vistaClientes === k ? "#fff" : "#001E62" } }>{t}</button>
             ))}
           </div>
@@ -6881,7 +6881,7 @@ function ProspectosTarjeta({ prospectos, clientes, onAbrir }) {
     const limite = fechaLocalISO(new Date(ahora - 30 * dia));
     const semanas = [0, 1, 2, 3].map((k) => todos.filter((x) => edad(x.fecha) > k * 7 * dia && edad(x.fecha) <= (k + 1) * 7 * dia).length).reverse();
     return {
-      pendientes: pares.length - conv.length,
+      pendientes: pares.filter((x) => !x.cl && !prospectoArchivado(x.pr)).length,
       sem: semanas[3], semPrev: semanas[2], semanas,
       conv30: conv.filter((x) => fechaVentaCliente(x.cl) >= limite && fechaVentaCliente(x.cl) >= fechaLocalISO(x.pr.fecha)).length,
       convTotal: conv.length,
@@ -7218,9 +7218,10 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
                 <div className="mt-2">
                   <div className="text-xs font-extrabold mb-1" style={ { color: "#001E62" } }>👥 Prospectos del barrio ({prosDeBarrio(v.barrioId).length})</div>
                   {prosDeBarrio(v.barrioId).map((pr) => (
-                    <div key={pr.id} className="flex items-center gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#E3EDFA" } }>
+                    <div key={pr.id} className="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#E3EDFA" } }>
                       <div className="min-w-0 flex-1 text-xs" style={ { color: "#001E62", overflowWrap: "anywhere" } }><span className="font-extrabold">{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCliente(pr) ? " · ✅ Ya es cliente" : ""}</div>
                       <button type="button" onClick={() => quitarProspecto(pr.id)} aria-label={"Quitar a " + pr.nombre} className="shrink-0 rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 36, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
+                    {!esCliente(pr) && <WhatsAppProspecto pr={pr} />}
                     </div>
                   ))}
                 </div>
@@ -7312,73 +7313,110 @@ function clienteDeProspecto(pr, clientes) {
 }
 const prospectoEsCliente = (pr, clientes) => !!clienteDeProspecto(pr, clientes);
 const fechaVentaCliente = (c) => (c.creadoEn ? fechaLocalISO(c.creadoEn) : c.fechaIngreso || "");
+// Un prospecto sin convertirse pasa solo a "archivado" a los 60 días: sale de las listas de trabajo pero sigue contando en las estadísticas.
+const DIAS_PROSPECTO_ACTIVO = 60;
+const prospectoArchivado = (pr) => !!pr && !!pr.fecha && Date.now() - new Date(pr.fecha).getTime() > DIAS_PROSPECTO_ACTIVO * 86400000;
 const ventaValida = (c) => !!c && !c.eliminado && !c.cancelado && !c.penalizado;
 
-// Vista de prospectos (dentro de la pestaña Clientes): todos juntos, agrupados por barrio, con los que no tienen barrio arriba.
+// Mensaje de primer contacto para un prospecto (abre WhatsApp con el texto ya escrito; José solo toca enviar).
+function mensajeProspecto(pr) {
+  const nom = String(pr.nombre || "").trim().split(/\s+/)[0];
+  const nombre = nom ? nom.charAt(0).toUpperCase() + nom.slice(1).toLowerCase() : "";
+  const bar = pr.barrio ? tituloEs(pr.barrio) : "";
+  return "Hola" + (nombre ? " " + nombre : "") + ", buenas. Le habla José Severino, su asesor de Tigo. " + (bar ? "Estuve por " + bar + " y conversamos un ratito. " : "Conversamos hace poco. ") + "Le escribo para dejarle mi número, y si le parece le reviso qué plan de internet le conviene más para su casa, sin compromiso. ¿Le cuento?";
+}
+function WhatsAppProspecto({ pr }) {
+  const nums = numerosProspecto(pr).filter((n) => String(n.numero || "").replace(/\D/g, "").length >= 7).sort((a, b) => (b.paga ? 1 : 0) - (a.paga ? 1 : 0));
+  if (nums.length === 0) return null;
+  return (
+    <div className="w-full flex flex-wrap gap-2 mt-1">
+      {nums.map((n, i) => (
+        <a key={i} href={"https://wa.me/" + telefonoWhatsapp(n.numero) + "?text=" + encodeURIComponent(mensajeProspecto(pr))} className="flex-1 flex items-center justify-center rounded-lg font-bold text-xs" style={ { minHeight: 40, minWidth: 110, border: "2px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none" } }>💬 {nums.length > 1 ? (n.quien || "Número " + (i + 1)) + (n.paga ? " 💳" : "") : "WhatsApp"}</a>
+      ))}
+    </div>
+  );
+}
+
+// Lista de prospectos (pestaña Clientes): una sola lista, los más recientes arriba.
 function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
   const [asignando, setAsignando] = useState(null);
   const [q, setQ] = useState("");
   const [verClientes, setVerClientes] = useState(false);
+  const [verArchivados, setVerArchivados] = useState(false);
   const nq = normTexto(q);
+  const dq = nq.replace(/\D/g, "");
   const todosP = prospectos || [];
   const esCli = (pr) => prospectoEsCliente(pr, clientes);
-  const visibles = todosP.filter((pr) => (verClientes || !esCli(pr)) && (!nq || normTexto(pr.nombre).includes(nq) || normTexto(pr.barrio).includes(nq) || numerosProspecto(pr).some((n) => String(n.numero || "").replace(/\D/g, "").includes(nq.replace(/\D/g, "") || "#"))));
-  const sinBarrio = visibles.filter((x) => !x.barrioId);
-  const grupos = [...new Map(visibles.filter((x) => x.barrioId).map((x) => [x.barrioId, x])).values()].map((g) => ({ g, lista: visibles.filter((x) => x.barrioId === g.barrioId) }));
-  const nPend = todosP.filter((x) => !esCli(x)).length; const nConv = todosP.length - nPend;
+  const visibles = todosP.filter((pr) => (verClientes || !esCli(pr)) && (verArchivados || esCli(pr) || !prospectoArchivado(pr)) && (!nq || normTexto(pr.nombre).includes(nq) || normTexto(pr.barrio).includes(nq) || (dq.length >= 3 && numerosProspecto(pr).some((n) => String(n.numero || "").replace(/\D/g, "").includes(dq))))).slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  const nArch = todosP.filter((x) => !esCli(x) && prospectoArchivado(x)).length;
+  const nConv = todosP.filter((x) => esCli(x)).length; const nPend = todosP.length - nConv - nArch;
+  const nSin = todosP.filter((x) => !x.barrioId && !esCli(x) && !prospectoArchivado(x)).length;
   const quitar = (pid) => onProspectos((prev) => prev.filter((x) => x.id !== pid));
   const asignar = (pid, b) => { onProspectos((prev) => prev.map((x) => (x.id === pid ? { ...x, barrioId: b.barrioId, barrio: b.barrio, provincia: b.provincia, distrito: b.distrito, corregimiento: b.corregimiento } : x))); setAsignando(null); };
-  const fila = (pr) => (
-    <div key={pr.id} className="flex items-start gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#F3F6FB" } }>
-      <div className="min-w-0 flex-1 text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCli(pr) ? " · ✅ Ya es cliente" : ""}</div>
-      <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="shrink-0 rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 36, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
-    </div>
-  );
   return (
     <div>
-      <div className="text-sm font-extrabold mb-2" style={ { color: "#001E62" } }>👥 {nPend} {nPend === 1 ? "prospecto" : "prospectos"}{nConv > 0 ? " · ✅ " + nConv + (nConv === 1 ? " ya es cliente" : " ya son clientes") : ""}</div>
+      <div className="text-sm font-extrabold mb-2" style={ { color: "#001E62" } }>👥 {nPend} {nPend === 1 ? "prospecto" : "prospectos"}{nSin > 0 ? " · 📍 " + nSin + " sin barrio" : ""}{nConv > 0 ? " · ✅ " + nConv + (nConv === 1 ? " ya es cliente" : " ya son clientes") : ""}</div>
       <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, barrio o número" className="w-full rounded-xl border outline-none px-3 text-sm mb-2" style={ { minHeight: 44, borderColor: "#DFE5EF", background: "#fff" } } aria-label="Buscar prospecto" />
       {nConv > 0 && <button type="button" onClick={() => setVerClientes(!verClientes)} className="text-xs font-bold mb-3" style={ { color: "#0072CE", background: "none", border: 0, minHeight: 32 } }>{verClientes ? "Ocultar los que ya son clientes" : "Mostrar también los que ya son clientes"}</button>}
       {todosP.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no tienes prospectos. Anótalos con el botón ➕ cuando andes en un barrio.</div>}
       {todosP.length > 0 && visibles.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No encontré prospectos con eso.</div>}
-      {sinBarrio.length > 0 && (
-        <div className="mb-3">
-          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>📍 Sin barrio ({sinBarrio.length})</div>
-          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Asígnales su barrio cuando puedas.</div>
-          <div className="flex flex-col gap-2">
-            {sinBarrio.map((pr) => (
-              <div key={pr.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
-                <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCli(pr) ? " · ✅ Ya es cliente" : ""}</div>
-                {asignando === pr.id ? (
-                  <>
-                    <ElegirBarrioProspecto ajustes={ajustes} recientes={[]} onElegir={(b) => asignar(pr.id, b)} />
-                    <button type="button" onClick={() => setAsignando(null)} className="w-full rounded-lg font-bold text-sm mt-2" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>Cancelar</button>
-                  </>
-                ) : (
-                  <div className="flex gap-2 mt-2">
-                    <button type="button" onClick={() => setAsignando(pr.id)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>📍 Asignar barrio</button>
-                    <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
-                  </div>
-                )}
+      <div className="flex flex-col gap-2">
+        {visibles.map((pr) => (
+          <div key={pr.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{pr.nombre}{esCli(pr) ? " · ✅ Ya es cliente" : ""}</div>
+                <div className="text-xs font-bold" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>{pr.barrioId ? "🏘️ " + pr.barrio : "📍 Sin barrio"} · {fmtFechaHora(pr.fecha)}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️ Archivado" : ""}</div>
+                <div className="text-xs mt-0.5" style={ { color: "#374151", overflowWrap: "anywhere" } }>{textoNumeros(pr)}{infoProspecto(pr)}</div>
               </div>
-            ))}
+              <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="shrink-0 rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 36, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
+            </div>
+            {!esCli(pr) && <div className="flex flex-wrap gap-2 mt-2"><WhatsAppProspecto pr={pr} />{!pr.barrioId && asignando !== pr.id && <button type="button" onClick={() => setAsignando(pr.id)} className="w-full rounded-lg font-bold text-xs" style={ { minHeight: 40, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>📍 Asignar barrio</button>}</div>}
+            {asignando === pr.id && (
+              <>
+                <ElegirBarrioProspecto ajustes={ajustes} recientes={[]} onElegir={(b) => asignar(pr.id, b)} />
+                <button type="button" onClick={() => setAsignando(null)} className="w-full rounded-lg font-bold text-sm mt-2" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>Cancelar</button>
+              </>
+            )}
           </div>
-        </div>
-      )}
-      {grupos.length > 0 && (
-        <div>
-          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>🏘️ Por barrio</div>
-          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Se quedan aquí hasta que se vuelven clientes.</div>
-          <div className="flex flex-col gap-2">
-            {grupos.map(({ g, lista }) => (
-              <details key={g.barrioId} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } } open={!!nq}>
-                <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {lista.length}</summary>
-                <div className="mt-2">{lista.map(fila)}</div>
-              </details>
-            ))}
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
+      {nArch > 0 && <button type="button" onClick={() => setVerArchivados(!verArchivados)} className="w-full mt-3 rounded-xl border font-bold text-sm" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>{verArchivados ? "Ocultar archivados" : "🗄️ Ver archivados (" + nArch + ")"}</button>}
+    </div>
+  );
+}
+
+// Prospectos agrupados por barrio (pestaña Barrios): el barrio con el prospecto más reciente va primero.
+function ProspectosPorBarrio({ prospectos, clientes }) {
+  const todosP = (prospectos || []).filter((x) => x && !prospectoEsCliente(x, clientes) && !prospectoArchivado(x));
+  const porFecha = (a, b) => String(b.fecha).localeCompare(String(a.fecha));
+  const grupos = [...new Map(todosP.filter((x) => x.barrioId).slice().sort(porFecha).map((x) => [x.barrioId, x])).values()].map((g) => ({ g, lista: todosP.filter((x) => x.barrioId === g.barrioId).sort(porFecha) }));
+  const sin = todosP.filter((x) => !x.barrioId).sort(porFecha);
+  if (todosP.length === 0) return <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no tienes prospectos. Anótalos con el botón ➕ cuando andes en un barrio.</div>;
+  const fila = (pr) => (
+    <div key={pr.id} className="rounded-lg px-2 py-2 mb-1" style={ { background: "#F3F6FB" } }>
+      <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}</div>
+      <div className="flex flex-wrap gap-2 mt-1"><WhatsAppProspecto pr={pr} /></div>
+    </div>
+  );
+  return (
+    <div>
+      <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Se quedan aquí hasta que se vuelven clientes.</div>
+      <div className="flex flex-col gap-2">
+        {grupos.map(({ g, lista }, i) => (
+          <details key={g.barrioId} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } } open={i === 0}>
+            <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {lista.length}</summary>
+            <div className="mt-2">{lista.map(fila)}</div>
+          </details>
+        ))}
+        {sin.length > 0 && (
+          <details className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
+            <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32 } }>📍 Sin barrio · 👥 {sin.length}</summary>
+            <div className="text-xs my-1" style={ { color: "#5A6680" } }>Asígnales barrio desde Clientes → Prospectos.</div>
+            <div className="mt-2">{sin.map(fila)}</div>
+          </details>
+        )}
+      </div>
     </div>
   );
 }
@@ -7635,16 +7673,19 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
         <>
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
             {chip(vista === "descubrir", "🧭 Descubrir", () => { setVista("descubrir"); setVerMas(30); })}
+            {chip(vista === "prospectos", "👥 Prospectos", () => { setVista("prospectos"); setVerMas(30); })}
             {chip(vista === "stats", "📊 Estadísticas", () => { setVista("stats"); setVerMas(30); })}
             {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
           </div>
-          {vista !== "stats" && vista !== "descubrir" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
+          {vista !== "stats" && vista !== "descubrir" && vista !== "prospectos" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
             <option value="centrales">Herrera y Los Santos</option>
             <option value="todas">Todas las provincias</option>
             {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
           </select>}
 
           {vista === "descubrir" && <DescubrirBarrios todos={todos} visitas={visitas || []} onVisitas={onVisitas || (() => {})} prospectos={prospectos || []} onProspectos={onProspectos || (() => {})} clientesTodos={clientes} ajustes={ajustes} />}
+
+          {vista === "prospectos" && <ProspectosPorBarrio prospectos={prospectos || []} clientes={clientes} />}
 
           {vista === "stats" && stats && (() => {
             const bloque = (titulo, nota, filas, vacio) => filas.length === 0 ? null : (
