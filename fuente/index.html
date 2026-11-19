@@ -14073,7 +14073,7 @@ function ClienteDetalle({
   const [mostrarCancelar, setMostrarCancelar] = useState(false);
   const [fechaCancel, setFechaCancel] = useState(() => fechaLocalISO(new Date()));
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
-  const [verObs, setVerObs] = useState(true);
+  const [verObs, setVerObs] = useState(false);
   const [menuAcciones, setMenuAcciones] = useState(false);
   const [masInst, setMasInst] = useState(false); // opciones extra de la instalación (desde el menú ⋯)
 
@@ -14343,7 +14343,7 @@ function ClienteDetalle({
             ["1ra factura", fmtMonto(cliente.monto1raFactura)],
             ["Pago", <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block" style={ { color: r.color, background: r.bg } }>{r.texto}</span>],
             cliente.cicloFacturacion && cicloLabel !== "—" && ["Ciclo", cicloLabel],
-            (cliente.fechaInstalacion || !(mostrarInst && cliente.instalacionProgramada)) && ["Instalación", cliente.fechaInstalacion ? fmtFechaDia(cliente.fechaInstalacion) : cliente.instalacionProgramada ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "") : "—"],
+            (cliente.fechaInstalacion || !(mostrarInst && cliente.instalacionProgramada)) && ["Instalación", cliente.fechaInstalacion ? fmtFechaDia(cliente.fechaInstalacion) + (() => { const d = Math.round((new Date(fechaLocalISO(new Date()) + "T12:00:00") - new Date(String(cliente.fechaInstalacion).slice(0, 10) + "T12:00:00")) / 86400000); return d > 0 ? " · hace " + d + (d === 1 ? " día" : " días") : d === 0 ? " · hoy" : ""; })() : cliente.instalacionProgramada ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "") : "—"],
             ["Ingreso", cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"],
           ].filter(Boolean);
           return filasH.map(([k, v], i) => filaH(k, v, i));
@@ -14357,13 +14357,17 @@ function ClienteDetalle({
         const tieneTel = !!String(cliente.telefono || "").replace(/\D/g, "");
         const rb = (datosBarrios && cliente.observaciones) ? cruzarBarrio(cliente, datosBarrios) : null;
         const hayBarrio = !!rb && rb.estado !== "sinBarrio";
-        if (!tieneTel && !hayBarrio) return null;
+        const bt = leerBloqueTigo(cliente.observaciones);
+        const soloDig = (x) => String(x || "").replace(/\D/g, "").slice(-8);
+        const extrasT = [bt.voz1, bt.voz2].filter((x) => x && soloDig(x) && soloDig(x) !== soloDig(cliente.telefono));
+        const filasC = [extrasT.length > 0 && [extrasT.length > 1 ? "Teléfonos extra" : "Teléfono extra", extrasT.join(" · ")], !!bt.correo && ["Correo", bt.correo]].filter(Boolean);
+        if (!tieneTel && !hayBarrio && filasC.length === 0) return null;
         let filaBarrio = null;
         if (hayBarrio) {
           if (rb.estado === "ok") {
             const e = datosBarrios.porId.get(datosBarrios.aEnt.get(rb.fila.id)) || rb.fila;
             filaBarrio = (
-              <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio(e)} className="w-full flex items-center justify-between gap-3 py-2 text-sm text-left" style={ { borderTop: tieneTel ? "1px solid #EEF2F9" : "none", minHeight: 44 } }>
+              <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio(e)} className="w-full flex items-center justify-between gap-3 py-2 text-sm text-left" style={ { borderTop: (tieneTel || filasC.length) ? "1px solid #EEF2F9" : "none", minHeight: 44 } }>
                 <span style={ { color: "#5A6680" } }>Barrio</span>
                 <span className="text-right min-w-0">
                   <span className="block font-medium" style={ { color: "#001E62", overflowWrap: "anywhere" } }>🏘️ {e.barrio}{e.arpuAlto ? " ⭐" : ""} ›</span>
@@ -14373,7 +14377,7 @@ function ClienteDetalle({
             );
           } else {
             filaBarrio = (
-              <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio({ barrio: rb.barrio, sinCoincidencia: true })} className="w-full flex items-center justify-between gap-3 py-2 text-sm text-left" style={ { borderTop: tieneTel ? "1px solid #EEF2F9" : "none", minHeight: 44 } }>
+              <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio({ barrio: rb.barrio, sinCoincidencia: true })} className="w-full flex items-center justify-between gap-3 py-2 text-sm text-left" style={ { borderTop: (tieneTel || filasC.length) ? "1px solid #EEF2F9" : "none", minHeight: 44 } }>
                 <span style={ { color: "#5A6680" } }>Barrio</span>
                 <span className="text-right min-w-0">
                   <span className="block font-medium" style={ { color: "#B45309", overflowWrap: "anywhere" } }>⚠ Sin coincidencia: “{rb.barrio}” ›</span>
@@ -14396,6 +14400,12 @@ function ClienteDetalle({
               </span>
             </div>
             )}
+            {filasC.map(([k, v], i) => (
+              <div key={k} className="flex justify-between gap-3 py-2 text-sm" style={ { borderTop: (i || tieneTel) ? "1px solid #EEF2F9" : "none" } }>
+                <span style={ { color: "#5A6680" } }>{k}</span>
+                <span className="text-right" style={ { color: "#111827", overflowWrap: "anywhere" } }>{v}</span>
+              </div>
+            ))}
             {filaBarrio}
           </div>
         );
@@ -14540,6 +14550,33 @@ function ClienteDetalle({
       )}
 
       {(() => {
+        const hoyM = fechaLocalISO(new Date());
+        const ms = [];
+        (cliente.facturas || []).filter((f) => f.n <= 3).forEach((f) => (f.milestones || []).forEach((m) => ms.push({ ...m, fn: f.n })));
+        if (ms.length === 0 || cliente.cancelado || cliente.penalizado) return null;
+        ms.sort((a, b) => String(a.triggerDate).localeCompare(String(b.triggerDate)));
+        let futuros = 0;
+        const visibles = ms.filter((m) => { if (m.enviado || m.pendienteHoy) return true; futuros += 1; return futuros <= 2; });
+        const chipM = (t, bg, col) => <span className="inline-block text-xs font-medium rounded-full px-2.5 py-0.5 whitespace-nowrap" style={ { background: bg, color: col } }>{t}</span>;
+        return (
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-3 mb-3">
+            <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>Mensajes</h2>
+            {visibles.map((m, i) => (
+              <div key={m.key} className="flex items-center justify-between gap-3 py-2 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                <span className="min-w-0">
+                  <span className="block font-semibold" style={ { color: "#001E62" } }>{m.tag} {m.corto || m.label}</span>
+                  <span className="block text-xs" style={ { color: "#5A6680" } }>{ORDINAL[m.fn]} factura{m.corto ? " · " + m.label : ""}</span>
+                </span>
+                {m.enviado ? chipM("✓ Enviado", "#E3EDFA", "#001E62")
+                  : m.pendienteHoy ? chipM("Toca hoy", "#FFF3DC", "#B45309")
+                  : chipM("Programado · " + fmtFechaDia(String(m.triggerDate).slice(0, 10)), "#F1F4F9", "#4A5878")}
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {(() => {
         // Historial automático: se anota solo al abrir WhatsApp o llamar desde la app, con el motivo.
         const CANAL = { whatsapp: "💬 WhatsApp", llamada: "📞 Llamada", visita: "🚶 Visita" };
         const MOTIVO = { cobro: "💵 Cobro", instalacion: "🔧 Instalación", venta: "📦 Venta o info", seguimiento: "🤝 Seguimiento", otro: "📝 Otro" };
@@ -14554,14 +14591,27 @@ function ClienteDetalle({
         const lista = (envios || [])
           .filter((e) => e && e.clienteId === cliente.id && e.fecha && ((e.tipo === "contacto" && e.origen !== "clientes" && e.origen !== "comision") || e.tipo === "abrir"))
           .sort((a, b) => (a.fecha < b.fecha ? 1 : -1));
-        if (lista.length === 0) return null;
+        const eventos = [
+          cliente.creadoEn && ["Ingresó", fmtFecha(fechaLocalISO(cliente.creadoEn))],
+          cliente.abonoInicial !== false && cliente.abonoFecha && !isNaN(new Date(cliente.abonoFecha).getTime()) && ["Abono recibido", fmtFechaHora(cliente.abonoFecha)],
+          cliente.instalacionEnviadaEn && !isNaN(new Date(cliente.instalacionEnviadaEn).getTime()) && ["Info de instalación enviada", fmtFechaHora(cliente.instalacionEnviadaEn)],
+          cliente.fechaInstalacion && ["Instalado", fmtFechaDia(cliente.fechaInstalacion)],
+          cliente.cancelado && cliente.fechaCancelacion && ["Cancelado", fmtFecha(cliente.fechaCancelacion)],
+        ].filter(Boolean);
+        if (lista.length === 0 && eventos.length === 0) return null;
         const mostrar = verTodosContactos ? lista : lista.slice(0, 5);
         return (
           <div className="mt-6">
-            <h2 className="text-sm font-semibold mb-2">Contactos</h2>
+            <h2 className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Historial</h2>
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm px-4">
+              {eventos.map(([k, v], i) => (
+                <div key={k} className="flex justify-between gap-3 py-2 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                  <span style={ { color: "#5A6680" } }>{k}</span>
+                  <span className="text-right font-medium" style={ { color: "#111827" } }>{v}</span>
+                </div>
+              ))}
               {mostrar.map((e, i) => (
-                <div key={e.id || i} className="py-2" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                <div key={e.id || i} className="py-2" style={ { borderTop: (i || eventos.length) ? "1px solid #EEF2F9" : "none" } }>
                   <div className="text-sm font-bold" style={ { color: "#001E62" } }>{CANAL[e.canal] || CANAL.whatsapp} · {MOTIVO[motivoDe(e)]} <span className="text-xs font-normal" style={ { color: "#5A6680" } }>· {fmtFechaHora(e.fecha)}</span></div>
                   {e.nota && <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }>{e.nota}</div>}
                 </div>
