@@ -2842,6 +2842,7 @@ function IconoBarra({ name, size = 24 }) {
     clock: <React.Fragment><circle cx="12" cy="12" r="8.5" /><path d="M12 7.5V12l3 2" /></React.Fragment>,
     gear: <React.Fragment><circle cx="12" cy="12" r="3" /><path d="M12 2.8v2.4M12 18.8v2.4M2.8 12h2.4M18.8 12h2.4M5.5 5.5l1.7 1.7M16.8 16.8l1.7 1.7M5.5 18.5l1.7-1.7M16.8 7.2l1.7-1.7" /></React.Fragment>,
     chart: <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />,
+    pin: <React.Fragment><path d="M12 21s6.5-5.6 6.5-11A6.5 6.5 0 0 0 5.5 10c0 5.4 6.5 11 6.5 11z" /><circle cx="12" cy="10" r="2.4" /></React.Fragment>,
   };
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={name === "plus" ? 2.2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { display: "block" } }>
@@ -2888,6 +2889,7 @@ function App() {
   const [visitasBarrios, setVisitasBarrios] = useListaNube("barrios-visitas", opcionesNube("visitasBarrios"));
   const [prospectosBarrios, setProspectosBarrios] = useListaNube("barrios-prospectos", opcionesNube("prospectosBarrios"));
   const [barriosVista, setBarriosVista] = useState(null);
+  const [vistaClientes, setVistaClientes] = useState("clientes");
   const [barrioInicial, setBarrioInicial] = useState(null);
   function registrarEnvio(datos) {
     setEnvios((prev) => [{ id: uid(), fecha: new Date().toISOString(), dispositivo: dispositivoActual(), ...datos }, ...prev].slice(0, 600));
@@ -4545,6 +4547,7 @@ function App() {
     if (key === "dashboard") setPeriodoDash(periodoActualApp);
     // Al entrar a Clientes desde el menú, si venías de un aviso del tablero (todos los meses), vuelve a la vista por mes.
     if (key === "clientes") setFiltrosClientes((prev) => (prev.modoVerTodos ? { ...prev, modoVerTodos: false, filtroEstado: "" } : prev));
+    if (key === "barrios") { setBarrioInicial(null); setBarriosVista(null); }
     setTab(key);
   }
   // ---- Barra de abajo que se esconde al bajar y vuelve al subir; deslizar de lado cambia de pestaña ----
@@ -4559,9 +4562,9 @@ function App() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tab]);
-  const ORDEN_SWIPE = ["dashboard", "clientes", "alertas", "precierre"];
+  const ORDEN_SWIPE = ["dashboard", "clientes", "alertas", "barrios"];
   const TITULOS_TAB = { clientes: "Clientes", alertas: "Mensajes", precierre: "Precierre", historial: "Historial" };
-  const NOMBRES_SWIPE = { dashboard: "Dashboard", clientes: "Clientes", alertas: "Mensajes", precierre: "Precierre" };
+  const NOMBRES_SWIPE = { dashboard: "Dashboard", clientes: "Clientes", alertas: "Mensajes", barrios: "Barrios" };
   const [pistaSwipe, setPistaSwipe] = useState(null);
   const pistaRef = useRef(null);
   pistaRef.current = (dir) => {
@@ -4857,7 +4860,7 @@ function App() {
           { key: "dashboard", label: "Inicio", icon: "home" },
           { key: "clientes", label: "Clientes", icon: "users" },
           { key: "alertas", label: "Mensajes", icon: "cash", badge: conteoMsj ? conteoMsj.total : stats.alHoy },
-          { key: "precierre", label: "Precierre", icon: "receipt" },
+          { key: "barrios", label: "Barrios", icon: "pin" },
         ].map((item) => (
           <button
             key={item.key}
@@ -5045,6 +5048,7 @@ function App() {
             </div>
             <div className="flex flex-col gap-1">
               {[
+                { key: "precierre", label: "Precierre", icon: "receipt" },
                 { key: "historial", label: "Historial", icon: "clock" },
               ].map((item) => (
                 <button
@@ -5136,6 +5140,8 @@ function App() {
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
             onAbrirBarrios={() => { setBarrioInicial(null); setBarriosVista(null); navegarA("barrios"); }}
             visitasBarrios={visitasBarrios}
+            prospectosBarrios={prospectosBarrios}
+            onAbrirProspectos={() => { setVistaClientes("prospectos"); setTab("clientes"); }}
             onReportarVisita={() => { setBarrioInicial(null); setBarriosVista("descubrir"); navegarA("barrios"); }}
             clientesBarrios={clientesCalc}
             ajustesBarrios={ajustesBarrios}
@@ -5152,6 +5158,16 @@ function App() {
           />
         )}
         {tab === "clientes" && (
+          <div className="flex items-center gap-2 mb-3">
+            {[["clientes", "Clientes"], ["prospectos", "👥 Prospectos" + (prospectosBarrios && prospectosBarrios.length ? " (" + prospectosBarrios.filter((x) => !prospectoEsCliente(x, clientesActivos)).length + ")" : "")]].map(([k, t]) => (
+              <button key={k} type="button" onClick={() => setVistaClientes(k)} className="rounded-full text-sm font-bold px-4" style={ { minHeight: 44, border: "2px solid #001E62", background: vistaClientes === k ? "#001E62" : "#fff", color: vistaClientes === k ? "#fff" : "#001E62" } }>{t}</button>
+            ))}
+          </div>
+        )}
+        {tab === "clientes" && vistaClientes === "prospectos" && (
+          <ProspectosVista prospectos={prospectosBarrios || []} onProspectos={setProspectosBarrios} clientes={clientesActivos} ajustes={ajustesBarrios} />
+        )}
+        {tab === "clientes" && vistaClientes !== "prospectos" && (
           <ClientesTab
             clientes={filteredClientes}
             clientesTodos={clientesActivos}
@@ -6771,39 +6787,149 @@ function elegirIdeas(rutas, ronda) {
     return tramos.filter((t) => t.l.length).map((t) => ({ etiqueta: t.n, zona: t.l[ronda % t.l.length], de: t.l.length }));
 }
 
-function BarriosTarjeta({ clientes, clientesMovil, onAbrir, ajustes }) {
-  const { datos } = useBarrios(ajustes);
-  const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos, clientesMovil) : null), [clientes, clientesMovil, datos]);
-  const idea = useMemo(() => {
-    if (!datos || !est) return null;
-    const ideas = elegirIdeas(calcularRutas(todosLosBarrios(datos, est)), 0);
-    return ideas.length ? ideas[0] : null;
-  }, [datos, est]);
-  const z = idea ? idea.zona : null;
+// ---- Tarjetas del Dashboard: Barrios y Prospectos (azul y gris; nada depende del rojo/verde) ----
+function TarjetaCabecera({ icono, titulo, sub, onClick }) {
   return (
-    <button type="button" onClick={onAbrir} className="block w-full text-left bg-white rounded-lg border border-gray-200 shadow-sm p-5 mb-4">
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <h2 className="font-semibold text-sm">📍 Hoy ve a</h2>
-        <span aria-hidden="true" style={ { color: "#001E62", fontSize: 18 } }>›</span>
-      </div>
-      {!est ? <div className="text-xs" style={ { color: "#5A6680" } }>Cargando…</div> : !z ? <div className="text-xs" style={ { color: "#5A6680" } }>Toca para ver ideas de barrios.</div> : (
-        <>
-          <div className="font-extrabold text-lg" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{limpiarZona(z.corregimiento) || limpiarZona(z.distrito)}</div>
-          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{[limpiarZona(z.distrito), z.provincia.charAt(0) + z.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}{z.km != null ? ` · a ~${z.km} km de ${PUNTO_BASE.nombre}` : ""}</div>
-          {z.top.slice(0, 3).map((b) => (
-            <div key={b.e.id} className="py-1" style={ { borderTop: "1px solid #EEF2F9" } }>
-              <div className="font-bold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.e.barrio}</div>
-              {b.motivos[0] && <div className="text-xs font-bold" style={ { color: "#166534" } }>{b.motivos[0]}</div>}
-            </div>
-          ))}
-          <div className="text-xs font-bold mt-2" style={ { color: "#0072CE" } }>Toca para ver 3 ideas →</div>
-        </>
-      )}
+    <button type="button" onClick={onClick} className="flex items-center gap-3 w-full text-left mb-3" style={ { background: "none", border: 0, padding: 0 } }>
+      <span className="flex items-center justify-center shrink-0" style={ { width: 38, height: 38, borderRadius: 12, background: "#001E62", fontSize: 19 } } aria-hidden="true">{icono}</span>
+      <span className="min-w-0 flex-1"><span className="block font-extrabold text-base" style={ { color: "#001E62", lineHeight: 1.15 } }>{titulo}</span>{sub && <span className="block text-xs font-bold" style={ { color: "#5A6680" } }>{sub}</span>}</span>
+      <span aria-hidden="true" style={ { color: "#001E62", fontSize: 22, lineHeight: 1 } }>›</span>
     </button>
   );
 }
+function BarraRanking({ items, max }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {items.map((x, i) => (
+        <div key={i} className="flex items-center gap-2">
+          <span className="flex items-center justify-center shrink-0 font-extrabold" style={ { width: 22, height: 22, borderRadius: 11, fontSize: 12, background: i === 0 ? "#001E62" : "#E3EDFA", color: i === 0 ? "#fff" : "#001E62" } }>{i + 1}</span>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline justify-between gap-2"><span className="text-sm font-bold" style={ { color: "#001E62", overflowWrap: "anywhere", lineHeight: 1.2 } }>{x.nombre}</span><span className="text-sm font-extrabold shrink-0" style={ { color: "#001E62" } }>{x.n}</span></div>
+            <div style={ { height: 6, borderRadius: 3, background: "#EEF2F9", marginTop: 3 } }><div style={ { height: 6, borderRadius: 3, width: Math.max(8, Math.round((x.n / max) * 100)) + "%", background: i === 0 ? "#001E62" : "#0072CE" } } /></div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+function BarriosTarjeta({ clientes, clientesMovil, onAbrir, ajustes, visitas, prospectos }) {
+  const { datos } = useBarrios(ajustes);
+  const est = useMemo(() => (datos ? estadisticasBarrios(clientes, datos, clientesMovil) : null), [clientes, clientesMovil, datos]);
+  const entidades = useMemo(() => (datos && est ? todosLosBarrios(datos, est) : []), [datos, est]);
+  const [periodo, setPeriodo] = useState("mes");
+  const vs = (visitas || []).filter((v) => v);
+  const enCurso = vs.filter((v) => v.estado === "en curso");
+  const ruta = ordenarRecorrido(enCurso);
+  const sig = ruta.orden[0] ? ruta.orden[0].v : null;
+  const hechas = vs.filter((v) => v.estado === "hecha");
+  const ahora = Date.now();
+  const ult = hechas.length ? Math.min(...hechas.map((v) => Math.floor((ahora - new Date(v.fecha).getTime()) / 86400000))) : null;
+  const mesKey = fechaLocalISO().slice(0, 7);
+  const rank = useMemo(() => {
+    const conteo = (filtro) => entidades.map((e) => ({ nombre: e.barrio, n: (e.clientes || []).filter((c) => ventaValida(c) && filtro(fechaVentaCliente(c))).length })).filter((x) => x.n > 0).sort((a, b) => b.n - a.n).slice(0, 3);
+    return { historico: conteo(() => true), mes: conteo((f) => f.slice(0, 7) === mesKey) };
+  }, [entidades, mesKey]);
+  const topPros = useMemo(() => {
+    const m = new Map();
+    (prospectos || []).filter((x) => x && x.barrioId).forEach((x) => { const o = m.get(x.barrioId) || { nombre: x.barrio, n: 0 }; o.n += 1; m.set(x.barrioId, o); });
+    return [...m.values()].sort((a, b) => b.n - a.n).slice(0, 4);
+  }, [prospectos]);
+  const lista = periodo === "mes" && rank.mes.length ? rank.mes : rank.historico;
+  const usado = periodo === "mes" && rank.mes.length ? "mes" : "siempre";
+  const seg = (k, t) => <button key={k} type="button" onClick={() => setPeriodo(k)} className="flex-1 font-bold text-xs" style={ { minHeight: 32, borderRadius: 8, border: 0, background: usado === k ? "#001E62" : "transparent", color: usado === k ? "#fff" : "#001E62" } }>{t}</button>;
+  return (
+    <div className="bg-white rounded-2xl border shadow-sm p-4 mb-4" style={ { borderColor: "#DFE5EF" } }>
+      <TarjetaCabecera icono="🏘️" titulo="Barrios" sub={enCurso.length > 0 ? enCurso.length + (enCurso.length === 1 ? " barrio en tu recorrido" : " barrios en tu recorrido") : "Elige a dónde ir hoy"} onClick={onAbrir} />
+      {sig ? (
+        <div className="rounded-xl p-3 mb-3" style={ { background: "#E3EDFA", border: "2px solid #0072CE" } }>
+          <div className="text-xs font-extrabold" style={ { color: "#0072CE" } }>👉 SIGUIENTE</div>
+          <div className="font-extrabold text-lg" style={ { color: "#001E62", lineHeight: 1.15, overflowWrap: "anywhere" } }>{sig.barrio}</div>
+          <div className="text-xs font-bold mb-2" style={ { color: "#5A6680" } }>{limpiarZona(sig.corregimiento)}{ruta.orden[0].leg != null ? " · 🚗 ~" + fmtMinutos(ruta.orden[0].leg) : ""}{enCurso.length > 1 ? " · +" + (enCurso.length - 1) + " más" : ""}</div>
+          <a href={urlGoogleBarrio(sig)} className="flex items-center justify-center rounded-lg font-bold text-sm text-white" style={ { minHeight: 44, background: "#001E62", textDecoration: "none" } }>🧭 Cómo llegar</a>
+        </div>
+      ) : (
+        <button type="button" onClick={onAbrir} className="flex items-center justify-between w-full rounded-xl px-3 mb-3 font-bold text-sm" style={ { minHeight: 52, border: "2px dashed #0072CE", background: "#F5F9FE", color: "#0072CE" } }><span>🧭 Armar recorrido de hoy</span><span aria-hidden="true">→</span></button>
+      )}
+      {ult !== null && ult > 7 && <div className="rounded-lg px-3 py-2 mb-3 text-xs font-bold" style={ { background: "#FFF3DC", color: "#B45309", border: "1px solid #F0D9AE" } }>⚠️ {ult} días sin visitar un barrio. Prueba una zona nueva.</div>}
+      {(rank.mes.length > 0 || rank.historico.length > 0) && (
+        <div className="mb-3">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="font-extrabold text-sm" style={ { color: "#001E62" } }>🏆 Mejores barrios</div>
+            <div className="flex" style={ { width: 150, padding: 2, borderRadius: 10, background: "#EEF2F9" } }>{seg("mes", "Este mes")}{seg("siempre", "De siempre")}</div>
+          </div>
+          <BarraRanking items={lista} max={lista[0] ? lista[0].n : 1} />
+          <div className="text-xs mt-1" style={ { color: "#5A6680" } }>Ventas por barrio</div>
+        </div>
+      )}
+      {topPros.length > 0 && (
+        <div>
+          <div className="font-extrabold text-sm mb-2" style={ { color: "#001E62" } }>👥 Barrios con más prospectos</div>
+          <div className="flex flex-wrap gap-2">{topPros.map((x, i) => <span key={i} className="inline-flex items-center gap-2 rounded-full px-3 text-xs font-bold" style={ { minHeight: 32, background: "#E3EDFA", color: "#001E62" } }><span style={ { overflowWrap: "anywhere" } }>{x.nombre}</span><span className="font-extrabold rounded-full px-2" style={ { background: "#001E62", color: "#fff", fontSize: 11 } }>{x.n}</span></span>)}</div>
+        </div>
+      )}
+    </div>
+  );
+}
 
-// Formulario para agregar un barrio que no viene en el listado de Tigo.
+function ProspectosTarjeta({ prospectos, clientes, onAbrir }) {
+  const todos = (prospectos || []).filter((x) => x);
+  const st = useMemo(() => {
+    const ahora = Date.now(); const dia = 86400000;
+    const edad = (d) => ahora - new Date(d).getTime();
+    const pares = todos.map((pr) => ({ pr, cl: clienteDeProspecto(pr, clientes) }));
+    const conv = pares.filter((x) => x.cl);
+    const limite = fechaLocalISO(new Date(ahora - 30 * dia));
+    const semanas = [0, 1, 2, 3].map((k) => todos.filter((x) => edad(x.fecha) > k * 7 * dia && edad(x.fecha) <= (k + 1) * 7 * dia).length).reverse();
+    return {
+      pendientes: pares.length - conv.length,
+      sem: semanas[3], semPrev: semanas[2], semanas,
+      conv30: conv.filter((x) => fechaVentaCliente(x.cl) >= limite && fechaVentaCliente(x.cl) >= fechaLocalISO(x.pr.fecha)).length,
+      convTotal: conv.length,
+      tasa: todos.length ? Math.round((conv.length / todos.length) * 100) : 0,
+    };
+  }, [todos.length, clientes]);
+  const maxSem = Math.max(1, ...st.semanas);
+  const dif = st.sem - st.semPrev;
+  const kpi = (valor, etiqueta, extra) => (
+    <div className="flex-1 rounded-xl px-2 py-2 text-center" style={ { background: "#F5F9FE", border: "1px solid #DFE5EF" } }>
+      <div className="font-extrabold" style={ { color: "#001E62", fontSize: 26, lineHeight: 1.05 } }>{valor}</div>
+      <div className="text-xs font-bold" style={ { color: "#5A6680", lineHeight: 1.2 } }>{etiqueta}</div>
+      {extra && <div className="text-xs font-extrabold mt-0.5" style={ { color: "#0072CE" } }>{extra}</div>}
+    </div>
+  );
+  return (
+    <div className="bg-white rounded-2xl border shadow-sm p-4 mb-4" style={ { borderColor: "#DFE5EF" } }>
+      <TarjetaCabecera icono="👥" titulo="Prospectos" sub={todos.length ? todos.length + " anotados en total" : null} onClick={onAbrir} />
+      {todos.length === 0 ? (
+        <div className="text-sm font-bold" style={ { color: "#5A6680" } }>Aún sin prospectos. Anótalos con el botón ➕ cuando andes en un barrio.</div>
+      ) : (
+        <>
+          <div className="flex gap-2 mb-3">
+            {kpi(st.sem, "nuevos esta semana", dif === 0 ? "igual que la anterior" : (dif > 0 ? "▲ " : "▼ ") + Math.abs(dif) + " vs anterior")}
+            {kpi(st.conv30, "cerrados en 30 días")}
+            {kpi(st.pendientes, "por cerrar")}
+          </div>
+          <div className="rounded-xl p-3 mb-3" style={ { border: "1px solid #DFE5EF" } }>
+            <div className="flex items-center justify-between mb-1"><span className="text-xs font-extrabold" style={ { color: "#001E62" } }>De prospecto a cliente</span><span className="font-extrabold text-sm" style={ { color: "#001E62" } }>{st.tasa}%</span></div>
+            <div style={ { height: 8, borderRadius: 4, background: "#EEF2F9" } }><div style={ { height: 8, borderRadius: 4, width: Math.max(st.tasa > 0 ? 4 : 0, st.tasa) + "%", background: "#001E62" } } /></div>
+            <div className="text-xs mt-1" style={ { color: "#5A6680" } }>{st.convTotal} de {todos.length} ya son clientes</div>
+          </div>
+          <div className="text-xs font-extrabold mb-1" style={ { color: "#001E62" } }>Nuevos por semana</div>
+          <div className="flex items-end gap-2" style={ { height: 64 } }>
+            {st.semanas.map((n, i) => (
+              <div key={i} className="flex-1 flex flex-col items-center justify-end" style={ { height: "100%" } }>
+                <span className="text-xs font-extrabold" style={ { color: "#001E62" } }>{n}</span>
+                <div style={ { width: "100%", height: Math.max(4, Math.round((n / maxSem) * 36)), borderRadius: 4, background: i === 3 ? "#001E62" : "#9DB7DD" } } />
+              </div>
+            ))}
+          </div>
+          <div className="flex gap-2 mt-1">{["hace 3 sem", "hace 2", "anterior", "esta"].map((t) => <span key={t} className="flex-1 text-center" style={ { fontSize: 10, color: "#5A6680" } }>{t}</span>)}</div>
+        </>
+      )}
+    </div>
+  );
+}
+
 function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
   const [nombre, setNombre] = useState(inicial.nombre || "");
   const [prov, setProv] = useState(inicial.provincia || "");
@@ -6990,20 +7116,52 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
       return { e, pos, min: minutosEntre(base, pos), score: puntajeCandidatoBarrio(e, contexto) };
     }).filter(Boolean);
   }, [todos, visitadosIds, contexto]);
-  const recomendados = useMemo(() => {
-    if (!mins) return [];
+  // Dos listas: ⭐ los mejores (ranking) y 🆕 zonas nuevas para explorar (donde casi no trabajas), con rotación diaria.
+  const { mejores, explorar, hayMasMejores, hayMasExplorar } = useMemo(() => {
+    if (!mins) return { mejores: [], explorar: [], hayMasMejores: false, hayMasExplorar: false };
+    const n = verMasRec ? 6 : 3;
+    const zk = (c) => [c.e.provincia, c.e.distrito, c.e.corregimiento].join("|");
+    const trabajada = new Set();
+    (visitas || []).forEach((v) => trabajada.add([v.provincia, v.distrito, v.corregimiento].join("|")));
+    contexto.clientesPorZona.forEach((cnt, k) => { if (cnt > 0) trabajada.add(k); });
+    const hoy = fechaLocalISO();
+    const azar = (id) => { let h = 7; const t = hoy + "|" + id; for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 1000003; return h / 1000003; };
+    const ok = candidatos.filter((c) => c.min <= mins);
     const val = (c) => c.score + 15 * (c.min / mins);
-    const ok = candidatos.filter((c) => c.min <= mins).sort((a, b) => val(b) - val(a));
-    const porZona = new Map(); const out = [];
-    for (const c of ok) {
+    const m = []; const porZ = new Map();
+    for (const c of ok.slice().sort((a, b) => val(b) - val(a))) {
       const k = c.e.corregimiento;
-      if ((porZona.get(k) || 0) >= 2) continue;
-      porZona.set(k, (porZona.get(k) || 0) + 1);
-      out.push(c);
-      if (out.length >= (verMasRec ? 12 : 6)) break;
+      if ((porZ.get(k) || 0) >= 2) continue;
+      porZ.set(k, (porZ.get(k) || 0) + 1);
+      m.push(c);
+      if (m.length >= n) break;
     }
-    return out;
-  }, [candidatos, mins, verMasRec]);
+    const idsM = new Set(m.map((c) => c.e.id));
+    const resto = ok.filter((c) => !idsM.has(c.e.id));
+    const nuevas = resto.filter((c) => !trabajada.has(zk(c)));
+    const pocas = resto.filter((c) => trabajada.has(zk(c))).sort((a, b) => (contexto.clientesPorZona.get(zk(a)) || 0) - (contexto.clientesPorZona.get(zk(b)) || 0) || b.score - a.score);
+    const rank = (c) => c.score + 25 * azar(c.e.id);
+    const x = []; const zonasX = new Set();
+    for (const c of nuevas.slice().sort((a, b) => rank(b) - rank(a))) {
+      if (zonasX.has(c.e.corregimiento)) continue;
+      zonasX.add(c.e.corregimiento);
+      x.push({ ...c, etq: "🆕 Zona nueva para ti" });
+      if (x.length >= n) break;
+    }
+    if (x.length < n) {
+      for (const c of pocas) {
+        if (zonasX.has(c.e.corregimiento)) continue;
+        zonasX.add(c.e.corregimiento);
+        const cl = contexto.clientesPorZona.get(zk(c)) || 0;
+        x.push({ ...c, etq: cl > 0 ? "🌱 Solo " + cl + (cl === 1 ? " cliente tuyo" : " clientes tuyos") + " por aquí" : "🆕 Zona nueva para ti" });
+        if (x.length >= n) break;
+      }
+    }
+    const idsX = new Set(x.map((c) => c.e.id));
+    const hayM = ok.some((c) => !idsM.has(c.e.id) && !idsX.has(c.e.id));
+    const motivoM = (c) => { const cl = contexto.clientesPorZona.get(zk(c)) || 0; return c.e.arpuAlto ? "⭐ ARPU alto" : c.e.hhpp >= 250 ? "⭐ Barrio grande" : "⭐ Buen potencial"; };
+    return { mejores: m.map((c) => ({ ...c, etq: motivoM(c) })), explorar: x, hayMasMejores: hayM, hayMasExplorar: hayM };
+  }, [candidatos, mins, verMasRec, contexto, visitas]);
   const voy = (c) => onVisitas((prev) => [...prev, { id: "vis-" + uid(), barrioId: c.e.id, barrio: c.e.barrio, provincia: c.e.provincia, distrito: c.e.distrito, corregimiento: c.e.corregimiento, hhpp: c.e.hhpp, fecha: new Date().toISOString(), estado: "en curso", reporte: null }]);
   const quitarVisita = (id) => onVisitas((prev) => prev.filter((v) => v.id !== id));
   const agregarProspecto = (v, pr) => { (onProspectos || (() => {}))((prev) => [...prev, { id: "pro-" + uid(), visitaId: v.id, barrioId: v.barrioId, barrio: v.barrio, provincia: v.provincia, distrito: v.distrito, corregimiento: v.corregimiento, fecha: new Date().toISOString(), ...pr }]); setReportando(null); };
@@ -7021,6 +7179,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
   );
   const tarjetaBarrio = (c, accion, etiquetaAccion) => (
     <div key={c.e.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
+      {c.etq && <div className="text-xs font-extrabold mb-1" style={ { color: "#0072CE" } }>{c.etq}</div>}
       <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{c.e.barrio}</div>
       <div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(c.e.corregimiento)} · {limpiarZona(c.e.distrito)}</div>
       <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>🚗 ~{fmtMinutos(c.min)} · 🏠 {fmtNum(c.e.hhpp)} casas · {etiquetaTamano(c.e.hhpp)}{c.e.arpuAlto ? " · ⭐ ARPU alto" : ""}</div>
@@ -7075,7 +7234,6 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
                     <a href={urlWazeBarrio(v)} className="flex items-center justify-center rounded-lg font-bold text-sm px-4" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none" } }>Waze</a>
                   </div>
                   <a href={urlGoogleCorregimiento(v)} className="block text-center text-xs font-bold mt-1" style={ { color: "#5A6680", textDecoration: "underline" } }>¿No lo encuentra? Ir al corregimiento</a>
-                  <button type="button" onClick={() => setReportando(v.id)} className="w-full rounded-lg font-bold text-sm text-white mt-2" style={ { minHeight: 44, background: "#001E62", border: 0 } }>➕ Prospecto</button>
                   <div className="flex gap-2 mt-2">
                     <button type="button" onClick={() => terminarVisita(v.id)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>✅ Terminé</button>
                     <button type="button" onClick={() => quitarVisita(v.id)} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>No fui</button>
@@ -7099,10 +7257,13 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
       </div>
       {mins && (
         <div className="mb-3">
-          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>🔎 Para descubrir (hasta {fmtMinutos(mins)})</div>
-          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Barrios que no has visitado y donde todavía no tienes clientes. Escoge uno.</div>
-          {recomendados.length === 0 ? <div className="rounded-xl border bg-white p-3 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay barrios nuevos en ese tiempo. Prueba con más minutos.</div> : <div className="flex flex-col gap-2">{recomendados.map((c) => tarjetaBarrio(c, voy, "🚗 Voy para allá"))}</div>}
-          {candidatos.filter((c) => c.min <= mins).length > recomendados.length && !verMasRec && <button type="button" onClick={() => setVerMasRec(true)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más opciones</button>}
+          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>⭐ Los mejores (hasta {fmtMinutos(mins)})</div>
+          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Los barrios con más potencial que no has visitado.</div>
+          {mejores.length === 0 ? <div className="rounded-xl border bg-white p-3 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay barrios nuevos en ese tiempo. Prueba con más minutos.</div> : <div className="flex flex-col gap-2">{mejores.map((c) => tarjetaBarrio(c, voy, "🚗 Voy para allá"))}</div>}
+          <div className="font-extrabold text-sm mt-4 mb-1" style={ { color: "#001E62" } }>🆕 Para explorar</div>
+          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Zonas donde casi no has trabajado. Cambian cada día para sacarte de la rutina.</div>
+          {explorar.length === 0 ? <div className="rounded-xl border bg-white p-3 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay zonas nuevas en ese tiempo. Prueba con más minutos.</div> : <div className="flex flex-col gap-2">{explorar.map((c) => tarjetaBarrio(c, voy, "🚗 Voy a explorar"))}</div>}
+          {hayMasMejores && !verMasRec && <button type="button" onClick={() => setVerMasRec(true)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más opciones</button>}
         </div>
       )}
       {hechas.length > 0 && (
@@ -7135,23 +7296,68 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
           </div>
         </div>
       )}
-      {proSinBarrio.length > 0 && (
+    </div>
+  );
+}
+
+// Cliente que corresponde a este prospecto: por WhatsApp (últimos 8 dígitos) o por nombre igual dentro del mismo barrio.
+function clienteDeProspecto(pr, clientes) {
+  const dig8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
+  const cl = (clientes || []).filter((c) => c && !c.eliminado);
+  const nums = numerosProspecto(pr).map((n) => dig8(n.numero)).filter((d) => d.length >= 7);
+  const porTel = cl.find((c) => { const d = dig8(c.telefono); return d.length >= 7 && nums.includes(d); });
+  if (porTel) return porTel;
+  const nom = normTexto(pr.nombre); const bar = normTexto(pr.barrio);
+  return (nom && bar && cl.find((c) => normTexto(c.nombre) === nom && normTexto(c.barrio || "").includes(bar))) || null;
+}
+const prospectoEsCliente = (pr, clientes) => !!clienteDeProspecto(pr, clientes);
+const fechaVentaCliente = (c) => (c.creadoEn ? fechaLocalISO(c.creadoEn) : c.fechaIngreso || "");
+const ventaValida = (c) => !!c && !c.eliminado && !c.cancelado && !c.penalizado;
+
+// Vista de prospectos (dentro de la pestaña Clientes): todos juntos, agrupados por barrio, con los que no tienen barrio arriba.
+function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
+  const [asignando, setAsignando] = useState(null);
+  const [q, setQ] = useState("");
+  const [verClientes, setVerClientes] = useState(false);
+  const nq = normTexto(q);
+  const todosP = prospectos || [];
+  const esCli = (pr) => prospectoEsCliente(pr, clientes);
+  const visibles = todosP.filter((pr) => (verClientes || !esCli(pr)) && (!nq || normTexto(pr.nombre).includes(nq) || normTexto(pr.barrio).includes(nq) || numerosProspecto(pr).some((n) => String(n.numero || "").replace(/\D/g, "").includes(nq.replace(/\D/g, "") || "#"))));
+  const sinBarrio = visibles.filter((x) => !x.barrioId);
+  const grupos = [...new Map(visibles.filter((x) => x.barrioId).map((x) => [x.barrioId, x])).values()].map((g) => ({ g, lista: visibles.filter((x) => x.barrioId === g.barrioId) }));
+  const nPend = todosP.filter((x) => !esCli(x)).length; const nConv = todosP.length - nPend;
+  const quitar = (pid) => onProspectos((prev) => prev.filter((x) => x.id !== pid));
+  const asignar = (pid, b) => { onProspectos((prev) => prev.map((x) => (x.id === pid ? { ...x, barrioId: b.barrioId, barrio: b.barrio, provincia: b.provincia, distrito: b.distrito, corregimiento: b.corregimiento } : x))); setAsignando(null); };
+  const fila = (pr) => (
+    <div key={pr.id} className="flex items-start gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#F3F6FB" } }>
+      <div className="min-w-0 flex-1 text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCli(pr) ? " · ✅ Ya es cliente" : ""}</div>
+      <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="shrink-0 rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 36, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
+    </div>
+  );
+  return (
+    <div>
+      <div className="text-sm font-extrabold mb-2" style={ { color: "#001E62" } }>👥 {nPend} {nPend === 1 ? "prospecto" : "prospectos"}{nConv > 0 ? " · ✅ " + nConv + (nConv === 1 ? " ya es cliente" : " ya son clientes") : ""}</div>
+      <input type="text" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nombre, barrio o número" className="w-full rounded-xl border outline-none px-3 text-sm mb-2" style={ { minHeight: 44, borderColor: "#DFE5EF", background: "#fff" } } aria-label="Buscar prospecto" />
+      {nConv > 0 && <button type="button" onClick={() => setVerClientes(!verClientes)} className="text-xs font-bold mb-3" style={ { color: "#0072CE", background: "none", border: 0, minHeight: 32 } }>{verClientes ? "Ocultar los que ya son clientes" : "Mostrar también los que ya son clientes"}</button>}
+      {todosP.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>Todavía no tienes prospectos. Anótalos con el botón ➕ cuando andes en un barrio.</div>}
+      {todosP.length > 0 && visibles.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No encontré prospectos con eso.</div>}
+      {sinBarrio.length > 0 && (
         <div className="mb-3">
-          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>📍 Prospectos sin barrio ({proSinBarrio.length})</div>
+          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>📍 Sin barrio ({sinBarrio.length})</div>
           <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Asígnales su barrio cuando puedas.</div>
           <div className="flex flex-col gap-2">
-            {proSinBarrio.map((pr) => (
+            {sinBarrio.map((pr) => (
               <div key={pr.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
-                <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCliente(pr) ? " · ✅ Ya es cliente" : ""}</div>
+                <div className="text-xs" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCli(pr) ? " · ✅ Ya es cliente" : ""}</div>
                 {asignando === pr.id ? (
                   <>
-                    <ElegirBarrioProspecto ajustes={ajustes} recientes={[]} onElegir={(b) => asignarBarrio(pr.id, b)} />
+                    <ElegirBarrioProspecto ajustes={ajustes} recientes={[]} onElegir={(b) => asignar(pr.id, b)} />
                     <button type="button" onClick={() => setAsignando(null)} className="w-full rounded-lg font-bold text-sm mt-2" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>Cancelar</button>
                   </>
                 ) : (
                   <div className="flex gap-2 mt-2">
                     <button type="button" onClick={() => setAsignando(pr.id)} className="flex-1 rounded-lg font-bold text-sm" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>📍 Asignar barrio</button>
-                    <button type="button" onClick={() => quitarProspecto(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
+                    <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
                   </div>
                 )}
               </div>
@@ -7159,22 +7365,17 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
           </div>
         </div>
       )}
-      {prospectosL.some((x) => x.barrioId) && (
-        <div className="mb-3">
-          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>👥 Prospectos por barrio</div>
+      {grupos.length > 0 && (
+        <div>
+          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>🏘️ Por barrio</div>
           <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Se quedan aquí hasta que se vuelven clientes.</div>
           <div className="flex flex-col gap-2">
-            {[...new Map(prospectosL.filter((x) => x.barrioId).map((x) => [x.barrioId, x])).values()].map((g) => {
-              const lista = prosDeBarrio(g.barrioId); const pend = lista.filter((x) => !esCliente(x)); const conv = lista.length - pend.length;
-              return (
-                <details key={g.barrioId} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
-                  <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {pend.length} {pend.length === 1 ? "prospecto" : "prospectos"}{conv > 0 ? " · ✅ " + conv + (conv === 1 ? " ya es cliente" : " ya son clientes") : ""}</summary>
-                  <div className="mt-2">{pend.map((pr) => (
-                    <div key={pr.id} className="text-xs mb-1" style={ { color: "#374151", overflowWrap: "anywhere" } }><span className="font-extrabold" style={ { color: "#001E62" } }>{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}</div>
-                  ))}{pend.length === 0 && <div className="text-xs" style={ { color: "#5A6680" } }>Todos ya son clientes.</div>}</div>
-                </details>
-              );
-            })}
+            {grupos.map(({ g, lista }) => (
+              <details key={g.barrioId} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } } open={!!nq}>
+                <summary className="font-extrabold text-sm" style={ { color: "#001E62", minHeight: 32, overflowWrap: "anywhere" } }>{g.barrio} · 👥 {lista.length}</summary>
+                <div className="mt-2">{lista.map(fila)}</div>
+              </details>
+            ))}
           </div>
         </div>
       )}
@@ -7265,8 +7466,6 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
   const { datos, error } = useBarrios(ajustes);
   const [formNuevo, setFormNuevo] = useState(inicial && inicial.sinCoincidencia ? { nombre: inicial.barrio } : null);
   const [vista, setVista] = useState(inicial ? "buscar" : (vistaInicial || "descubrir"));
-  const [ronda, setRonda] = useState(0);
-  const [ideaAbierta, setIdeaAbierta] = useState(null);
   const [periodoStat, setPeriodoStat] = useState("30");
   const [statAbierto, setStatAbierto] = useState(null);
   const [statTodos, setStatTodos] = useState({});
@@ -7310,10 +7509,6 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
     if (!datos || !est) return [];
     return todosLosBarrios(datos, est);
   }, [datos, est]);
-  // Ruta de hoy: zonas de Herrera y Los Santos con los mejores barrios. Solo suma puntos (nunca resta).
-  const rutas = useMemo(() => calcularRutas(todos), [todos]);
-  // 3 ideas para hoy: una cerca, una a distancia media y una lejos, rotando con "Dame otras ideas".
-  const ideas = useMemo(() => elegirIdeas(rutas, ronda), [rutas, ronda]);
   // Estadísticas: ventas por período, quién paga la 1ra factura, bajas y avance por zona.
   const stats = useMemo(() => {
     if (!est) return null;
@@ -7440,53 +7635,16 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
         <>
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
             {chip(vista === "descubrir", "🧭 Descubrir", () => { setVista("descubrir"); setVerMas(30); })}
-            {chip(vista === "hoy", "📍 Hoy", () => { setVista("hoy"); setVerMas(30); })}
             {chip(vista === "stats", "📊 Estadísticas", () => { setVista("stats"); setVerMas(30); })}
             {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
           </div>
-          {vista !== "hoy" && vista !== "stats" && vista !== "descubrir" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
+          {vista !== "stats" && vista !== "descubrir" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
             <option value="centrales">Herrera y Los Santos</option>
             <option value="todas">Todas las provincias</option>
             {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
           </select>}
 
           {vista === "descubrir" && <DescubrirBarrios todos={todos} visitas={visitas || []} onVisitas={onVisitas || (() => {})} prospectos={prospectos || []} onProspectos={onProspectos || (() => {})} clientesTodos={clientes} ajustes={ajustes} />}
-
-          {vista === "hoy" && (
-            <>
-              <p className="text-xs mb-2" style={ { color: "#5A6680" } }>3 ideas para hoy en Herrera y Los Santos, según su distancia desde {PUNTO_BASE.nombre}. Elige la que te guste.</p>
-              {ideas.length === 0 && <div className="rounded-xl border bg-white p-4 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay barrios para recomendar.</div>}
-              <div className="flex flex-col gap-3">
-                {ideas.map(({ etiqueta, zona: z }) => {
-                  const abierta = ideaAbierta === z.k;
-                  const lista = abierta ? z.top : z.top.slice(0, 3);
-                  return (
-                    <div key={etiqueta} className="rounded-xl border bg-white p-3" style={ { borderColor: "#0072CE" } }>
-                      <div className="text-xs font-bold" style={ { color: "#0072CE" } }>{etiqueta}{z.km != null ? ` · a ~${z.km} km de ${PUNTO_BASE.nombre}` : ""}</div>
-                      <div className="font-extrabold text-lg" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{limpiarZona(z.corregimiento) || limpiarZona(z.distrito)}</div>
-                      <div className="text-xs mb-2" style={ { color: "#5A6680" } }>{[limpiarZona(z.distrito), z.provincia.charAt(0) + z.provincia.slice(1).toLowerCase()].filter(Boolean).join(" · ")}</div>
-                      <div className="flex flex-col gap-2">
-                        {lista.map((b, i) => (
-                          <div key={b.e.id} className="rounded-lg border p-2" style={ { borderColor: "#DFE5EF" } }>
-                            <div className="flex items-start gap-2">
-                              <span className="font-extrabold text-sm shrink-0" style={ { color: "#0072CE" } }>{i + 1}.</span>
-                              <div className="min-w-0 flex-1">
-                                <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{b.e.barrio}</div>
-                                <div className="text-xs font-bold" style={ { color: "#5A6680" } }>🏠 {fmtNum(b.e.hhpp)} casas · {etiquetaTamano(b.e.hhpp)}</div>
-                                {(abierta ? b.motivos : b.motivos.slice(0, 1)).map((m) => <div key={m} className="text-xs font-bold mt-1" style={ { color: "#166534" } }>{m}</div>)}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                      {z.top.length > 3 && <button type="button" onClick={() => setIdeaAbierta(abierta ? null : z.k)} className="text-xs font-bold rounded-md px-3 border mt-2" style={ { minHeight: 40, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>{abierta ? "Ver menos" : `Ver los ${z.top.length} barrios con todos los motivos`}</button>}
-                    </div>
-                  );
-                })}
-              </div>
-              {ideas.length > 0 && <button type="button" onClick={() => { setRonda(ronda + 1); setIdeaAbierta(null); }} className="w-full mt-3 rounded-xl border font-bold text-sm" style={ { minHeight: 48, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>🎲 Dame otras ideas</button>}
-            </>
-          )}
 
           {vista === "stats" && stats && (() => {
             const bloque = (titulo, nota, filas, vacio) => filas.length === 0 ? null : (
@@ -7578,7 +7736,7 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
 }
 
 // Tarjetas del Dashboard que se pueden ordenar. La de comisión nunca se esconde.
-const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "instalaciones", "planes", "barrios", "dia", "ventas"];
+const ORDEN_DASHBOARD_BASE = ["dinero", "comision", "metas", "instalaciones", "planes", "barrios", "prospectos", "dia", "ventas"];
 function ordenDashboardNormal(cfg) {
   const o = cfg && Array.isArray(cfg.orden) ? cfg.orden.filter((id, i, a) => ORDEN_DASHBOARD_BASE.includes(id) && a.indexOf(id) === i) : [];
   // Una tarjeta que todavía no estaba guardada se coloca justo después de la que le
@@ -9146,7 +9304,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios, visitasBarrios, onReportarVisita }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios, visitasBarrios, onReportarVisita, prospectosBarrios, onAbrirProspectos }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -11570,8 +11728,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         </div>
       ))}
 
-      {onAbrirBarrios && bloqueOrd("barrios", "Barrios", <BarriosTarjeta clientes={clientesBarrios || clientes} clientesMovil={convergencias} onAbrir={onAbrirBarrios} ajustes={ajustesBarrios} />)}
 
+      {onAbrirBarrios && bloqueOrd("barrios", "Barrios", <BarriosTarjeta clientes={clientesBarrios || clientes} clientesMovil={convergencias} onAbrir={onAbrirBarrios} ajustes={ajustesBarrios} visitas={visitasBarrios} prospectos={prospectosBarrios} />)}
+      {onAbrirProspectos && bloqueOrd("prospectos", "Prospectos", <ProspectosTarjeta prospectos={prospectosBarrios} clientes={clientesBarrios || clientes} onAbrir={onAbrirProspectos} />)}
       {onIrAVentas && bloqueOrd("ventas", "Ventas por mensajes", (() => {
         const vh = calcularVentasHoy(clientes, convergencias, Date.now());
         const dato = (num, txt) => (
