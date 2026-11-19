@@ -6853,6 +6853,38 @@ function estrellasVisita(v, despues) {
   const tasa = ((r.ventas || 0) + (despues || 0)) / r.puertas;
   return Math.min(5, 1 + (tasa > 0 ? 1 : 0) + (tasa >= 0.1 ? 1 : 0) + (tasa >= 0.2 ? 1 : 0) + (r.volver === "si" ? 1 : 0));
 }
+// Recorrido del día: sale de la oficina al barrio más cercano y sigue siempre al más cercano que queda; vuelve a la oficina.
+function ordenarRecorrido(visitas) {
+  const base = [PUNTO_BASE.lat, PUNTO_BASE.lon];
+  const pend = visitas.map((v) => ({ v, pos: posZonaBarrio(v.provincia, v.distrito, v.corregimiento) }));
+  const con = pend.filter((x) => x.pos); const sin = pend.filter((x) => !x.pos);
+  const dist = (p, q) => kmEntrePuntos(p, q);
+  const costo = (seq) => { let c = 0; let a = base; seq.forEach((x) => { c += dist(a, x.pos); a = x.pos; }); return c + dist(a, base); };
+  let mejorSeq = null;
+  if (con.length <= 7) {
+    // Pocos barrios: se prueban todos los órdenes y se toma el de menos kilómetros.
+    let mejorC = Infinity;
+    const perm = (resto, hechos) => { if (!resto.length) { const c = costo(hechos); if (c < mejorC) { mejorC = c; mejorSeq = hechos; } return; } resto.forEach((x, i) => perm(resto.filter((_, j) => j !== i), [...hechos, x])); };
+    perm(con, []);
+  } else {
+    const resto = [...con]; mejorSeq = []; let actual = base;
+    while (resto.length) { let m = 0; let km = Infinity; resto.forEach((x, i) => { const d = dist(actual, x.pos); if (d < km) { km = d; m = i; } }); const x = resto.splice(m, 1)[0]; mejorSeq.push(x); actual = x.pos; }
+  }
+  const orden = []; let actual = base; let total = 0;
+  (mejorSeq || []).forEach((x) => { const leg = minutosManejo(dist(actual, x.pos)); total += leg; orden.push({ ...x, leg }); actual = x.pos; });
+  if (orden.length) total += minutosManejo(dist(actual, base));
+  sin.forEach((x) => orden.push({ ...x, leg: null }));
+  return { orden, total: orden.length > 1 ? total : null };
+}
+const TIT_PROV = (p) => String(p || "").charAt(0) + String(p || "").slice(1).toLowerCase();
+const textoLugarBarrio = (v) => [v.barrio, limpiarZona(v.corregimiento), TIT_PROV(v.provincia), "Panamá"].filter(Boolean).join(", ");
+const urlGoogleBarrio = (v) => "https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + encodeURIComponent(textoLugarBarrio(v));
+const urlWazeBarrio = (v) => "https://waze.com/ul?navigate=yes&q=" + encodeURIComponent(textoLugarBarrio(v));
+const urlGoogleCorregimiento = (v) => { const pos = posZonaBarrio(v.provincia, v.distrito, v.corregimiento); return pos ? "https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + pos[0] + "," + pos[1] : urlGoogleBarrio(v); };
+const urlGoogleRecorrido = (orden) => {
+  const l = orden.map((x) => textoLugarBarrio(x.v));
+  return "https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=" + PUNTO_BASE.lat + "," + PUNTO_BASE.lon + "&destination=" + encodeURIComponent(l[l.length - 1]) + (l.length > 1 ? "&waypoints=" + encodeURIComponent(l.slice(0, -1).join("|")) : "");
+};
 function puntajeCandidatoBarrio(e, ctx) {
   let sc = Math.min(e.hhpp, 400) / 8;
   if (e.arpuAlto) sc += 20;
@@ -6910,6 +6942,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas }) {
     if (centros.length === 0) return [];
     return candidatos.filter((c) => !enCurso.some((v) => v.barrioId === c.e.id) && centros.some((p) => kmEntrePuntos(p, c.pos) <= 4)).sort((a, b) => b.score - a.score).slice(0, 5);
   }, [candidatos, enCurso]);
+  const ruta = ordenarRecorrido(enCurso);
   const chipBtn = (activo, texto, onClick, key) => (
     <button key={key || texto} type="button" onClick={onClick} className="rounded-full text-sm font-bold px-4" style={ { minHeight: 44, border: "2px solid #001E62", background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{activo ? "✓ " : ""}{texto}</button>
   );
@@ -6934,20 +6967,34 @@ function DescubrirBarrios({ todos, visitas, onVisitas }) {
       {enCurso.length > 0 && (
         <div className="rounded-xl p-3 mb-3" style={ { background: "#E3EDFA", border: "2px solid #0072CE" } }>
           <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>🧭 Hoy vas a</div>
-          {enCurso.map((v) => (
-            <div key={v.id} className="rounded-lg bg-white p-3 mb-2" style={ { border: "1px solid #DFE5EF" } }>
-              <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{v.barrio}</div>
-              <div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(v.corregimiento)} · {limpiarZona(v.distrito)}</div>
+          {ruta.total != null && (
+            <div className="text-xs font-bold mb-2" style={ { color: "#001E62" } }>🚗 ~{fmtMinutos(ruta.total)} en total, ida y vuelta a tu oficina · {ruta.orden.length} barrios</div>
+          )}
+          {ruta.orden.length > 1 && (
+            <a href={urlGoogleRecorrido(ruta.orden)} className="flex items-center justify-center w-full rounded-lg font-bold text-sm mb-2" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none" } }>🗺️ Ver los {ruta.orden.length} en el mapa</a>
+          )}
+          {ruta.orden.map((it, idx) => { const v = it.v; return (
+            <div key={v.id} className="rounded-lg bg-white p-3 mb-2" style={ { border: ruta.orden.length > 1 && idx === 0 ? "2px solid #0072CE" : "1px solid #DFE5EF" } }>
+              {ruta.orden.length > 1 && idx === 0 && <div className="text-xs font-extrabold mb-1" style={ { color: "#0072CE" } }>👉 Siguiente</div>}
+              <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{ruta.orden.length > 1 ? (idx + 1) + ". " : ""}{v.barrio}</div>
+              <div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(v.corregimiento)} · {limpiarZona(v.distrito)}{ruta.orden.length > 1 && it.leg != null ? " · 🚗 ~" + fmtMinutos(it.leg) + (idx === 0 ? " desde tu oficina" : " desde el anterior") : ""}</div>
               {reportando === v.id ? (
                 <ReporteVisitaBarrio visita={v} onGuardar={(rep) => guardarReporte(v.id, rep)} onCancelar={() => setReportando(null)} />
               ) : (
-                <div className="flex gap-2 mt-2">
-                  <button type="button" onClick={() => setReportando(v.id)} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 44, background: "#001E62", border: 0 } }>📝 ¿Cómo te fue?</button>
-                  <button type="button" onClick={() => quitarVisita(v.id)} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>No fui</button>
-                </div>
+                <>
+                  <div className="flex gap-2 mt-2">
+                    <a href={urlGoogleBarrio(v)} className="flex-1 flex items-center justify-center rounded-lg font-bold text-sm" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none" } }>🧭 Cómo llegar</a>
+                    <a href={urlWazeBarrio(v)} className="flex items-center justify-center rounded-lg font-bold text-sm px-4" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62", textDecoration: "none" } }>Waze</a>
+                  </div>
+                  <a href={urlGoogleCorregimiento(v)} className="block text-center text-xs font-bold mt-1" style={ { color: "#5A6680", textDecoration: "underline" } }>¿No lo encuentra? Ir al corregimiento</a>
+                  <div className="flex gap-2 mt-2">
+                    <button type="button" onClick={() => setReportando(v.id)} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 44, background: "#001E62", border: 0 } }>📝 ¿Cómo te fue?</button>
+                    <button type="button" onClick={() => quitarVisita(v.id)} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>No fui</button>
+                  </div>
+                </>
               )}
             </div>
-          ))}
+          ); })}
           {cercaDe.length > 0 && (
             <>
               <div className="font-extrabold text-sm mt-3 mb-1" style={ { color: "#001E62" } }>📍 Cerca de ahí, para completar el día</div>
