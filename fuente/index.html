@@ -1373,7 +1373,7 @@ function infoPlazoAbono(c, ahoraMs) {
   const lim = plazoAbono(c);
   if (!lim) return { nivel: "normal", texto: "⚠ Falta abono" };
   const ms = lim.getTime() - ahoraMs;
-  if (ms <= 0) return { nivel: "vencido", texto: `⚠ VENCIÓ · ${diaRelativo(lim, ahoraMs)} ${horaAMPM(lim)}` };
+  if (ms <= 0) return { nivel: "vencido", texto: `⚠ Abono vencido · el plazo era ${diaRelativo(lim, ahoraMs)} ${horaAMPM(lim)}` };
   const min = Math.ceil(ms / 60000);
   const h = Math.floor(min / 60);
   const m = min % 60;
