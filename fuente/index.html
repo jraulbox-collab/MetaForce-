@@ -1813,6 +1813,8 @@ function leerBloqueTigo(obs) {
     voz1: get("Teléfono de contacto 1"),
     voz2: get("Teléfono de contacto 2"),
     correo: get("Correo"),
+    direccion: get("Dirección"),
+    direccion2: get("Dirección adicional"),
   };
 }
 // Plan como lo entiende el cliente (sin "SINGLE/DOBLE").
@@ -14076,7 +14078,8 @@ function ClienteDetalle({
   const [fechaCancel, setFechaCancel] = useState(() => fechaLocalISO(new Date()));
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
   const [verObs, setVerObs] = useState(false);
-  const [verHist, setVerHist] = useState(false);
+  const [verHist, setVerHist] = useState(true);
+  const [copiadoCta, setCopiadoCta] = useState(false);
   const [menuAcciones, setMenuAcciones] = useState(false);
   const [masInst, setMasInst] = useState(false); // opciones extra de la instalación (desde el menú ⋯)
 
@@ -14093,6 +14096,7 @@ function ClienteDetalle({
     );
   }
 
+  const notasPropias = String(cliente.observaciones || "").split("\n").filter((l) => l.trim() && !/^\s*•\s*[^:]+:/.test(l) && !/^\s*Datos de la orden Tigo:?\s*$/i.test(l)).join("\n").trim();
   const cicloLabel = (CICLOS.find((c) => c.value === cliente.cicloFacturacion) || {}).label || "—";
   const riesgo = estadoRiesgoChurn(cliente, periodoActual);
   const mostrarInst = !cliente.fechaInstalacion && !cliente.cancelado && !cliente.penalizado && !!onGuardarOrden;
@@ -14187,7 +14191,7 @@ function ClienteDetalle({
           </button>
         </div>
       )}
-      <p className="text-sm mb-3" style={ { color: "#5A6680" } }>{planLabel(cliente)}</p>
+      <div className="mb-3"></div>
 
 
       {(cliente.penalizado || mostrarPenalizar) && (
@@ -14341,17 +14345,26 @@ function ClienteDetalle({
                 )}
               </span>
             )],
-            cliente.cuentaTigo && ["Cuenta Tigo", cliente.cuentaTigo],
+            (cliente.cuentaTigo || leerBloqueTigo(cliente.observaciones).cuenta) && ["Cuenta", (
+              <span className="inline-flex items-center gap-1.5">
+                <span>{cliente.cuentaTigo || leerBloqueTigo(cliente.observaciones).cuenta}</span>
+                <button type="button" onClick={async () => { const ok = await copiarTextoPrecierre(String(cliente.cuentaTigo || leerBloqueTigo(cliente.observaciones).cuenta)); if (ok) { setCopiadoCta(true); setTimeout(() => setCopiadoCta(false), 1800); } }} title="Copiar número de cuenta" className="text-xs" style={ { color: copiadoCta ? "#001E62" : "#9CA3AF", minWidth: 28, minHeight: 28 } }>{copiadoCta ? "✓" : "📋"}</button>
+              </span>
+            )],
+            !!planLabel(cliente) && ["Plan", planLabel(cliente)],
             ["Mensual", fmtMonto(cliente.montoMensual)],
             ["1ra factura", fmtMonto(cliente.monto1raFactura)],
             cliente.cicloFacturacion && cicloLabel !== "—" && ["Ciclo", cicloLabel],
             (cliente.fechaInstalacion || !(mostrarInst && cliente.instalacionProgramada)) && ["Instalación", cliente.fechaInstalacion ? fmtFechaDia(cliente.fechaInstalacion) + (() => { const d = Math.round((new Date(fechaLocalISO(new Date()) + "T12:00:00") - new Date(String(cliente.fechaInstalacion).slice(0, 10) + "T12:00:00")) / 86400000); return d > 0 ? " · hace " + d + (d === 1 ? " día" : " días") : d === 0 ? " · hoy" : ""; })() : cliente.instalacionProgramada ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "") : "—"],
           ].filter(Boolean);
-          return filasH.map(([k, v], i) => filaH(k, v, i));
+          const conPro = !!(cliente.fechaInstalacion && cliente.fecha1raFactura && vencimientoPrimeraFacturaHogar(cliente));
+          return filasH.map(([k, v], i) => (
+            <React.Fragment key={k}>
+              {filaH(k, v, i)}
+              {k === "1ra factura" && conPro && <div className="text-xs pb-1.5" style={ { color: "#5A6680" } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>}
+            </React.Fragment>
+          ));
         })()}
-        {cliente.fechaInstalacion && cliente.fecha1raFactura && vencimientoPrimeraFacturaHogar(cliente) && (
-        <div className="text-xs pb-1" style={ { color: "#5A6680", marginTop: 4 } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>
-        )}
       </div>
 
       {(() => {
@@ -14372,6 +14385,8 @@ function ClienteDetalle({
             </span>
           )]),
           !!bt.correo && ["Correo", bt.correo],
+          !!bt.direccion && ["Dirección", bt.direccion],
+          !!bt.direccion2 && ["Dirección adicional", bt.direccion2],
         ].filter(Boolean);
         if (!tieneTel && !hayBarrio && filasC.length === 0) return null;
         let filaBarrio = null;
@@ -14424,7 +14439,7 @@ function ClienteDetalle({
       })()}
 
 
-      {cliente.observaciones && (
+      {notasPropias && (
         <div className="mb-4">
           <button
             type="button"
@@ -14438,7 +14453,7 @@ function ClienteDetalle({
           </button>
           {verObs && (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-2 text-sm" style={ { whiteSpace: "pre-line" } }>
-              {cliente.observaciones}
+              {notasPropias}
             </div>
           )}
         </div>
