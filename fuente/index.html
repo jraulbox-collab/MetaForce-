@@ -14073,7 +14073,7 @@ function ClienteDetalle({
   const [mostrarCancelar, setMostrarCancelar] = useState(false);
   const [fechaCancel, setFechaCancel] = useState(() => fechaLocalISO(new Date()));
   const [motivoCancel, setMotivoCancel] = useState("voluntaria");
-  const [verObs, setVerObs] = useState(false);
+  const [verObs, setVerObs] = useState(true);
   const [menuAcciones, setMenuAcciones] = useState(false);
   const [masInst, setMasInst] = useState(false); // opciones extra de la instalación (desde el menú ⋯)
 
@@ -14319,114 +14319,85 @@ function ClienteDetalle({
         </div>
       )}
 
-      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-4 grid gap-x-3 gap-y-3 text-sm" style={ { gridTemplateColumns: "repeat(6, minmax(0, 1fr))" } }>
-        <div style={ { gridColumn: "span 3", order: 1 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Suscriptor</div>
-          <div className="font-medium flex items-center gap-1.5">
-            <span>{cliente.numeroSuscriptor || "—"}</span>
-            {cliente.numeroSuscriptor && (
-              <button
-                onClick={() => onCopiarSuscriptor(cliente)}
-                title="Copiar número de suscriptor"
-                className="text-xs"
-                style={ { color: copiedSubKey === cliente.id ? "#001E62" : "#9CA3AF" } }
-              >
-                {copiedSubKey === cliente.id ? "✓" : "📋"}
-              </button>
-            )}
-          </div>
-        </div>
-        {cliente.cuentaTigo && (
-          <div style={ { gridColumn: "span 6", order: 9 } }>
-            <div className="text-xs" style={ { color: "#5A6680" } }>Número de cuenta (Tigo)</div>
-            <div className="font-medium">{cliente.cuentaTigo}</div>
-          </div>
-        )}
-        <div style={ { gridColumn: "span 3", order: 2 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Teléfono</div>
-          <div className="font-medium flex items-center gap-1.5">
-            {cliente.telefono || "—"}
-            {String(cliente.telefono || "").replace(/\D/g, "") && (
-              <a href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`} onClick={(e) => { e.preventDefault(); onRegistrarContacto && onRegistrarContacto(cliente, "whatsapp", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento"))); window.location.href = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`; }} aria-label="Escribirle por WhatsApp" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>💬</a>
-            )}
-            {String(cliente.telefono || "").replace(/\D/g, "") && (
-              <a href={`tel:+507${String(cliente.telefono).replace(/\D/g, "").slice(-8)}`} onClick={() => onRegistrarContacto && onRegistrarContacto(cliente, "llamada", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento")))} aria-label="Llamar" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>📞</a>
-            )}
-          </div>
-        </div>
-        {cliente.cicloFacturacion && cicloLabel !== "—" && (
-        <div style={ { gridColumn: "span 2", order: 6 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Ciclo</div>
-          <div className="font-medium">{cicloLabel}</div>
-        </div>
-        )}
-        {!(mostrarInst && cliente.instalacionProgramada && !cliente.fechaInstalacion) && (
-        <div style={ { gridColumn: cliente.fechaInstalacion ? "span 2" : "span 6", order: 8 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Instalación</div>
-          <div className="font-medium">
-            {cliente.fechaInstalacion
-              ? fmtFechaDia(cliente.fechaInstalacion)
-              : cliente.instalacionProgramada
-              ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "")
-              : "—"}
-          </div>
-        </div>
-        )}
-        <div style={ { gridColumn: "span 2", order: 3 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Mensual</div>
-          <div className="font-medium">{fmtMonto(cliente.montoMensual)}</div>
-        </div>
-        <div style={ { gridColumn: "span 2", order: 4 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>1ra factura</div>
-          <div className="font-medium">{fmtMonto(cliente.monto1raFactura)}</div>
-        </div>
-        <div style={ { gridColumn: "span 2", order: 5 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Pago</div>
-          <div>
-            {(() => {
-              const r = resumenPagoCliente(cliente);
-              return (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block" style={ { color: r.color, background: r.bg } }>
-                  {r.texto}
-                </span>
-              );
-            })()}
-          </div>
-        </div>
+      <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-3">
+        <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>Venta</h2>
+        {(() => {
+          const r = resumenPagoCliente(cliente);
+          const filaH = (k, v, i) => (
+            <div key={k} className="flex items-center justify-between gap-3 py-1.5 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+              <span style={ { color: "#5A6680" } }>{k}</span>
+              <span className="text-right font-medium" style={ { color: "#111827" } }>{v}</span>
+            </div>
+          );
+          const filasH = [
+            ["Suscriptor", (
+              <span className="inline-flex items-center gap-1.5">
+                <span>{cliente.numeroSuscriptor || "—"}</span>
+                {cliente.numeroSuscriptor && (
+                  <button onClick={() => onCopiarSuscriptor(cliente)} title="Copiar número de suscriptor" className="text-xs" style={ { color: copiedSubKey === cliente.id ? "#001E62" : "#9CA3AF", minWidth: 28, minHeight: 28 } }>{copiedSubKey === cliente.id ? "✓" : "📋"}</button>
+                )}
+              </span>
+            )],
+            cliente.cuentaTigo && ["Cuenta Tigo", cliente.cuentaTigo],
+            ["Mensual", fmtMonto(cliente.montoMensual)],
+            ["1ra factura", fmtMonto(cliente.monto1raFactura)],
+            ["Pago", <span className="text-xs font-medium px-2 py-0.5 rounded-full inline-block" style={ { color: r.color, background: r.bg } }>{r.texto}</span>],
+            cliente.cicloFacturacion && cicloLabel !== "—" && ["Ciclo", cicloLabel],
+            (cliente.fechaInstalacion || !(mostrarInst && cliente.instalacionProgramada)) && ["Instalación", cliente.fechaInstalacion ? fmtFechaDia(cliente.fechaInstalacion) : cliente.instalacionProgramada ? "Programada: " + fmtFechaDia(cliente.instalacionProgramada) + (cliente.franjaInstalacion ? " · " + franjaCorta(cliente.franjaInstalacion) : "") : "—"],
+            ["Ingreso", cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"],
+          ].filter(Boolean);
+          return filasH.map(([k, v], i) => filaH(k, v, i));
+        })()}
         {cliente.fechaInstalacion && cliente.fecha1raFactura && vencimientoPrimeraFacturaHogar(cliente) && (
-            <div className="text-xs" style={ { color: "#5A6680", gridColumn: "span 6", order: 5 } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>
-          )}
-        <div style={ { gridColumn: "span 2", order: 7 } }>
-          <div className="text-xs" style={ { color: "#5A6680" } }>Ingreso</div>
-          <div className="font-medium">{cliente.creadoEn ? fmtFecha(fechaLocalISO(cliente.creadoEn)) : "—"}</div>
-        </div>
+        <div className="text-xs pb-1" style={ { color: "#5A6680", marginTop: 4 } }>Prorrateo del {fmtFecha(cliente.fechaInstalacion)} al {fmtFecha(addDays(cliente.fecha1raFactura, -1))} + mensualidad del {fmtFecha(cliente.fecha1raFactura)} al {fmtFecha(vencimientoPrimeraFacturaHogar(cliente))}</div>
+        )}
       </div>
 
       {(() => {
-        if (!datosBarrios || !cliente.observaciones) return null;
-        const r = cruzarBarrio(cliente, datosBarrios);
-        if (r.estado === "sinBarrio") return null;
-        const caja = "block w-full text-left bg-white rounded-lg border shadow-sm px-4 py-3 mb-4";
-        if (r.estado === "ok") {
-          const e = datosBarrios.porId.get(datosBarrios.aEnt.get(r.fila.id)) || r.fila;
-          return (
-            <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio(e)} className={caja} style={ { borderColor: "#DFE5EF", minHeight: 52 } }>
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm font-bold" style={ { color: "#001E62", overflowWrap: "anywhere" } }>🏘️ {e.barrio}{e.arpuAlto ? " ⭐" : ""}</span>
-                <span aria-hidden="true" style={ { color: "#001E62", fontSize: 18 } }>›</span>
-              </div>
-              <div className="text-xs" style={ { color: "#5A6680" } }>{[e.corregimiento, e.distrito].filter(Boolean).join(", ")} · {fmtNum(e.hhpp)} casas · {etiquetaTamano(e.hhpp)}</div>
-            </button>
-          );
+        const tieneTel = !!String(cliente.telefono || "").replace(/\D/g, "");
+        const rb = (datosBarrios && cliente.observaciones) ? cruzarBarrio(cliente, datosBarrios) : null;
+        const hayBarrio = !!rb && rb.estado !== "sinBarrio";
+        if (!tieneTel && !hayBarrio) return null;
+        let filaBarrio = null;
+        if (hayBarrio) {
+          if (rb.estado === "ok") {
+            const e = datosBarrios.porId.get(datosBarrios.aEnt.get(rb.fila.id)) || rb.fila;
+            filaBarrio = (
+              <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio(e)} className="w-full flex items-center justify-between gap-3 py-2 text-sm text-left" style={ { borderTop: tieneTel ? "1px solid #EEF2F9" : "none", minHeight: 44 } }>
+                <span style={ { color: "#5A6680" } }>Barrio</span>
+                <span className="text-right min-w-0">
+                  <span className="block font-medium" style={ { color: "#001E62", overflowWrap: "anywhere" } }>🏘️ {e.barrio}{e.arpuAlto ? " ⭐" : ""} ›</span>
+                  <span className="block text-xs" style={ { color: "#5A6680" } }>{[e.corregimiento, e.distrito].filter(Boolean).join(", ")} · {fmtNum(e.hhpp)} casas · {etiquetaTamano(e.hhpp)}</span>
+                </span>
+              </button>
+            );
+          } else {
+            filaBarrio = (
+              <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio({ barrio: rb.barrio, sinCoincidencia: true })} className="w-full flex items-center justify-between gap-3 py-2 text-sm text-left" style={ { borderTop: tieneTel ? "1px solid #EEF2F9" : "none", minHeight: 44 } }>
+                <span style={ { color: "#5A6680" } }>Barrio</span>
+                <span className="text-right min-w-0">
+                  <span className="block font-medium" style={ { color: "#B45309", overflowWrap: "anywhere" } }>⚠ Sin coincidencia: “{rb.barrio}” ›</span>
+                  <span className="block text-xs" style={ { color: "#5A6680" } }>{rb.estado === "ambiguo" ? `Hay ${rb.candidatos.length} con ese nombre; falta el corregimiento.` : "No está en el listado. Tócalo para buscarlo."}</span>
+                </span>
+              </button>
+            );
+          }
         }
         return (
-          <button type="button" onClick={() => onAbrirBarrio && onAbrirBarrio({ barrio: r.barrio, sinCoincidencia: true })} className={caja} style={ { borderColor: "#B45309", minHeight: 52 } }>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-sm font-bold" style={ { color: "#B45309", overflowWrap: "anywhere" } }>⚠ Barrio sin coincidencia: “{r.barrio}”</span>
-              <span aria-hidden="true" style={ { color: "#B45309", fontSize: 18 } }>›</span>
+          <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-3">
+            <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>Contacto</h2>
+            {tieneTel && (
+            <div className="flex items-center justify-between gap-3 py-1 text-sm">
+              <span style={ { color: "#5A6680" } }>Teléfono</span>
+              <span className="font-medium flex items-center gap-1.5" style={ { color: "#111827" } }>
+                {cliente.telefono}
+                <a href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`} onClick={(e) => { e.preventDefault(); onRegistrarContacto && onRegistrarContacto(cliente, "whatsapp", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento"))); window.location.href = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`; }} aria-label="Escribirle por WhatsApp" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>💬</a>
+                <a href={`tel:+507${String(cliente.telefono).replace(/\D/g, "").slice(-8)}`} onClick={() => onRegistrarContacto && onRegistrarContacto(cliente, "llamada", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento")))} aria-label="Llamar" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>📞</a>
+              </span>
             </div>
-            <div className="text-xs" style={ { color: "#5A6680" } }>{r.estado === "ambiguo" ? `Hay ${r.candidatos.length} barrios con ese nombre; falta el corregimiento.` : "No está en el listado. Tócalo para buscarlo o crearlo."}</div>
-          </button>
+            )}
+            {filaBarrio}
+          </div>
         );
       })()}
 
@@ -14451,7 +14422,7 @@ function ClienteDetalle({
         </div>
       )}
 
-      <h2 className="text-sm font-semibold mb-2">Facturas</h2>
+      <h2 className="text-sm font-semibold mb-2" style={ { color: "#001E62" } }>Facturación</h2>
       {cliente.facturas.length === 0 ? (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-5 text-center">
           <p className="text-sm" style={ { color: "#B45309" } }>
