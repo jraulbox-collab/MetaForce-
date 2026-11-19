@@ -7220,7 +7220,7 @@ function DescubrirBarrios({ todos, visitas, onVisitas, prospectos, onProspectos,
                   {prosDeBarrio(v.barrioId).map((pr) => (
                     <div key={pr.id} className="flex flex-wrap items-center gap-2 rounded-lg px-2 py-1 mb-1" style={ { background: "#E3EDFA" } }>
                       <div className="min-w-0 flex-1 text-xs" style={ { color: "#001E62", overflowWrap: "anywhere" } }><span className="font-extrabold">{pr.nombre}</span> · {textoNumeros(pr)}{infoProspecto(pr)}{esCliente(pr) ? " · ✅ Ya es cliente" : ""}</div>
-                      <button type="button" onClick={() => quitarProspecto(pr.id)} aria-label={"Quitar a " + pr.nombre} className="shrink-0 rounded-lg font-bold text-xs" style={ { minHeight: 36, minWidth: 36, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>✕</button>
+                      <BotonQuitarProspecto pr={pr} onQuitar={() => quitarProspecto(pr.id)} />
                     {!esCliente(pr) && <WhatsAppProspecto pr={pr} />}
                     </div>
                   ))}
@@ -7345,6 +7345,19 @@ function BotonCopiarProspecto({ pr }) {
   };
   return <button type="button" onClick={copiar} aria-label={"Copiar nombre de contacto de " + pr.nombre} className="inline-flex items-center justify-center rounded-lg font-bold shrink-0" style={ { ...botonChico, background: copiado ? "#001E62" : "#E3EDFA", color: copiado ? "#fff" : "#001E62" } }>{copiado ? "✓" : "📋"}</button>;
 }
+// ✕ con confirmación: un toque pregunta "¿Eliminar?" y hay que confirmar.
+function BotonQuitarProspecto({ pr, onQuitar }) {
+  const [pregunta, setPregunta] = useState(false);
+  if (pregunta) {
+    return (
+      <span className="inline-flex items-center gap-1 shrink-0">
+        <button type="button" onClick={() => { setPregunta(false); onQuitar(); }} className="rounded-lg font-bold" style={ { minHeight: 30, padding: "0 10px", border: 0, background: "#001E62", color: "#fff", fontSize: 12 } }>Eliminar</button>
+        <button type="button" onClick={() => setPregunta(false)} className="rounded-lg font-bold" style={ { minHeight: 30, padding: "0 10px", border: 0, background: "#EEF2F9", color: "#001E62", fontSize: 12 } }>No</button>
+      </span>
+    );
+  }
+  return <button type="button" onClick={() => setPregunta(true)} aria-label={"Eliminar a " + pr.nombre} className="rounded-lg font-bold text-xs shrink-0" style={ { minHeight: 30, minWidth: 30, border: 0, background: "#EEF2F9", color: "#5A6680" } }>✕</button>;
+}
 const numerosConWa = (pr) => numerosProspecto(pr).filter((n) => String(n.numero || "").replace(/\D/g, "").length >= 7);
 function WhatsAppProspecto({ pr }) {
   const nums = numerosConWa(pr).sort((a, b) => (b.paga ? 1 : 0) - (a.paga ? 1 : 0));
@@ -7392,7 +7405,7 @@ function ProspectosVista({ prospectos, onProspectos, clientes, ajustes }) {
             <div className="flex items-center gap-1">
               <button type="button" onClick={() => setEditando(pr.id)} className="min-w-0 flex-1 text-left font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere", lineHeight: 1.2, background: "none", border: 0, padding: 0 } }>{pr.nombre}{esCli(pr) ? " · ✅ Cliente" : ""} <span style={ { fontSize: 12 } }>✏️</span></button>
               {!esCli(pr) && <BotonCopiarProspecto pr={pr} />}
-              <button type="button" onClick={() => quitar(pr.id)} aria-label={"Quitar a " + pr.nombre} className="rounded-lg font-bold text-xs shrink-0" style={ { minHeight: 30, minWidth: 30, border: 0, background: "#EEF2F9", color: "#5A6680" } }>✕</button>
+              <BotonQuitarProspecto pr={pr} onQuitar={() => quitar(pr.id)} />
             </div>
             <div className="flex items-center gap-2 text-xs font-bold" style={ { color: "#5A6680", overflowWrap: "anywhere" } }>
               <span className="min-w-0">{pr.barrioId ? <>🏘️ {tituloEs(pr.barrio)}{zonaProspecto(pr) && <span className="font-normal"> · {tituloEs(zonaProspecto(pr))}</span>}</> : "📍 Sin barrio"} <span className="font-normal">· {fmtFechaDia(fechaLocalISO(pr.fecha)).replace(/^[a-záéíóú]+\.? /i, "")}{!esCli(pr) && prospectoArchivado(pr) ? " · 🗄️" : ""}</span></span>
