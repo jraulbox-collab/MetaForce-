@@ -2885,6 +2885,8 @@ function App() {
   // queda anotada con fecha y dispositivo, para poder rastrear cualquier desajuste.
   const [envios, setEnvios, syncEnvios] = useListaNube("envios-churn", opcionesNube("envios", { nuevosAlPrincipio: true }));
   const [ajustesBarrios, setAjustesBarrios] = useListaNube("barrios-ajustes", opcionesNube("barrios"));
+  const [visitasBarrios, setVisitasBarrios] = useListaNube("barrios-visitas", opcionesNube("visitasBarrios"));
+  const [barriosVista, setBarriosVista] = useState(null);
   const [barrioInicial, setBarrioInicial] = useState(null);
   function registrarEnvio(datos) {
     setEnvios((prev) => [{ id: uid(), fecha: new Date().toISOString(), dispositivo: dispositivoActual(), ...datos }, ...prev].slice(0, 600));
@@ -5130,7 +5132,9 @@ function App() {
             msgHoy={conteoMsj}
             onAbrirComision={() => { memoriaCobros.rescateSeleccion = {}; comisionRestaurar.current = false; comisionPasoSimple.current = true; try { window.history.pushState({ mf: true, tab: "dashboard", comision: true, clienteDetalleId: null, origenDetalle }, ""); } catch (e) {} setComisionAbierta(true); } }
             onIrAVentas={() => { setSeccionMensajes("ventas"); setTab("alertas"); }}
-            onAbrirBarrios={() => { setBarrioInicial(null); navegarA("barrios"); }}
+            onAbrirBarrios={() => { setBarrioInicial(null); setBarriosVista(null); navegarA("barrios"); }}
+            visitasBarrios={visitasBarrios}
+            onReportarVisita={() => { setBarrioInicial(null); setBarriosVista("descubrir"); navegarA("barrios"); }}
             clientesBarrios={clientesCalc}
             ajustesBarrios={ajustesBarrios}
             onVerClientes={(payload) => {
@@ -5192,6 +5196,9 @@ function App() {
             clientesMovil={convergencias}
             ajustes={ajustesBarrios}
             onAjustes={setAjustesBarrios}
+            visitas={visitasBarrios}
+            onVisitas={setVisitasBarrios}
+            vistaInicial={barriosVista}
             inicial={barrioInicial}
             volverLabel={barrioInicial ? "← Volver a la ficha" : "← Volver al Dashboard"}
             onVolver={() => volverA(barrioInicial ? "detalle" : "dashboard")}
@@ -6433,7 +6440,7 @@ const BARRIOS_CACHE = "mf_barrios_v4";
 const PROV_CENTRALES = ["COCLE", "HERRERA", "LOS SANTOS", "VERAGUAS"];
 // Coordenadas aproximadas (Who's On First) de corregimientos y distritos para calcular distancia desde Chitré.
 const COORDS_ZONAS = {"z":{"HERRERA|CHITRE":[7.9758,-80.449],"HERRERA|LA ARENA":[7.9677,-80.4652],"HERRERA|MONAGRILLO":[7.9818,-80.4376],"HERRERA|SAN JUAN BAUTISTA":[7.961,-80.4128],"HERRERA|CHUMICAL":[7.8448,-80.7263],"HERRERA|LAS MINAS":[7.8,-80.75],"HERRERA|LOS CERRITOS":[7.7975,-80.6107],"HERRERA|LOS POZOS":[7.6925,-80.6693],"HERRERA|LLANO GRANDE":[7.9301,-80.8074],"HERRERA|LOS LLANOS":[7.9262,-80.8801],"HERRERA|MENCHACA":[7.8606,-80.7594],"HERRERA|OCU":[7.925,-80.8114],"HERRERA|PENAS CHATAS":[8.015,-80.8037],"HERRERA|CABUYA":[8.0314,-80.6323],"HERRERA|LLANO DE LA CRUZ":[7.9518,-80.6424],"HERRERA|LOS CASTILLOS":[7.9856,-80.6189],"HERRERA|PARITA":[8.0341,-80.5792],"HERRERA|PORTOBELILLO":[8.0174,-80.5954],"HERRERA|POTUGA":[8.0632,-80.6227],"HERRERA|EL BARRERO":[7.9334,-80.5136],"HERRERA|EL CIRUELO":[7.8876,-80.6755],"HERRERA|EL PAJARO":[7.9434,-80.5701],"HERRERA|EL PEDREGOSO":[7.9364,-80.6381],"HERRERA|LAS CABRAS":[7.8756,-80.5491],"HERRERA|PESE":[7.8952,-80.6158],"HERRERA|RINCON HONDO":[7.8444,-80.604],"HERRERA|CHUPAMPA":[8.0762,-80.7766],"HERRERA|EL LIMON":[8.058,-80.7729],"HERRERA|EL RINCON":[8.1208,-80.6158],"HERRERA|LOS CANELOS":[8.1172,-80.7077],"HERRERA|SANTA MARIA":[8.1011,-80.6912],"LOS SANTOS|EL ESPINAL":[7.8667,-80.3194],"LOS SANTOS|GUARARE":[7.7775,-80.3539],"LOS SANTOS|GUARARE ARRIBA":[7.8002,-80.3598],"LOS SANTOS|LA ENEA":[7.8333,-80.2742],"LOS SANTOS|LA PASERA":[7.7976,-80.3034],"LOS SANTOS|PERALES":[7.7746,-80.3249],"LOS SANTOS|BAYANO":[7.6301,-80.382],"LOS SANTOS|EL CARATE":[7.7312,-80.2969],"LOS SANTOS|EL COCAL":[7.737,-80.2798],"LOS SANTOS|EL MANANTIAL":[7.7824,-80.2471],"LOS SANTOS|EL MUNOZ":[7.6758,-80.3213],"LOS SANTOS|EL PEDREGOSO":[7.6917,-80.3279],"LOS SANTOS|LA LAJA":[7.731,-80.253],"LOS SANTOS|LA MIEL":[7.5602,-80.3274],"LOS SANTOS|LA PALMA":[7.7167,-80.3833],"LOS SANTOS|LA TIZA":[7.75,-80.2833],"LOS SANTOS|LAS PALMITAS":[7.7652,-80.2935],"LOS SANTOS|LAS TABLAS":[7.6415,-80.3081],"LOS SANTOS|LAS TABLAS ABAJO":[7.7961,-80.2523],"LOS SANTOS|PENA BLANCA":[7.7193,-80.2837],"LOS SANTOS|SANTO DOMINGO":[7.75,-80.25],"LOS SANTOS|SESTEADERO":[7.7389,-80.2485],"LOS SANTOS|VALLE RICO":[7.6201,-80.3508],"LOS SANTOS|AGUA BUENA":[7.8167,-80.4],"LOS SANTOS|LA ESPIGADILLA":[7.8833,-80.3833],"LOS SANTOS|LAS CRUCES":[7.8228,-80.43],"LOS SANTOS|LLANO LARGO":[7.9,-80.4333],"LOS SANTOS|LOS ANGELES":[7.8842,-80.3577],"LOS SANTOS|LOS OLIVOS":[7.9167,-80.4833],"LOS SANTOS|SABANA GRANDE":[7.8354,-80.3649],"LOS SANTOS|SANTA ANA":[7.6667,-80.4167],"LOS SANTOS|TRES QUEBRADAS":[7.8402,-80.4074],"LOS SANTOS|VILLA LOURDES":[7.8114,-80.4703],"LOS SANTOS|LLANO DE PIEDRA":[7.6667,-80.5667],"LOS SANTOS|MACARACAS":[7.6579,-80.5415],"LOS SANTOS|MARIABE":[7.5827,-80.0661],"LOS SANTOS|PEDASI":[7.5081,-80.1067],"LOS SANTOS|LAJAMINA":[7.5859,-80.1321],"LOS SANTOS|PARAISO":[7.6851,-80.1608],"LOS SANTOS|PARITILLA":[7.6285,-80.1724],"LOS SANTOS|POCRI":[7.6319,-80.1587],"LOS SANTOS|CANAS":[7.4471,-80.2648],"LOS SANTOS|EL CACAO":[7.5,-80.55],"LOS SANTOS|TONOSI":[7.4137,-80.5058]},"d":{"LOS SANTOS|LAS TABLAS":[7.6415,-80.3081],"LOS SANTOS|TONOSI":[7.4137,-80.5058],"LOS SANTOS|POCRI":[7.6319,-80.1587],"HERRERA|CHITRE":[7.9758,-80.449],"HERRERA|OCU":[7.925,-80.8114],"LOS SANTOS|LOS SANTOS":[7.8711,-80.4333],"HERRERA|PARITA":[8.0341,-80.5792],"HERRERA|PESE":[7.8952,-80.6158],"LOS SANTOS|GUARARE":[7.7775,-80.3539],"HERRERA|SANTA MARIA":[8.1011,-80.6912],"HERRERA|LOS POZOS":[7.6925,-80.6693],"LOS SANTOS|MACARACAS":[7.6579,-80.5415],"LOS SANTOS|PEDASI":[7.5081,-80.1067],"HERRERA|LAS MINAS":[7.7324,-80.7997]}};
-const PUNTO_BASE = { nombre: "Chitré", lat: 7.9611, lon: -80.429 };
+const PUNTO_BASE = { nombre: "tu oficina", lat: 7.9644559, lon: -80.4171367 };
 function kmDesdeBase(provincia, distrito, corregimiento) {
   const k = normTexto(provincia) + "|" + normTexto(limpiarZona(corregimiento));
   const pos = COORDS_ZONAS.z[k] || COORDS_ZONAS.d[normTexto(provincia) + "|" + normTexto(limpiarZona(distrito))];
@@ -6442,6 +6449,23 @@ function kmDesdeBase(provincia, distrito, corregimiento) {
   const x = Math.sin(((pos[0] - PUNTO_BASE.lat) * r) / 2) ** 2 + Math.cos(PUNTO_BASE.lat * r) * Math.cos(pos[0] * r) * Math.sin(((pos[1] - PUNTO_BASE.lon) * r) / 2) ** 2;
   return Math.round(2 * 6371 * Math.asin(Math.sqrt(x)));
 }
+// Posición aproximada de un corregimiento (o de su distrito) y tiempo estimado de manejo desde la oficina.
+function posZonaBarrio(provincia, distrito, corregimiento) {
+  const k = normTexto(provincia) + "|" + normTexto(limpiarZona(corregimiento));
+  return COORDS_ZONAS.z[k] || COORDS_ZONAS.d[normTexto(provincia) + "|" + normTexto(limpiarZona(distrito))] || null;
+}
+function kmEntrePuntos(a, b) {
+  const r = Math.PI / 180;
+  const x = Math.sin(((b[0] - a[0]) * r) / 2) ** 2 + Math.cos(a[0] * r) * Math.cos(b[0] * r) * Math.sin(((b[1] - a[1]) * r) / 2) ** 2;
+  return 2 * 6371 * Math.asin(Math.sqrt(x));
+}
+// Minutos aproximados: línea recta x 1.3 por las curvas; lento en la ciudad, más rápido en carretera.
+function minutosManejo(kmRecta) {
+  const km = kmRecta * 1.3;
+  const h = Math.min(km, 5) / 30 + Math.max(0, Math.min(km, 30) - 5) / 55 + Math.max(0, km - 30) / 65;
+  return Math.max(3, Math.round((h * 60) / 5) * 5);
+}
+const fmtMinutos = (m) => (m >= 60 ? Math.floor(m / 60) + " h" + (m % 60 ? " " + (m % 60) + " min" : "") : m + " min");
 const PROV_VENDER = ["HERRERA", "LOS SANTOS"];
 let barriosPreparados = null;
 function limpiarZona(s) {
@@ -6800,10 +6824,213 @@ function FormBarrioNuevo({ datos, inicial, onGuardar, onCancelar }) {
   );
 }
 
-function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajustes, onAjustes, inicial, volverLabel }) {
+// ---------- Descubrir barrios: eliges cuánto manejar, te sugiere barrios nuevos y después anotas cómo te fue ----------
+const TIEMPOS_DESCUBRIR = [10, 20, 30, 40, 50, 60, 90];
+const COMPETENCIA_OPC = ["Cable Onda", "Más Móvil", "Starlink", "Otra", "Ninguna"];
+const OPINION_OPC = [
+  ["contentos", "😊 Contentos con su proveedor"],
+  ["velocidad", "⚡ Quieren más velocidad"],
+  ["quejas", "😠 Se quejan del servicio"],
+  ["precio", "💰 Solo les importa el precio"],
+  ["sininteres", "🚫 Sin interés"],
+];
+const VOLVER_OPC = [["si", "👍 Sí"], ["tal", "🤔 Tal vez"], ["no", "👎 No"]];
+function estrellasVisita(v) {
+  const r = v && v.reporte;
+  if (!r || !(r.puertas > 0)) return null;
+  const tasa = r.ventas / r.puertas;
+  return Math.min(5, 1 + (tasa > 0 ? 1 : 0) + (tasa >= 0.1 ? 1 : 0) + (tasa >= 0.2 ? 1 : 0) + (r.volver === "si" ? 1 : 0));
+}
+function puntajeCandidatoBarrio(e, ctx) {
+  let sc = Math.min(e.hhpp, 400) / 8;
+  if (e.arpuAlto) sc += 20;
+  const zk = [e.provincia, e.distrito, e.corregimiento].join("|");
+  sc -= Math.min(20, (ctx.clientesPorZona.get(zk) || 0) * 3);
+  const dz = ctx.visitasPorZona.get(zk);
+  if (dz) { if (dz.ventas > 0) sc += 15; if (dz.noVolver > 0) sc -= 25; }
+  return sc;
+}
+
+function DescubrirBarrios({ todos, visitas, onVisitas }) {
+  const [mins, setMins] = useState(null);
+  const [reportando, setReportando] = useState(null);
+  const [verMasRec, setVerMasRec] = useState(false);
+  const hechas = (visitas || []).filter((v) => v.estado === "hecha");
+  const enCurso = (visitas || []).filter((v) => v.estado === "en curso");
+  const visitadosIds = useMemo(() => new Set((visitas || []).map((v) => v.barrioId)), [visitas]);
+  const contexto = useMemo(() => {
+    const clientesPorZona = new Map();
+    todos.forEach((e) => { const k = [e.provincia, e.distrito, e.corregimiento].join("|"); clientesPorZona.set(k, (clientesPorZona.get(k) || 0) + (e.vendidos || 0)); });
+    const visitasPorZona = new Map();
+    hechas.forEach((v) => { const k = [v.provincia, v.distrito, v.corregimiento].join("|"); const d = visitasPorZona.get(k) || { ventas: 0, noVolver: 0 }; d.ventas += (v.reporte && v.reporte.ventas) || 0; if (v.reporte && v.reporte.volver === "no") d.noVolver += 1; visitasPorZona.set(k, d); });
+    return { clientesPorZona, visitasPorZona };
+  }, [todos, hechas.length]);
+  const candidatos = useMemo(() => {
+    const base = [PUNTO_BASE.lat, PUNTO_BASE.lon];
+    return todos.filter((e) => PROV_VENDER.includes(e.provincia) && e.hhpp >= 40 && !(e.vendidos > 0) && !visitadosIds.has(e.id)).map((e) => {
+      const pos = posZonaBarrio(e.provincia, e.distrito, e.corregimiento);
+      if (!pos) return null;
+      return { e, pos, min: minutosManejo(kmEntrePuntos(base, pos)), score: puntajeCandidatoBarrio(e, contexto) };
+    }).filter(Boolean);
+  }, [todos, visitadosIds, contexto]);
+  const recomendados = useMemo(() => {
+    if (!mins) return [];
+    const val = (c) => c.score + 15 * (c.min / mins);
+    const ok = candidatos.filter((c) => c.min <= mins).sort((a, b) => val(b) - val(a));
+    const porZona = new Map(); const out = [];
+    for (const c of ok) {
+      const k = c.e.corregimiento;
+      if ((porZona.get(k) || 0) >= 2) continue;
+      porZona.set(k, (porZona.get(k) || 0) + 1);
+      out.push(c);
+      if (out.length >= (verMasRec ? 12 : 6)) break;
+    }
+    return out;
+  }, [candidatos, mins, verMasRec]);
+  const voy = (c) => onVisitas((prev) => [...prev, { id: "vis-" + uid(), barrioId: c.e.id, barrio: c.e.barrio, provincia: c.e.provincia, distrito: c.e.distrito, corregimiento: c.e.corregimiento, hhpp: c.e.hhpp, fecha: new Date().toISOString(), estado: "en curso", reporte: null }]);
+  const quitarVisita = (id) => onVisitas((prev) => prev.filter((v) => v.id !== id));
+  const guardarReporte = (id, rep) => { onVisitas((prev) => prev.map((v) => (v.id === id ? { ...v, estado: "hecha", reporte: rep, fechaReporte: new Date().toISOString() } : v))); setReportando(null); };
+  const cercaDe = useMemo(() => {
+    if (enCurso.length === 0) return [];
+    const centros = enCurso.map((v) => posZonaBarrio(v.provincia, v.distrito, v.corregimiento)).filter(Boolean);
+    if (centros.length === 0) return [];
+    return candidatos.filter((c) => !enCurso.some((v) => v.barrioId === c.e.id) && centros.some((p) => kmEntrePuntos(p, c.pos) <= 4)).sort((a, b) => b.score - a.score).slice(0, 5);
+  }, [candidatos, enCurso]);
+  const chipBtn = (activo, texto, onClick, key) => (
+    <button key={key || texto} type="button" onClick={onClick} className="rounded-full text-sm font-bold px-4" style={ { minHeight: 44, border: "2px solid #001E62", background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{activo ? "✓ " : ""}{texto}</button>
+  );
+  const tarjetaBarrio = (c, accion, etiquetaAccion) => (
+    <div key={c.e.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
+      <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{c.e.barrio}</div>
+      <div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(c.e.corregimiento)} · {limpiarZona(c.e.distrito)}</div>
+      <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>🚗 ~{fmtMinutos(c.min)} · 🏠 {fmtNum(c.e.hhpp)} casas · {etiquetaTamano(c.e.hhpp)}{c.e.arpuAlto ? " · ⭐ ARPU alto" : ""}</div>
+      <button type="button" onClick={() => accion(c)} className="w-full rounded-lg font-bold text-sm mt-2" style={ { minHeight: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } }>{etiquetaAccion}</button>
+    </div>
+  );
+  // Resumen de lo aprendido
+  const aprendido = (() => {
+    if (hechas.length === 0) return null;
+    const comp = {}; let precios = []; let puertas = 0; let ventas = 0;
+    hechas.forEach((v) => { const r = v.reporte || {}; puertas += r.puertas || 0; ventas += r.ventas || 0; (r.competencia || []).forEach((c) => { comp[c] = (comp[c] || 0) + 1; }); if (r.precio > 0) precios.push(Number(r.precio)); });
+    const topComp = Object.entries(comp).filter(([k]) => k !== "Ninguna").sort((a, b) => b[1] - a[1])[0];
+    return { puertas, ventas, topComp: topComp ? topComp[0] : null, precio: precios.length ? precios.reduce((a, b) => a + b, 0) / precios.length : null };
+  })();
+  return (
+    <div>
+      {enCurso.length > 0 && (
+        <div className="rounded-xl p-3 mb-3" style={ { background: "#E3EDFA", border: "2px solid #0072CE" } }>
+          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>🧭 Hoy vas a</div>
+          {enCurso.map((v) => (
+            <div key={v.id} className="rounded-lg bg-white p-3 mb-2" style={ { border: "1px solid #DFE5EF" } }>
+              <div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{v.barrio}</div>
+              <div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(v.corregimiento)} · {limpiarZona(v.distrito)}</div>
+              {reportando === v.id ? (
+                <ReporteVisitaBarrio visita={v} onGuardar={(rep) => guardarReporte(v.id, rep)} onCancelar={() => setReportando(null)} />
+              ) : (
+                <div className="flex gap-2 mt-2">
+                  <button type="button" onClick={() => setReportando(v.id)} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 44, background: "#001E62", border: 0 } }>📝 ¿Cómo te fue?</button>
+                  <button type="button" onClick={() => quitarVisita(v.id)} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 44, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>No fui</button>
+                </div>
+              )}
+            </div>
+          ))}
+          {cercaDe.length > 0 && (
+            <>
+              <div className="font-extrabold text-sm mt-3 mb-1" style={ { color: "#001E62" } }>📍 Cerca de ahí, para completar el día</div>
+              <div className="flex flex-col gap-2">{cercaDe.map((c) => tarjetaBarrio(c, voy, "➕ Agregar al recorrido"))}</div>
+            </>
+          )}
+        </div>
+      )}
+      <div className="rounded-xl border bg-white p-3 mb-3" style={ { borderColor: "#DFE5EF" } }>
+        <div className="font-extrabold text-sm mb-2" style={ { color: "#001E62" } }>⏱️ ¿Cuánto quieres manejar?</div>
+        <div className="flex flex-wrap gap-2">{TIEMPOS_DESCUBRIR.map((m) => chipBtn(mins === m, m === 90 ? "1 h 30 min" : m === 60 ? "1 hora" : m + " min", () => { setMins(mins === m ? null : m); setVerMasRec(false); }, m))}</div>
+        <div className="text-xs mt-2" style={ { color: "#5A6680" } }>Desde {PUNTO_BASE.nombre}. Son tiempos aproximados (línea recta x 1.3, con tráfico de ciudad).</div>
+      </div>
+      {mins && (
+        <div className="mb-3">
+          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>🔎 Para descubrir (hasta {fmtMinutos(mins)})</div>
+          <div className="text-xs mb-2" style={ { color: "#5A6680" } }>Barrios que no has visitado y donde todavía no tienes clientes. Escoge uno.</div>
+          {recomendados.length === 0 ? <div className="rounded-xl border bg-white p-3 text-sm text-center" style={ { borderColor: "#DFE5EF", color: "#5A6680" } }>No hay barrios nuevos en ese tiempo. Prueba con más minutos.</div> : <div className="flex flex-col gap-2">{recomendados.map((c) => tarjetaBarrio(c, voy, "🚗 Voy para allá"))}</div>}
+          {candidatos.filter((c) => c.min <= mins).length > recomendados.length && !verMasRec && <button type="button" onClick={() => setVerMasRec(true)} className="w-full mt-2 rounded-xl border font-bold text-sm" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>Ver más opciones</button>}
+        </div>
+      )}
+      {hechas.length > 0 && (
+        <div className="mb-3">
+          <div className="font-extrabold text-sm mb-1" style={ { color: "#001E62" } }>📒 Mis visitas</div>
+          {aprendido && (
+            <div className="rounded-xl border bg-white p-3 mb-2 text-xs font-bold" style={ { borderColor: "#DFE5EF", color: "#001E62" } }>
+              🚪 {aprendido.puertas} puertas · ✅ {aprendido.ventas} ventas{aprendido.topComp ? " · 🥊 Competencia más común: " + aprendido.topComp : ""}{aprendido.precio ? " · 💵 Pagan ~$" + aprendido.precio.toFixed(0) : ""}
+            </div>
+          )}
+          <div className="flex flex-col gap-2">
+            {hechas.slice().sort((a, b) => String(b.fecha).localeCompare(String(a.fecha))).map((v) => {
+              const r = v.reporte || {}; const est = estrellasVisita(v);
+              return (
+                <div key={v.id} className="rounded-xl border bg-white p-3" style={ { borderColor: "#DFE5EF" } }>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0"><div className="font-extrabold text-sm" style={ { color: "#001E62", overflowWrap: "anywhere" } }>{v.barrio}</div><div className="text-xs" style={ { color: "#5A6680" } }>{limpiarZona(v.corregimiento)} · {fmtFechaHora(v.fecha)}</div></div>
+                    {est && <span className="text-sm font-extrabold shrink-0" style={ { color: "#001E62" } }>⭐ {est}/5</span>}
+                  </div>
+                  <div className="text-xs font-bold mt-1" style={ { color: "#001E62" } }>🚪 {r.puertas || 0} puertas · ✅ {r.ventas || 0} ventas{r.puertas > 0 ? " (" + ((r.ventas / r.puertas) * 10).toFixed(1) + " por 10)" : ""}</div>
+                  {(r.competencia || []).length > 0 && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>🥊 {r.competencia.join(", ")}{r.precio > 0 ? " · pagan ~$" + r.precio : ""}</div>}
+                  {(r.opinion || []).length > 0 && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>💬 {r.opinion.map((k) => (OPINION_OPC.find((o) => o[0] === k) || [0, k])[1]).join(" · ")}</div>}
+                  {r.volver && <div className="text-xs mt-0.5" style={ { color: "#374151" } }>🔁 ¿Volver? {(VOLVER_OPC.find((o) => o[0] === r.volver) || [0, r.volver])[1]}</div>}
+                  {r.nota && <div className="text-xs mt-0.5" style={ { color: "#374151", overflowWrap: "anywhere" } }>📝 {r.nota}</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReporteVisitaBarrio({ visita, onGuardar, onCancelar }) {
+  const [puertas, setPuertas] = useState(0);
+  const [ventas, setVentas] = useState(0);
+  const [comp, setComp] = useState([]);
+  const [precio, setPrecio] = useState("");
+  const [op, setOp] = useState([]);
+  const [volver, setVolver] = useState("");
+  const [nota, setNota] = useState("");
+  const alternar = (lista, setLista, k) => setLista(lista.includes(k) ? lista.filter((x) => x !== k) : (k === "Ninguna" ? ["Ninguna"] : [...lista.filter((x) => x !== "Ninguna"), k]));
+  const paso = (valor, set, d, max) => (
+    <div className="inline-flex items-center gap-2">
+      <button type="button" onClick={() => set(Math.max(0, valor - d))} className="rounded-lg font-extrabold" style={ { width: 44, height: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } } aria-label="Menos">−</button>
+      <span className="font-extrabold text-lg text-center" style={ { minWidth: 36, color: "#001E62" } }>{valor}</span>
+      <button type="button" onClick={() => set(max ? Math.min(max, valor + d) : valor + d)} className="rounded-lg font-extrabold" style={ { width: 44, height: 44, border: "2px solid #001E62", background: "#fff", color: "#001E62" } } aria-label="Más">＋</button>
+    </div>
+  );
+  const chipM = (activo, texto, onClick, key) => (
+    <button key={key} type="button" onClick={onClick} className="rounded-full text-xs font-bold px-3" style={ { minHeight: 40, border: "2px solid #001E62", background: activo ? "#001E62" : "#fff", color: activo ? "#fff" : "#001E62" } }>{activo ? "✓ " : ""}{texto}</button>
+  );
+  const etq = (t) => <div className="text-xs font-extrabold mt-3 mb-1" style={ { color: "#001E62" } }>{t}</div>;
+  return (
+    <div className="mt-2">
+      <div className="text-xs font-bold" style={ { color: "#5A6680" } }>Cuéntame cómo te fue en {visita.barrio}</div>
+      {etq("🚪 ¿Cuántas puertas tocaste?")}{paso(puertas, setPuertas, 1)}
+      {etq("✅ ¿Cuántas ventas?")}{paso(ventas, setVentas, 1, puertas || undefined)}
+      {etq("🥊 ¿Qué competencia hay?")}<div className="flex flex-wrap gap-2">{COMPETENCIA_OPC.map((k) => chipM(comp.includes(k), k, () => alternar(comp, setComp, k), k))}</div>
+      {etq("💵 ¿Cuánto pagan ahora? (internet, $ al mes)")}
+      <input type="number" inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="Ej. 30" className="rounded-lg border outline-none px-3 text-sm" style={ { minHeight: 44, width: 120, borderColor: "#DFE5EF" } } />
+      {etq("💬 ¿Qué dice la gente?")}<div className="flex flex-wrap gap-2">{OPINION_OPC.map(([k, t]) => chipM(op.includes(k), t, () => alternar(op, setOp, k), k))}</div>
+      {etq("🔁 ¿Volverías a este barrio?")}<div className="flex flex-wrap gap-2">{VOLVER_OPC.map(([k, t]) => chipM(volver === k, t, () => setVolver(volver === k ? "" : k), k))}</div>
+      {etq("📝 Nota (opcional)")}
+      <input type="text" value={nota} onChange={(e) => setNota(e.target.value)} placeholder="Algo que quieras recordar" className="w-full rounded-lg border outline-none px-3 text-sm" style={ { minHeight: 44, borderColor: "#DFE5EF" } } />
+      <div className="flex gap-2 mt-3">
+        <button type="button" onClick={() => onGuardar({ puertas, ventas, competencia: comp, precio: precio === "" ? null : Number(precio), opinion: op, volver, nota: nota.trim() })} className="flex-1 rounded-lg font-bold text-sm text-white" style={ { minHeight: 48, background: "#001E62", border: 0 } }>✓ Guardar visita</button>
+        <button type="button" onClick={onCancelar} className="rounded-lg font-bold text-sm px-3" style={ { minHeight: 48, border: "1.5px solid #DFE5EF", background: "#fff", color: "#5A6680" } }>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajustes, onAjustes, inicial, volverLabel, visitas, onVisitas, vistaInicial }) {
   const { datos, error } = useBarrios(ajustes);
   const [formNuevo, setFormNuevo] = useState(inicial && inicial.sinCoincidencia ? { nombre: inicial.barrio } : null);
-  const [vista, setVista] = useState(inicial ? "buscar" : "hoy");
+  const [vista, setVista] = useState(inicial ? "buscar" : (vistaInicial || "descubrir"));
   const [ronda, setRonda] = useState(0);
   const [ideaAbierta, setIdeaAbierta] = useState(null);
   const [periodoStat, setPeriodoStat] = useState("30");
@@ -6978,15 +7205,18 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
       {datos && est && (
         <>
           <div className="flex items-center gap-2 overflow-x-auto mb-2" style={ { scrollbarWidth: "none" } }>
+            {chip(vista === "descubrir", "🧭 Descubrir", () => { setVista("descubrir"); setVerMas(30); })}
             {chip(vista === "hoy", "📍 Hoy", () => { setVista("hoy"); setVerMas(30); })}
             {chip(vista === "stats", "📊 Estadísticas", () => { setVista("stats"); setVerMas(30); })}
             {chip(vista === "buscar", "🔎 Buscar", () => { setVista("buscar"); setVerMas(30); })}
           </div>
-          {vista !== "hoy" && vista !== "stats" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
+          {vista !== "hoy" && vista !== "stats" && vista !== "descubrir" && <select value={provSel} onChange={(e) => { setProvSel(e.target.value); setVerMas(30); }} className="w-full rounded-xl border outline-none px-3 mb-3" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } aria-label="Provincia">
             <option value="centrales">Herrera y Los Santos</option>
             <option value="todas">Todas las provincias</option>
             {provincias.map((p) => <option key={p} value={p}>{p.charAt(0) + p.slice(1).toLowerCase()}</option>)}
           </select>}
+
+          {vista === "descubrir" && <DescubrirBarrios todos={todos} visitas={visitas || []} onVisitas={onVisitas || (() => {})} />}
 
           {vista === "hoy" && (
             <>
@@ -8682,7 +8912,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios, visitasBarrios, onReportarVisita }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -10023,7 +10253,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const nMensajes = msgHoy ? msgHoy.total : nRecMsg + nVentas;
         const hayMsg = nMensajes > 0;
         const hayArriba = hayCobros || hayVentas || hayMsg;
-        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst && !hayMsg) return null;
+        const visitasPend = (visitasBarrios || []).filter((v) => v && v.estado === "en curso");
+        const hayVisita = visitasPend.length > 0 && !!onReportarVisita;
+        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst && !hayMsg && !hayVisita) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
           <LineaMatchPendiente
@@ -10115,10 +10347,25 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
             )}
+            {hayVisita && (
+              <button
+                type="button"
+                onClick={onReportarVisita}
+                className="w-full text-left flex items-center gap-3 px-4 py-3"
+                style={ { background: "transparent", color: "#fff", border: 0, borderTop: (hayArriba || hayAbono || hayInfo || hayMatch || hayCiclo || hayCicloHogar) ? "1px solid rgba(255,255,255,.18)" : 0 } }
+              >
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">🧭</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold">{visitasPend.length === 1 ? "¿Cómo te fue en " + visitasPend[0].barrio + "?" : visitasPend.length + " visitas por reportar"}</span>
+                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>Cuenta qué dice la gente, qué competencia hay y cuánto pagan</span>
+                </span>
+                <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
+              </button>
+            )}
             {hayPorInst && (
               <PanelPorInstalar
                 enTarjeta
-                conSeparador={hayArriba || hayAbono || hayInfo || hayMatch}
+                conSeparador={hayArriba || hayAbono || hayInfo || hayMatch || hayCiclo || hayCicloHogar || hayVisita}
                 porInstalar={listaPorInstalar}
                 onMarcarInstalado={onMarcarInstalado}
                 onReprogramar={onReprogramarInstalacion}
