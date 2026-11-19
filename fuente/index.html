@@ -14360,7 +14360,18 @@ function ClienteDetalle({
         const bt = leerBloqueTigo(cliente.observaciones);
         const soloDig = (x) => String(x || "").replace(/\D/g, "").slice(-8);
         const extrasT = [bt.voz1, bt.voz2].filter((x) => x && soloDig(x) && soloDig(x) !== soloDig(cliente.telefono));
-        const filasC = [extrasT.length > 0 && [extrasT.length > 1 ? "Teléfonos extra" : "Teléfono extra", extrasT.join(" · ")], !!bt.correo && ["Correo", bt.correo]].filter(Boolean);
+        const motivoC = mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento");
+        const btnC = { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" };
+        const filasC = [
+          ...extrasT.map((x) => ["Otro número", (
+            <span className="inline-flex items-center gap-1.5">
+              <span className="font-medium">{x}</span>
+              <a href={`https://wa.me/${telefonoWhatsapp(x)}`} onClick={(e) => { e.preventDefault(); onRegistrarContacto && onRegistrarContacto(cliente, "whatsapp", "", motivoC); window.location.href = `https://wa.me/${telefonoWhatsapp(x)}`; }} aria-label={"Escribir por WhatsApp a " + x} className="inline-flex items-center justify-center rounded-md text-sm" style={ btnC }>💬</a>
+              <a href={`tel:+507${soloDig(x)}`} onClick={() => onRegistrarContacto && onRegistrarContacto(cliente, "llamada", "", motivoC)} aria-label={"Llamar a " + x} className="inline-flex items-center justify-center rounded-md text-sm" style={ btnC }>📞</a>
+            </span>
+          )]),
+          !!bt.correo && ["Correo", bt.correo],
+        ].filter(Boolean);
         if (!tieneTel && !hayBarrio && filasC.length === 0) return null;
         let filaBarrio = null;
         if (hayBarrio) {
@@ -14392,7 +14403,7 @@ function ClienteDetalle({
             <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>Contacto</h2>
             {tieneTel && (
             <div className="flex items-center justify-between gap-3 py-1 text-sm">
-              <span style={ { color: "#5A6680" } }>Teléfono</span>
+              <span style={ { color: "#5A6680" } }>WhatsApp</span>
               <span className="font-medium flex items-center gap-1.5" style={ { color: "#111827" } }>
                 {cliente.telefono}
                 <a href={`https://wa.me/${telefonoWhatsapp(cliente.telefono)}`} onClick={(e) => { e.preventDefault(); onRegistrarContacto && onRegistrarContacto(cliente, "whatsapp", "", (mostrarInst ? "instalacion" : (cliente.fechaInstalacion && cliente.f1_estado !== "pagada" ? "cobro" : "seguimiento"))); window.location.href = `https://wa.me/${telefonoWhatsapp(cliente.telefono)}`; }} aria-label="Escribirle por WhatsApp" className="inline-flex items-center justify-center rounded-md text-sm" style={ { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" } }>💬</a>
@@ -14473,71 +14484,6 @@ function ClienteDetalle({
                 </button>
               )}
 
-              {(() => {
-                const enviadosF = f.milestones.filter((m) => m.enviado).map((m) => {
-                  const ev = (envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === m.key && e.tipo === "marcar").map((e) => e.fecha).sort().pop();
-                  return { m, ev };
-                });
-                if (enviadosF.length === 0) return null;
-                return (
-                  <div className="mt-2.5 mb-1 flex flex-col gap-1">
-                    {enviadosF.map(({ m, ev }) => (
-                      <div key={m.key} className="text-xs font-medium" style={ { color: "#001E62" } }>
-                        ✓ {m.label} · {ev ? "enviado " + fmtFechaHora(ev) : "enviado (sin fecha registrada)"}
-                      </div>
-                    ))}
-                  </div>
-                );
-              })()}
-
-              {(() => {
-                const alertasActivas = f.milestones.filter((m) => m.pendienteHoy);
-                if (alertasActivas.length === 0) return null;
-                return (
-                  <div className="flex flex-col gap-3 mt-3">
-                    {alertasActivas.map((m) => {
-                      const key = cliente.id + m.key;
-                      return (
-                        <div key={m.key} className="rounded-md border p-3" style={ { borderColor: "#F0F0EF" } }>
-                          <div className="flex items-center gap-2 mb-2">
-                            <span className="font-mono text-[11px] px-1.5 py-0.5 rounded" style={ { background: m.bg, color: m.color } }>
-                              {m.tag}
-                            </span>
-                            <span className="text-xs" style={ { color: "#5A6680" } }>{m.label}</span>
-                          </div>
-                          <div className="-mt-1 mb-2"><FranjaPrimeraFactura milestone={m} cliente={cliente} /></div>
-                          <div className="text-sm rounded-md p-3 mb-3" style={ { background: "#F3F6FB", color: "#374151" } }>
-                            {m.texto}
-                          </div>
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <a
-                              href={whatsappLink(cliente, m)}
-                              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                              style={ { background: "#25D366" } }
-                            >
-                              Enviar por WhatsApp
-                            </a>
-                            <button
-                              onClick={() => onCopiarMensaje(cliente, m)}
-                              className="text-xs font-medium px-3 py-1.5 rounded-md text-white"
-                              style={ { background: "#001E62" } }
-                            >
-                              {copiedKey === key ? "Copiado ✓" : "Copiar mensaje"}
-                            </button>
-                            <button
-                              onClick={() => onMarcarEnviado(cliente.id, m.key)}
-                              className="text-xs font-medium px-3 py-1.5 rounded-md border"
-                              style={ { borderColor: "#DFE5EF", color: "#374151" } }
-                            >
-                              Marcar como enviado
-                            </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-                );
-              })()}
             </div>
           );
         })}
@@ -14550,28 +14496,44 @@ function ClienteDetalle({
       )}
 
       {(() => {
-        const hoyM = fechaLocalISO(new Date());
+        if (cliente.cancelado || cliente.penalizado) return null;
         const ms = [];
-        (cliente.facturas || []).filter((f) => f.n <= 3).forEach((f) => (f.milestones || []).forEach((m) => ms.push({ ...m, fn: f.n })));
-        if (ms.length === 0 || cliente.cancelado || cliente.penalizado) return null;
-        ms.sort((a, b) => String(a.triggerDate).localeCompare(String(b.triggerDate)));
-        let futuros = 0;
-        const visibles = ms.filter((m) => { if (m.enviado || m.pendienteHoy) return true; futuros += 1; return futuros <= 2; });
+        (cliente.facturas || []).filter((f) => f.n <= 3).forEach((f) => (f.milestones || []).forEach((m) => { if (f.n === 1 || m.pendienteHoy || m.enviado) ms.push({ ...m, fn: f.n }); }));
+        if (ms.length === 0) return null;
+        const ordT = (t) => { const k = ["d1", "t15", "t3"].indexOf(t); return k < 0 ? 9 : k; };
+        ms.sort((a, b) => (a.fn - b.fn) || (ordT(a.type) - ordT(b.type)) || String(a.triggerDate).localeCompare(String(b.triggerDate)));
+        const espera = cicloHogarEspera(cliente);
         const chipM = (t, bg, col) => <span className="inline-block text-xs font-medium rounded-full px-2.5 py-0.5 whitespace-nowrap" style={ { background: bg, color: col } }>{t}</span>;
         return (
           <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mt-3 mb-3">
-            <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>Mensajes</h2>
-            {visibles.map((m, i) => (
-              <div key={m.key} className="flex items-center justify-between gap-3 py-2 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
-                <span className="min-w-0">
-                  <span className="block font-semibold" style={ { color: "#001E62" } }>{m.tag} {m.corto || m.label}</span>
-                  <span className="block text-xs" style={ { color: "#5A6680" } }>{ORDINAL[m.fn]} factura{m.corto ? " · " + m.label : ""}</span>
-                </span>
-                {m.enviado ? chipM("✓ Enviado", "#E3EDFA", "#001E62")
-                  : m.pendienteHoy ? chipM("Toca hoy", "#FFF3DC", "#B45309")
-                  : chipM("Programado · " + fmtFechaDia(String(m.triggerDate).slice(0, 10)), "#F1F4F9", "#4A5878")}
-              </div>
-            ))}
+            <h2 className="text-sm font-semibold mb-1" style={ { color: "#001E62" } }>Mensajes</h2>
+            {ms.map((m, i) => {
+              const key = cliente.id + m.key;
+              const evEnv = m.enviado ? (envios || []).filter((e) => e && e.clienteId === cliente.id && e.key === m.key && e.tipo === "marcar").map((e) => e.fecha).sort().pop() : null;
+              const estado = m.enviado ? chipM("✓ Enviado", "#E3EDFA", "#001E62")
+                : espera ? chipM("Retenido · confirma el ciclo", "#F1F4F9", "#4A5878")
+                : m.pendienteHoy ? chipM(String(m.triggerDate).slice(0, 10) === fechaLocalISO(new Date()) ? "Toca hoy" : "Listo para enviar", "#E3EDFA", "#0072CE")
+                : chipM("Programado · " + fmtFechaDia(String(m.triggerDate).slice(0, 10)), "#F1F4F9", "#4A5878");
+              return (
+                <div key={m.key} className="py-2.5" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold" style={ { color: "#001E62" } }>{m.tag} {m.corto || m.label}</span>
+                    {estado}
+                  </div>
+                  <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>{ORDINAL[m.fn]} factura{m.corto ? " · " + m.label : ""}{evEnv ? " · enviado " + fmtFechaHora(evEnv) : ""}</div>
+                  {!m.enviado && !espera && m.pendienteHoy && (
+                    <>
+                      <div className="mt-1"><FranjaPrimeraFactura milestone={m} cliente={cliente} /></div>
+                      <div className="flex gap-2 mt-2">
+                        <button type="button" onClick={() => onCopiarMensaje(cliente, m)} className="flex-1 text-sm font-bold rounded-lg" style={ { minHeight: 40, border: "1.5px solid #001E62", background: "#fff", color: "#001E62" } }>{copiedKey === key ? "Copiado ✓" : "Copiar mensaje"}</button>
+                        <a href={whatsappLink(cliente, m)} className="flex-1 text-center text-sm font-bold rounded-lg text-white" style={ { minHeight: 40, lineHeight: "40px", background: "#128C4A" } }>Enviar por WhatsApp</a>
+                      </div>
+                      <button type="button" onClick={() => onMarcarEnviado(cliente.id, m.key)} className="block w-full text-center text-xs font-semibold mt-1" style={ { color: "#5A6680", minHeight: 32 } }>Marcar como enviado</button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
           </div>
         );
       })()}
