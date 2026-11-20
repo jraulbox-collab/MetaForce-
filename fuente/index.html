@@ -768,7 +768,7 @@ const TIPOS_CLIENTE_MOVIL = [
   { value: "fulltigo", label: "FULL TIGO" },
 ];
 // Datos extra que se guardan al pegar el texto de Tigo (todos opcionales).
-const DATOS_EXTRA_MOVIL = ["correo", "telefonoAdicional", "telefonoAdicional2", "numeroOrden", "direccion", "barrio", "corregimiento", "planNombre", "sim", "estadoOrden", "titularCedula", "titularCorreo", "titularTelefono", "matchConfirmado", "matchFecha"];
+const DATOS_EXTRA_MOVIL = ["correo", "telefonoAdicional", "telefonoAdicional2", "numeroOrden", "direccion", "barrio", "corregimiento", "planNombre", "sim", "estadoOrden", "titularNombre", "titularCedula", "titularCorreo", "titularTelefono", "matchConfirmado", "matchFecha"];
 function datosExtraDe(c) {
   const o = {};
   DATOS_EXTRA_MOVIL.forEach((k) => { if (c && c[k] !== undefined && c[k] !== null && c[k] !== "") o[k] = c[k]; });
@@ -15595,6 +15595,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   const mi = matchInfo(c);
   const calc1ra = fch && c.montoPlan != null ? calcularPrimeraFacturaMovil(c.montoPlan, fch, false) : null;
   const extras = [c.telefonoAdicional, c.telefonoAdicional2].filter(Boolean);
+  const fechaMatchISO = c.tipo === "matchdigital" ? (c.matchFecha || (c.creadoEn ? fechaLocalISO(c.creadoEn) : "")) : "";
   const dueñoHogar = (() => {
     const k = d8(c.titularTelefono);
     if (k.length < 7) return null;
@@ -15620,7 +15621,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   const botonCls = "block w-full text-center text-sm font-bold rounded-lg mt-2";
   const botonEstilo = { minHeight: 40, lineHeight: "37px", border: "1.5px solid #001E62", background: "#fff", color: "#001E62" };
   const elegirCiclo = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${c.nombre} es el ${pad(n)}?`, () => { onEditar(c.id, { cicloConfirmado: true, cicloManual: n === (movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo ? null : n }); }, { si: "✓ Sí, es ese ciclo" });
-  const hayContacto = extras.length > 0 || !!c.barrio;
+  const hayContacto = extras.length > 0 || !!c.barrio || !!c.correo;
   return (
     <div className="max-w-2xl">
       <button type="button" onClick={onVolver} className="text-xs font-medium mb-4" style={ { color: "#0072CE" } }>{volverLabel || "← Volver a Clientes"}</button>
@@ -15686,10 +15687,21 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
         <>
           {filas([
             ["Estado", mi ? chip(String(mi.texto).replace(/^[^A-Za-zÁÉÍÓÚáéíóú]+/, ""), AMBAR) : chip("Confirmado", VERDE)],
-            !!c.titularTelefono && ["Teléfono del titular", <span className="inline-flex items-center gap-2">{c.titularTelefono}<BotonWaChico tel={c.titularTelefono} /></span>],
-            !!dueñoHogar && ["Cliente Hogar", <button type="button" onClick={() => onAbrirHogar && onAbrirHogar(dueñoHogar)} className="font-medium underline text-right" style={ { color: "#0072CE" } }>{dueñoHogar.nombre}{dueñoHogar.telefono ? " · " + dueñoHogar.telefono : ""}</button>],
-            !!c.titularCorreo && ["Correo del titular", c.titularCorreo],
+            !!fechaMatchISO && ["Se hizo el match", fmtFecha(fechaMatchISO)],
+            !!mi && !!mi.lim && ["Vence", fmtFecha(mi.lim)],
+          ])}
+          <div className="text-xs font-bold mt-3 mb-0.5" style={ { color: "#001E62" } }>Titular del Hogar</div>
+          {filas([
+            ["Nombre", dueñoHogar
+              ? <button type="button" onClick={() => onAbrirHogar && onAbrirHogar(dueñoHogar)} className="font-medium underline text-right" style={ { color: "#0072CE" } }>{dueñoHogar.nombre}</button>
+              : c.titularNombre
+                ? <span>{c.titularNombre}</span>
+                : <button type="button" onClick={() => onEditarForm && onEditarForm(c)} className="font-medium text-right" style={ { color: "#0072CE" } }>Añadir nombre</button>],
+            !!c.titularTelefono && ["Teléfono", <span className="inline-flex items-center gap-2">{c.titularTelefono}<BotonWaChico tel={c.titularTelefono} /></span>],
+            !!dueñoHogar && ["Instalación", dueñoHogar.fechaInstalacion ? chip("Instalado · " + fmtFecha(dueñoHogar.fechaInstalacion), VERDE) : chip(dueñoHogar.instalacionProgramada ? "Programada · " + fmtFecha(dueñoHogar.instalacionProgramada) : "Sin instalar", AMBAR)],
+            !!dueñoHogar && ["1ra factura Hogar", dueñoHogar.f1_estado === "pagada" ? chip("Pagada", VERDE) : chip("Pendiente", AMBAR)],
             !!c.titularCedula && ["Cédula (informativa)", c.titularCedula],
+            !!c.titularCorreo && ["Correo", c.titularCorreo],
           ])}
           {mi && mi.nivel !== "vencido" && !!c.titularTelefono && (() => {
             const url = `https://wa.me/${telefonoWhatsapp(c.titularTelefono)}?text=${encodeURIComponent(textoMatchTitular(c))}`;
@@ -15703,6 +15715,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
 
       {hayContacto && tarjeta("Contacto", filas([
         extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", <span className="inline-flex flex-col items-end gap-1">{extras.map((t) => <span key={t} className="inline-flex items-center gap-2">{t}<BotonWaChico tel={t} /></span>)}</span>],
+        !!c.correo && ["Correo del cliente", c.correo],
         !!c.barrio && ["Barrio", c.barrio],
       ]))}
 
@@ -16252,6 +16265,10 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 <div>
                   <label className={etiquetaCls} style={ { color: "#5A6680" } }>Correo del titular</label>
                   <input type="email" value={datosExtra.titularCorreo || ""} onChange={(e) => setExtra("titularCorreo", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+                </div>
+                <div className="col-span-2">
+                  <label className={etiquetaCls} style={ { color: "#5A6680" } }>Nombre del titular</label>
+                  <input value={datosExtra.titularNombre || ""} onChange={(e) => setExtra("titularNombre", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
                 </div>
                 <div className="col-span-2">
                   <label className={etiquetaCls} style={ { color: "#5A6680" } }>Cédula del titular (solo informativa)</label>
