@@ -7933,7 +7933,8 @@ function AnillosRescate({ pcRef, tramo, ing }) {
   const fracC = !sig ? 1 : Math.max(0, Math.min(1, (pcRef - desde) / (sig.min - desde)));
   const centroC = !sig ? "✓" : alcanza ? String(tramo.n) : "—";
   const tituloC = !sig ? "Escalón máximo" : alcanza ? (tramo.n === 1 ? "cliente" : "clientes") : "no alcanzas";
-  const subC = !sig ? "" : alcanza ? "a escalón " + sig.min + "%" : "el " + sig.min + "%";
+  const opcionesC = alcanza ? [tramo.opM ? tramo.opM + " Móvil" : null, tramo.opH ? tramo.opH + " Hogar" : null].filter(Boolean) : [];
+  const subC = !sig ? "" : alcanza ? "a escalón " + sig.min + "%" + (opcionesC.length ? " · " + opcionesC.join(" o ") : "") : "el " + sig.min + "%";
   let tIng = null;
   if (ing && ing.meta > 0 && ing.pctRef != null) {
     const pct = ing.pctRef;
@@ -10487,6 +10488,24 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         if (!sube && r.total > actual + 0.005) sube = { n: k, total: r.total, extra: r.total - actual };
         if (!tramo && r.montoBase !== baseActual && r.montoBase > baseActual) tramo = { n: k, monto: r.montoBase, total: r.total };
         if (sube && tramo) break;
+      }
+      // Cuántos de un solo tipo (Móvil o Hogar) harían falta para subir de tramo, con lo que sigue pendiente.
+      if (tramo) {
+        const solo = (lista) => {
+          const s2 = [...rescateSeleccionados];
+          for (let i = 0; i < lista.length; i++) {
+            s2.push(lista[i]);
+            const r = calcularComisionConSubconjuntoHoy(s2);
+            if (r.completo && r.montoBase > baseActual) return i + 1;
+          }
+          return null;
+        };
+        const opM = solo(libres.filter((c) => idsMovilHoy.has(c.id)));
+        const opH = solo(porRatio.filter((c) => !idsMovilHoy.has(c.id)));
+        tramo.opM = opM;
+        tramo.opH = opH;
+        const mejor = Math.min(opM || 1e9, opH || 1e9);
+        if (mejor < 1e9) tramo.n = Math.min(tramo.n, mejor);
       }
       return { primeros, sube, tramo, baseActual, actual, maxTotal: maxR.total, esMaximo: maxR.total <= actual + 0.005 };
     } catch (e) { return null; }
