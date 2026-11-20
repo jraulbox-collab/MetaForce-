@@ -1570,6 +1570,28 @@ function valorOrdenColumna(c, key) {
 // Limpia el teléfono para WhatsApp.
 // - Si empieza con "+", ya trae su código de país (ej. +1 859…, +507 6…): se usa tal cual.
 // - Si no, se asume Panamá y se le antepone 507 (salvo que ya empiece con 507).
+// Botón discreto de WhatsApp (chat vacío) para acompañar cualquier número guardado.
+function BotonWaChico({ tel, fondo }) {
+  const digitos = String(tel || "").replace(/\D/g, "");
+  if (digitos.length < 7) return null;
+  return (
+    <a
+      href={"https://wa.me/" + telefonoWhatsapp(tel)}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={"Abrir chat de WhatsApp con " + tel}
+      title="WhatsApp"
+      onClick={(e) => e.stopPropagation()}
+      className="shrink-0 inline-flex items-center justify-center rounded-full"
+      style={ { width: 28, height: 28, background: fondo || "#E3F5EA", color: "#166534" } }
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <path d="M3 21l1.65-3.8a9 9 0 1 1 3.4 2.9L3 21" />
+        <path d="M9 10a.5.5 0 0 0 1 0V9a.5.5 0 0 0-1 0v1a5 5 0 0 0 5 5h1a.5.5 0 0 0 0-1h-1a.5.5 0 0 0 0 1" />
+      </svg>
+    </a>
+  );
+}
 function telefonoWhatsapp(telefono) {
   const texto = (telefono || "").trim();
   const digits = texto.replace(/\D/g, "");
@@ -9119,6 +9141,7 @@ function ListaMisReferidos({ clientes, convergencias }) {
             <div className="text-sm font-bold" style={ { color: "#001E62" } }>{f.nombre ? tituloEs(f.nombre) : f.tel}</div>
             <div className="text-[11px]" style={ { color: "#5A6680" } }>{f.nombre ? `${f.tel} · ` : ""}Lo dio {tituloEs(f.dador)}</div>
           </div>
+          <BotonWaChico tel={f.tel} />
           <span className="shrink-0 text-[11px] font-extrabold px-2 py-1 rounded-lg" style={ { background: "#EAF0FB", color: "#001E62" } }>{f.estado}</span>
         </div>
       ))}
@@ -10540,7 +10563,18 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       const norm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
       const qTxt = norm(q);
       const qNum = q.replace(/\D/g, "");
-      r = r.filter((c) => norm(c.nombre).includes(qTxt) || (qNum.length > 0 && (String(c.telefono || "").replace(/\D/g, "").includes(qNum) || String(c.numeroSuscriptor || "").replace(/\D/g, "").includes(qNum))));
+      const hogarDe = (c) => {
+        if (!idsMovilHoy.has(c.id)) return null;
+        const k = String(c.titularTelefono || "").replace(/\D/g, "").slice(-8);
+        if (k.length < 7) return null;
+        return (clientes || []).find((h) => String(h.telefono || "").replace(/\D/g, "").slice(-8) === k) || null;
+      };
+      r = r.filter((c) => {
+        const h = hogarDe(c);
+        const dig = (x) => String(x || "").replace(/\D/g, "");
+        return norm(c.nombre).includes(qTxt) || (h && norm(h.nombre).includes(qTxt)) ||
+          (qNum.length > 0 && (dig(c.telefono).includes(qNum) || dig(c.numeroSuscriptor).includes(qNum) || dig(c.titularTelefono).includes(qNum) || (h && dig(h.telefono).includes(qNum))));
+      });
     }
     const gana = (c) => (etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0);
     const venc = (c) => claveCobro(c).venc;
@@ -13833,6 +13867,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           search={search}
           setSearch={setSearch}
           hogarCoincidencias={search.trim() ? clientes.filter((c) => !c.penalizado) : []}
+          hogarCoincidenciasTodos={clientes}
           onVerDetalleHogar={onVerDetalle}
           chipInicial={chipMovilSalto}
           onChipAplicado={() => setChipMovilSalto(null)}
@@ -15544,7 +15579,7 @@ function pasaChipMovil(c, chip) {
 
 // Ficha de un Cliente Móvil (solo lectura): venta, facturación, match, contacto y mensajes.
 // "Editar cliente" abre el formulario de siempre; al guardar o cancelar se vuelve a esta ficha.
-function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, onEliminar }) {
+function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, onEliminar, hogarClientes, onAbrirHogar }) {
   const [menu, setMenu] = useState(false);
   const [copiado, setCopiado] = useState(null);
   const hoyISO = fechaLocalISO(new Date());
@@ -15560,6 +15595,11 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   const mi = matchInfo(c);
   const calc1ra = fch && c.montoPlan != null ? calcularPrimeraFacturaMovil(c.montoPlan, fch, false) : null;
   const extras = [c.telefonoAdicional, c.telefonoAdicional2].filter(Boolean);
+  const dueñoHogar = (() => {
+    const k = d8(c.titularTelefono);
+    if (k.length < 7) return null;
+    return (hogarClientes || []).find((h) => !h.penalizado && (d8(h.telefono) === k || [leerBloqueTigo(h.observaciones).voz1, leerBloqueTigo(h.observaciones).voz2].some((t) => d8(t) === k))) || null;
+  })();
   const pad =(n) => String(n).padStart(2, "0");
   const numWa = String(c.telefono || "").replace(/\D/g, "") ? telefonoWhatsapp(c.telefono) : "";
   const irWa = (url) => (e) => { e.preventDefault(); window.location.href = url; };
@@ -15646,7 +15686,8 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
         <>
           {filas([
             ["Estado", mi ? chip(String(mi.texto).replace(/^[^A-Za-zÁÉÍÓÚáéíóú]+/, ""), AMBAR) : chip("Confirmado", VERDE)],
-            !!c.titularTelefono && ["Teléfono del titular", c.titularTelefono],
+            !!c.titularTelefono && ["Teléfono del titular", <span className="inline-flex items-center gap-2">{c.titularTelefono}<BotonWaChico tel={c.titularTelefono} /></span>],
+            !!dueñoHogar && ["Cliente Hogar", <button type="button" onClick={() => onAbrirHogar && onAbrirHogar(dueñoHogar)} className="font-medium underline text-right" style={ { color: "#0072CE" } }>{dueñoHogar.nombre}{dueñoHogar.telefono ? " · " + dueñoHogar.telefono : ""}</button>],
             !!c.titularCorreo && ["Correo del titular", c.titularCorreo],
             !!c.titularCedula && ["Cédula (informativa)", c.titularCedula],
           ])}
@@ -15661,7 +15702,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
       ))}
 
       {hayContacto && tarjeta("Contacto", filas([
-        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", extras.join(" · ")],
+        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", <span className="inline-flex flex-col items-end gap-1">{extras.map((t) => <span key={t} className="inline-flex items-center gap-2">{t}<BotonWaChico tel={t} /></span>)}</span>],
         !!c.barrio && ["Barrio", c.barrio],
       ]))}
 
@@ -15702,7 +15743,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   );
 }
 
-function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, onVerDetalleHogar, chipInicial, onChipAplicado, chipExt, setChipExt, onFichaAbierta }) {
+function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, mesActivo, abrirForm, onFormAbierto, prefill, onVolverAPrecierre, metas, search, setSearch, hogarCoincidencias, hogarCoincidenciasTodos, onVerDetalleHogar, chipInicial, onChipAplicado, chipExt, setChipExt, onFichaAbierta }) {
   const [chipMovilLocal, setChipMovilLocal] = useState(chipInicial || "todos");
   const chipMovil = chipExt !== undefined ? chipExt : chipMovilLocal;
   const setChipMovil = setChipExt || setChipMovilLocal;
@@ -15979,6 +16020,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           onEditarForm={startEdit}
           onEditar={onEditar}
           onEliminar={(id) => setConfirmarEliminarMovil(id)}
+          hogarClientes={hogarCoincidenciasTodos}
+          onAbrirHogar={onVerDetalleHogar}
         />
         {confirmarEliminarMovil && (
           <ConfirmModal
