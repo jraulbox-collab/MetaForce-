@@ -15425,8 +15425,9 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   const sinConfirmarCiclo = cicloPorConfirmar(c);
   const sinSalir = !pagada && !!fch && hoyISO < fch.llegaISO;
   const mi = matchInfo(c);
+  const calc1ra = fch && c.montoPlan != null ? calcularPrimeraFacturaMovil(c.montoPlan, fch, false) : null;
   const extras = [c.telefonoAdicional, c.telefonoAdicional2].filter(Boolean);
-  const pad = (n) => String(n).padStart(2, "0");
+  const pad =(n) => String(n).padStart(2, "0");
   const numWa = String(c.telefono || "").replace(/\D/g, "") ? telefonoWhatsapp(c.telefono) : "";
   const irWa = (url) => (e) => { e.preventDefault(); window.location.href = url; };
   const AMBAR = ["#FFF3DC", "#B45309", "#B45309"], VERDE = ["#E3F5EA", "#0F5A2B", "#166534"], AZUL = ["#E3EDFA", "#0072CE", "#0072CE"], GRIS = ["#F1F4F9", "#4A5878", "#DFE5EF"];
@@ -15481,6 +15482,10 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
           {filas([
             ["Ciclo", sinConfirmarCiclo ? chip("Sin confirmar · sugerido " + pad(fch.ciclo), AMBAR) : c.cicloConfirmado ? chip("✅ " + pad(fch.ciclo), VERDE) : pad(fch.ciclo)],
             ["1ra factura", pagada ? chip("Pagada", VERDE) : sinSalir ? chip("Aún no sale · ~" + fmtFechaDia(fch.llegaISO), GRIS) : chip("Pendiente", AMBAR)],
+            !!calc1ra && ["Monto 1ra factura (aprox.)", <span className="font-medium">{fmtMonto(calc1ra.total)}</span>],
+          ])}
+          {!!calc1ra && <div className="text-xs pb-1.5" style={ { color: "#5A6680" } }>Prorrateo del {fmtFecha(fch.activacion)} al {fmtFecha(fch.finProrrateo)} ({calc1ra.dias} días) + mensualidad del {fmtFecha(fch.inicioMes)} al {fmtFecha(fch.finMes)}, con impuestos</div>}
+          {filas([
             !pagada && !!limite && ["Fecha límite", fmtFechaDia(fechaLocalISO(limite)) + (vencidoPlazo ? " · venció" : "")],
             !pagada && ["Pedirle el pago antes del", fmtFechaDia(fch.metaISO)],
           ])}
