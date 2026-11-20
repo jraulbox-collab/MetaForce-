@@ -9507,6 +9507,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const [rescateConfirmando, setRescateConfirmando] = useState(false);
   const [ordenRescate, setOrdenRescate] = useState("vence");
   const [filtroRescate, setFiltroRescate] = useState({ hogar: false, movil: false });
+  const [busqRescate, setBusqRescate] = useState("");
+  const [busqRescateAbierta, setBusqRescateAbierta] = useState(false);
   // Vista de la tarjeta de comisión (nueva = fondo blanco, actual = azul oscuro). Se
   // recuerda la última que elegiste en este teléfono; si no hay nada guardado, la nueva.
   const [vistaComision, setVistaComisionEstado] = useState(() => {
@@ -10533,6 +10535,13 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const ordenarFiltrar = (arr) => {
     let r = [...arr];
     if (filtroRescate.hogar !== filtroRescate.movil) r = r.filter((c) => (idsMovilHoy.has(c.id) ? filtroRescate.movil : filtroRescate.hogar));
+    const q = busqRescate.trim();
+    if (q) {
+      const norm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+      const qTxt = norm(q);
+      const qNum = q.replace(/\D/g, "");
+      r = r.filter((c) => norm(c.nombre).includes(qTxt) || (qNum.length > 0 && (String(c.telefono || "").replace(/\D/g, "").includes(qNum) || String(c.numeroSuscriptor || "").replace(/\D/g, "").includes(qNum))));
+    }
     const gana = (c) => (etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0);
     const venc = (c) => claveCobro(c).venc;
     if (ordenRescate === "suma") r.sort((a, b) => gana(b) - gana(a) || String(venc(a)).localeCompare(String(venc(b))));
@@ -10752,9 +10761,31 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                     {hay && (
                       <button type="button" onClick={() => setFiltroRescate({ hogar: false, movil: false })} className="text-xs font-bold shrink-0 px-1" style={ { color: "#B45309" } }>✕ Quitar</button>
                     )}
+                    <button
+                      type="button"
+                      aria-label="Buscar cliente"
+                      aria-pressed={busqRescateAbierta || !!busqRescate}
+                      onClick={() => setBusqRescateAbierta((v) => !v)}
+                      className="shrink-0 rounded-full text-sm"
+                      style={ { minHeight: 32, minWidth: 32, border: "1.5px solid #001E62", color: busqRescateAbierta || busqRescate ? "#fff" : "#001E62", background: busqRescateAbierta || busqRescate ? "#001E62" : "#fff" } }
+                    >🔍</button>
                   </div>
                 );
               })()}
+              {(busqRescateAbierta || busqRescate) && (
+                <div className="flex items-center gap-2 mb-3">
+                  <input
+                    type="search"
+                    value={busqRescate}
+                    onChange={(e) => setBusqRescate(e.target.value)}
+                    placeholder="Nombre, teléfono o N° de suscriptor"
+                    autoFocus
+                    className="flex-1 rounded-lg px-3 text-sm"
+                    style={ { minHeight: 36, border: "1.5px solid #001E62", color: "#001E62", background: "#fff", minWidth: 0 } }
+                  />
+                  {busqRescate && <button type="button" onClick={() => setBusqRescate("")} className="text-xs font-bold shrink-0 px-1" style={ { color: "#B45309" } }>✕</button>}
+                </div>
+              )}
 
               {rescateVencidosOrdenados.length > 0 && (
                 <>
