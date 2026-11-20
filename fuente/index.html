@@ -13826,8 +13826,8 @@ function ClientesTab({ clientes, clientesCompletos, clientesTodos, search, setSe
             />
           </div>
           <div className="flex shrink-0 rounded-xl overflow-hidden" style={ { border: "1.5px solid #001E62" } }>
-            <button type="button" onClick={() => setSubVista("clientes")} aria-label="Hogar" className="font-bold" style={ { height: 41, padding: "0 10px", fontSize: 14, background: subVista === "clientes" ? "#001E62" : "#fff", color: subVista === "clientes" ? "#fff" : "#001E62" } }>🏠 {clientesDelMes.filter((c) => !clienteExcluido(c)).length}</button>
-            <button type="button" onClick={() => setSubVista("movil")} aria-label="Móvil" className="font-bold" style={ { height: 41, padding: "0 10px", fontSize: 14, background: subVista === "movil" ? "#001E62" : "#fff", color: subVista === "movil" ? "#fff" : "#001E62" } }>📱 {clientesMovilDelMes}</button>
+            <button type="button" onClick={() => setSubVista("clientes")} aria-label="Hogar" className="font-bold" style={ { height: 41, padding: "0 10px", fontSize: 14, background: subVista === "clientes" ? "#001E62" : "#fff", color: subVista === "clientes" ? "#fff" : "#001E62" } }>🏠 {(search.trim() ? clientes : clientesDelMes).filter((c) => !clienteExcluido(c)).length}</button>
+            <button type="button" onClick={() => setSubVista("movil")} aria-label="Móvil" className="font-bold" style={ { height: 41, padding: "0 10px", fontSize: 14, background: subVista === "movil" ? "#001E62" : "#fff", color: subVista === "movil" ? "#fff" : "#001E62" } }>📱 {search.trim() ? (clientesMovil || []).filter((c) => movilCoincideBusqueda(c, search.trim(), clientesCompletos || clientes)).length : clientesMovilDelMes}</button>
           </div>
         </div>
         <div className="flex items-center gap-2 mt-2 overflow-x-auto" style={ { scrollbarWidth: "none", paddingBottom: 2 } }>
@@ -14110,7 +14110,8 @@ function ClientesTab({ clientes, clientesCompletos, clientesTodos, search, setSe
             .map((c) => ({
               id: c.id,
               nombre: c.nombre,
-              sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c)), (() => { const r = razonBusquedaMovil(c, search.trim(), clientesCompletos || clientes); return r ? "Coincide en " + r : ""; })()].filter(Boolean).join(" · "),
+              sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c))].filter(Boolean).join(" · "),
+              razon: razonBusquedaMovil(c, search.trim(), clientesCompletos || clientes),
               ref: c,
             }))}
           onAbrir={() => setSubVista("movil")}
@@ -14427,7 +14428,7 @@ function ClientesTab({ clientes, clientesCompletos, clientesTodos, search, setSe
             {filtroEstado || filtroInstalacion || filtroPlan || rangoActivo
               ? "No hay clientes con ese filtro."
               : search.trim()
-              ? "Sin resultados para esa búsqueda."
+              ? ((clientesMovil || []).some((c) => movilCoincideBusqueda(c, search.trim(), clientesCompletos || clientes)) ? "Sin resultados en Hogar." : "Sin resultados para esa búsqueda.")
               : "No hay clientes en este mes."}
           </p>
         </div>
@@ -15811,6 +15812,7 @@ function BloqueOtraLista({ icono, titulo, filas, onAbrir }) {
           <span className="min-w-0">
             <span className="block text-sm font-medium truncate" style={ { color: "#001E62" } }>{f.nombre}</span>
             {f.sub && <span className="block text-xs truncate" style={ { color: "#5A6680" } }>{f.sub}</span>}
+            {f.razon && <span className="block text-xs mt-0.5" style={ { color: "#0B4A99", whiteSpace: "normal" } }>Coincide en {f.razon}</span>}
           </span>
           <span style={ { color: "#9CA3AF" } }>›</span>
         </button>
@@ -16745,7 +16747,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           filas={(hogarCoincidencias || []).map((c) => ({
             id: c.id,
             nombre: c.nombre,
-            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación", (() => { const r = razonBusquedaHogar(c, busquedaMovil.trim(), (clientesMovil || []).filter((x) => (hogarDeMovil(x, hogarCoincidenciasTodos) || {}).id === c.id)); return r ? "Coincide en " + r : ""; })()].filter(Boolean).join(" · "),
+            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "),
+            razon: razonBusquedaHogar(c, busquedaMovil.trim(), (clientesMovil || []).filter((x) => (hogarDeMovil(x, hogarCoincidenciasTodos) || {}).id === c.id)),
             ref: c,
           }))}
           onAbrir={(c) => onVerDetalleHogar && onVerDetalleHogar(c)}
