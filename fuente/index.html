@@ -10472,7 +10472,24 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const filaCobro = (c) => {
     const movil = idsMovilHoy.has(c.id);
     const sel = !!rescateSeleccion[c.id];
-    const plan = Number(c.montoMensual) > 0 ? fmtMonto(c.montoMensual) : "";
+    // Hogar: lo que le falta por pagar de su 1ra factura (con impuesto y prorrateo, menos lo ya pagado).
+    // Móvil: costo aproximado de su 1ra factura con prorrateo e impuestos.
+    let plan = "";
+    try {
+      if (movil) {
+        const calcM = calcularPrimeraFacturaMovil(c.montoPlan, movilFechasPrimeraFactura(c), false);
+        if (calcM) plan = `1ra factura ~${fmtMonto(calcM.total)}`;
+      } else {
+        const mensual = Number(c.montoMensual) || 0;
+        const factura1 = Number(c.monto1raFactura) || 0;
+        if (mensual > 0 && factura1 >= mensual) {
+          const factor = c.planTipo === "DOBLE" ? 1.07 : 1.01;
+          const yaPagado = c.f1_saldoPendiente ? mensual * factor : c.abonoInicial === false ? 0 : (mensual * factor) / 2;
+          const falta = factura1 * factor - yaPagado;
+          if (falta > 0.005) plan = `Falta ~${fmtMonto(falta)}`;
+        }
+      }
+    } catch (e) { plan = ""; }
     const vence = textoVence(c, movil);
     const g = etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0;
     return (
