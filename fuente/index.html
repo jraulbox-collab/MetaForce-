@@ -924,6 +924,116 @@ function sugerirHogarDeMovil(m, hogares) {
   });
   return cands.length === 1 ? cands[0] : null;
 }
+// ---------- Reconocer números: de quién es un número que ya tienes registrado ----------
+const digitos8 = (t) => String(t || "").replace(/\D/g, "").slice(-8);
+function duenosDeNumero(tel, clientes, moviles, excluir) {
+  const k = digitos8(tel);
+  if (k.length < 7) return [];
+  const ex = excluir || {};
+  const igual = (x) => digitos8(x) === k;
+  const out = [];
+  (clientes || []).forEach((h) => {
+    if (ex.hogarId && h.id === ex.hogarId) return;
+    let b = {};
+    try { b = leerBloqueTigo(h.observaciones); } catch (e) {}
+    if (igual(h.telefono)) out.push({ tipo: "hogar", c: h, rol: "principal" });
+    else if (igual(b.voz1)) out.push({ tipo: "hogar", c: h, rol: "Contacto 1 de Tigo" });
+    else if (igual(b.voz2)) out.push({ tipo: "hogar", c: h, rol: "Contacto 2 de Tigo" });
+    else if ((h.referidos || []).some((r) => igual(r.tel))) out.push({ tipo: "hogar", c: h, rol: "Referido" });
+  });
+  (moviles || []).forEach((m) => {
+    if (ex.movilId && m.id === ex.movilId) return;
+    if (igual(m.telefono) || igual(m.whatsapp)) out.push({ tipo: "movil", c: m, rol: "principal" });
+    else if (igual(m.telefonoAdicional) || igual(m.telefonoAdicional2)) out.push({ tipo: "movil", c: m, rol: "Teléfono extra" });
+    else if (igual(m.titularTelefono)) out.push({ tipo: "movil", c: m, rol: "Titular del Match" });
+    else if ((m.referidos || []).some((r) => igual(r.tel))) out.push({ tipo: "movil", c: m, rol: "Referido" });
+  });
+  return out;
+}
+function textoDuenoNumero(d) {
+  const n = tituloEs(d.c.nombre || "");
+  if (d.rol === "principal") return d.tipo === "hogar" ? "Es el cliente " + n : "Es la línea móvil de " + n;
+  return "Es contacto de " + n + " (" + d.rol + ")";
+}
+// Clientes que tienen como contacto alguno de los números dados (la relación inversa).
+function apareceComoContacto(propios, excluir, clientes, moviles) {
+  const ks = (propios || []).map(digitos8).filter((k) => k.length >= 7);
+  if (!ks.length) return [];
+  const en = (x) => ks.includes(digitos8(x));
+  const ex = excluir || {};
+  const out = [];
+  (clientes || []).forEach((h) => {
+    if (ex.hogarId && h.id === ex.hogarId) return;
+    let b = {};
+    try { b = leerBloqueTigo(h.observaciones); } catch (e) {}
+    if (en(b.voz1)) out.push({ tipo: "hogar", c: h, rol: "Contacto 1 de Tigo" });
+    else if (en(b.voz2)) out.push({ tipo: "hogar", c: h, rol: "Contacto 2 de Tigo" });
+    else if ((h.referidos || []).some((r) => en(r.tel))) out.push({ tipo: "hogar", c: h, rol: "Referido" });
+  });
+  (moviles || []).forEach((m) => {
+    if (ex.movilId && m.id === ex.movilId) return;
+    if (en(m.telefonoAdicional) || en(m.telefonoAdicional2)) out.push({ tipo: "movil", c: m, rol: "Teléfono extra" });
+    else if (en(m.titularTelefono)) out.push({ tipo: "movil", c: m, rol: "Titular del Match" });
+    else if ((m.referidos || []).some((r) => en(r.tel))) out.push({ tipo: "movil", c: m, rol: "Referido" });
+  });
+  return out;
+}
+// Etiqueta azul bajo un número: dice de quién es si ya lo tienes registrado.
+function EtiquetaNumero({ tel, clientes, moviles, excluir, onAbrirHogar, onAbrirMovil, alineada }) {
+  const lista = duenosDeNumero(tel, clientes, moviles, excluir);
+  if (!lista.length) return null;
+  return (
+    <div className={"flex flex-col gap-1 mt-1 " + (alineada === false ? "items-start" : "items-end")}>
+      {lista.map((d, i) => {
+        const abrir = d.tipo === "hogar" ? onAbrirHogar : onAbrirMovil;
+        return (
+          <button key={i} type="button" disabled={!abrir} onClick={() => abrir && abrir(d.c)} className="text-xs rounded-full px-2.5 py-0.5 text-left" style={ { background: "#E3EDFA", color: "#0B4A99", border: "none" } }>{textoDuenoNumero(d)}</button>
+        );
+      })}
+    </div>
+  );
+}
+// Cuadro ámbar con los números (de una lista) que ya están registrados.
+function AvisoNumeros({ numeros, clientes, moviles, excluir, onAbrirHogar, onAbrirMovil }) {
+  const filas = [];
+  (numeros || []).forEach(({ etq, tel }) => duenosDeNumero(tel, clientes, moviles, excluir).forEach((d) => filas.push({ etq, tel, d })));
+  if (!filas.length) return null;
+  return (
+    <div className="rounded-lg p-3 my-2" style={ { background: "#FFF3DC", border: "1px solid #B45309" } }>
+      <div className="text-sm font-bold mb-1" style={ { color: "#B45309" } }>Números que ya tienes registrados</div>
+      {filas.map((f, i) => {
+        const abrir = f.d.tipo === "hogar" ? onAbrirHogar : onAbrirMovil;
+        return (
+          <div key={i} className="flex items-center justify-between gap-2 py-1.5 text-sm" style={ { borderTop: i ? "1px solid #F0D9AE" : "none" } }>
+            <div className="min-w-0">
+              <div style={ { color: "#111827" } }>{f.tel}</div>
+              <div className="text-xs" style={ { color: "#5A6680" } }>{f.etq ? f.etq + " · " : ""}{textoDuenoNumero(f.d)}</div>
+            </div>
+            {abrir && <button type="button" onClick={() => abrir(f.d.c)} className="text-sm font-bold shrink-0" style={ { color: "#0072CE" } }>Abrir</button>}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+// Tarjeta "También aparece como contacto de" para las fichas.
+function TarjetaApareceComoContacto({ lista, onAbrirHogar, onAbrirMovil }) {
+  if (!lista || !lista.length) return null;
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-3">
+      <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>También aparece como contacto de</h2>
+      {lista.map((d, i) => {
+        const abrir = d.tipo === "hogar" ? onAbrirHogar : onAbrirMovil;
+        return (
+          <div key={i} className="flex items-center justify-between gap-3 py-2 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+            <button type="button" disabled={!abrir} onClick={() => abrir && abrir(d.c)} className="text-left font-medium underline min-w-0 truncate" style={ { color: "#0072CE" } }>{tituloEs(d.c.nombre || "")}</button>
+            <span className="text-xs shrink-0" style={ { color: "#5A6680" } }>{d.rol}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 // Mensaje para el titular del Hogar (solo mientras el plazo siga vigente).
 function textoMatchTitular(c) {
   const i = matchInfo(c);
@@ -5298,6 +5408,9 @@ function App() {
         {tab === "detalle" && (
           <ClienteDetalle
             cliente={clienteDetalle}
+            todosClientes={clientes}
+            todosMoviles={convergencias}
+            onAbrirHogar={(h) => { setClienteDetalleId(h.id); try { window.scrollTo(0, 0); } catch (e) {} }}
             movilesDelTitular={clienteDetalle ? (convergencias || []).filter((m) => (hogarDeMovil(m, clientes) || {}).id === clienteDetalle.id) : []}
             onVerMovil={(m) => {
               setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: m.id, volverA: "detalle", ficha: true }, token: Date.now() });
@@ -5545,6 +5658,7 @@ function App() {
             editing={!!editingId}
             editingId={editingId}
             clientes={clientesCalc}
+            movilesTodos={convergencias}
             onAbrirExistente={(c) => {
               resetForm();
               setOrigenDetalle("clientes");
@@ -15010,6 +15124,9 @@ function ClienteDetalle({
   cliente,
   movilesDelTitular,
   onVerMovil,
+  todosClientes,
+  todosMoviles,
+  onAbrirHogar,
   onVolver,
   volverLabel,
   onEditar,
@@ -15346,10 +15463,13 @@ function ClienteDetalle({
         const btnC = { minWidth: 34, minHeight: 30, background: "#E3EDFA", textDecoration: "none" };
         const filasC = [
           ...extrasT.map((x) => ["Otro número", (
+            <span className="inline-flex flex-col items-end">
             <span className="inline-flex items-center gap-1.5">
               <span className="font-medium">{x}</span>
               <a href={`https://wa.me/${telefonoWhatsapp(x)}`} onClick={(e) => { e.preventDefault(); onRegistrarContacto && onRegistrarContacto(cliente, "whatsapp", "", motivoC); window.location.href = `https://wa.me/${telefonoWhatsapp(x)}`; }} aria-label={"Escribir por WhatsApp a " + x} className="inline-flex items-center justify-center rounded-md text-sm" style={ btnC }>💬</a>
               <a href={`tel:+507${soloDig(x)}`} onClick={() => onRegistrarContacto && onRegistrarContacto(cliente, "llamada", "", motivoC)} aria-label={"Llamar a " + x} className="inline-flex items-center justify-center rounded-md text-sm" style={ btnC }>📞</a>
+            </span>
+            <EtiquetaNumero tel={x} clientes={todosClientes} moviles={todosMoviles} excluir={{ hogarId: cliente.id }} onAbrirHogar={onAbrirHogar} onAbrirMovil={onVerMovil} />
             </span>
           )]),
           !!(cliente.correo || bt.correo) && ["Correo", cliente.correo || bt.correo],
@@ -15405,6 +15525,8 @@ function ClienteDetalle({
           </div>
         );
       })()}
+
+      <TarjetaApareceComoContacto lista={apareceComoContacto([cliente.telefono], { hogarId: cliente.id }, todosClientes, todosMoviles)} onAbrirHogar={onAbrirHogar} onAbrirMovil={onVerMovil} />
 
       {(movilesDelTitular || []).length > 0 && (
         <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-3">
@@ -15644,7 +15766,7 @@ function pasaChipMovil(c, chip) {
 
 // Ficha de un Cliente Móvil (solo lectura): venta, facturación, match, contacto y mensajes.
 // "Editar cliente" abre el formulario de siempre; al guardar o cancelar se vuelve a esta ficha.
-function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, onEliminar, hogarClientes, onAbrirHogar }) {
+function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, onEliminar, hogarClientes, onAbrirHogar, movilesTodos, onAbrirMovil }) {
   const [menu, setMenu] = useState(false);
   const [copiado, setCopiado] = useState(null);
   const [buscaHogar, setBuscaHogar] = useState(null);
@@ -15841,8 +15963,10 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
         </>
       ))}
 
+      <TarjetaApareceComoContacto lista={apareceComoContacto([c.telefono, c.whatsapp], { movilId: c.id }, hogarClientes, movilesTodos)} onAbrirHogar={onAbrirHogar} onAbrirMovil={onAbrirMovil} />
+
       {hayContacto && tarjeta("Contacto", filas([
-        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", <span className="inline-flex flex-col items-end gap-1">{extras.map((t) => <span key={t} className="inline-flex items-center gap-2">{t}<BotonWaChico tel={t} /></span>)}</span>],
+        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", <span className="inline-flex flex-col items-end gap-1">{extras.map((t) => <span key={t} className="inline-flex flex-col items-end"><span className="inline-flex items-center gap-2">{t}<BotonWaChico tel={t} /></span><EtiquetaNumero tel={t} clientes={hogarClientes} moviles={movilesTodos} excluir={{ movilId: c.id }} onAbrirHogar={onAbrirHogar} onAbrirMovil={onAbrirMovil} /></span>)}</span>],
         !!c.correo && ["Correo del cliente", c.correo],
         !!c.barrio && ["Barrio", c.barrio],
       ]))}
@@ -16163,6 +16287,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           onEliminar={(id) => setConfirmarEliminarMovil(id)}
           hogarClientes={hogarCoincidenciasTodos}
           onAbrirHogar={onVerDetalleHogar}
+          movilesTodos={clientesMovil}
+          onAbrirMovil={(m) => abrirFicha(m, fichaVolver.current)}
         />
         {confirmarEliminarMovil && (
           <ConfirmModal
@@ -16319,10 +16445,12 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
             <div>
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>Teléfono adicional</label>
               <input type="tel" inputMode="tel" value={datosExtra.telefonoAdicional || ""} onChange={(e) => setExtra("telefonoAdicional", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+              <EtiquetaNumero alineada={false} tel={datosExtra.telefonoAdicional} clientes={hogarCoincidenciasTodos} moviles={clientesMovil} excluir={{ movilId: editingId }} onAbrirHogar={onVerDetalleHogar} onAbrirMovil={(m) => abrirFicha(m, fichaVolver.current)} />
             </div>
             <div>
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>Teléfono adicional 2</label>
               <input type="tel" inputMode="tel" value={datosExtra.telefonoAdicional2 || ""} onChange={(e) => setExtra("telefonoAdicional2", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+              <EtiquetaNumero alineada={false} tel={datosExtra.telefonoAdicional2} clientes={hogarCoincidenciasTodos} moviles={clientesMovil} excluir={{ movilId: editingId }} onAbrirHogar={onVerDetalleHogar} onAbrirMovil={(m) => abrirFicha(m, fichaVolver.current)} />
             </div>
             <div>
               <label className={etiquetaCls} style={ { color: "#5A6680" } }>Correo</label>
@@ -16389,6 +16517,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                 <div>
                   <label className={etiquetaCls} style={ { color: "#5A6680" } }>Teléfono del titular</label>
                   <input type="tel" inputMode="tel" value={datosExtra.titularTelefono || ""} onChange={(e) => setExtra("titularTelefono", e.target.value)} className={campoCls} style={ { borderColor: "#DFE5EF" } } />
+              <EtiquetaNumero alineada={false} tel={datosExtra.titularTelefono} clientes={hogarCoincidenciasTodos} moviles={clientesMovil} excluir={{ movilId: editingId }} onAbrirHogar={onVerDetalleHogar} onAbrirMovil={(m) => abrirFicha(m, fichaVolver.current)} />
                 </div>
                 <div>
                   <label className={etiquetaCls} style={ { color: "#5A6680" } }>Correo del titular</label>
@@ -18648,7 +18777,7 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
   );
 }
 
-function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCancel, clientes = [], onAbrirExistente }) {
+function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCancel, clientes = [], onAbrirExistente, movilesTodos = [] }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
   const inputClass = "w-full px-3 py-2 rounded-md border text-sm outline-none focus:ring-2";
   const inputStyle = { borderColor: "#DFE5EF" };
@@ -18756,6 +18885,19 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
             }
           />
         )}
+        {(() => {
+          let b = {};
+          try { b = leerBloqueTigo(form.observaciones); } catch (e) {}
+          return (
+            <AvisoNumeros
+              numeros={[{ etq: "Contacto 1 de Tigo", tel: b.voz1 }, { etq: "Contacto 2 de Tigo", tel: b.voz2 }].filter((x) => x.tel)}
+              clientes={clientes}
+              moviles={movilesTodos}
+              excluir={{ hogarId: editingId }}
+              onAbrirHogar={onAbrirExistente}
+            />
+          );
+        })()}
         <SeccionFormulario titulo="Datos del cliente">
           <div className="grid grid-cols-2 gap-3">
             <Field label="Número de suscriptor *">
