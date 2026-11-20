@@ -3065,6 +3065,8 @@ function App() {
   // queda anotada con fecha y dispositivo, para poder rastrear cualquier desajuste.
   const [envios, setEnvios, syncEnvios] = useListaNube("envios-churn", opcionesNube("envios", { nuevosAlPrincipio: true }));
   const [ajustesBarrios, setAjustesBarrios] = useListaNube("barrios-ajustes", opcionesNube("barrios"));
+  const { datos: datosBarriosBusq } = useBarrios(ajustesBarrios);
+  ZONA_BUSQ.datos = datosBarriosBusq;
   const [visitasBarrios, setVisitasBarrios] = useListaNube("barrios-visitas", opcionesNube("visitasBarrios"));
   const [prospectosBarrios, setProspectosBarrios] = useListaNube("barrios-prospectos", opcionesNube("prospectosBarrios"));
   const [barriosVista, setBarriosVista] = useState(null);
@@ -3494,7 +3496,7 @@ function App() {
       if (h) porHogar.set(h.id, [...(porHogar.get(h.id) || []), m]);
     });
     return clientesCalc.filter((c) => hogarCoincideBusqueda(c, q, porHogar.get(c.id)));
-  }, [clientesCalc, search, convergencias, clientes]);
+  }, [clientesCalc, search, convergencias, clientes, datosBarriosBusq]);
 
   const stats = useMemo(() => {
     const total = clientes.filter((c) => !clienteExcluido(c)).length;
@@ -15915,13 +15917,28 @@ function primeraCoincidencia(campos, q) {
   }
   return "";
 }
+// Lista oficial de barrios (la carga App) para buscar también por corregimiento y distrito.
+const ZONA_BUSQ = { datos: null };
+function zonaHogar(c) {
+  const d = ZONA_BUSQ.datos;
+  if (!d || !c || !c.observaciones) return null;
+  try { const rb = cruzarBarrio(c, d); if (rb.estado === "ok") return d.porId.get(d.aEnt.get(rb.fila.id)) || rb.fila; } catch (e) {}
+  return null;
+}
+function zonaMovil(m) {
+  const d = ZONA_BUSQ.datos;
+  if (!d || !m || !m.barrio) return null;
+  try { const rb = cruzarBarrioMovil(m, d); if (rb.estado === "ok") return d.porId.get(d.aEnt.get(rb.fila.id)) || rb.fila; } catch (e) {}
+  return null;
+}
 function razonBusquedaHogar(c, q, movilesDelHogar) {
+  const z = zonaHogar(c);
   let b = {};
   try { b = leerBloqueTigo(c.observaciones); } catch (e) {}
   const refs = c.referidos || [];
   const ms = movilesDelHogar || [];
   return primeraCoincidencia([
-    ["Barrio", b.barrio || c.barrio], ["Corregimiento", b.corregimiento], ["Correo", correoHogar(c)],
+    ["Barrio", b.barrio || c.barrio], ["Corregimiento", b.corregimiento], ["Corregimiento", z && z.corregimiento], ["Distrito", z && z.distrito], ["Correo", correoHogar(c)],
     ["Contacto 1 de Tigo", b.voz1, true], ["Contacto 2 de Tigo", b.voz2, true],
     ...refs.map((r) => ["Referido", r.nombre]), ...refs.map((r) => ["Referido", r.tel, true]),
     ...ms.map((m) => ["Línea móvil vinculada", m.nombre]), ...ms.map((m) => ["Línea móvil vinculada", m.telefono, true]),
@@ -15929,8 +15946,9 @@ function razonBusquedaHogar(c, q, movilesDelHogar) {
 }
 function razonBusquedaMovil(c, q, hogares) {
   const h = hogares ? hogarDeMovil(c, hogares) : null;
+  const z = zonaMovil(c);
   return primeraCoincidencia([
-    ["WhatsApp", c.whatsapp, true], ["Barrio", c.barrio], ["Correo", c.correo],
+    ["WhatsApp", c.whatsapp, true], ["Barrio", c.barrio], ["Corregimiento", z && z.corregimiento], ["Distrito", z && z.distrito], ["Correo", c.correo],
     ["Teléfono extra", c.telefonoAdicional, true], ["Teléfono extra", c.telefonoAdicional2, true],
     ["Titular del Hogar", c.titularNombre], ["Teléfono del titular", c.titularTelefono, true],
     ["Correo del titular", c.titularCorreo], ["Cédula del titular", c.titularCedula],
@@ -15940,8 +15958,9 @@ function razonBusquedaMovil(c, q, hogares) {
 function movilCoincideBusqueda(c, q, hogares) {
   if (!q) return true;
   const h = hogares ? hogarDeMovil(c, hogares) : null;
+  const z = zonaMovil(c);
   return coincideTextoNumero(
-    [c.nombre, c.barrio, c.correo, c.titularNombre, c.titularCorreo, c.titularCedula, h && h.nombre],
+    [c.nombre, c.barrio, z && z.corregimiento, z && z.distrito, c.correo, c.titularNombre, c.titularCorreo, c.titularCedula, h && h.nombre],
     [c.telefono, c.whatsapp, c.telefonoAdicional, c.telefonoAdicional2, c.titularTelefono, h && h.telefono],
     q
   );
@@ -15953,7 +15972,7 @@ function hogarCoincideBusqueda(c, q, movilesDelHogar) {
   const refs = c.referidos || [];
   const ms = movilesDelHogar || [];
   return coincideTextoNumero(
-    [c.nombre, planLabel(c), b.barrio || c.barrio, b.corregimiento, correoHogar(c), ...refs.map((r) => r.nombre), ...ms.map((m) => m.nombre)],
+    [c.nombre, planLabel(c), b.barrio || c.barrio, b.corregimiento, zonaHogar(c) && zonaHogar(c).corregimiento, zonaHogar(c) && zonaHogar(c).distrito, correoHogar(c), ...refs.map((r) => r.nombre), ...ms.map((m) => m.nombre)],
     [c.numeroSuscriptor, c.telefono, b.voz1, b.voz2, ...refs.map((r) => r.tel), ...ms.map((m) => m.telefono)],
     q
   );
