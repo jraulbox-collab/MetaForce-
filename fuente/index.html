@@ -13435,7 +13435,8 @@ function armarResultadosBusqueda({ q, hogares, moviles, todosHogares, prospectos
     if (!r) r = razonBusquedaMovil(c, q, todosHogares);
     items.push({ tipo: "e", movil: true, id: "em" + c.id, nombre: c.nombre, sub: [c.telefono, c.eliminadoEn ? "eliminado el " + fmtFecha(String(c.eliminadoEn).slice(0, 10)) : ""].filter(Boolean).join(" · "), razon: r, p, ref: c });
   });
-  items.sort((a, b) => a.p - b.p || String(a.nombre || "").localeCompare(String(b.nombre || "")));
+  const grupo = (x) => (x.tipo === "e" ? 2 : x.excluido ? 1 : 0);
+  items.sort((a, b) => grupo(a) - grupo(b) || a.p - b.p || String(a.nombre || "").localeCompare(String(b.nombre || "")));
   return items;
 }
 function BusquedaGlobalClientes({ items, tipos, onHogar, onMovil, onProspecto, onRecuperar }) {
