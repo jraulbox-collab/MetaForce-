@@ -10730,13 +10730,6 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                         )}
                       </div>
                     </div>
-                    {rescateSeleccionados.length > 0 && (rescateCruceTramo || rescateCruceAcelerador || rescateSeleccionados.some((c) => idsMovilHoy.has(c.id))) && (
-                      <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-                        {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
-                        {rescateCruceAcelerador && <div>{comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)." : "🐢 Perderías el acelerador."}</div>}
-                        {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && <div>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>}
-                      </div>
-                    )}
                   </>
                 )}
               </div>
