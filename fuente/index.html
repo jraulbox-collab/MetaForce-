@@ -5349,6 +5349,7 @@ function App() {
         {tab === "clientes" && vistaClientes !== "prospectos" && (
           <ClientesTab
             clientes={filteredClientes}
+            clientesCompletos={clientesCalc}
             clientesTodos={clientesActivos}
             search={search}
             setSearch={setSearch}
@@ -13357,7 +13358,7 @@ function textoReporteDiario(clientes, convergencias) {
   return `${saludo}\n*Gestión de hoy* · ${fmtFecha(hoy)}\n\n${cuerpo}`;
 }
 
-function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onAbrirComision }) {
+function ClientesTab({ clientes, clientesCompletos, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onAbrirComision }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -13474,6 +13475,15 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
     setTimeout(() => setCopiedCell(null), 1200);
   }
 
+  const movilesPorHogarTab = useMemo(() => {
+    const m = new Map();
+    if (!search.trim()) return m;
+    (clientesMovil || []).forEach((x) => {
+      const h = hogarDeMovil(x, clientesCompletos || clientes);
+      if (h) m.set(h.id, [...(m.get(h.id) || []), x]);
+    });
+    return m;
+  }, [search, clientesMovil, clientesCompletos, clientes]);
   function renderCeldaCliente(c, key) {
     switch (key) {
       case "suscriptor":
@@ -13512,6 +13522,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
                 {copiedCell === c.id + "tel" ? "✓" : "📋"}
               </button>
             </div>
+            {search.trim() && (() => { const r = razonBusquedaHogar(c, search.trim(), movilesPorHogarTab.get(c.id)); return r ? <div className="text-xs mt-0.5" style={ { color: "#0B4A99", whiteSpace: "normal" } }>Coincide en {r}</div> : null; })()}
             {cicloHogarPorConfirmar(c) && <div className="mt-1"><CicloHogarConfirmar cliente={c} onConfirmar={onConfirmarCiclo} /></div>}
           </div>
         );
@@ -14031,7 +14042,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           search={search}
           setSearch={setSearch}
           hogarCoincidencias={search.trim() ? clientes.filter((c) => !c.penalizado) : []}
-          hogarCoincidenciasTodos={clientes}
+          hogarCoincidenciasTodos={clientesCompletos || clientes}
           onVerDetalleHogar={onVerDetalle}
           chipInicial={chipMovilSalto}
           onChipAplicado={() => setChipMovilSalto(null)}
@@ -14095,11 +14106,11 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           icono="📱"
           titulo="Móvil"
           filas={(clientesMovil || [])
-            .filter((c) => movilCoincideBusqueda(c, search.trim(), clientes))
+            .filter((c) => movilCoincideBusqueda(c, search.trim(), clientesCompletos || clientes))
             .map((c) => ({
               id: c.id,
               nombre: c.nombre,
-              sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c))].filter(Boolean).join(" · "),
+              sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c)), (() => { const r = razonBusquedaMovil(c, search.trim(), clientesCompletos || clientes); return r ? "Coincide en " + r : ""; })()].filter(Boolean).join(" · "),
               ref: c,
             }))}
           onAbrir={() => setSubVista("movil")}
@@ -15726,6 +15737,39 @@ function coincideTextoNumero(textos, numeros, q) {
   const qd = String(q).replace(/\D/g, "");
   return qd.length >= 3 && numeros.some((n) => n && String(n).replace(/\D/g, "").includes(qd));
 }
+// Primer campo en el que coincide la búsqueda: "etiqueta · valor". Solo campos que no se ven ya en la fila.
+function primeraCoincidencia(campos, q) {
+  const qt = normBusq(q).trim();
+  if (!qt) return "";
+  const qd = String(q).replace(/\D/g, "");
+  for (const [etq, val, esNum] of campos) {
+    if (!val) continue;
+    if (esNum ? qd.length >= 3 && String(val).replace(/\D/g, "").includes(qd) : normBusq(val).includes(qt)) return etq + " · " + val;
+  }
+  return "";
+}
+function razonBusquedaHogar(c, q, movilesDelHogar) {
+  let b = {};
+  try { b = leerBloqueTigo(c.observaciones); } catch (e) {}
+  const refs = c.referidos || [];
+  const ms = movilesDelHogar || [];
+  return primeraCoincidencia([
+    ["Barrio", b.barrio || c.barrio], ["Corregimiento", b.corregimiento], ["Correo", correoHogar(c)],
+    ["Contacto 1 de Tigo", b.voz1, true], ["Contacto 2 de Tigo", b.voz2, true],
+    ...refs.map((r) => ["Referido", r.nombre]), ...refs.map((r) => ["Referido", r.tel, true]),
+    ...ms.map((m) => ["Línea móvil vinculada", m.nombre]), ...ms.map((m) => ["Línea móvil vinculada", m.telefono, true]),
+  ], q);
+}
+function razonBusquedaMovil(c, q, hogares) {
+  const h = hogares ? hogarDeMovil(c, hogares) : null;
+  return primeraCoincidencia([
+    ["WhatsApp", c.whatsapp, true], ["Barrio", c.barrio], ["Correo", c.correo],
+    ["Teléfono extra", c.telefonoAdicional, true], ["Teléfono extra", c.telefonoAdicional2, true],
+    ["Titular del Hogar", c.titularNombre], ["Teléfono del titular", c.titularTelefono, true],
+    ["Correo del titular", c.titularCorreo], ["Cédula del titular", c.titularCedula],
+    ["Cliente Hogar vinculado", h && h.nombre], ["Teléfono del cliente Hogar", h && h.telefono, true],
+  ], q);
+}
 function movilCoincideBusqueda(c, q, hogares) {
   if (!q) return true;
   const h = hogares ? hogarDeMovil(c, hogares) : null;
@@ -16701,7 +16745,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           filas={(hogarCoincidencias || []).map((c) => ({
             id: c.id,
             nombre: c.nombre,
-            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "),
+            sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación", (() => { const r = razonBusquedaHogar(c, busquedaMovil.trim(), (clientesMovil || []).filter((x) => (hogarDeMovil(x, hogarCoincidenciasTodos) || {}).id === c.id)); return r ? "Coincide en " + r : ""; })()].filter(Boolean).join(" · "),
             ref: c,
           }))}
           onAbrir={(c) => onVerDetalleHogar && onVerDetalleHogar(c)}
@@ -16847,6 +16891,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                             </div>
                           );
                         })()}
+                        {busquedaMovil.trim() && (() => { const r = razonBusquedaMovil(c, busquedaMovil.trim(), hogarCoincidenciasTodos); return r ? <div className="text-xs mt-1" style={ { color: "#0B4A99" } }>Coincide en {r}</div> : null; })()}
                         {(() => {
                           const fch = movilFechasPrimeraFactura(c);
                           return (
