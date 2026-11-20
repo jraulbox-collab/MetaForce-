@@ -15907,6 +15907,13 @@ function coincideTextoNumero(textos, numeros, q) {
   return qd.length >= 3 && numeros.some((n) => n && String(n).replace(/\D/g, "").includes(qd));
 }
 // Primer campo en el que coincide la búsqueda: "etiqueta · valor". Solo campos que no se ven ya en la fila.
+// Trozo corto de las observaciones donde aparece lo buscado (para no mostrar todo el texto).
+function fragmentoObs(obs, q) {
+  const t = String(obs || "").replace(/\s+/g, " ");
+  const i = normBusq(t).indexOf(normBusq(q).trim());
+  if (i < 0) return "";
+  return (i > 25 ? "…" : "") + t.slice(Math.max(0, i - 25), i + 45).trim() + (t.length > i + 45 ? "…" : "");
+}
 function primeraCoincidencia(campos, q) {
   const qt = normBusq(q).trim();
   if (!qt) return "";
@@ -15938,10 +15945,11 @@ function razonBusquedaHogar(c, q, movilesDelHogar) {
   const refs = c.referidos || [];
   const ms = movilesDelHogar || [];
   return primeraCoincidencia([
-    ["Barrio", b.barrio || c.barrio], ["Corregimiento", b.corregimiento], ["Corregimiento", z && z.corregimiento], ["Distrito", z && z.distrito], ["Correo", correoHogar(c)],
+    ["Barrio", b.barrio || c.barrio], ["Corregimiento", b.corregimiento], ["Corregimiento", z && z.corregimiento], ["Distrito", z && z.distrito], ["Dirección", b.direccion], ["Dirección adicional", b.direccion2], ["Correo", correoHogar(c)],
     ["Contacto 1 de Tigo", b.voz1, true], ["Contacto 2 de Tigo", b.voz2, true],
     ...refs.map((r) => ["Referido", r.nombre]), ...refs.map((r) => ["Referido", r.tel, true]),
     ...ms.map((m) => ["Línea móvil vinculada", m.nombre]), ...ms.map((m) => ["Línea móvil vinculada", m.telefono, true]),
+    ["Observaciones", fragmentoObs(c.observaciones, q)],
   ], q);
 }
 function razonBusquedaMovil(c, q, hogares) {
@@ -15972,7 +15980,7 @@ function hogarCoincideBusqueda(c, q, movilesDelHogar) {
   const refs = c.referidos || [];
   const ms = movilesDelHogar || [];
   return coincideTextoNumero(
-    [c.nombre, planLabel(c), b.barrio || c.barrio, b.corregimiento, zonaHogar(c) && zonaHogar(c).corregimiento, zonaHogar(c) && zonaHogar(c).distrito, correoHogar(c), ...refs.map((r) => r.nombre), ...ms.map((m) => m.nombre)],
+    [c.nombre, planLabel(c), b.barrio || c.barrio, b.corregimiento, b.direccion, b.direccion2, c.observaciones, zonaHogar(c) && zonaHogar(c).corregimiento, zonaHogar(c) && zonaHogar(c).distrito, correoHogar(c), ...refs.map((r) => r.nombre), ...ms.map((m) => m.nombre)],
     [c.numeroSuscriptor, c.telefono, b.voz1, b.voz2, ...refs.map((r) => r.tel), ...ms.map((m) => m.telefono)],
     q
   );
