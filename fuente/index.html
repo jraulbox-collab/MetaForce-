@@ -6348,7 +6348,7 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
             )}
 
             <p className="text-xs mb-4" style={ { color: "#5A6680" } }>
-              Revisa en el sistema de Tigo si ya pagó. Si pagó, márcalo en la pestaña Clientes.
+              Revisa en el sistema de Tigo si ya pagó. Si pagó, márcalo aquí abajo.
               {actual.esMovil && <span className="block mt-1" style={ { color: "#B45309", fontWeight: 600 } }>Debe pagar su 1ra factura completa para contar.</span>}
             </p>
 
@@ -6413,6 +6413,15 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
               </div>
             ) : (
               <div className="flex flex-col gap-2">
+                {actual.facturaPendiente && (
+                  <button
+                    onClick={() => setConfirmando("pagada")}
+                    className="w-full py-3 rounded-md font-semibold text-white"
+                    style={ { background: "#001E62" } }
+                  >
+                    ✓ Ya pagó
+                  </button>
+                )}
                 <button
                   onClick={() => onNoPagoTodavia(actual.cliente.id)}
                   className="w-full py-3 rounded-md border font-medium"
