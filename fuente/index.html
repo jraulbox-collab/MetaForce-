@@ -5585,6 +5585,7 @@ function App() {
         onDescartarCliente={cancelarCliente}
         onConfirmarRescate={confirmarRescate}
         onMarcarMovilPagada={(id) => editarConvergencia(id, { f1_estado: "pagada", f1_pagadaEn: new Date().toISOString() })}
+        onDesmarcarMovilPagada={(id) => editarConvergencia(id, { f1_estado: "", f1_pagadaEn: null })}
         onVerClientes={(payload) => {
           guardarScrollComision();
           setComisionAbierta(false);
@@ -6285,6 +6286,26 @@ function MetaInput({ valor, onConfirmar, width, step }) {
   );
 }
 
+// Texto corto con el monto de cobro de un cliente: Hogar = lo que le falta de su 1ra factura
+// (con impuesto y prorrateo, menos lo ya pagado); Móvil = costo aproximado de su 1ra factura.
+function textoMontoCobro(c, movil) {
+  try {
+    if (movil) {
+      const calcM = calcularPrimeraFacturaMovil(c.montoPlan, movilFechasPrimeraFactura(c), false);
+      return calcM ? `1ra factura ~${fmtMonto(calcM.total)}` : "";
+    }
+    const mensual = Number(c.montoMensual) || 0;
+    const factura1 = Number(c.monto1raFactura) || 0;
+    if (mensual > 0 && factura1 >= mensual) {
+      const factor = c.planTipo === "DOBLE" ? 1.07 : 1.01;
+      const yaPagado = c.f1_saldoPendiente ? mensual * factor : c.abonoInicial === false ? 0 : (mensual * factor) / 2;
+      const falta = factura1 * factor - yaPagado;
+      if (falta > 0.005) return `Falta ~${fmtMonto(falta)}`;
+    }
+  } catch (e) {}
+  return "";
+}
+
 // ---------- Modo revisión diaria de churn ----------
 function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada, onNoPagoTodavia, onDescartar, onSaltar, onCopiarSuscriptor, copiedSubKey, onCalcularGanancia, onCerrar }) {
   const actual = pendientes[0] || null;
@@ -6296,7 +6317,7 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
     setConfirmando(null);
   }, [actual && actual.cliente.id]);
 
-  const ganancia = actual ? onCalcularGanancia(actual.cliente) : null;
+  const montoCobroTxt = actual ? textoMontoCobro(actual.cliente, actual.esMovil) : "";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={ { background: "rgba(0,0,0,0.5)" } }>
@@ -6319,9 +6340,9 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
               </span>
               <span>{actual.esMovil ? etiquetaTipoMovil(tipoClienteMovil(actual.cliente)) : planLabel(actual.cliente)}</span>
             </div>
-            {ganancia !== null && ganancia > 0 && (
+            {!!montoCobroTxt && (
               <div className="text-xs font-medium px-2 py-1 rounded-full inline-block mb-1" style={ { color: "#001E62", background: "#EAF0FB" } }>
-                💰 Regularizar la diferencia sube tu comisión confirmada {fmtMonto(ganancia)}
+                💰 {montoCobroTxt}
               </div>
             )}
 
@@ -9411,7 +9432,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   );
 }
 
-function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios, visitasBarrios, onReportarVisita, prospectosBarrios, onAbrirProspectos }) {
+function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensajeInstalacion, copiedKey, onMarcarAbono, periodoDash: periodoDashProp, onPeriodoDash, ordenDashboard, onOrdenDashboard, modoOrden: modoOrdenProp, onModoOrden, umbralProrrateo = 25, stats, clientes, metas, onActualizarMeta, convergencias, onNuevo, onVerClientes, onActualizarEstadoFactura, onCopiarSuscriptor, copiedSubKey, onDescartarCliente, onConfirmarRescate, onMarcarMovilPagada, onDesmarcarMovilPagada, vista = "dashboard", onIrACobros, onIrAMensajes, msgHoy, onAbrirComision, onIrAVentas, onVerCliente, onAbrirBarrios, clientesBarrios, ajustesBarrios, visitasBarrios, onReportarVisita, prospectosBarrios, onAbrirProspectos }) {
   const periodoActual = periodoComision(fechaLocalISO(new Date()));
   const [periodoLocal, setPeriodoLocal] = useState(() => (memoriaDashboard.retorno && memoriaDashboard.periodo ? memoriaDashboard.periodo : periodoComision(fechaLocalISO(new Date()))));
   const periodoVisto = periodoDashProp || periodoLocal;
@@ -9435,6 +9456,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const [tarjetaComAbierta, setTarjetaComAbierta] = useState(() => (vista === "cobros" ? true : memoriaCobros.retorno ? !!memoriaCobros.tarjetaComAbierta : false));
   if (vista !== "cobros") memoriaCobros.tarjetaComAbierta = tarjetaComAbierta;
   const [barraComAbierta, setBarraComAbierta] = useState(false);
+  const [confirmFila, setConfirmFila] = useState(null); // { c, estado: "pagada" | "" }
+  const [verPagados, setVerPagados] = useState(false);
   const [montoAbierto, setMontoAbierto] = useState({});
   const [rescateSeleccion, setRescateSeleccion] = useState(() => (memoriaCobros.retorno ? { ...memoriaCobros.rescateSeleccion } : {}));
   if (vista === "cobros") {
@@ -10472,24 +10495,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const filaCobro = (c) => {
     const movil = idsMovilHoy.has(c.id);
     const sel = !!rescateSeleccion[c.id];
-    // Hogar: lo que le falta por pagar de su 1ra factura (con impuesto y prorrateo, menos lo ya pagado).
-    // Móvil: costo aproximado de su 1ra factura con prorrateo e impuestos.
-    let plan = "";
-    try {
-      if (movil) {
-        const calcM = calcularPrimeraFacturaMovil(c.montoPlan, movilFechasPrimeraFactura(c), false);
-        if (calcM) plan = `1ra factura ~${fmtMonto(calcM.total)}`;
-      } else {
-        const mensual = Number(c.montoMensual) || 0;
-        const factura1 = Number(c.monto1raFactura) || 0;
-        if (mensual > 0 && factura1 >= mensual) {
-          const factor = c.planTipo === "DOBLE" ? 1.07 : 1.01;
-          const yaPagado = c.f1_saldoPendiente ? mensual * factor : c.abonoInicial === false ? 0 : (mensual * factor) / 2;
-          const falta = factura1 * factor - yaPagado;
-          if (falta > 0.005) plan = `Falta ~${fmtMonto(falta)}`;
-        }
-      }
-    } catch (e) { plan = ""; }
+    const plan = textoMontoCobro(c, movil);
     const vence = textoVence(c, movil);
     const g = etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0;
     return (
@@ -10506,12 +10512,16 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             {chipsCliente(c)}
           </div>
         </div>
+        <button type="button" aria-label="Marcar como pagada" title="Ya pagó" onClick={(e) => { e.preventDefault(); e.stopPropagation(); setConfirmFila({ c, estado: "pagada" }); }} className="shrink-0 flex items-center justify-center rounded-full font-extrabold" style={ { width: 38, height: 38, border: "2px solid #001E62", color: "#001E62", background: "#fff", fontSize: 18 } }>✓</button>
         {c.telefono && (
           <a href={`https://wa.me/${telefonoWhatsapp(c.telefono)}`} target="_blank" rel="noopener noreferrer" aria-label="Abrir chat de WhatsApp" onClick={(e) => { e.stopPropagation(); }} className="shrink-0 flex items-center justify-center rounded-full" style={ { width: 38, height: 38, border: "2px solid #001E62", fontSize: 18 } }>💬</a>
         )}
       </label>
     );
   };
+  const pagadosVista = periodoRescateActivo
+    ? [...clientesConfirmadosHoy, ...(esNuevoHoy ? convergenciasPeriodoHoy.filter((c) => c.f1_estado === "pagada") : [])]
+    : [];
   const vistaCobros = (
     <div>
       {periodoRescateActivo && rescateCandidatos.length === 0 && (
@@ -10732,6 +10742,33 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 </>
               )}
 
+              {pagadosVista.length > 0 && (
+                <div className="mb-4">
+                  <button type="button" onClick={() => setVerPagados((v) => !v)} aria-expanded={verPagados} className="w-full text-left text-xs font-semibold" style={ { color: "#166534", minHeight: 36 } }>
+                    ✓ Ya pagaron · {pagadosVista.length} {verPagados ? "▲" : "▼"}
+                  </button>
+                  {verPagados && (
+                    <div className="flex flex-col gap-2 mt-1">
+                      {pagadosVista.map((c) => {
+                        const mov = idsMovilHoy.has(c.id);
+                        return (
+                          <div key={c.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl border" style={ { borderColor: "#BEE8CE", background: "#F3FBF6" } }>
+                            <div className="flex-1 min-w-0">
+                              <div className="font-bold truncate" style={ { color: "#0B4A99", fontSize: 14 } }>{tituloEs(c.nombre || "")}</div>
+                              <div className="text-xs font-bold" style={ { color: "#166534" } }>
+                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded mr-2" style={ mov ? { background: "#0E7C66", color: "#fff" } : { background: "#001E62", color: "#fff" } }>{mov ? "Móvil" : "Hogar"}</span>
+                                {c.f1_saldoPendiente ? "Pago parcial" : "Pagada"}
+                              </div>
+                            </div>
+                            <button type="button" onClick={() => setConfirmFila({ c, estado: "" })} className="shrink-0 text-xs font-bold rounded-lg px-3" style={ { minHeight: 36, border: "1.5px solid #5A6680", color: "#5A6680", background: "#fff" } }>Deshacer</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
+
               </>
               )}
             </div>
@@ -10742,6 +10779,22 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       </div>
       )}
       </div>
+      )}
+      {confirmFila && (
+        <ConfirmarFacturaModal
+          nombre={confirmFila.c.nombre}
+          n={1}
+          nuevoEstado={confirmFila.estado}
+          permiteParcial={!idsMovilHoy.has(confirmFila.c.id) && esProrrateoAlto(confirmFila.c, umbralProrrateo)}
+          saldoPendiente={!!confirmFila.c.f1_saldoPendiente}
+          onCancel={() => setConfirmFila(null)}
+          onConfirm={(opciones) => {
+            const { c, estado } = confirmFila;
+            if (idsMovilHoy.has(c.id)) { if (estado === "pagada") onMarcarMovilPagada(c.id); else onDesmarcarMovilPagada(c.id); }
+            else onActualizarEstadoFactura(c.id, 1, estado, opciones || {});
+            setConfirmFila(null);
+          } }
+        />
       )}
       {rescateCandidatos.length > 0 && <div style={ { height: 24 } } aria-hidden="true" />}
     </div>
