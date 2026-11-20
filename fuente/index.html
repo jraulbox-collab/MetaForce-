@@ -10526,6 +10526,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       <div className="rounded-xl border mb-4 bg-white" style={ { borderColor: "#DFE5EF", overflow: vista === "cobros" ? "visible" : "hidden" } }>
       {(tarjetaComAbierta || !(periodoRescateActivo && comisionConfirmadaHoy.completo)) && (
       <div>
+      {!(periodoRescateActivo && rescateCandidatos.length > 0) && (
       <div className="px-4 pt-3 pb-2">
         {(() => {
           const mesPago = periodoRescateActivo ? mesLabel(sumarMesClave(periodoRescateActivo, 2)).split(" ")[0] : "";
@@ -10553,8 +10554,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           );
         })()}
       </div>
+      )}
       {enRiesgoHoy.length > 0 && (
-        <div className="px-4 pb-3">
+        <div className="px-4 pt-3 pb-3">
           <button
             type="button"
             onClick={() => setMostrarRevisionDiaria(true)}
@@ -10608,8 +10610,20 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <p className="text-sm font-medium" style={ { color: "#001E62" } }>✓ Todos tus clientes de este ciclo ya pagaron su 1ra factura.</p>
               ) : (
                 <>
-              <div className="fixed left-0 right-0 bottom-0" style={ { position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 40, background: "#fff", borderTop: "2px solid #001E62", borderRadius: "20px 20px 0 0", boxShadow: "0 -8px 24px rgba(0,30,98,.22)", padding: "8px 16px max(28px, calc(14px + env(safe-area-inset-bottom)))", maxHeight: "72vh", overflowY: "auto" } }>
-                <div aria-hidden="true" style={ { width: 44, height: 5, borderRadius: 3, background: "#C5CEDF", margin: "0 auto 8px" } } />
+              <div style={ { position: "sticky", top: "calc(56px + env(safe-area-inset-top))", zIndex: 29, background: "#fff", borderBottom: "2px solid #001E62", borderRadius: "0 0 20px 20px", boxShadow: "0 8px 24px rgba(0,30,98,.22)", padding: "10px 16px 10px", margin: "-16px -16px 12px", maxHeight: "65vh", overflowY: "auto" } }>
+                {(() => {
+                  const nPendB = enRiesgoHoy.length;
+                  const limB = fechaLimitePrimeraFactura(periodoRescateActivo);
+                  const vencB = limB ? fmtFechaLarga(fechaLocalISO(limB)) : null;
+                  const urgB = rescateDiasRestantes !== null && rescateDiasRestantes <= 7;
+                  const dB = rescateDiasRestantes === null ? "" : rescateDiasRestantes <= 0 ? "Vence hoy" : rescateDiasRestantes === 1 ? "Queda 1 día" : `${rescateDiasRestantes} días`;
+                  const hastaB = comisionMaximaHoy.completo && comisionConfirmadaHoy.completo && comisionMaximaHoy.total > comisionConfirmadaHoy.total + 0.005 ? comisionMaximaHoy.total : null;
+                  return (
+                    <div className="text-xs mb-1.5" style={ { color: urgB ? "#B45309" : "#5A6680", fontWeight: urgB ? 700 : 600 } }>
+                      ⏳ {dB}{vencB ? ` (vence ${vencB})` : ""} · {nPendB} pendiente{nPendB === 1 ? "" : "s"}{hastaB !== null ? <span> · hasta <b className="font-mono">{fmtMonto(hastaB)}</b></span> : null}
+                    </div>
+                  );
+                })()}
                 {(
                   <>
                     <div className="flex items-center justify-between gap-3">
@@ -10626,7 +10640,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                               <span style={ { fontSize: 20, color: rescateSeleccionados.length > 0 && rescateGanancia > 0.005 ? "#0072CE" : "#001E62" } }>{rescateSeleccionados.length > 0 ? (comisionSimulada.completo ? "$" + Math.round(comisionSimulada.total) : "—") : (comisionConfirmadaHoy.completo ? "$" + Math.round(comisionConfirmadaHoy.total) : "—")}</span>
                             </div>
                           </div>
-                          <span className="shrink-0 text-[11px] font-bold rounded-full px-2 py-1" style={ { background: "#EEF3FB", color: "#001E62" } }>{barraComAbierta ? "▼" : "▲"}</span>
+                          <span className="shrink-0 text-[11px] font-bold rounded-full px-2 py-1" style={ { background: "#EEF3FB", color: "#001E62" } }>{barraComAbierta ? "▲" : "▼"}</span>
                         </div>
                         {esNuevoHoy && comisionConfirmadaHoy.completo && comisionConfirmadaHoy.pctClientesPonderado != null && (
                           <AvanceRescate
@@ -10729,7 +10743,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       )}
       </div>
       )}
-      {rescateCandidatos.length > 0 && <div style={ { height: barraComAbierta ? 520 : 190 } } aria-hidden="true" />}
+      {rescateCandidatos.length > 0 && <div style={ { height: 24 } } aria-hidden="true" />}
     </div>
   );
   if (vista === "cobros") return vistaCobros;
