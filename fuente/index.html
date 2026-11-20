@@ -878,6 +878,52 @@ function matchInfo(c) {
   const cuando = d === 0 ? "vence hoy" : d === 1 ? "queda 1 día" : `quedan ${d} días`;
   return { nivel: d <= 1 ? "urgente" : "pendiente", texto: `⏳ Match pendiente · ${cuando}`, dias: d, lim };
 }
+// ---------- Vincular una línea Match Digital con el cliente Hogar que es su titular ----------
+const normNombreMatch = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+function correoHogar(h) {
+  try { return String((h && h.correo) || leerBloqueTigo(h && h.observaciones).correo || "").trim().toLowerCase(); } catch (e) { return ""; }
+}
+// Coincidencia exacta: el teléfono del titular es el del Hogar (o uno de sus contactos), o el correo es el mismo.
+function hogarExactoDeMovil(m, hogares) {
+  if (!m) return null;
+  const k = String(m.titularTelefono || "").replace(/\D/g, "").slice(-8);
+  const mail = String(m.titularCorreo || "").trim().toLowerCase();
+  if (k.length < 7 && !mail) return null;
+  return (hogares || []).find((h) => {
+    if (h.penalizado) return false;
+    if (k.length >= 7) {
+      const b = leerBloqueTigo(h.observaciones);
+      if ([h.telefono, b.voz1, b.voz2].some((t) => String(t || "").replace(/\D/g, "").slice(-8) === k)) return true;
+    }
+    return !!mail && correoHogar(h) === mail;
+  }) || null;
+}
+// Cliente Hogar de una línea Match: el que confirmaste a mano, o si no, la coincidencia exacta.
+function hogarDeMovil(m, hogares) {
+  if (m && m.hogarId) {
+    const x = (hogares || []).find((h) => h.id === m.hogarId);
+    if (x) return x;
+  }
+  return hogarExactoDeMovil(m, hogares);
+}
+// Posible titular (solo si hay una candidata clara): el correo o el nombre del titular traen el primer nombre y un apellido.
+function sugerirHogarDeMovil(m, hogares) {
+  if (!m || m.tipo !== "matchdigital" || hogarDeMovil(m, hogares)) return null;
+  const descartados = new Set(m.hogarDescartados || []);
+  const local = String(m.titularCorreo || "").split("@")[0].toLowerCase().replace(/[^a-z]/g, "");
+  const palabrasT = normNombreMatch(m.titularNombre).split(" ").filter(Boolean);
+  const vacias = new Set(["del", "de", "la", "las", "los", "y"]);
+  const cands = (hogares || []).filter((h) => {
+    if (h.penalizado || descartados.has(h.id)) return false;
+    const pal = normNombreMatch(h.nombre).split(" ").filter((w) => w.length >= 3 && !vacias.has(w));
+    if (pal.length < 2) return false;
+    const enCorreo = local ? pal.filter((w) => local.includes(w)) : [];
+    if (enCorreo.length >= 2 && enCorreo.includes(pal[0])) return true;
+    const enNombre = palabrasT.length ? pal.filter((w) => palabrasT.includes(w)) : [];
+    return enNombre.length >= 2 && enNombre.includes(pal[0]);
+  });
+  return cands.length === 1 ? cands[0] : null;
+}
 // Mensaje para el titular del Hogar (solo mientras el plazo siga vigente).
 function textoMatchTitular(c) {
   const i = matchInfo(c);
@@ -2152,6 +2198,7 @@ const emptyForm = () => ({
   nombre: "",
   numeroSuscriptor: "",
   telefono: "",
+  correo: "",
   cicloFacturacion: "",
   planTipo: "",
   velocidad: "",
@@ -3887,6 +3934,7 @@ function App() {
       nombre: c.nombre,
       numeroSuscriptor: c.numeroSuscriptor,
       telefono: c.telefono,
+      correo: c.correo || correoHogar(c),
       cicloFacturacion: c.cicloFacturacion,
       planTipo: c.planTipo,
       velocidad: c.velocidad,
@@ -5250,6 +5298,11 @@ function App() {
         {tab === "detalle" && (
           <ClienteDetalle
             cliente={clienteDetalle}
+            movilesDelTitular={clienteDetalle ? (convergencias || []).filter((m) => m.tipo === "matchdigital" && (hogarDeMovil(m, clientes) || {}).id === clienteDetalle.id) : []}
+            onVerMovil={(m) => {
+              setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: m.id, volverA: "detalle", ficha: true }, token: Date.now() });
+              navegarA("clientes");
+            }}
             onVolver={() => volverA(origenDetalle)}
             volverLabel={origenDetalle === "comision" ? "← Volver a Comisión" : origenDetalle === "alertas" ? "← Volver a Cobros" : origenDetalle === "dashboard" ? "← Volver al Dashboard" : origenDetalle === "barrios" ? "← Volver a Barrios" : "← Volver a Clientes"}
             onEditar={startEdit}
@@ -10565,13 +10618,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       const norm = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
       const qTxt = norm(q);
       const qNum = q.replace(/\D/g, "");
-      const hogarDe = (c) => {
-        if (!idsMovilHoy.has(c.id)) return null;
-        const k = String(c.titularTelefono || "").replace(/\D/g, "").slice(-8);
-        const mail = String(c.titularCorreo || "").trim().toLowerCase();
-        if (k.length < 7 && !mail) return null;
-        return (clientes || []).find((h) => (k.length >= 7 && String(h.telefono || "").replace(/\D/g, "").slice(-8) === k) || (!!mail && String(leerBloqueTigo(h.observaciones).correo || "").trim().toLowerCase() === mail)) || null;
-      };
+      const hogarDe = (c) => (idsMovilHoy.has(c.id) ? hogarDeMovil(c, clientes) : null);
       r = r.filter((c) => {
         const h = hogarDe(c);
         const dig = (x) => String(x || "").replace(/\D/g, "");
@@ -14961,6 +15008,8 @@ function BloqueInstalacionProgramada({ cliente, onGuardarOrden, onCopiarMensaje,
 
 function ClienteDetalle({
   cliente,
+  movilesDelTitular,
+  onVerMovil,
   onVolver,
   volverLabel,
   onEditar,
@@ -15303,7 +15352,7 @@ function ClienteDetalle({
               <a href={`tel:+507${soloDig(x)}`} onClick={() => onRegistrarContacto && onRegistrarContacto(cliente, "llamada", "", motivoC)} aria-label={"Llamar a " + x} className="inline-flex items-center justify-center rounded-md text-sm" style={ btnC }>📞</a>
             </span>
           )]),
-          !!bt.correo && ["Correo", bt.correo],
+          !!(cliente.correo || bt.correo) && ["Correo", cliente.correo || bt.correo],
           !!bt.direccion && ["Dirección", bt.direccion],
           !!bt.direccion2 && ["Dirección adicional", bt.direccion2],
         ].filter(Boolean);
@@ -15356,6 +15405,18 @@ function ClienteDetalle({
           </div>
         );
       })()}
+
+      {(movilesDelTitular || []).length > 0 && (
+        <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-4 mb-3">
+          <h2 className="text-sm font-semibold mb-1.5" style={ { color: "#001E62" } }>Líneas móviles del titular</h2>
+          {movilesDelTitular.map((m, i) => (
+            <div key={m.id} className="flex items-center justify-between gap-3 py-2 text-sm" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+              <button type="button" onClick={() => onVerMovil && onVerMovil(m)} className="text-left font-medium underline min-w-0 truncate" style={ { color: "#0072CE" } }>{tituloEs(m.nombre || "")}</button>
+              <span className="inline-flex items-center gap-2 shrink-0" style={ { color: "#5A6680" } }>{m.telefono}<BotonWaChico tel={m.telefono} /></span>
+            </div>
+          ))}
+        </div>
+      )}
 
 
       {notasPropias && (
@@ -15600,17 +15661,8 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   const calc1ra = fch && c.montoPlan != null ? calcularPrimeraFacturaMovil(c.montoPlan, fch, false) : null;
   const extras = [c.telefonoAdicional, c.telefonoAdicional2].filter(Boolean);
   const fechaMatchISO = c.tipo === "matchdigital" ? (c.matchFecha || (c.creadoEn ? fechaLocalISO(c.creadoEn) : "")) : "";
-  const dueñoHogar = (() => {
-    const k = d8(c.titularTelefono);
-    const mail = String(c.titularCorreo || "").trim().toLowerCase();
-    if (k.length < 7 && !mail) return null;
-    return (hogarClientes || []).find((h) => {
-      if (h.penalizado) return false;
-      const b = leerBloqueTigo(h.observaciones);
-      if (k.length >= 7 && (d8(h.telefono) === k || d8(b.voz1) === k || d8(b.voz2) === k)) return true;
-      return !!mail && String(b.correo || "").trim().toLowerCase() === mail;
-    }) || null;
-  })();
+  const dueñoHogar = hogarDeMovil(c, hogarClientes);
+  const sugHogar = !dueñoHogar ? sugerirHogarDeMovil(c, hogarClientes) : null;
   const pad =(n) => String(n).padStart(2, "0");
   const numWa = String(c.telefono || "").replace(/\D/g, "") ? telefonoWhatsapp(c.telefono) : "";
   const irWa = (url) => (e) => { e.preventDefault(); window.location.href = url; };
@@ -15701,6 +15753,16 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
             !!mi && !!mi.lim && ["Vence", fmtFecha(mi.lim)],
           ])}
           <div className="text-xs font-bold mt-3 mb-0.5" style={ { color: "#001E62" } }>Titular del Hogar</div>
+          {sugHogar && (
+            <div className="rounded-lg p-3 my-2" style={ { background: "#FFF3DC", border: "1px solid #B45309" } }>
+              <div className="text-sm font-medium" style={ { color: "#B45309" } }>¿Es el titular {tituloEs(sugHogar.nombre)}?</div>
+              <div className="text-xs mt-0.5 mb-2" style={ { color: "#5A6680" } }>El correo o el nombre se parece a su nombre{sugHogar.telefono ? " · tel. " + sugHogar.telefono : ""}.</div>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => onEditar(c.id, { hogarId: sugHogar.id })} className="flex-1 text-sm font-bold rounded-lg" style={ { minHeight: 38, border: "1.5px solid #001E62", background: "#001E62", color: "#fff" } }>Sí, es</button>
+                <button type="button" onClick={() => onEditar(c.id, { hogarDescartados: [...(c.hogarDescartados || []), sugHogar.id] })} className="flex-1 text-sm font-bold rounded-lg" style={ { minHeight: 38, border: "1.5px solid #001E62", background: "#fff", color: "#001E62" } }>No</button>
+              </div>
+            </div>
+          )}
           {filas([
             ["Nombre", dueñoHogar
               ? <button type="button" onClick={() => onAbrirHogar && onAbrirHogar(dueñoHogar)} className="font-medium underline text-right" style={ { color: "#0072CE" } }>{dueñoHogar.nombre}</button>
@@ -16033,7 +16095,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
   const fichaCliente = fichaId ? (clientesMovil || []).find((x) => x.id === fichaId) : null;
   if (fichaCliente && !formAbierto) {
     const v = fichaVolver.current;
-    const etiquetaVolver = v === "alertas" ? "← Volver a Mensajes" : v === "dashboard" ? "← Volver al Dashboard" : v === "comision" ? "← Volver a la comisión" : "← Volver a Clientes";
+    const etiquetaVolver = v === "alertas" ? "← Volver a Mensajes" : v === "dashboard" ? "← Volver al Dashboard" : v === "comision" ? "← Volver a la comisión" : v === "detalle" ? "← Volver a la ficha del cliente" : "← Volver a Clientes";
     return (
       <>
         <FichaClienteMovil
@@ -18628,6 +18690,7 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                 ...f,
                 nombre: f.nombre || d.nombre,
                 numeroSuscriptor: f.numeroSuscriptor || d.suscriptor,
+                correo: f.correo || String(d.correo || "").trim().toLowerCase(),
                 fechaInstalacion: "",
                 instalacionProgramada: d.fecha,
                 franjaInstalacion: d.franja || "",
@@ -18655,6 +18718,11 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
                 </p>
               )}
             </Field>
+            <div className="col-span-2">
+              <Field label="Correo">
+                <input type="email" value={form.correo || ""} onChange={set("correo")} className={inputClass} style={inputStyle} />
+              </Field>
+            </div>
             <div className="col-span-2">
               <Field label="Nombre y apellido *">
                 <input required value={form.nombre} onChange={set("nombre")} className={inputClass} style={inputStyle} />
