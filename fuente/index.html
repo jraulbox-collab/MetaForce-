@@ -5298,7 +5298,7 @@ function App() {
         {tab === "detalle" && (
           <ClienteDetalle
             cliente={clienteDetalle}
-            movilesDelTitular={clienteDetalle ? (convergencias || []).filter((m) => m.tipo === "matchdigital" && (hogarDeMovil(m, clientes) || {}).id === clienteDetalle.id) : []}
+            movilesDelTitular={clienteDetalle ? (convergencias || []).filter((m) => (hogarDeMovil(m, clientes) || {}).id === clienteDetalle.id) : []}
             onVerMovil={(m) => {
               setSaltarAMes({ periodo: periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())), subVista: "movil", abrirForm: true, prefill: { editarId: m.id, volverA: "detalle", ficha: true }, token: Date.now() });
               navegarA("clientes");
@@ -15647,6 +15647,7 @@ function pasaChipMovil(c, chip) {
 function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, onEliminar, hogarClientes, onAbrirHogar }) {
   const [menu, setMenu] = useState(false);
   const [copiado, setCopiado] = useState(null);
+  const [buscaHogar, setBuscaHogar] = useState(null);
   const hoyISO = fechaLocalISO(new Date());
   const fch = movilFechasPrimeraFactura(c);
   const tipo = tipoClienteMovil(c);
@@ -15741,6 +15742,61 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
           >{pagada ? "Quitar marca de 1ra factura pagada" : "Marcar 1ra factura pagada"}</button>
           {c.cicloConfirmado && !pagada && (
             <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${c.nombre}?`, () => onEditar(c.id, { cicloConfirmado: false }), { si: "Sí, quitarla" })} className="block w-full text-center text-xs font-semibold mt-2" style={ { color: "#5A6680", minHeight: 32 } }>Quitar confirmación del ciclo</button>
+          )}
+        </>
+      ))}
+
+      {tipo !== "matchdigital" && tarjeta("Titular del Hogar", (
+        <>
+          {dueñoHogar ? (
+            <>
+              {filas([
+                ["Nombre", <button type="button" onClick={() => onAbrirHogar && onAbrirHogar(dueñoHogar)} className="font-medium underline text-right" style={ { color: "#0072CE" } }>{dueñoHogar.nombre}</button>],
+                !!dueñoHogar.telefono && ["Teléfono", <span className="inline-flex items-center gap-2">{dueñoHogar.telefono}<BotonWaChico tel={dueñoHogar.telefono} /></span>],
+                ["Instalación", dueñoHogar.fechaInstalacion ? chip("Instalado · " + fmtFecha(dueñoHogar.fechaInstalacion), VERDE) : chip(dueñoHogar.instalacionProgramada ? "Programada · " + fmtFecha(dueñoHogar.instalacionProgramada) : "Sin instalar", AMBAR)],
+                ["1ra factura Hogar", dueñoHogar.f1_estado === "pagada" ? chip("Pagada", VERDE) : chip("Pendiente", AMBAR)],
+              ])}
+              {c.hogarId && (
+                <button type="button" onClick={() => confirmarAccion(null, "¿Quitar el vínculo con " + dueñoHogar.nombre + "?", () => onEditar(c.id, { hogarId: "" }), { si: "Sí, quitarlo" })} className="text-xs font-bold mt-2" style={ { color: "#B45309" } }>Quitar vínculo</button>
+              )}
+            </>
+          ) : buscaHogar === null ? (
+            <>
+              <div className="text-sm mb-2" style={ { color: "#5A6680" } }>Sin vincular</div>
+              <button type="button" onClick={() => setBuscaHogar("")} className={botonCls} style={botonEstilo}>Vincular con cliente Hogar</button>
+            </>
+          ) : (
+            <>
+              <input
+                value={buscaHogar}
+                onChange={(e) => setBuscaHogar(e.target.value)}
+                placeholder="Nombre, teléfono o suscriptor"
+                autoFocus
+                className="w-full rounded-lg px-3 text-sm"
+                style={ { minHeight: 38, border: "1.5px solid #001E62", color: "#001E62", background: "#fff" } }
+              />
+              {(() => {
+                const q = buscaHogar.trim();
+                const qn = normNombreMatch(q);
+                const qd = q.replace(/\D/g, "");
+                const res = q.length < 2 ? [] : (hogarClientes || []).filter((h) => !h.penalizado && (normNombreMatch(h.nombre).includes(qn) || (qd.length >= 3 && (String(h.telefono || "").replace(/\D/g, "").includes(qd) || String(h.numeroSuscriptor || "").replace(/\D/g, "").includes(qd))))).slice(0, 8);
+                return (
+                  <div className="mt-1">
+                    {res.map((h) => (
+                      <div key={h.id} className="py-2 flex items-center justify-between gap-2" style={ { borderTop: "1px solid #EEF2F9" } }>
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold truncate" style={ { color: "#001E62" } }>{tituloEs(h.nombre)}</div>
+                          <div className="text-xs" style={ { color: "#5A6680" } }>{h.telefono}{h.numeroSuscriptor ? " · Suscriptor " + h.numeroSuscriptor : ""}</div>
+                        </div>
+                        <button type="button" onClick={() => { onEditar(c.id, { hogarId: h.id }); setBuscaHogar(null); }} className="text-sm font-bold shrink-0" style={ { color: "#0072CE", minHeight: 36 } }>Elegir</button>
+                      </div>
+                    ))}
+                    {q.length >= 2 && res.length === 0 && <div className="text-xs py-2" style={ { color: "#5A6680" } }>No encontré ese cliente.</div>}
+                  </div>
+                );
+              })()}
+              <button type="button" onClick={() => setBuscaHogar(null)} className="text-xs font-bold mt-2" style={ { color: "#5A6680" } }>Cancelar</button>
+            </>
           )}
         </>
       ))}
