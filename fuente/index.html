@@ -10679,7 +10679,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                       <div className="text-left min-w-0 flex-1" style={ { minHeight: 56 } }>
                         <div className="flex items-center justify-between gap-2">
                           <div style={ { minWidth: 0 } }>
-                            <div style={ { fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: "#5A6680", textTransform: "uppercase", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}, ganas` : "Simulación"}</div>
+                            <div style={ { fontSize: 10, fontWeight: 800, letterSpacing: "0.05em", color: "#5A6680", textTransform: "uppercase", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `Si pagan ${rescateSeleccionados.length}, ganas` : "Simulación"}{rescateSeleccionados.length > 0 && <button type="button" onClick={() => setRescateSeleccion({})} aria-label="Limpiar simulación" className="font-bold rounded-full" style={ { marginLeft: 8, padding: "2px 8px", fontSize: 11, color: "#001E62", border: "1.5px solid #001E62", background: "#fff", textTransform: "none", letterSpacing: 0 } }>✕ Limpiar</button>}</div>
                             <div className="font-mono font-extrabold" style={ { fontSize: 24, lineHeight: 1.1, color: rescateSeleccionados.length > 0 ? "#0072CE" : "#9AA6BD", whiteSpace: "nowrap" } }>{rescateSeleccionados.length > 0 ? `${rescateGanancia >= 0 ? "+" : ""}$${Math.round(rescateGanancia)}` : "+$0"}</div>
                           </div>
                           <div style={ { textAlign: "right" } }>
@@ -10702,14 +10702,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                         )}
                       </div>
                     </div>
-                    {rescateSeleccionados.length > 0 && (
-                      <div className="mt-3 pt-3 flex flex-col gap-3" style={ { borderTop: "1px solid #DFE5EF", color: "#001E62" } }>
-                        <div className="text-xs" style={ { color: "#5A6680" } }>
-                          {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
-                          {rescateCruceAcelerador && <div>{comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)." : "🐢 Perderías el acelerador."}</div>}
-                          {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && <div>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>}
-                        </div>
-                        <button type="button" onClick={() => { setRescateSeleccion({}); } } className="self-start font-bold rounded-lg px-3 text-sm" style={ { minHeight: 40, color: "#001E62", border: "2px solid #001E62", background: "#fff" } }>☐ Limpiar simulación</button>
+                    {rescateSeleccionados.length > 0 && (rescateCruceTramo || rescateCruceAcelerador || rescateSeleccionados.some((c) => idsMovilHoy.has(c.id))) && (
+                      <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
+                        {rescateCruceTramo && <div>📈 Pasarías del tramo de {fmtMonto(comisionConfirmadaHoy.montoBase)} al de {fmtMonto(comisionSimulada.montoBase)}.</div>}
+                        {rescateCruceAcelerador && <div>{comisionSimulada.ajusteIngreso === "acelerador" ? "⚡ Activas el acelerador (+10 puntos)." : "🐢 Perderías el acelerador."}</div>}
+                        {rescateSeleccionados.some((c) => idsMovilHoy.has(c.id)) && <div>Los clientes Móvil deben pagar su 1ra factura completa para contar.</div>}
                       </div>
                     )}
                   </>
