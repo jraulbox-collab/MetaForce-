@@ -8940,14 +8940,16 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   (clientes || []).forEach((c) => {
     const b = leerBloqueTigo(c.observaciones);
     [c.telefono, b.voz1, b.voz2].forEach((t) => { const k = d8(t); if (k.length >= 7 && !dueños[k]) dueños[k] = c; });
+    const km = String(b.correo || "").trim().toLowerCase();
+    if (km && !dueños["@" + km]) dueños["@" + km] = c;
   });
   const porCliente = {};
   let totalMatch = 0;
   (convergencias || []).forEach((m) => {
-    if (m.tipo !== "matchdigital" || !m.titularTelefono) return;
+    if (m.tipo !== "matchdigital" || (!m.titularTelefono && !m.titularCorreo)) return;
     const f = String(m.matchFecha || (m.creadoEn ? fechaLocalISO(m.creadoEn) : "")).slice(0, 7);
     if (f !== mes) return;
-    const dueño = dueños[d8(m.titularTelefono)];
+    const dueño = (m.titularTelefono && dueños[d8(m.titularTelefono)]) || dueños["@" + String(m.titularCorreo || "").trim().toLowerCase()];
     if (!dueño) return;
     totalMatch += 1;
     porCliente[dueño.id] = { nombre: dueño.nombre, n: ((porCliente[dueño.id] || {}).n || 0) + 1 };
@@ -10566,14 +10568,16 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
       const hogarDe = (c) => {
         if (!idsMovilHoy.has(c.id)) return null;
         const k = String(c.titularTelefono || "").replace(/\D/g, "").slice(-8);
-        if (k.length < 7) return null;
-        return (clientes || []).find((h) => String(h.telefono || "").replace(/\D/g, "").slice(-8) === k) || null;
+        const mail = String(c.titularCorreo || "").trim().toLowerCase();
+        if (k.length < 7 && !mail) return null;
+        return (clientes || []).find((h) => (k.length >= 7 && String(h.telefono || "").replace(/\D/g, "").slice(-8) === k) || (!!mail && String(leerBloqueTigo(h.observaciones).correo || "").trim().toLowerCase() === mail)) || null;
       };
       r = r.filter((c) => {
         const h = hogarDe(c);
         const dig = (x) => String(x || "").replace(/\D/g, "");
         return norm(c.nombre).includes(qTxt) || (h && norm(h.nombre).includes(qTxt)) ||
-          (qNum.length > 0 && (dig(c.telefono).includes(qNum) || dig(c.numeroSuscriptor).includes(qNum) || dig(c.titularTelefono).includes(qNum) || (h && dig(h.telefono).includes(qNum))));
+          (qNum.length > 0 && (dig(c.telefono).includes(qNum) || dig(c.numeroSuscriptor).includes(qNum) || dig(c.titularTelefono).includes(qNum) || (h && dig(h.telefono).includes(qNum)))) ||
+          (qTxt.includes("@") && (norm(c.titularCorreo).includes(qTxt) || norm(c.correo).includes(qTxt)));
       });
     }
     const gana = (c) => (etiquetas.get(c.id) ? etiquetas.get(c.id).gain : 0);
@@ -15598,8 +15602,14 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
   const fechaMatchISO = c.tipo === "matchdigital" ? (c.matchFecha || (c.creadoEn ? fechaLocalISO(c.creadoEn) : "")) : "";
   const dueñoHogar = (() => {
     const k = d8(c.titularTelefono);
-    if (k.length < 7) return null;
-    return (hogarClientes || []).find((h) => !h.penalizado && (d8(h.telefono) === k || [leerBloqueTigo(h.observaciones).voz1, leerBloqueTigo(h.observaciones).voz2].some((t) => d8(t) === k))) || null;
+    const mail = String(c.titularCorreo || "").trim().toLowerCase();
+    if (k.length < 7 && !mail) return null;
+    return (hogarClientes || []).find((h) => {
+      if (h.penalizado) return false;
+      const b = leerBloqueTigo(h.observaciones);
+      if (k.length >= 7 && (d8(h.telefono) === k || d8(b.voz1) === k || d8(b.voz2) === k)) return true;
+      return !!mail && String(b.correo || "").trim().toLowerCase() === mail;
+    }) || null;
   })();
   const pad =(n) => String(n).padStart(2, "0");
   const numWa = String(c.telefono || "").replace(/\D/g, "") ? telefonoWhatsapp(c.telefono) : "";
