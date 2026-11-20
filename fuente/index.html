@@ -3487,15 +3487,14 @@ function App() {
 
   const filteredClientes = useMemo(() => {
     if (!search.trim()) return clientesCalc;
-    const q = search.toLowerCase();
-    return clientesCalc.filter(
-      (c) =>
-        c.nombre.toLowerCase().includes(q) ||
-        c.numeroSuscriptor.toLowerCase().includes(q) ||
-        c.telefono.toLowerCase().includes(q) ||
-        planLabel(c).toLowerCase().includes(q)
-    );
-  }, [clientesCalc, search]);
+    const q = search.trim();
+    const porHogar = new Map();
+    (convergencias || []).forEach((m) => {
+      const h = hogarDeMovil(m, clientes);
+      if (h) porHogar.set(h.id, [...(porHogar.get(h.id) || []), m]);
+    });
+    return clientesCalc.filter((c) => hogarCoincideBusqueda(c, q, porHogar.get(c.id)));
+  }, [clientesCalc, search, convergencias, clientes]);
 
   const stats = useMemo(() => {
     const total = clientes.filter((c) => !clienteExcluido(c)).length;
@@ -14096,7 +14095,7 @@ function ClientesTab({ clientes, clientesTodos, search, setSearch, onEdit, onDel
           icono="📱"
           titulo="Móvil"
           filas={(clientesMovil || [])
-            .filter((c) => movilCoincideBusqueda(c, search.trim().toLowerCase()))
+            .filter((c) => movilCoincideBusqueda(c, search.trim(), clientes))
             .map((c) => ({
               id: c.id,
               nombre: c.nombre,
@@ -15717,9 +15716,36 @@ function ClienteDetalle({
 }
 
 // Búsqueda compartida Hogar + Móvil: coincidencia de un Cliente Móvil con el texto buscado.
-function movilCoincideBusqueda(c, q) {
+const normBusq = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// Coincide si el texto buscado está en alguno de los textos (sin acentos ni mayúsculas) o, si trae 3+ dígitos,
+// en alguno de los números (sin guiones ni espacios).
+function coincideTextoNumero(textos, numeros, q) {
+  const qt = normBusq(q).trim();
+  if (!qt) return true;
+  if (textos.some((t) => t && normBusq(t).includes(qt))) return true;
+  const qd = String(q).replace(/\D/g, "");
+  return qd.length >= 3 && numeros.some((n) => n && String(n).replace(/\D/g, "").includes(qd));
+}
+function movilCoincideBusqueda(c, q, hogares) {
   if (!q) return true;
-  return String(c.nombre || "").toLowerCase().includes(q) || String(c.telefono || "").includes(q) || String(c.whatsapp || "").includes(q);
+  const h = hogares ? hogarDeMovil(c, hogares) : null;
+  return coincideTextoNumero(
+    [c.nombre, c.barrio, c.correo, c.titularNombre, c.titularCorreo, c.titularCedula, h && h.nombre],
+    [c.telefono, c.whatsapp, c.telefonoAdicional, c.telefonoAdicional2, c.titularTelefono, h && h.telefono],
+    q
+  );
+}
+function hogarCoincideBusqueda(c, q, movilesDelHogar) {
+  if (!q) return true;
+  let b = {};
+  try { b = leerBloqueTigo(c.observaciones); } catch (e) {}
+  const refs = c.referidos || [];
+  const ms = movilesDelHogar || [];
+  return coincideTextoNumero(
+    [c.nombre, planLabel(c), b.barrio || c.barrio, b.corregimiento, correoHogar(c), ...refs.map((r) => r.nombre), ...ms.map((m) => m.nombre)],
+    [c.numeroSuscriptor, c.telefono, b.voz1, b.voz2, ...refs.map((r) => r.tel), ...ms.map((m) => m.telefono)],
+    q
+  );
 }
 
 // Bloque compacto con las coincidencias de la OTRA lista (Hogar o Móvil) bajo el buscador.
@@ -16717,7 +16743,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
           const filtrando = chipMovil !== "todos";
           const delMes = clientesMovil
             .filter((c) => periodoComision(fechaActivacionMovil(c)) === m.key)
-            .filter((c) => movilCoincideBusqueda(c, q))
+            .filter((c) => movilCoincideBusqueda(c, busquedaMovil.trim(), hogarCoincidenciasTodos))
             .filter((c) => pasaChipMovil(c, chipMovil))
             .sort((a, b) => chipMovil === "sinPagar"
               ? String(fechaActivacionMovil(a)).localeCompare(String(fechaActivacionMovil(b)))
