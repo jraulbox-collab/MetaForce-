@@ -4327,6 +4327,24 @@ function App() {
     });
   }
 
+  // Móviles eliminados: salen del historial (guarda la ficha completa al borrar).
+  const movilesEliminados = useMemo(() => {
+    const vistos = new Set();
+    return (historialCambios || [])
+      .filter((e) => e && e.entidad === "convergencia" && e.tipo === "eliminar" && e.snapshotAntes && !e.deshecho)
+      .filter((e) => !(convergencias || []).some((c) => c.id === e.refId))
+      .filter((e) => (vistos.has(e.refId) ? false : (vistos.add(e.refId), true)))
+      .map((e) => ({ ...e.snapshotAntes, eliminadoEn: e.fecha }));
+  }, [historialCambios, convergencias]);
+
+  function recuperarMovil(id) {
+    const m = movilesEliminados.find((c) => c.id === id);
+    if (!m) return;
+    const { eliminadoEn, ...resto } = m;
+    setConvergencias((prev) => (prev.some((c) => c.id === id) ? prev : [...prev, resto]));
+    registrarCambio({ entidad: "convergencia", tipo: "recuperar", etiqueta: resto.nombre, despues: resto, cambios: [], refId: id });
+  }
+
   function recuperarCliente(id) {
     const cliente = eliminados.find((c) => c.id === id);
     if (!cliente) return;
@@ -5367,7 +5385,8 @@ function App() {
             } }
             onNuevo={() => setMostrarSelectorNuevo(true)}
             eliminados={eliminados}
-            onRecuperar={recuperarCliente}
+            movilesEliminados={movilesEliminados}
+            onRecuperar={(id, esMovil) => (esMovil ? recuperarMovil(id) : recuperarCliente(id))}
             saltarAMes={saltarAMes}
             onSaltoAplicado={() => setSaltarAMes(null)}
             columnasClientes={columnasClientes}
@@ -13362,7 +13381,7 @@ function textoReporteDiario(clientes, convergencias) {
 }
 
 // ---------- Búsqueda global: clientes Hogar, móviles y prospectos en una sola lista ----------
-function armarResultadosBusqueda({ q, hogares, moviles, todosHogares, prospectos, clientesActivos, eliminados }) {
+function armarResultadosBusqueda({ q, hogares, moviles, todosHogares, prospectos, clientesActivos, eliminados, movilesEliminados }) {
   const nq = normBusq(q).trim();
   const dq = String(q).replace(/\D/g, "");
   const items = [];
@@ -13407,6 +13426,13 @@ function armarResultadosBusqueda({ q, hogares, moviles, todosHogares, prospectos
     if (!r) r = razonBusquedaHogar(c, q, []);
     items.push({ tipo: "e", id: "e" + c.id, nombre: c.nombre, sub: [c.numeroSuscriptor, c.telefono].filter(Boolean).join(" · ") + (c.eliminadoEn ? " · eliminado el " + fmtFecha(String(c.eliminadoEn).slice(0, 10)) : ""), razon: r, p, ref: c });
   });
+  (movilesEliminados || []).forEach((c) => {
+    if (!movilCoincideBusqueda(c, q, todosHogares)) return;
+    let r = base(c.nombre, [c.telefono, c.whatsapp]);
+    const p = r ? 0 : 1;
+    if (!r) r = razonBusquedaMovil(c, q, todosHogares);
+    items.push({ tipo: "e", movil: true, id: "em" + c.id, nombre: c.nombre, sub: [c.telefono, c.eliminadoEn ? "eliminado el " + fmtFecha(String(c.eliminadoEn).slice(0, 10)) : ""].filter(Boolean).join(" · "), razon: r, p, ref: c });
+  });
   items.sort((a, b) => a.p - b.p || String(a.nombre || "").localeCompare(String(b.nombre || "")));
   return items;
 }
@@ -13429,13 +13455,13 @@ function BusquedaGlobalClientes({ items, tipos, onHogar, onMovil, onProspecto, o
           <div key={f.id} className="px-3 py-2.5 flex items-center justify-between gap-2" style={ { borderTop: i ? "1px solid #F0F0EF" : "none" } }>
             <span className="min-w-0">
               <span className="flex items-center gap-1.5">
-                <span className="shrink-0 text-xs font-bold rounded-full px-2" style={ { background: marca.e.bg, color: marca.e.fg } }>{marca.e.t}</span>
+                <span className="shrink-0 text-xs font-bold rounded-full px-2" style={ { background: marca.e.bg, color: marca.e.fg } }>{f.movil ? "🗑 Móvil eliminado" : marca.e.t}</span>
                 <span className="text-sm font-bold truncate" style={ { color: "#5A6680" } }>{f.nombre}</span>
               </span>
               {f.sub && <span className="block text-xs mt-0.5" style={ { color: "#9CA3AF" } }>{f.sub}</span>}
               {f.razon && <span className="block text-xs mt-0.5" style={ { color: "#0B4A99", whiteSpace: "normal" } }>Coincide en {f.razon}</span>}
             </span>
-            <button type="button" onClick={() => onRecuperar && onRecuperar(f.ref.id)} className="text-xs font-medium px-3 py-1.5 rounded-md text-white shrink-0" style={ { background: "#001E62" } }>Recuperar</button>
+            <button type="button" onClick={() => onRecuperar && onRecuperar(f.ref.id, !!f.movil)} className="text-xs font-medium px-3 py-1.5 rounded-md text-white shrink-0" style={ { background: "#001E62" } }>Recuperar</button>
           </div>
         ) : (
           <button
@@ -13462,7 +13488,7 @@ function BusquedaGlobalClientes({ items, tipos, onHogar, onMovil, onProspecto, o
   );
 }
 
-function ClientesTab({ clientes, clientesCompletos, prospectos, clientesActivos, onVerProspecto, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onAbrirComision }) {
+function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospectos, clientesActivos, onVerProspecto, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onAbrirComision }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
   const mesActivoEfectivo = mesActivo || mesActualKey;
@@ -13499,8 +13525,8 @@ function ClientesTab({ clientes, clientesCompletos, prospectos, clientesActivos,
   const [movilDesdeBusqueda, setMovilDesdeBusqueda] = useState(false);
   const buscando = search.trim().length > 0;
   const resultadosBusq = useMemo(
-    () => (buscando ? armarResultadosBusqueda({ q: search.trim(), hogares: clientes, moviles: clientesMovil, todosHogares: clientesCompletos || clientes, prospectos, clientesActivos: clientesActivos || clientesTodos, eliminados }) : []),
-    [buscando, search, clientes, clientesMovil, clientesCompletos, prospectos, clientesActivos, clientesTodos, eliminados]
+    () => (buscando ? armarResultadosBusqueda({ q: search.trim(), hogares: clientes, moviles: clientesMovil, todosHogares: clientesCompletos || clientes, prospectos, clientesActivos: clientesActivos || clientesTodos, eliminados, movilesEliminados }) : []),
+    [buscando, search, clientes, clientesMovil, clientesCompletos, prospectos, clientesActivos, clientesTodos, eliminados, movilesEliminados]
   );
   const cuentaBusq = { h: resultadosBusq.filter((x) => x.tipo === "h").length, m: resultadosBusq.filter((x) => x.tipo === "m").length, p: resultadosBusq.filter((x) => x.tipo === "p").length, e: resultadosBusq.filter((x) => x.tipo === "e").length };
   const [chipMovilSalto, setChipMovilSalto] = useState(null);
