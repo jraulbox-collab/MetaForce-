@@ -13378,11 +13378,10 @@ function armarResultadosBusqueda({ q, hogares, moviles, todosHogares, prospectos
     if (h) porHogar.set(h.id, [...(porHogar.get(h.id) || []), x]);
   });
   (hogares || []).forEach((c) => {
-    if (clienteExcluido(c)) return;
     let r = base(c.nombre, [c.telefono, c.numeroSuscriptor]);
     const p = r ? 0 : 1;
     if (!r) r = razonBusquedaHogar(c, q, porHogar.get(c.id)) || (normBusq(planLabel(c)).includes(nq) ? "Plan · " + planLabel(c) : "");
-    items.push({ tipo: "h", id: "h" + c.id, nombre: c.nombre, sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "), razon: r, p, ref: c });
+    items.push({ excluido: clienteExcluido(c), tipo: "h", id: "h" + c.id, nombre: c.nombre, sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "Pendiente de instalación"].filter(Boolean).join(" · "), razon: r, p, ref: c });
   });
   (moviles || []).forEach((c) => {
     if (!movilCoincideBusqueda(c, q, todosHogares)) return;
@@ -13450,6 +13449,7 @@ function BusquedaGlobalClientes({ items, tipos, onHogar, onMovil, onProspecto, o
               <span className="flex items-center gap-1.5">
                 <span className="shrink-0 text-xs font-bold rounded-full px-2" style={ { background: marca[f.tipo].bg, color: marca[f.tipo].fg } }>{marca[f.tipo].t}</span>
                 <span className="text-sm font-bold truncate" style={ { color: "#001E62" } }>{f.nombre}</span>
+                {f.excluido && <span className="shrink-0 text-xs font-bold rounded-full px-2" style={ { background: "#FDE8E8", color: "#B42318" } }>Cancelado</span>}
               </span>
               {f.sub && <span className="block text-xs mt-0.5" style={ { color: "#5A6680" } }>{f.sub}</span>}
               {f.razon && <span className="block text-xs mt-0.5" style={ { color: "#0B4A99", whiteSpace: "normal" } }>Coincide en {f.razon}</span>}
