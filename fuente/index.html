@@ -6327,7 +6327,7 @@ function RevisionDiariaModal({ pendientes, total, permiteParcial, onMarcarPagada
 
             {actual.esMovil && <div className="text-xs mb-1" style={ { color: "#5A6680" } }>Número de línea</div>}
             <button
-              onClick={() => onCopiarSuscriptor(actual.cliente)}
+              onClick={() => onCopiarSuscriptor(actual.esMovil ? { ...actual.cliente, numeroSuscriptor: String(actual.cliente.numeroSuscriptor || "").replace(/\D/g, "") } : actual.cliente)}
               className="w-full py-3 rounded-md border-2 mb-2 font-mono text-2xl font-bold tracking-wide"
               style={ { borderColor: "#001E62", color: "#001E62" } }
             >
