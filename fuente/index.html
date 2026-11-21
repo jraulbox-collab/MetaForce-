@@ -12457,6 +12457,7 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
         )}
         <div className="absolute z-10 flex items-start justify-between gap-2" style={ { top: 0, left: 0, right: 0, pointerEvents: "none" } }>
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px]" style={ { color: "#374151", paddingTop: 2 } }>
+            <span className="font-bold" style={ { color: "#001E62" } }>{modoDias === "ing" ? "Ingreso" : "Instalación"} ·</span>
             <span className="inline-flex items-center gap-1"><span style={ { width: "12px", height: "10px", borderRadius: "2px", background: "#001E62", display: "inline-block" } } /> Hogar</span>
             <span className="inline-flex items-center gap-1"><span style={ { width: "12px", height: "10px", borderRadius: "2px", border: "1.5px solid " + colorMovil.b, background: colorMovil.f, display: "inline-block" } } /> Móvil</span>
             {modoDias === "ins" && ritmo > 0 ? <span className="inline-flex items-center gap-1"><span style={ { display: "inline-block", height: "11px", borderLeft: "2px dashed #B45309" } } /> Ritmo</span> : null}
@@ -12467,9 +12468,9 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
             aria-expanded={menuAbierto === "opc"}
             aria-label={"Opciones de la gráfica: " + (modoDias === "ing" ? "por ingreso" : "por instalación") + ", " + (vistaDiaria.d === "mes" ? "mes completo" : vistaDiaria.d + " días")}
             onClick={() => setMenuAbierto(menuAbierto === "opc" ? null : "opc")}
-            className="rounded-xl text-[12px] font-bold whitespace-nowrap"
-            style={ { minWidth: 44, padding: "0 10px", height: 44, marginTop: -4, color: "#001E62", background: menuAbierto === "opc" ? "#E3EDFA" : "white", border: "1.5px solid #001E62", pointerEvents: "auto", flex: "none" } }
-          >{(modoDias === "ing" ? "Ingreso" : "Instalación") + " ▾"}</button>
+            className="rounded-xl text-[15px] font-bold"
+            style={ { width: 44, height: 44, marginTop: -4, color: "#001E62", background: menuAbierto === "opc" ? "#E3EDFA" : "white", border: "1.5px solid #001E62", pointerEvents: "auto", flex: "none" } }
+          >▾</button>
         </div>
       {(() => {
         const mesCompleto = vistaDiaria.d === "mes";
