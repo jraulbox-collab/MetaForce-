@@ -12091,32 +12091,59 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
       {bloqueOrd("planes", "Planes del período", (
         <div className="bg-white rounded-xl border p-4 mb-6" style={ { borderColor: "#DFE5EF" } }>
-          <h2 className="font-semibold text-sm mb-2" style={ { color: "#001E62" } }>Planes del período</h2>
-          {planesDelPeriodo.length === 0 ? (
-            <p className="text-sm" style={ { color: "#5A6680" } }>Todavía no hay clientes en este período.</p>
-          ) : (
-            planesDelPeriodo.map((p) => (
-              <button
-                key={p.k}
-                type="button"
-                onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: p.k })}
-                aria-label={`Ver los ${p.n} clientes del plan ${formatoPlan(p.k)}`}
-                className="w-full grid items-center gap-2 text-left"
-                style={ { gridTemplateColumns: "minmax(96px,40%) 1fr 28px 12px", minHeight: 44 } }
-              >
-                <span className="text-xs font-semibold truncate" style={ { color: "#001E62" } }>{formatoPlan(p.k)}</span>
-                <span className="block h-3 rounded-full overflow-hidden" style={ { background: "#E3EDFA", border: "1px solid #C9D9F0" } }>
-                  <span className="block h-full" style={ { width: Math.max(6, (p.n / maxPlanN) * 100) + "%", background: "#001E62" } } />
-                </span>
-                <span className="text-xs font-mono font-bold text-right" style={ { color: "#001E62" } }>{p.n}</span>
-                <span aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
-              </button>
-            ))
-          )}
-          <div className="flex items-center gap-2 flex-wrap mt-2">
-            <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{singlesInstalados} Singles ›</button>
-            <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })} className="text-xs font-semibold px-2.5 py-1.5 rounded-md" style={ { background: "#E3EDFA", color: "#0072CE" } }>{doblesInstalados} Dobles ›</button>
+          <div className="flex items-center justify-between gap-1.5 mb-1.5">
+            <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>Planes del período</h2>
+            <span className="flex items-center gap-1.5 shrink-0">
+              <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "SINGLE" })} className="text-[11.5px] font-semibold px-2 py-1.5 rounded-md whitespace-nowrap" style={ { background: "#E3EDFA", color: "#0072CE" } }>{singlesInstalados} Singles ›</button>
+              <button type="button" onClick={() => onVerClientes({ periodo: periodoVisto, filtroPlan: "DOBLE" })} className="text-[11.5px] font-semibold px-2 py-1.5 rounded-md whitespace-nowrap" style={ { background: "#E3EDFA", color: "#0072CE" } }>{doblesInstalados} Dobles ›</button>
+            </span>
           </div>
+          {(() => {
+            const celda = (clave, nombre, n, max, color, alTocar, etiquetaAria) => (
+              <button key={clave} type="button" onClick={alTocar} aria-label={etiquetaAria} className="text-left flex flex-col justify-center gap-1" style={ { minHeight: 44, minWidth: 0 } }>
+                <span className="flex items-center justify-between gap-1.5">
+                  <span className="text-xs font-semibold truncate" style={ { color: "#001E62" } }>{nombre}</span>
+                  <span className="text-xs font-mono font-bold" style={ { color: "#001E62" } }>{n}</span>
+                </span>
+                <span className="block rounded-full overflow-hidden" style={ { height: 6, background: "#E3EDFA" } }>
+                  <span className="block h-full" style={ { width: Math.max(6, (n / max) * 100) + "%", background: color } } />
+                </span>
+              </button>
+            );
+            const movsPlanes = {};
+            convergenciasDelPeriodo.filter(movilCuentaParaComision).forEach((m) => {
+              const nom = (m.planNombre || "").trim() || (m.montoPlan != null && Number(m.montoPlan) > 0 ? "Móvil $" + Number(m.montoPlan) : "Móvil");
+              const k = nom.toLowerCase();
+              if (!movsPlanes[k]) movsPlanes[k] = { nom, n: 0 };
+              movsPlanes[k].n += 1;
+            });
+            const listaMov = Object.values(movsPlanes).sort((x, y) => y.n - x.n);
+            const maxMov = listaMov.reduce((acc, x) => Math.max(acc, x.n), 1);
+            const totMov = listaMov.reduce((acc, x) => acc + x.n, 0);
+            const totHog = planesDelPeriodo.reduce((acc, x) => acc + x.n, 0);
+            const rotulo = (t) => <div className="text-[10.5px] font-bold uppercase mt-2" style={ { color: "#5A6680", letterSpacing: ".04em" } }>{t}</div>;
+            if (planesDelPeriodo.length === 0 && listaMov.length === 0) return <p className="text-sm" style={ { color: "#5A6680" } }>Todavía no hay clientes en este período.</p>;
+            return (
+              <>
+                {planesDelPeriodo.length > 0 ? (
+                  <>
+                    {rotulo("Hogar · " + totHog + (totHog === 1 ? " cliente" : " clientes"))}
+                    <div className="grid" style={ { gridTemplateColumns: "1fr 1fr", columnGap: 16, rowGap: 2 } }>
+                      {planesDelPeriodo.map((p) => celda(p.k, formatoPlan(p.k), p.n, maxPlanN, "#001E62", () => onVerClientes({ periodo: periodoVisto, filtroPlan: p.k }), `Ver los ${p.n} clientes del plan ${formatoPlan(p.k)}`))}
+                    </div>
+                  </>
+                ) : null}
+                {listaMov.length > 0 ? (
+                  <>
+                    {rotulo("Móvil · " + totMov + (totMov === 1 ? " cliente" : " clientes"))}
+                    <div className="grid" style={ { gridTemplateColumns: "1fr 1fr", columnGap: 16, rowGap: 2 } }>
+                      {listaMov.map((m) => celda("m" + m.nom, m.nom, m.n, maxMov, "#0072CE", () => onVerClientes({ periodo: periodoVisto, subVista: "movil" }), `Ver los ${m.n} clientes móviles del plan ${m.nom}`))}
+                    </div>
+                  </>
+                ) : null}
+              </>
+            );
+          })()}
           {(() => {
         // ARPU por cliente (informativo, no entra en la comisión nueva). Del período que estás viendo.
         const hogarInst = clientesDelPeriodo.filter((c) => !!c.fechaInstalacion);
