@@ -12467,9 +12467,9 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
             aria-expanded={menuAbierto === "opc"}
             aria-label={"Opciones de la gráfica: " + (modoDias === "ing" ? "por ingreso" : "por instalación") + ", " + (vistaDiaria.d === "mes" ? "mes completo" : vistaDiaria.d + " días")}
             onClick={() => setMenuAbierto(menuAbierto === "opc" ? null : "opc")}
-            className="rounded-xl text-[15px] font-bold"
-            style={ { width: 44, height: 44, marginTop: -4, color: "#001E62", background: menuAbierto === "opc" ? "#E3EDFA" : "white", border: "1.5px solid #001E62", pointerEvents: "auto", flex: "none" } }
-          >▾</button>
+            className="rounded-xl text-[12px] font-bold whitespace-nowrap"
+            style={ { minWidth: 44, padding: "0 10px", height: 44, marginTop: -4, color: "#001E62", background: menuAbierto === "opc" ? "#E3EDFA" : "white", border: "1.5px solid #001E62", pointerEvents: "auto", flex: "none" } }
+          >{(modoDias === "ing" ? "Ingreso" : "Instalación") + " ▾"}</button>
         </div>
       {(() => {
         const mesCompleto = vistaDiaria.d === "mes";
