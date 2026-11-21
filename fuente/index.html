@@ -9920,7 +9920,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
 
   const historialPeriodos = useMemo(() => {
     const out = [];
-    for (let i = 0; i < 6; i++) out.push(sumarMesClave(periodoActual, -i));
+    for (let i = 0; i < 8; i++) out.push(sumarMesClave(periodoActual, -i));
     return out;
   }, [periodoActual]);
 
@@ -9930,7 +9930,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   // (para graficar de izquierda a derecha en orden cronológico).
   const historialComisiones = useMemo(() => {
     return historialPeriodos
-      .slice(0, 4)
+      .slice(0, 8)
       .map((key) => {
         const delPeriodo = clientes.filter((c) => periodoDelCliente(c) === key && clienteCuentaParaComision(c));
         const cantidad = delPeriodo.length;
@@ -10496,7 +10496,8 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
   const [mostrarRevisionDiaria, setMostrarRevisionDiaria] = useState(false);
   const [revisionDiariaAbierto, setRevisionDiariaAbierto] = useState(vista === "cobros");
   const [cobroMesAbierto, setCobroMesAbierto] = useState(false);
-  const [historialAbierto, setHistorialAbierto] = useState(true);
+  const [historialAbierto, setHistorialAbierto] = useState(false);
+  const [histMesAbierto, setHistMesAbierto] = useState({});
 
   // ---- Lo que se cobra este mes ----
   // Este mes se cobra el ciclo de hace 2 períodos (septiembre cobra julio, octubre cobra
@@ -11281,6 +11282,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             </span>
           </button>
         );
+        const etiquetaChip = (txt, posible) => (
+          <span className="inline-block text-[11px] font-extrabold rounded-full px-2 py-0.5" style={ posible ? { background: "#FFF6E3", color: "#B45309" } : { background: "#E3EDFA", color: "#001E62" } }>{txt}</span>
+        );
         let filaRescate = null;
         if (periodoRescateActivo) {
           const mesPagoNombre = nombreMesCap(sumarMesClave(periodoRescateActivo, 2));
@@ -11294,23 +11298,21 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
           const nPorCobrar = rescateCandidatos.length;
           if (hayPend && onAbrirComision && comisionConfirmadaHoy.completo) {
             filaRescate = (
-              <div className="px-3 py-3">
-                <button type="button" onClick={onAbrirComision} className="w-full text-left rounded-xl p-3" style={ { background: "#FFF6E3", border: "2px solid #B45309" } }>
-                  <div className="text-[11px] font-extrabold uppercase tracking-wide" style={ { color: "#B45309" } }>🎯 Para rescatar · todavía puedes sumar</div>
-                  <div className="flex items-end justify-between gap-3 mt-1.5">
-                    <span className="min-w-0">
-                      <span className="block text-base font-bold" style={ { color: "#001E62" } }>{mesPagoNombre}</span>
-                      <span className="block text-xs" style={ { color: "#5A6680" } }>De tus ventas de {nombreMes(periodoRescateActivo)}</span>
-                    </span>
-                    <span className="text-right shrink-0">
-                      <span className="block text-[11px]" style={ { color: "#5A6680" } }>Confirmado hoy</span>
-                      <span className="block text-lg font-bold font-mono" style={ { color: "#001E62" } }>{fmtMonto(comisionConfirmadaHoy.total)}</span>
-                      {comisionMaximaHoy.completo && <span className="block text-xs font-bold font-mono" style={ { color: "#B45309" } }>hasta {fmtMonto(comisionMaximaHoy.total)} si pagan</span>}
-                    </span>
-                  </div>
-                  <div className="text-xs font-semibold mt-2" style={ { color: "#B45309" } }>📋 {nPorCobrar} por cobrar{textoPlazo ? " · ⏳ " + textoPlazo : ""}</div>
-                  <div className="mt-2 rounded-lg text-center text-white font-bold text-sm flex items-center justify-center" style={ { minHeight: 44, background: "#001E62" } }>Abrir herramienta de cobro ›</div>
-                </button>
+              <div style={ { background: "#FFF6E3", borderLeft: "4px solid #B45309" } }>
+                <div className="px-4 pt-2.5">
+                  <span className="text-xs font-bold uppercase tracking-wide" style={ { color: "#B45309" } }>{mesPagoNombre}</span>
+                  <span className="text-xs" style={ { color: "#5A6680" } }> · ventas de {nombreMes(periodoRescateActivo)}{rescateDiasRestantes !== null ? " · " + (rescateDiasRestantes <= 0 ? "hoy es el último día" : "quedan " + rescateDiasRestantes + " día" + (rescateDiasRestantes === 1 ? "" : "s")) : ""}</span>
+                </div>
+                <div className="px-4 pt-0.5 pb-2.5 flex items-baseline gap-2.5 flex-wrap">
+                  <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Seguro", false)}<b className="font-mono" style={ { color: "#001E62", fontSize: 17 } }>{fmtMonto(comisionConfirmadaHoy.total).replace(/\.00$/, "")}</b></span>
+                  {comisionMaximaHoy.completo ? (
+                    <>
+                      <span style={ { color: "#5A6680" } }>→</span>
+                      <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Posible", true)}<b className="font-mono" style={ { color: "#B45309", fontSize: 17 } }>{fmtMonto(comisionMaximaHoy.total).replace(/\.00$/, "")}</b></span>
+                    </>
+                  ) : null}
+                </div>
+                <button type="button" onClick={onAbrirComision} className="rounded-lg text-white font-bold text-[13px] flex items-center justify-center" style={ { minHeight: 44, background: "#001E62", margin: "0 12px 10px", width: "calc(100% - 24px)" } }>{nPorCobrar} por cobrar · Abrir herramienta de cobro ›</button>
               </div>
             );
           } else {
@@ -11326,158 +11328,102 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             );
           }
         }
+        // Cuadro con el detalle de un cobro (mismos datos que antes, ordenados en filas).
+        const cuadroDetalle = (com, filasExtra) => {
+          if (!com) return null;
+          const filas = [];
+          filasExtra.forEach((f) => filas.push(f));
+          if (!com.completo) {
+            filas.push(["Metas", "Faltan metas cargadas"]);
+          } else if (com.esquema === "nuevo" || com.pctClientesPonderado != null) {
+            filas.push(["Hogar", com.pctHogar != null ? com.pctHogar.toFixed(0) + "% de la meta" : "—"]);
+            filas.push(["Móvil", com.pctMovil != null ? com.pctMovil.toFixed(0) + "% de la meta" : "—"]);
+            filas.push(["Base por clientes", fmtMonto(com.montoBase)]);
+            filas.push(["Ingresos", (com.pctIngreso != null ? com.pctIngreso.toFixed(0) + "% de la meta" : "—") + (com.ajusteIngreso === "acelerador" ? " · acelerador +10%" : "")]);
+            filas.push(["Bono portabilidad", (com.cantidadConvergencias || 0) + " × $" + BONO_POR_CONVERGENCIA + " = " + fmtMonto(com.bonoConvergencias || 0)]);
+          } else {
+            filas.push(["Base", fmtMonto(com.montoBase) + " (" + com.pctIngreso.toFixed(1) + "% ingresos) × " + com.pctArpu.toFixed(1) + "% ARPU × " + com.pctClientes.toFixed(1) + "% clientes"]);
+          }
+          return (
+            <div className="mf-abrir mx-3 mb-3 rounded-[10px] px-3" style={ { background: "#F3F6FB" } }>
+              {filas.map((f, i) => (
+                <div key={i} className="flex justify-between gap-2.5 py-1.5 text-xs" style={ i ? { borderTop: "1px solid #E1E7F1" } : undefined }>
+                  <span style={ { color: "#5A6680" } }>{f[0]}</span>
+                  <b className="text-right" style={ { color: "#001E62" } }>{f[1]}</b>
+                </div>
+              ))}
+            </div>
+          );
+        };
+        const valorMes = cobroMes.confirmado.completo && !cobroMes.vacio ? fmtMonto(cobroMes.confirmado.total).replace(/\.00$/, "") : "—";
+        const mesesCobrados = historialComisiones
+          .filter((d) => d.key <= sumarMesClave(periodoActual, -3) && (d.completo || d.cantidad > 0))
+          .slice()
+          .reverse();
+        const mesesVisibles = historialAbierto ? mesesCobrados : mesesCobrados.slice(0, 3);
         return (
           <div className="mb-6">
             <div className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
-              <div className="px-4 pt-4 pb-3">
-                <div className="text-xs font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>Comisiones</div>
-                <div className="text-base font-bold mt-0.5" style={ { color: "#001E62" } }>Lo que cobras</div>
-                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>Se paga 2 meses después de la venta</div>
+              <div className="px-4 pt-3 pb-1.5 flex items-baseline gap-2">
+                <span className="text-xs font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>Comisiones</span>
+                <span className="text-sm font-bold" style={ { color: "#001E62" } }>· Lo que cobras</span>
               </div>
               {!mostrarCobroMes && !filaRescate && (
                 <p className="px-4 pb-3 text-xs" style={ { color: "#5A6680" } }>Todavía no hay cobros por mostrar.</p>
               )}
+              {filaRescate && <div style={ { borderTop: "1px solid #DFE5EF" } }>{filaRescate}</div>}
               {mostrarCobroMes && (
                 <div style={ { borderTop: "1px solid #DFE5EF" } }>
-                  {fila(
-                    definitivo && !cobroMes.vacio ? "✓" : "◐",
-                    `${nombreMesCap(periodoActual)} · este mes`,
-                    subCobro,
-                    cobroMes.confirmado.completo && !cobroMes.vacio ? fmtMonto(cobroMes.confirmado.total) : "—",
-                    cobroMesAbierto ? "ocultar detalle ▲" : "ver detalle ▼",
-                    () => setCobroMesAbierto((v) => !v)
-                  )}
+                  <button type="button" onClick={() => setCobroMesAbierto((v) => !v)} aria-expanded={cobroMesAbierto} className="w-full text-left flex items-center justify-between gap-2 px-4" style={ { minHeight: 68 } }>
+                    <span className="min-w-0">
+                      <span className="block text-xs font-bold uppercase tracking-wide" style={ { color: "#001E62" } }>Este mes · {nombreMes(periodoActual)}</span>
+                      <span className="block text-xs mt-0.5" style={ { color: "#5A6680" } }>
+                        {cobroMes.vacio ? "Sin clientes en el ciclo de " + nombreMes(cobroMes.periodoCobro) : !cobroMes.confirmado.completo ? "Falta cargar meta de " + cobroMes.faltantes.join(", ") : "ventas de " + nombreMes(cobroMes.periodoCobro)}
+                      </span>
+                      {cobroMes.confirmado.completo && !cobroMes.vacio ? <span className="block mt-1">{etiquetaChip("Seguro", false)}</span> : null}
+                    </span>
+                    <span className="text-right shrink-0 flex items-center gap-1.5">
+                      <span>
+                        <span className="block font-mono font-extrabold" style={ { color: "#001E62", fontSize: 32, letterSpacing: "-0.03em", lineHeight: 1.1 } }>{valorMes}</span>
+                        {!definitivo && cobroMes.confirmado.completo && !cobroMes.vacio && cobroMes.siPagan.completo ? <span className="block text-[11px] font-bold" style={ { color: "#5A6680" } }>posible {fmtMonto(cobroMes.siPagan.total).replace(/\.00$/, "")} si pagan {cobroMes.nEnPlazo}</span> : null}
+                      </span>
+                      <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{cobroMesAbierto ? "▴" : "▾"}</span>
+                    </span>
+                  </button>
                   {cobroMesAbierto && (
-              <div className="mf-abrir px-4 pb-4 pt-3" style={ { borderTop: "1px solid #DFE5EF" } }>
-                <div className="flex items-center justify-between flex-wrap gap-2 mb-1">
-                  <h2 className="font-semibold text-sm" style={ { color: "#001E62" } }>
-                    💰 Lo que cobras en {nombreMes(periodoActual)}
-                  </h2>
-                  <span className="text-xs" style={ { color: "#9CA3AF" } }>
-                    {cobroMes.nuevo ? "Esquema nuevo" : "Esquema anterior"}
-                  </span>
-                </div>
-                <p className="text-xs mb-3" style={ { color: "#5A6680" } }>
-                  Ciclo de {nombreMes(cobroMes.periodoCobro)} · {fmtFecha(fechaLocalISO(rango.inicio))} – {fmtFecha(fechaLocalISO(rango.fin))}
-                </p>
-
-                {cobroMes.vacio ? (
-                  <p className="text-sm" style={ { color: "#5A6680" } }>No hay clientes ni Clientes Móvil en este ciclo.</p>
-                ) : !cobroMes.confirmado.completo ? (
-                  <p className="text-sm" style={ { color: "#B45309" } }>
-                    ⚠ Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.
-                  </p>
-                ) : definitivo ? (
-                  <div>
-                    <div className="text-3xl font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
-                    <div className="text-xs font-medium mt-1" style={ { color: "#001E62" } }>✓ Cierre definitivo</div>
-                    <div className="text-xs mt-2" style={ { color: "#5A6680" } }>
-                      {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} cuentan
-                      {cobroMes.nVencidos > 0 ? ` · ⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (no llegaron a tiempo)` : " · todos llegaron a tiempo"}
-                    </div>
-                    <div className="text-xs mt-1" style={ { color: "#5A6680" } }>
-                      {cobroMes.nuevo
-                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) ${textoAjusteIngreso(cobroMes.confirmado)}`
-                        : `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos) × ${cobroMes.confirmado.pctArpu.toFixed(1)}% ARPU × ${cobroMes.confirmado.pctClientes.toFixed(1)}% clientes`}
-                    </div>
-                    {lineaBono && <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>{lineaBono}</div>}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <div className="text-xs font-medium" style={ { color: "#001E62" } }>✓ Confirmado</div>
-                      <div className="text-3xl font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(cobroMes.confirmado.total)}</div>
-                      <div className="text-xs mt-1" style={ { color: "#5A6680" } }>
-                        {cobroMes.nPagados} cliente{cobroMes.nPagados === 1 ? "" : "s"} ya pagaron
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-medium" style={ { color: "#B45309" } }>◐ Si pagan los pendientes</div>
-                      <div className="text-3xl font-mono font-bold" style={ { color: "#B45309" } }>
-                        {cobroMes.siPagan.completo ? fmtMonto(cobroMes.siPagan.total) : "—"}
-                      </div>
-                      <div className="text-xs mt-1" style={ { color: "#5A6680" } }>
-                        +{cobroMes.nEnPlazo} en plazo (vence el {fmtFecha(fechaLocalISO(cobroMes.fechaLimite))})
-                      </div>
-                    </div>
-                    <div className="sm:col-span-2 text-xs" style={ { color: "#5A6680" } }>
-                      {cobroMes.nVencidos > 0 ? `⛔ ${cobroMes.nVencidos} no cuenta${cobroMes.nVencidos === 1 ? "" : "n"} (no llegaron a tiempo)` : "Ninguno ha quedado fuera todavía."}
-                      {lineaBono ? ` · ${lineaBono}` : ""}
-                    </div>
-                    <div className="sm:col-span-2 text-xs" style={ { color: "#5A6680" } }>
-                      {cobroMes.nuevo
-                        ? `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctClientesPonderado.toFixed(1)}% clientes: ${cobroMes.confirmado.pctHogar.toFixed(1)}% hogar + ${cobroMes.confirmado.pctMovil.toFixed(1)}% móvil) ${textoAjusteIngreso(cobroMes.confirmado)}`
-                        : `Base ${fmtMonto(cobroMes.confirmado.montoBase)} (${cobroMes.confirmado.pctIngreso.toFixed(1)}% ingresos) × ${cobroMes.confirmado.pctArpu.toFixed(1)}% ARPU × ${cobroMes.confirmado.pctClientes.toFixed(1)}% clientes`}
-                    </div>
-                  </div>
-                )}
-              </div>
+                    cobroMes.vacio ? (
+                      <p className="mf-abrir px-4 pb-3 text-xs" style={ { color: "#5A6680" } }>No hay clientes ni Clientes Móvil en este ciclo.</p>
+                    ) : !cobroMes.confirmado.completo ? (
+                      <p className="mf-abrir px-4 pb-3 text-xs" style={ { color: "#5A6680" } }>Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.</p>
+                    ) : cuadroDetalle(cobroMes.confirmado, [
+                        ["Clientes que cuentan", cobroMes.nPagados + " de " + (cobroMes.nPagados + cobroMes.nEnPlazo + cobroMes.nVencidos) + (cobroMes.nEnPlazo > 0 ? " · " + cobroMes.nEnPlazo + " pendiente" + (cobroMes.nEnPlazo === 1 ? "" : "s") + " (vence el " + fmtFecha(fechaLocalISO(cobroMes.fechaLimite)) + ")" : "")],
+                      ].concat([["Ciclo", nombreMes(cobroMes.periodoCobro) + " · " + fmtFecha(fechaLocalISO(rango.inicio)) + " – " + fmtFecha(fechaLocalISO(rango.fin))]]))
                   )}
                 </div>
               )}
-              {filaRescate && <div style={ { borderTop: "1px solid #DFE5EF" } }>{filaRescate}</div>}
-              <div style={ { borderTop: "1px solid #DFE5EF" } }>
-                <button
-                  type="button"
-                  onClick={() => setHistorialAbierto((v) => !v)}
-                  aria-expanded={historialAbierto}
-                  className="w-full text-left flex items-center gap-3 px-4"
-                  style={ { minHeight: 56 } }
-                >
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-bold" style={ { color: "#001E62" } }>Historial de comisión</span>
-                    <span className="block text-[11px] mt-0.5" style={ { color: "#5A6680" } }>Últimos 4 meses</span>
-                  </span>
-                  <span aria-hidden="true" style={ { color: "#5A6680", fontSize: 14 } }>{historialAbierto ? "▲" : "▼"}</span>
-                </button>
-                {historialAbierto && (
-                  <div className="px-4 pb-4">
-        <HistorialComisionChart
-          data={historialComisiones}
-          periodoActivo={periodoMostrado}
-          periodoActual={periodoActual}
-          onSelect={(key) => setPeriodoVisto(key)}
-          onHover={setHoverPeriodo}
-        />
-
-        {detalleMostrado && (
-          <div className="rounded-md p-3 mt-4" style={ { background: "#F3F6FB" } }>
-            <div className="flex items-center justify-between flex-wrap gap-1 mb-1">
-              <span className="text-sm font-semibold" style={ { color: "#001E62" } }>
-                {mesLabel(detalleMostrado.key)}{detalleMostrado.key === periodoActual ? " (actual)" : ""}
-              </span>
-              <span className="text-lg font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(detalleMostrado.total)}</span>
-            </div>
-            <div className="text-xs" style={ { color: "#5A6680" } }>
-              {detalleMostrado.completo
-                ? detalleMostrado.esquema === "nuevo"
-                  ? `Base ${fmtMontoCorto(detalleMostrado.montoBase)} (${detalleMostrado.pctClientesPonderado.toFixed(1)}% clientes) ${textoAjusteIngresoCorto(detalleMostrado)}${detalleMostrado.bonoConvergencias > 0 ? ` + ${fmtMontoCorto(detalleMostrado.bonoConvergencias)} bono` : ""}`
-                  : `Base ${fmtMonto(detalleMostrado.montoBase)} (${detalleMostrado.pctIngreso.toFixed(1)}% ingresos) × ${detalleMostrado.pctArpu.toFixed(1)}% ARPU × ${detalleMostrado.pctClientes.toFixed(1)}% clientes`
-                : "Faltan metas cargadas en este período para calcular la comisión completa."}
-            </div>
-            <div className="text-xs mt-1" style={ { color: "#9CA3AF" } }>
-              {detalleMostrado.cantidad} clientes hogar · {fmtMonto(detalleMostrado.dinero)} en ingresos
-              {detalleMostrado.esquema === "nuevo" ? "" : ` · ARPU ${fmtMonto(detalleMostrado.arpu)}`}
-            </div>
-            {detalleAnterior && (
-              <div
-                className="text-xs mt-2 font-semibold flex items-center gap-1"
-                style={ { color: detalleMostrado.total >= detalleAnterior.total ? "#001E62" : "#B45309" } }
-              >
-                <span>{detalleMostrado.total >= detalleAnterior.total ? "▲" : "▼"}</span>
-                <span>
-                  {fmtMonto(Math.abs(detalleMostrado.total - detalleAnterior.total))} {detalleMostrado.total >= detalleAnterior.total ? "más" : "menos"} que {mesLabel(detalleAnterior.key)}
-                  {detalleAnterior.total > 0
-                    ? ` (${detalleMostrado.total >= detalleAnterior.total ? "+" : "-"}${Math.abs(Math.round(((detalleMostrado.total - detalleAnterior.total) / detalleAnterior.total) * 100))}%)`
-                    : ""}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-                  </div>
-                )}
-              </div>
+              {mesesCobrados.length > 0 && (
+                <div style={ { borderTop: "1px solid #DFE5EF" } }>
+                  <div className="px-4 pt-2 text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>Historial</div>
+                  {mesesVisibles.map((d) => {
+                    const abierto = !!histMesAbierto[d.key];
+                    const mesPago = nombreMesCap(sumarMesClave(d.key, 2));
+                    return (
+                      <div key={d.key}>
+                        <button type="button" onClick={() => setHistMesAbierto((o) => ({ ...o, [d.key]: !o[d.key] }))} aria-expanded={abierto} className="w-full text-left flex items-center gap-2 px-4 text-[13px]" style={ { minHeight: 44 } }>
+                          <b className="w-[88px] shrink-0" style={ { color: "#001E62" } }>{mesPago}</b>
+                          <span className="flex-1 text-xs" style={ { color: "#5A6680" } }>ventas de {nombreMes(d.key)}</span>
+                          <b className="font-mono text-sm" style={ { color: "#001E62" } }>{d.completo ? fmtMonto(d.total).replace(/\.00$/, "") : "—"}</b>
+                          <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{abierto ? "▴" : "▾"}</span>
+                        </button>
+                        {abierto ? cuadroDetalle(d, [["Clientes hogar", String(d.cantidad)]]) : null}
+                      </div>
+                    );
+                  })}
+                  {mesesCobrados.length > 3 && (
+                    <button type="button" onClick={() => setHistorialAbierto((v) => !v)} aria-expanded={historialAbierto} className="w-full text-sm font-bold" style={ { minHeight: 44, color: "#0072CE", borderTop: "1px solid #EEF1F7" } }>{historialAbierto ? "Ver menos ▴" : "Ver más meses ▾"}</button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         );
