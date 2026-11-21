@@ -6116,9 +6116,39 @@ function textoConsejoVenta(c) {
 // tienes y muestra al instante cuánto cambiaría tu comisión. No guarda nada: parte siempre de
 // los números reales de hoy. "Más opciones" trae: cobrar una cantidad, cierre a tu ritmo,
 // escalera, cálculo, portabilidad y precios, y comparar dos ideas (A y B).
+// Monto de un cliente simulado: se escribe y se confirma al salir del campo.
+function MontoSimInput({ valor, onConfirmar, etiqueta, C }) {
+  const aTxt = (v) => String(Math.round((Number(v) || 0) * 100) / 100);
+  const [txt, setTxt] = useState(aTxt(valor));
+  useEffect(() => { setTxt(aTxt(valor)); }, [valor]);
+  return (
+    <div data-money="1" style={ { display: "flex", alignItems: "center", gap: 4, width: 112, height: 44, padding: "0 10px", borderRadius: 12, border: "2px solid " + C.bd, background: C.page } }>
+      <span style={ { fontWeight: 800, color: C.mu } }>$</span>
+      <input
+        inputMode="decimal"
+        value={txt}
+        aria-label={etiqueta}
+        onChange={(e) => setTxt(e.target.value)}
+        onBlur={() => { const v = parseFloat(String(txt).replace(",", ".")); onConfirmar(isNaN(v) || v < 0 ? 0 : v); }}
+        onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        style={ { border: 0, background: "transparent", width: "100%", minWidth: 0, textAlign: "right", fontSize: 16, fontWeight: 800, color: C.navy, outline: "none", fontVariantNumeric: "tabular-nums" } }
+      />
+    </div>
+  );
+}
+
 function SimuladorComisionModal({ periodoKey, base, defecto, ritmo, onClose }) {
-  const [st, setSt] = useState(() => ({ slot: "A", A: { h: 0, m: 0, p: 0 }, B: { h: 0, m: 0, p: 0 }, ph: defecto.hogar, pm: defecto.movil, target: null, mas: false, sec: null }));
-  const g = (patch) => setSt((prev) => ({ ...prev, ...patch }));
+  const [lista, setLista] = useState([]); // clientes simulados: { id, t: "h" | "m", v: monto }
+  const [tipo, setTipo] = useState("h");
+  const [cant, setCant] = useState(1);
+  const [montoTxt, setMontoTxt] = useState("");
+  const [flash, setFlash] = useState(null);
+  const [deshacer, setDeshacer] = useState(null);
+  const [tecla, setTecla] = useState({ visible: false, principal: false, abajo: 0 });
+  const sigId = useRef(1);
+  const montoRef = useRef(null);
+  const tFlash = useRef(null);
+  const tDeshacer = useRef(null);
 
   // Atrás del navegador/gesto del iPhone cierra el simulador y deja el Dashboard como estaba.
   useEffect(() => {
@@ -6131,140 +6161,151 @@ function SimuladorComisionModal({ periodoKey, base, defecto, ritmo, onClose }) {
   function cerrar() {
     try { window.history.back(); } catch (e) { onClose(); }
   }
+  useEffect(() => () => { clearTimeout(tFlash.current); clearTimeout(tDeshacer.current); }, []);
 
-  const calc = (s) => calcularComisionNueva({
-    clientesHogar: base.clientesHogar + s.h,
-    metaClientesHogar: base.metaHogar,
-    clientesMovil: base.clientesMovil + s.m,
-    metaClientesMovil: base.metaMovil,
-    ingresosDelPeriodo: base.ingresos + s.h * st.ph + s.m * st.pm,
-    metaIngresos: base.metaIngresos,
-    cantidadBonoMovil: base.bonos + s.p,
-    cantidadBonoPendiente: 0,
-  });
-  const slot = st.slot;
-  const s = st[slot];
-  const cero = { h: 0, m: 0, p: 0 };
-  const ahora = calc(cero);
-  const sim = calc(s);
+  const calc = (l) => {
+    const nh = l.filter((c) => c.t === "h").length;
+    const nm = l.length - nh;
+    const suma = l.reduce((a, c) => a + (Number(c.v) || 0), 0);
+    return calcularComisionNueva({
+      clientesHogar: base.clientesHogar + nh,
+      metaClientesHogar: base.metaHogar,
+      clientesMovil: base.clientesMovil + nm,
+      metaClientesMovil: base.metaMovil,
+      ingresosDelPeriodo: base.ingresos + suma,
+      metaIngresos: base.metaIngresos,
+      cantidadBonoMovil: base.bonos,
+      cantidadBonoPendiente: 0,
+    });
+  };
+  const ahora = calc([]);
+  const sim = calc(lista);
   const dif = sim.total - ahora.total;
+  const nHog = lista.filter((c) => c.t === "h").length;
+  const nMov = lista.length - nHog;
+  const sumaSim = lista.reduce((a, c) => a + (Number(c.v) || 0), 0);
   const mons = (n) => (n < 0 ? "−" : "+") + fmtMiles(Math.abs(n), 0);
 
-  function cambiar(campo, d) {
-    const nuevo = { ...s, [campo]: Math.max(0, s[campo] + d) };
-    if (nuevo.p > nuevo.m) nuevo.p = nuevo.m;
-    g({ [slot]: nuevo });
-  }
-  const hastaEscalon = (hogar) => {
+  // Aviso al subir de escalón: sale unos segundos y vuelve al consejo normal.
+  const baseAnt = useRef(sim.montoBase);
+  useEffect(() => {
+    const prev = baseAnt.current;
+    if (sim.montoBase > prev) {
+      setFlash("¡Subiste de escalón! Tu base pasa de " + fmtMiles(prev, 0) + " a " + fmtMiles(sim.montoBase, 0) + ".");
+      clearTimeout(tFlash.current);
+      tFlash.current = setTimeout(() => setFlash(null), 4000);
+    } else if (sim.montoBase < prev) {
+      clearTimeout(tFlash.current);
+      setFlash(null);
+    }
+    baseAnt.current = sim.montoBase;
+  }, [sim.montoBase]);
+
+  // Consejo de arriba: cuánto falta para el siguiente escalón (con el plan promedio de cada tipo).
+  const hastaEscalon = (t) => {
     for (let n = 1; n <= 60; n++) {
-      const x = calc(hogar ? { ...s, h: s.h + n } : { ...s, m: s.m + n });
+      const extra = Array.from({ length: n }, () => ({ t, v: t === "h" ? defecto.hogar : defecto.movil }));
+      const x = calc([...lista, ...extra]);
       if (x.montoBase > sim.montoBase) return { n, gana: x.total - sim.total };
     }
     return null;
   };
-  const eH = hastaEscalon(true);
-  const eM = hastaEscalon(false);
+  const eH = hastaEscalon("h");
+  const eM = hastaEscalon("m");
   const topeMonto = TABLA_POSICION_NUEVA[TABLA_POSICION_NUEVA.length - 1].monto;
   const tope = sim.montoBase >= topeMonto;
-  let consejoLinea = "";
-  let atajo = null;
+  let textoHint = "";
   if (tope) {
-    consejoLinea = "Ya estás en el tope de clientes (140%). Ahora solo cuentan los ingresos: vende planes de más valor.";
+    textoHint = "Vende más clientes para asegurar tu comisión.";
   } else {
     const cruzaH = eH && eH.n === 1;
     const cruzaM = eM && eM.n === 1;
     if (cruzaH || cruzaM) {
       const hogar = cruzaH && (!cruzaM || eH.gana >= eM.gana);
-      consejoLinea = "1 " + (hogar ? "Hogar" : "Móvil") + " más y subes de escalón: " + mons(hogar ? eH.gana : eM.gana) + ".";
+      textoHint = "1 " + (hogar ? "Hogar" : "Móvil") + " más y subes de escalón: " + mons(hogar ? eH.gana : eM.gana) + ".";
     } else {
       let o = null;
       if (eH && (!eM || eH.n <= eM.n)) o = { n: eH.n, t: "Hogar", g: eH.gana };
       else if (eM) o = { n: eM.n, t: "Móvil", g: eM.gana };
-      consejoLinea = o ? "Estás a " + o.n + " " + o.t + " del siguiente escalón: " + mons(o.g) + "." : "";
+      textoHint = o ? "Estás a " + o.n + " " + o.t + " del siguiente escalón: " + mons(o.g) + "." : "";
     }
-    let opc = null;
-    if (eH && (!eM || eH.n < eM.n || (eH.n === eM.n && eH.gana >= eM.gana))) opc = { hogar: true, n: eH.n };
-    else if (eM) opc = { hogar: false, n: eM.n };
-    if (opc) atajo = { txt: "Sumar " + opc.n + (opc.hogar ? " Hogar" : " Móvil") + " y subir de escalón", ir: () => cambiar(opc.hogar ? "h" : "m", opc.n) };
+  }
+
+  // Línea de ingresos de la barra azul: % de la meta y si el acelerador está activo.
+  const pcI = (v) => { const p = Math.round(v); return (v < 100 && p >= 100 ? 99 : p) + "%"; };
+  const faltaI = Math.max(0, (base.metaIngresos || 0) - base.ingresos - sumaSim);
+  const lineaIngresos = base.metaIngresos > 0 && sim.pctIngreso != null && ahora.pctIngreso != null
+    ? "Ingresos " + (lista.length ? pcI(ahora.pctIngreso) + " → " : "") + pcI(sim.pctIngreso) +
+      (sim.ajusteIngreso === "acelerador" ? " · acelerador activo (+10%)" : " · faltan " + fmtMiles(faltaI, 0) + " para el acelerador")
+    : null;
+
+  // Agregar clientes: uno o varios a la vez, con el monto que escribas.
+  const monto = parseFloat(String(montoTxt).replace(",", "."));
+  const montoOk = monto > 0;
+  function agregar() {
+    if (!montoOk) return;
+    const nuevos = Array.from({ length: cant }, () => ({ id: sigId.current++, t: tipo, v: monto }));
+    setLista((l) => [...l, ...nuevos]);
+    setCant(1);
+    setMontoTxt("");
+    if (montoRef.current) montoRef.current.focus();
+  }
+  function elegirTipo(t) { setTipo(t); setMontoTxt(""); }
+  function quitar(nuevaLista, msg) {
+    const respaldo = lista.map((c) => ({ ...c }));
+    setLista(nuevaLista);
+    setDeshacer({ msg, respaldo });
+    clearTimeout(tDeshacer.current);
+    tDeshacer.current = setTimeout(() => setDeshacer(null), 6000);
+  }
+  function deshacerCambio() {
+    if (deshacer) setLista(deshacer.respaldo);
+    setDeshacer(null);
+    clearTimeout(tDeshacer.current);
+  }
+
+  // Barra "Listo" sobre el teclado (el teclado decimal del iPhone no trae tecla para cerrarlo).
+  const vv = typeof window !== "undefined" ? window.visualViewport : null;
+  const abajoTeclado = () => (vv ? Math.max(0, window.innerHeight - vv.height - vv.offsetTop) : 0);
+  useEffect(() => {
+    if (!vv) return undefined;
+    const f = () => setTecla((t) => (t.visible ? { ...t, abajo: abajoTeclado() } : t));
+    vv.addEventListener("resize", f);
+    vv.addEventListener("scroll", f);
+    return () => { vv.removeEventListener("resize", f); vv.removeEventListener("scroll", f); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  function alEnfocar(e) {
+    if (e.target.tagName === "INPUT") setTecla({ visible: true, principal: e.target === montoRef.current, abajo: abajoTeclado() });
+  }
+  function alDesenfocar() {
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || a.tagName !== "INPUT") setTecla((t) => ({ ...t, visible: false }));
+    }, 60);
+  }
+  function alTocar(e) {
+    const a = document.activeElement;
+    if (a && a.tagName === "INPUT" && !e.target.closest("input,button,[data-kbar],[data-money]")) a.blur();
   }
 
   const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", cell: "#E3EDFA", page: "#F3F6FB" };
-  const tarjeta = { background: "#fff", border: "1px solid " + C.bd, borderRadius: 16, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12 };
-  const btnMenos = { width: 44, height: 44, borderRadius: 12, border: "2px solid " + C.bd, background: C.page, color: C.navy, fontSize: 24, fontWeight: 700, lineHeight: 1, padding: 0 };
-  const btnMas = { width: 48, height: 48, borderRadius: 12, border: 0, background: C.navy, color: "#fff", fontSize: 26, fontWeight: 700, lineHeight: 1, padding: 0 };
-  const btnChico = { width: 44, height: 44, borderRadius: 12, border: "2px solid " + C.bd, background: C.page, color: C.navy, fontSize: 20, fontWeight: 700, padding: 0 };
-  const icoCaja = { width: 40, height: 40, borderRadius: 12, background: C.cell, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, color: C.navy };
   const num = { fontVariantNumeric: "tabular-nums" };
-
-  // ---- Secciones de "Más opciones" ----
-  const seccion = (key, titulo, contenido) => (
-    <div key={key} style={ { background: "#fff", border: "1px solid " + C.bd, borderRadius: 14, padding: "2px 14px" } }>
-      <button type="button" onClick={() => g({ sec: st.sec === key ? null : key })} aria-expanded={st.sec === key} style={ { width: "100%", minHeight: 48, background: "transparent", border: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, color: C.navy, fontSize: 14, fontWeight: 700, padding: 0, textAlign: "left" } }>
-        <span>{titulo}</span><span style={ { fontSize: 18, color: C.mu } }>{st.sec === key ? "−" : "+"}</span>
-      </button>
-      {st.sec === key && contenido}
-    </div>
+  const icoHogar = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" /></svg>;
+  const icoMovil = <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /></svg>;
+  const segBtn = (t, texto, ico) => (
+    <button type="button" onClick={() => elegirTipo(t)} aria-pressed={tipo === t} style={ { flex: 1, minHeight: 48, borderRadius: 12, border: "2px solid " + C.navy, background: tipo === t ? C.navy : "#fff", color: tipo === t ? "#fff" : C.navy, fontSize: 15, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } }>{ico}{texto}</button>
   );
-  const ajusteFila = (titulo, sub, valor, onMenos, onMas, etMenos, etMas) => (
-    <div style={ { display: "flex", alignItems: "center", gap: 8 } }>
-      <div style={ { flex: 1, fontSize: 13, fontWeight: 600, lineHeight: 1.3 } }>{titulo}{sub && <div style={ { color: C.mu, fontWeight: 500, fontSize: 11 } }>{sub}</div>}</div>
-      <button type="button" onClick={onMenos} aria-label={etMenos} style={btnChico}>−</button>
-      <div style={ { minWidth: 40, textAlign: "center", fontWeight: 800, ...num } }>{valor}</div>
-      <button type="button" onClick={onMas} aria-label={etMas} style={btnChico}>+</button>
-    </div>
-  );
-
-  // Meta: combinaciones más cortas de Hogar y Móvil para llegar a una cantidad.
-  const T = st.target != null ? st.target : Math.ceil((ahora.total + 150) / 50) * 50;
-  let combos = [];
-  let objTitulo;
-  let objSub;
-  if (st.sec === "meta") {
-    if (T <= ahora.total + 0.5) {
-      objTitulo = "¡Ya lo logras!";
-      objSub = "Hoy llevas " + fmtMiles(ahora.total, 0) + ". Sube la cantidad para ver qué falta.";
-    } else {
-      const lista = [];
-      for (let h = 0; h <= 12; h++) {
-        for (let m = 0; m <= 12; m++) {
-          if (calc({ h, m, p: 0 }).total >= T) { lista.push({ h, m }); break; }
-        }
-      }
-      const filtradas = lista.filter((a) => !lista.some((b) => b !== a && b.h <= a.h && b.m <= a.m && (b.h < a.h || b.m < a.m)));
-      filtradas.sort((a, b) => (a.h + a.m) - (b.h + b.m));
-      combos = filtradas.slice(0, 3).map((c) => ({ ...c, total: calc({ h: c.h, m: c.m, p: 0 }).total }));
-      objTitulo = combos.length ? "Para llegar a " + fmtMiles(T, 0) + " puedes vender:" : "Esa cantidad está muy lejos";
-      objSub = combos.length ? "Las combinaciones más cortas, con tus planes promedio." : "Baja la cantidad un poco.";
-    }
-  }
-  // Ritmo: cómo cierras el mes si sigues al paso de hoy.
-  const transc = ritmo && ritmo.transcurridos > 0 ? ritmo.transcurridos : 0;
-  const rem = ritmo ? Math.max(0, ritmo.total - ritmo.transcurridos) : 0;
-  const addH = transc ? Math.round((base.clientesHogar / transc) * rem) : 0;
-  const addM = transc ? Math.round((base.clientesMovil / transc) * rem) : 0;
-  const proy = calc({ h: addH, m: addM, p: 0 });
-  const ritDif = proy.total - ahora.total;
-  // Escalera
-  const posEsc = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
-  const abrev = (v) => (v < 1000 ? "$" + v : "$" + String(+(v / 1000).toFixed(2)) + "k");
-  const pcA = ahora.pctClientesPonderado;
-  const pcS = sim.pctClientesPonderado;
-  const ajTxt = sim.ajusteIngreso === "acelerador" ? " (acelerador +10 pts)" : sim.ajusteIngreso === "desacelerador" ? " (desacelerador)" : "";
-  const filaCalc = (k, v) => (
-    <div key={k} style={ { display: "flex", justifyContent: "space-between", gap: 10, padding: "7px 0", borderTop: "1px solid #EEF1F6", fontSize: 13 } }>
-      <span style={ { color: "#374151", minWidth: 0 } }>{k}</span><b style={ { textAlign: "right", flexShrink: 0, ...num } }>{v}</b>
-    </div>
-  );
-  const dA = calc(st.A).total - ahora.total;
-  const dB = calc(st.B).total - ahora.total;
-  const slotBtn = (id, dd) => (
-    <button key={id} type="button" onClick={() => g({ slot: id })} aria-pressed={slot === id} style={ { flex: 1, minHeight: 44, padding: "0 10px", borderRadius: 12, fontSize: 13, fontWeight: 800, border: "2px solid " + C.navy, background: slot === id ? C.navy : "#fff", color: slot === id ? "#fff" : C.navy } }>
-      Idea {id} · {mons(dd)}
-    </button>
-  );
+  const nomTipo = tipo === "h" ? "Hogar" : "Móvil";
+  const textoAgregar = !montoOk ? "Escribe el monto para agregar" : cant === 1 ? "Agregar 1 " + nomTipo + " de " + fmtMiles(monto, 2) : "Agregar " + cant + " " + nomTipo + " de " + fmtMiles(monto, 2) + " c/u";
+  const btnStep = { width: 44, height: 48, borderRadius: 12, border: "2px solid " + C.bd, background: C.page, color: C.navy, fontSize: 22, fontWeight: 700, padding: 0 };
+  // Numeración por tipo en el orden en que se agregaron; la lista se muestra del más nuevo al más viejo.
+  let cH = 0;
+  let cM = 0;
+  const numeros = lista.map((c) => (c.t === "h" ? ++cH : ++cM));
 
   return ReactDOM.createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col font-sans" style={ { background: C.page, color: C.navy } }>
+    <div className="fixed inset-0 z-50 flex flex-col font-sans" style={ { background: C.page, color: C.navy } } onFocus={alEnfocar} onBlur={alDesenfocar} onClick={alTocar}>
       <div style={ { flex: "none", background: "#fff", padding: "calc(12px + env(safe-area-inset-top)) 16px 10px", display: "flex", alignItems: "center", gap: 10, borderBottom: "1px solid " + C.bd } }>
         <button type="button" onClick={cerrar} aria-label="Volver al Dashboard" style={ { width: 44, height: 44, border: 0, background: C.page, borderRadius: 12, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy } }>
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7" /></svg>
@@ -6291,149 +6332,85 @@ function SimuladorComisionModal({ periodoKey, base, defecto, ritmo, onClose }) {
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={dif > 0.5 ? "M12 19V5M5 12l7-7 7 7" : dif < -0.5 ? "M12 5v14M5 12l7 7 7-7" : "M5 12h14"} /></svg>
           {Math.abs(dif) < 0.5 ? "Sin cambio todavía" : (dif > 0 ? "Subirías " : "Bajarías ") + fmtMiles(Math.abs(dif), 0)}
         </div>
+        {lineaIngresos && <div style={ { marginTop: 6, fontSize: 12, fontWeight: 600, opacity: 0.9 } }>{lineaIngresos}</div>}
       </div>
 
       <div style={ { flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 12px calc(28px + env(safe-area-inset-bottom))", display: "flex", flexDirection: "column", gap: 10 } }>
-        <div style={tarjeta}>
-          <div style={icoCaja}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v9a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" /></svg></div>
-          <div style={ { flex: 1, minWidth: 0 } }>
-            <div style={ { fontSize: 15, fontWeight: 800 } }>Hogar</div>
-            <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Llevas {base.clientesHogar} de {base.metaHogar}{s.h ? " → " + (base.clientesHogar + s.h) + " (" + Math.round(sim.pctHogar) + "%)" : " (" + Math.round(ahora.pctHogar) + "%)"}</div>
+        {(flash || textoHint) && (
+          <div style={ { background: flash ? C.navy : C.cell, color: flash ? "#fff" : C.navy, border: "1px solid " + (flash ? C.navy : "#C9DBF3"), borderRadius: 16, padding: 14, display: "flex", alignItems: "center", gap: 8 } }>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { flexShrink: 0 } }><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" /></svg>
+            <div style={ { fontSize: 13, fontWeight: 700, lineHeight: 1.35 } }>{flash || textoHint}</div>
           </div>
-          <div style={ { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 } }>
-            <button type="button" onClick={() => cambiar("h", -1)} aria-label="Quitar un Hogar" style={btnMenos}>−</button>
-            <div style={ { minWidth: 28, textAlign: "center", fontSize: 24, fontWeight: 800 } }>{s.h}</div>
-            <button type="button" onClick={() => cambiar("h", 1)} aria-label="Agregar un Hogar" style={btnMas}>+</button>
-          </div>
-        </div>
+        )}
 
-        <div style={tarjeta}>
-          <div style={icoCaja}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="7" y="2.5" width="10" height="19" rx="2" /><path d="M11 18.5h2" /></svg></div>
-          <div style={ { flex: 1, minWidth: 0 } }>
-            <div style={ { fontSize: 15, fontWeight: 800 } }>Móvil</div>
-            <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Llevas {base.clientesMovil} de {base.metaMovil}{s.m ? " → " + (base.clientesMovil + s.m) + " (" + Math.round(sim.pctMovil) + "%)" : " (" + Math.round(ahora.pctMovil) + "%)"}</div>
-          </div>
-          <div style={ { display: "flex", alignItems: "center", gap: 6, flexShrink: 0 } }>
-            <button type="button" onClick={() => cambiar("m", -1)} aria-label="Quitar un Móvil" style={btnMenos}>−</button>
-            <div style={ { minWidth: 28, textAlign: "center", fontSize: 24, fontWeight: 800 } }>{s.m}</div>
-            <button type="button" onClick={() => cambiar("m", 1)} aria-label="Agregar un Móvil" style={btnMas}>+</button>
-          </div>
-        </div>
-
-        {consejoLinea && (
-          <div style={ { background: C.cell, border: "1px solid #C9DBF3", borderRadius: 16, padding: 14 } }>
-            <div style={ { display: "flex", alignItems: "center", gap: 8 } }>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { flexShrink: 0 } }><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" /></svg>
-              <div style={ { fontSize: 12, fontWeight: 700, color: "#374151" } }>{s.h || s.m ? "Con lo que simulas, lo que sigue" : "Lo que más te conviene vender"}</div>
+        <div style={ { background: "#fff", border: "1px solid " + C.bd, borderRadius: 16, padding: 14 } }>
+          <div style={ { display: "flex", gap: 8 } }>{segBtn("h", "Hogar", icoHogar)}{segBtn("m", "Móvil", icoMovil)}</div>
+          <div style={ { display: "flex", gap: 12, marginTop: 12, alignItems: "flex-end" } }>
+            <div style={ { flex: 1, minWidth: 0 } }>
+              <div style={ { fontSize: 12, fontWeight: 700, color: C.mu, marginBottom: 4 } }>Monto por cliente</div>
+              <div data-money="1" style={ { display: "flex", alignItems: "center", gap: 4, height: 48, padding: "0 10px", borderRadius: 12, border: "2px solid " + C.bd, background: C.page } }>
+                <span style={ { fontWeight: 800, color: C.mu } }>$</span>
+                <input
+                  ref={montoRef}
+                  inputMode="decimal"
+                  enterKeyHint="go"
+                  placeholder="Escribe el monto"
+                  aria-label="Monto por cliente"
+                  value={montoTxt}
+                  onChange={(e) => setMontoTxt(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); agregar(); } }}
+                  style={ { border: 0, background: "transparent", width: "100%", minWidth: 0, fontSize: 18, fontWeight: 800, color: C.navy, outline: "none", ...num } }
+                />
+              </div>
             </div>
-            <div style={ { marginTop: 6, fontSize: 16, fontWeight: 800, lineHeight: 1.35 } }>{consejoLinea}</div>
-            {atajo && (
-              <button type="button" onClick={atajo.ir} style={ { marginTop: 12, minHeight: 48, width: "100%", borderRadius: 12, border: 0, background: C.navy, color: "#fff", fontSize: 14, fontWeight: 800 } }>{atajo.txt}</button>
-            )}
+            <div>
+              <div style={ { fontSize: 12, fontWeight: 700, color: C.mu, marginBottom: 4 } }>Cantidad</div>
+              <div style={ { display: "flex", alignItems: "center", gap: 6 } }>
+                <button type="button" onClick={() => setCant(Math.max(1, cant - 1))} aria-label="Menos" style={btnStep}>−</button>
+                <div style={ { minWidth: 30, textAlign: "center", fontSize: 22, fontWeight: 800 } }>{cant}</div>
+                <button type="button" onClick={() => setCant(Math.min(50, cant + 1))} aria-label="Más" style={btnStep}>+</button>
+              </div>
+            </div>
           </div>
-        )}
+          <button type="button" onClick={agregar} disabled={!montoOk} style={ { width: "100%", minHeight: 52, border: 0, borderRadius: 14, background: montoOk ? C.navy : "#C5CCDB", color: "#fff", fontSize: 16, fontWeight: 800, marginTop: 12, cursor: montoOk ? "pointer" : "not-allowed" } }>{textoAgregar}</button>
+        </div>
 
-        {(s.h > 0 || s.m > 0 || s.p > 0) && (
-          <button type="button" onClick={() => g({ [slot]: cero })} style={ { minHeight: 44, borderRadius: 12, border: "2px solid " + C.bd, background: "#fff", color: C.mu, fontSize: 13, fontWeight: 700 } }>Limpiar lo que simulé</button>
-        )}
+        <div style={ { display: "flex", justifyContent: "space-between", alignItems: "center", margin: "6px 4px 0", fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.mu } }>
+          <span>Clientes simulados</span>
+          <button type="button" onClick={() => quitar([], "Borraste " + lista.length + " cliente" + (lista.length > 1 ? "s" : ""))} style={ { visibility: lista.length ? "visible" : "hidden", whiteSpace: "nowrap", flexShrink: 0, border: 0, background: "transparent", color: C.mu, fontSize: 13, fontWeight: 700, textDecoration: "underline", minHeight: 44, padding: "0 4px", textTransform: "none", letterSpacing: 0 } }>Limpiar todo</button>
+        </div>
+        {lista.length > 0 && <div style={ { fontSize: 12, fontWeight: 600, color: C.mu, margin: "-4px 4px 0" } }>{nHog} Hogar, {nMov} Móvil · suman {fmtMiles(sumaSim, 2)}/mes</div>}
 
-        <button type="button" onClick={() => g({ mas: !st.mas, sec: null })} aria-expanded={st.mas} style={ { minHeight: 48, borderRadius: 12, border: "2px solid " + C.navy, background: "#fff", color: C.navy, fontSize: 14, fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } }>
-          {st.mas ? "Menos opciones" : "Más opciones"}
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={st.mas ? "M6 15l6-6 6 6" : "M6 9l6 6 6-6"} /></svg>
-        </button>
-
-        {st.mas && (
-          <div style={ { display: "flex", flexDirection: "column", gap: 8 } }>
-            {seccion("meta", "Quiero cobrar una cantidad", (
-              <div style={ { padding: "2px 0 14px" } }>
-                <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.35 } }>Elige cuánto y te digo qué te falta vender.</div>
-                <div style={ { display: "flex", alignItems: "center", justifyContent: "center", gap: 12, marginTop: 10 } }>
-                  <button type="button" onClick={() => g({ target: Math.max(500, T - 50) })} aria-label="Bajar la meta $50" style={ { ...btnMenos, width: 48, height: 48 } }>−</button>
-                  <div style={ { minWidth: 110, textAlign: "center", fontSize: 30, fontWeight: 800, ...num } }>{fmtMiles(T, 0)}</div>
-                  <button type="button" onClick={() => g({ target: T + 50 })} aria-label="Subir la meta $50" style={ { ...btnMas, fontSize: 24 } }>+</button>
-                </div>
-                <div style={ { marginTop: 12, fontSize: 14, fontWeight: 800 } }>{objTitulo}</div>
-                <div style={ { fontSize: 12, color: C.mu, marginTop: 2, lineHeight: 1.35 } }>{objSub}</div>
-                {combos.map((c) => (
-                  <div key={c.h + "-" + c.m} style={ { display: "flex", alignItems: "center", gap: 10, borderTop: "1px solid #EEF1F6", marginTop: 10, paddingTop: 10 } }>
-                    <div style={ { flex: 1, minWidth: 0 } }>
-                      <div style={ { fontSize: 15, fontWeight: 800 } }>{[c.h ? c.h + " Hogar" : null, c.m ? c.m + " Móvil" : null].filter(Boolean).join(" y ")}</div>
-                      <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Cobrarías {fmtMiles(c.total, 0)}</div>
-                    </div>
-                    <button type="button" onClick={() => g({ [slot]: { h: c.h, m: c.m, p: 0 }, sec: null, mas: false })} style={ { minHeight: 44, padding: "0 14px", borderRadius: 12, border: "2px solid " + C.navy, background: "#fff", color: C.navy, fontSize: 13, fontWeight: 800 } }>Probar</button>
-                  </div>
-                ))}
-              </div>
-            ))}
-
-            {seccion("ritmo", "Cómo cierro el mes a mi ritmo", (
-              <div style={ { padding: "2px 0 14px" } }>
-                {transc ? (
-                  <React.Fragment>
-                    <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.4 } }>Llevas {ritmo.transcurridos} de {ritmo.total} días de venta. Te quedan {rem}.</div>
-                    <div style={ { fontSize: 13, fontWeight: 700, marginTop: 10, lineHeight: 1.4 } }>Cerrarías con {base.clientesHogar + addH} Hogar y {base.clientesMovil + addM} Móvil.</div>
-                    <div style={ { fontSize: 24, fontWeight: 800, marginTop: 6, ...num } }>{fmtMiles(proy.total, 0)}</div>
-                    <div style={ { fontSize: 12, color: C.mu, marginTop: 2, lineHeight: 1.35 } }>{ritDif >= 0.5 ? mons(ritDif) + " más que hoy (" + fmtMiles(ahora.total, 0) + ")." : "Igual que hoy (" + fmtMiles(ahora.total, 0) + ")."}</div>
-                    <button type="button" onClick={() => g({ [slot]: { h: addH, m: addM, p: 0 }, sec: null, mas: false })} style={ { marginTop: 12, minHeight: 46, width: "100%", borderRadius: 12, border: "2px solid " + C.navy, background: "#fff", color: C.navy, fontSize: 13, fontWeight: 800 } }>Probar esto arriba</button>
-                    <div style={ { fontSize: 11, color: C.mu, marginTop: 8, lineHeight: 1.35 } }>Es un estimado con tu ritmo de hoy, no una promesa.</div>
-                  </React.Fragment>
-                ) : (
-                  <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.4 } }>Aún no hay días de venta para estimar tu ritmo.</div>
-                )}
-              </div>
-            ))}
-
-            {seccion("escalera", "Ver la escalera de escalones", (
-              <div style={ { paddingBottom: 14 } }>
-                <div style={ { position: "relative", height: 78, margin: "4px 10px 0" } }>
-                  <div style={ { position: "absolute", left: 0, right: 0, top: 34, height: 8, borderRadius: 4, background: C.bd } } />
-                  <div style={ { position: "absolute", left: 0, top: 34, height: 8, borderRadius: 4, background: "repeating-linear-gradient(135deg,#0072CE 0 3px,#BFD8F2 3px 6px)", width: Math.max(posEsc(pcS), posEsc(pcA)) + "%" } } />
-                  <div style={ { position: "absolute", left: 0, top: 34, height: 8, borderRadius: 4, background: C.navy, width: posEsc(pcA) + "%" } } />
-                  {TABLA_POSICION_NUEVA.map((t) => (
-                    <div key={t.min} style={ { position: "absolute", top: 6, width: 44, marginLeft: -22, textAlign: "center", left: posEsc(t.min) + "%" } }>
-                      <div style={ { fontSize: 10, fontWeight: 700, color: C.mu, height: 14, lineHeight: "14px" } }>{t.min}</div>
-                      <div style={ { width: 14, height: 14, boxSizing: "border-box", borderRadius: "50%", margin: "6px auto 0", border: "2px solid " + C.navy, background: pcS + 1e-9 >= t.min ? C.navy : "#fff" } } />
-                      <div style={ { fontSize: 10, fontWeight: 700, color: C.navy, marginTop: 4 } }>{abrev(t.monto)}</div>
-                    </div>
-                  ))}
-                </div>
-                <div style={ { display: "flex", flexWrap: "wrap", gap: "6px 14px", marginTop: 6, fontSize: 11, fontWeight: 600, color: "#374151" } }>
-                  <div style={ { display: "flex", alignItems: "center", gap: 6 } }><span style={ { width: 16, height: 8, borderRadius: 4, background: C.navy, display: "inline-block" } } />Hoy {pcA.toFixed(1)}%</div>
-                  <div style={ { display: "flex", alignItems: "center", gap: 6 } }><span style={ { width: 16, height: 8, borderRadius: 4, background: "repeating-linear-gradient(135deg,#0072CE 0 3px,#BFD8F2 3px 6px)", display: "inline-block" } } />Simulado {pcS.toFixed(1)}%</div>
-                </div>
-                <div style={ { fontSize: 11, color: C.mu, marginTop: 6 } }>Arriba el % de clientes, abajo la base que cobras.</div>
-              </div>
-            ))}
-
-            {seccion("calculo", "Cómo sale el cálculo", (
-              <div style={ { paddingBottom: 10 } }>
-                {filaCalc("Clientes (65% Hogar + 35% Móvil)", pcA.toFixed(1) + "% → " + pcS.toFixed(1) + "%")}
-                {filaCalc("Base por escalón", fmtMiles(ahora.montoBase, 0) + " → " + fmtMiles(sim.montoBase, 0))}
-                {filaCalc("Ingresos vs meta de " + fmtMiles(base.metaIngresos, 0), Math.round(ahora.pctIngreso) + "% → " + Math.round(sim.pctIngreso) + "%")}
-                {filaCalc("Factor de ingresos" + ajTxt, "×" + ahora.factorAcelerador.toFixed(2) + " → ×" + sim.factorAcelerador.toFixed(2))}
-                {filaCalc("Bono portabilidad (" + (base.bonos + s.p) + " × $" + BONO_POR_CONVERGENCIA + ")", fmtMiles(ahora.bonoConvergencias, 0) + " → " + fmtMiles(sim.bonoConvergencias, 0))}
-                {filaCalc("Total", fmtMiles(ahora.total, 0) + " → " + fmtMiles(sim.total, 0))}
-              </div>
-            ))}
-
-            {seccion("ajustes", "Portabilidad y precios de planes", (
-              <div style={ { display: "flex", flexDirection: "column", gap: 8, padding: "2px 0 14px" } }>
-                {ajusteFila("Móvil con portabilidad", "de los " + s.m + " que simulas · bono $" + BONO_POR_CONVERGENCIA + " c/u", s.p, () => cambiar("p", -1), () => { if (s.p < s.m) cambiar("p", 1); }, "Quitar una portabilidad", "Agregar una portabilidad")}
-                {ajusteFila("Plan Hogar", null, fmtMiles(st.ph, 0), () => g({ ph: Math.max(1, st.ph - 1) }), () => g({ ph: st.ph + 1 }), "Bajar plan Hogar", "Subir plan Hogar")}
-                {ajusteFila("Plan Móvil", null, fmtMiles(st.pm, 0), () => g({ pm: Math.max(1, st.pm - 1) }), () => g({ pm: st.pm + 1 }), "Bajar plan Móvil", "Subir plan Móvil")}
-                <div style={ { fontSize: 11, color: C.mu, lineHeight: 1.35 } }>Los planes empiezan en el promedio de tus ventas de este período.</div>
-              </div>
-            ))}
-
-            {seccion("escen", "Comparar dos ideas (A y B)", (
-              <div style={ { padding: "2px 0 14px" } }>
-                <div style={ { fontSize: 12, color: C.mu, lineHeight: 1.4 } }>Elige A o B y cambia los contadores de arriba. Cada uno guarda lo suyo.</div>
-                <div style={ { display: "flex", gap: 8, marginTop: 10 } }>{slotBtn("A", dA)}{slotBtn("B", dB)}</div>
-              </div>
-            ))}
-          </div>
-        )}
+        <div style={ { display: "flex", flexDirection: "column", gap: 8 } }>
+          {lista.length === 0 && (
+            <div style={ { border: "2px dashed " + C.bd, borderRadius: 14, padding: 18, textAlign: "center", fontSize: 13, color: C.mu } }>Aún no agregas clientes. Elige Hogar o Móvil, escribe el monto y toca Agregar.</div>
+          )}
+          {[...lista].map((it, i) => ({ it, n: numeros[i] })).reverse().map(({ it, n }) => (
+            <div key={it.id} style={ { background: "#fff", border: "1px solid " + C.bd, borderRadius: 14, padding: "6px 6px 6px 10px", display: "flex", alignItems: "center", gap: 10 } }>
+              <div style={ { width: 36, height: 36, borderRadius: 10, background: C.cell, display: "flex", alignItems: "center", justifyContent: "center", color: C.navy, flexShrink: 0 } }>{it.t === "h" ? icoHogar : icoMovil}</div>
+              <div style={ { flex: 1, minWidth: 0, fontSize: 15, fontWeight: 800 } }>{it.t === "h" ? "Hogar " : "Móvil "}{n}</div>
+              <MontoSimInput valor={it.v} etiqueta={"Monto de " + (it.t === "h" ? "Hogar " : "Móvil ") + n} C={C} onConfirmar={(v) => setLista((l) => l.map((c) => (c.id === it.id ? { ...c, v } : c)))} />
+              <button type="button" aria-label="Quitar" onClick={() => quitar(lista.filter((c) => c.id !== it.id), "Quitaste 1 cliente")} style={ { width: 44, height: 44, border: 0, background: "transparent", color: C.mu, fontSize: 20, fontWeight: 700, borderRadius: 12 } }>✕</button>
+            </div>
+          ))}
+        </div>
       </div>
+
+      {deshacer && (
+        <div style={ { position: "fixed", left: 12, right: 12, bottom: tecla.visible ? tecla.abajo + 62 : "calc(16px + env(safe-area-inset-bottom))", zIndex: 55, background: C.navy, color: "#fff", borderRadius: 14, padding: "4px 6px 4px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 14, fontWeight: 700, boxShadow: "0 6px 20px rgba(0,30,98,.3)" } }>
+          <span>{deshacer.msg}</span>
+          <button type="button" onClick={deshacerCambio} style={ { border: 0, background: "transparent", color: "#fff", fontSize: 14, fontWeight: 800, textDecoration: "underline", minHeight: 44, padding: "0 10px" } }>Deshacer</button>
+        </div>
+      )}
+
+      {tecla.visible && (
+        <div data-kbar="1" onPointerDown={(e) => e.preventDefault()} style={ { position: "fixed", left: 0, right: 0, bottom: tecla.abajo, zIndex: 60, background: "#fff", borderTop: "1px solid " + C.bd, padding: "6px 10px", display: "flex", justifyContent: tecla.principal ? "space-between" : "flex-end", gap: 10 } }>
+          <button type="button" onClick={() => { if (document.activeElement) document.activeElement.blur(); }} style={ { border: "2px solid " + C.bd, borderRadius: 12, background: C.page, color: C.navy, minHeight: 44, padding: "0 22px", fontSize: 15, fontWeight: 800 } }>Listo</button>
+          {tecla.principal && (
+            <button type="button" onClick={agregar} disabled={!montoOk} style={ { border: 0, borderRadius: 12, background: montoOk ? C.navy : "#C5CCDB", color: "#fff", minHeight: 44, padding: "0 22px", fontSize: 15, fontWeight: 800 } }>Agregar</button>
+          )}
+        </div>
+      )}
     </div>,
     document.body
   );
@@ -8262,6 +8239,8 @@ function clientesParaBonoIngresos(ingresosTotal, metaDinero, rpuHogar, rpuMovil)
 // plegables, y la proyección al final.
 function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaClientesHogar, metaClientesMovil, metaDinero, ingresosTotal, rpuHogar, rpuMovil, proyeccion, aunEsTemprano, onCambiarVista, onSimular }) {
   const C = { navy: "#001E62", mu: "#5A6680", bd: "#DFE5EF", pn: "#EEF3FB", blue: "#0072CE", cell: "#E3EDFA" };
+  // Siempre arranca compacta (cerrada); no se recuerda la última elección.
+  const [abierta, setAbierta] = useState(false);
   const pc = comision.pctClientesPonderado;
   const base = comision.montoBase;
   const tramoActual = TABLA_POSICION_NUEVA.filter((t) => pc >= t.min).slice(-1)[0] || null;
@@ -8291,7 +8270,7 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
   // ✓ = ya lo pasaste, ● = estás aquí, → (borde punteado) = el siguiente.
   const posEsc = (v) => Math.max(0, Math.min(100, ((v - MINIMO_COBRO) / (145 - MINIMO_COBRO)) * 100));
   const escalera = (
-    <div style={ { position: "relative", height: 58, margin: "10px 14px 6px" } } role="img" aria-label={"Escalera de escalones. Llevas " + pc.toFixed(1) + " por ciento de clientes."}>
+    <div style={ { position: "relative", height: 52, margin: "2px 12px 0" } } role="img" aria-label={"Escalera de escalones. Llevas " + pc.toFixed(1) + " por ciento de clientes."}>
       <div style={ { position: "absolute", left: 0, right: 0, top: 21, height: 8, borderRadius: 4, background: C.cell } } />
       <div style={ { position: "absolute", left: 0, top: 21, height: 8, borderRadius: 4, background: C.navy, width: posEsc(pc) + "%" } } />
       {TABLA_POSICION_NUEVA.map((t) => {
@@ -8320,87 +8299,98 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
     { hogar: rpuHogar ? Math.round(rpuHogar) : 38, movil: rpuMovil ? Math.round(rpuMovil) : 20 }
   );
   const fv = cv && cv.falta ? cv.falta : null;
-  const ganaEsc = fv ? Math.max(fv.ganaHogar || 0, fv.ganaMovil || 0) : 0;
-  let textoConsejo = null;
+    let textoConsejo = null;
   if (cv && cv.tope) {
     textoConsejo = "Estás en el tope de clientes. Ahora suman los ingresos: vende planes de más valor.";
   } else if (fv) {
     const partes = [];
     if (fv.hogar) partes.push(fv.hogar + " Hogar (+" + fmtMiles(fv.ganaHogar, 0) + ")");
     if (fv.movil) partes.push(fv.movil + " Móvil (+" + fmtMiles(fv.ganaMovil, 0) + ")");
-    if (partes.length) textoConsejo = "Falta" + ((fv.hogar > 1) || (fv.movil > 1) ? "n" : "") + " " + partes.join(" o ") + " para subir de escalón.";
+    if (partes.length) textoConsejo = "Clientes: falta" + ((fv.hogar > 1) || (fv.movil > 1) ? "n" : "") + " " + partes.join(" o ") + " para subir de escalón.";
   }
   const avisoIng = metaDinero && base > 0 && pi != null && pi < 100
-    ? "Tus ingresos van en " + pi.toFixed(0) + "%. Te faltan " + fmtMiles(faltaIng, 0) + " para activar el acelerador (+10%)" +
+    ? "faltan " + fmtMiles(faltaIng, 0) + " para el acelerador (+10%)" +
       (bonoIng && (bonoIng.cH != null || bonoIng.cM != null)
-        ? ": unos " + [bonoIng.cH != null ? bonoIng.cH + " Hogar" : null, bonoIng.cM != null ? bonoIng.cM + " Móvil" : null].filter(Boolean).join(" o ") + "."
+        ? ", unos " + [bonoIng.cH != null ? bonoIng.cH + " Hogar" : null, bonoIng.cM != null ? bonoIng.cM + " Móvil" : null].filter(Boolean).join(" o ") + "."
         : ".")
     : null;
-  const chip = { fontSize: 12, fontWeight: 700, border: "1px solid #D3DCEC", background: "#EAF1FB", borderRadius: 999, padding: "4px 10px" };
-  const filaBoton = { listStyle: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", minHeight: 52, fontSize: 14, fontWeight: 700, color: C.navy };
+  const filaBoton = { listStyle: "none", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", minHeight: 44, fontSize: 14, fontWeight: 700, color: C.navy };
+  const negrita = { color: C.navy, fontWeight: 700 };
+  // La cuenta explicada: base × % de ingresos + bono de portabilidad.
+  const pf = (v) => { const t = Math.round(v * 10) / 10; return (Number.isInteger(t) ? t.toFixed(0) : t.toFixed(1)) + "%"; };
+  const hayFactor = base > 0 && typeof comision.factorAcelerador === "number" && isFinite(comision.factorAcelerador);
+  const bonoTxt = comision.bonoConvergencias > 0 ? <React.Fragment> + <b style={negrita}>{fmtMiles(comision.bonoConvergencias, 0)}</b> portabilidad</React.Fragment> : null;
+  const formula = base === 0
+    ? <React.Fragment><b style={negrita}>{fmtMiles(0, 0)}</b> base (bajo el mínimo de {MINIMO_COBRO}%){bonoTxt}</React.Fragment>
+    : <React.Fragment><b style={negrita}>{fmtMiles(base, 0)}</b> base{hayFactor ? <React.Fragment> × <b style={negrita}>{pf(comision.factorAcelerador * 100)}</b> de ingresos{acel ? " (acelerador activo)" : ""}</React.Fragment> : null}{bonoTxt}</React.Fragment>;
+  // Fila de la tarjeta cerrada: el próximo escalón y cuántos clientes faltan.
+  const cH = fv ? fv.hogar : nH;
+  const cM = fv ? fv.movil : nM;
+  const opcionesEsc = [cH ? cH + " Hogar" : null, cM ? cM + " Móvil" : null].filter(Boolean).join(" o ");
+  const filaResumen = tramoSig
+    ? <React.Fragment>Próximo escalón: <span style={ { color: C.blue } }>{fmtMiles(tramoSig.monto, 0)}</span>{opcionesEsc ? " · " + opcionesEsc : ""}</React.Fragment>
+    : "★ Tramo máximo alcanzado";
   return (
     <div className="rounded-xl mb-6 overflow-hidden" style={ { background: "#fff", color: C.navy, border: "1px solid " + C.bd } }>
-      <div style={ { padding: "18px 18px 16px", borderBottom: "1px solid #E4E8F0" } }>
-        <div className="flex items-center justify-between gap-2">
-          <div style={ { fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: C.mu } }>Comisión · {mesLabel(periodoVisto).split(" ")[0]}</div>
-          <div style={ { display: "flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, background: "#EAF1FB", borderRadius: 999, padding: "4px 10px" } }>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15" rx="2" /><path d="M3.5 10h17M8 3v4M16 3v4" /></svg>
-            Cobras en {mesLabel(sumarMesClave(periodoVisto, 2)).split(" ")[0]}
-          </div>
+      <div style={ { padding: "12px 14px 10px", borderBottom: "1px solid #E4E8F0" } }>
+        <div style={ { fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", color: C.mu } }>Comisión de {mesLabel(periodoVisto).split(" ")[0]} · se cobra en {mesLabel(sumarMesClave(periodoVisto, 2)).split(" ")[0]}</div>
+        <div style={ { display: "flex", alignItems: "baseline", gap: 6, marginTop: 8 } }>
+          <div style={ { fontSize: 34, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" } }>{fmtMiles(comision.total)}</div>
+          <div style={ { fontSize: 12, fontWeight: 600, color: C.mu } }>estimada</div>
         </div>
-        <div style={ { display: "flex", alignItems: "baseline", gap: 8, marginTop: 10 } }>
-          <div style={ { fontSize: 44, fontWeight: 800, lineHeight: 1, letterSpacing: "-0.02em", fontVariantNumeric: "tabular-nums" } }>{fmtMiles(comision.total)}</div>
-          <div style={ { fontSize: 13, fontWeight: 600, color: C.mu } }>estimada</div>
-        </div>
-        <div style={ { display: "flex", flexWrap: "wrap", gap: 6, marginTop: 12 } }>
-          <span style={chip}>Base {fmtMiles(base, 0)}</span>
-          <span style={chip}>{base === 0 ? "Ingresos aún no afectan" : acel ? "✓ Acelerador activo" : pi != null && pi < 100 ? "! Ingresos al " + pi.toFixed(0) + "%" : "Ingresos al " + (pi != null ? pi.toFixed(0) : "—") + "%"}</span>
-          <span style={chip}>+{fmtMiles(comision.bonoConvergencias, 0)} portabilidad</span>
-        </div>
+        <div style={ { marginTop: 8, fontSize: 12, fontWeight: 600, color: C.mu, lineHeight: 1.4 } }>{formula}</div>
       </div>
 
-      <div style={ { padding: "14px 16px 8px" } }>
+      <button
+        type="button"
+        onClick={() => setAbierta(!abierta)}
+        aria-expanded={abierta}
+        style={ { width: "100%", minHeight: 52, padding: "6px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, background: "transparent", border: 0, textAlign: "left", fontSize: 13, fontWeight: 700, color: C.navy } }
+      >
+        <span style={ { flex: 1, minWidth: 0, lineHeight: 1.3 } }>{abierta ? "Escalera y consejos" : filaResumen}</span>
+        <span aria-hidden="true" style={ { color: C.mu, fontSize: 14 } }>{abierta ? "▴" : "▾"}</span>
+      </button>
+
+      {abierta && (
+      <div style={ { padding: "10px 12px 8px" } }>
         {base === 0 && (
           <div style={ { marginBottom: 12, borderRadius: 8, padding: "9px 12px", fontSize: 13, background: "#FFF3DC", color: "#7A3A06" } }>
             Aún no llegas al mínimo de cobro ({MINIMO_COBRO}% de clientes). Tu base es $0; por ahora solo cuenta el bono.
           </div>
         )}
 
-        <div style={ { borderRadius: 16, border: "1px solid #DDE7F5", background: "#F7FAFE", padding: 14 } }>
-          {tramoSig ? (
-            <React.Fragment>
-              <div style={ { fontSize: 13, fontWeight: 800, lineHeight: 1.35 } }>Próximo escalón: +{fmtMiles(ganaEsc || tramoSig.monto - base, 0)} en tu comisión</div>
-              <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Tu base pasaría de {fmtMiles(base, 0)} a {fmtMiles(tramoSig.monto, 0)}</div>
-              {escalera}
-              <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Siguiente escalón en {tramoSig.min}%</span></div>
-            </React.Fragment>
-          ) : (
-            <React.Fragment>
-              <div style={ { fontSize: 13, fontWeight: 800 } }>★ Tramo máximo alcanzado</div>
-              <div style={ { fontSize: 12, color: C.mu, marginTop: 2 } }>Base de {fmtMiles(base, 0)}. Cada ingreso extra sube el acelerador.</div>
-              {escalera}
-              <div style={leyenda}><span>Llevas {pc.toFixed(1)}%</span><span>Último escalón</span></div>
-            </React.Fragment>
-          )}
+        <div style={ { borderRadius: 14, border: "1px solid #DDE7F5", background: "#F7FAFE", padding: "8px 6px 6px" } }>
+          {escalera}
         </div>
 
         {(textoConsejo || avisoIng) && (
-          <div style={ { marginTop: 10 } }>
+          <div style={ { marginTop: 8 } }>
             {textoConsejo && (
-              <div style={ { display: "flex", alignItems: "center", gap: 8, borderLeft: "4px solid " + C.blue, background: C.cell, borderRadius: 10, padding: "8px 10px" } }>
+              <div style={ { display: "flex", alignItems: "center", gap: 8, borderLeft: "4px solid " + C.blue, background: C.cell, borderRadius: 10, padding: "6px 9px" } }>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={ { flexShrink: 0 } }><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.6 10.8c.7.6 1.1 1.4 1.1 2.2h5c0-.8.4-1.6 1.1-2.2A6 6 0 0 0 12 3z" /></svg>
-                <div style={ { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, lineHeight: 1.35 } }>{textoConsejo}</div>
+                <div style={ { flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, lineHeight: 1.3 } }>{textoConsejo}</div>
               </div>
             )}
             {avisoIng && (
-              <div style={ { marginTop: textoConsejo ? 6 : 0, borderRadius: 10, border: "1px solid #B45309", background: "#FFF3DC", padding: "6px 10px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11, fontWeight: 600, lineHeight: 1.35 } }>
-                <span style={ { fontWeight: 800, flexShrink: 0 } }>!</span><span>{avisoIng}</span>
+              <div style={ { marginTop: textoConsejo ? 5 : 0, borderRadius: 10, border: "1px solid #B45309", background: "#FFF3DC", padding: "5px 9px", display: "flex", gap: 8, alignItems: "flex-start", fontSize: 11, fontWeight: 600, lineHeight: 1.3 } }>
+                <span style={ { fontWeight: 800, flexShrink: 0 } }>!</span><span><b>Ingresos:</b> {avisoIng}</span>
               </div>
             )}
           </div>
         )}
 
-        <details style={ { marginTop: 12, borderTop: "1px solid " + C.bd } }>
+        <div style={ { marginTop: 10 } }>
+          <button
+            type="button"
+            onClick={onSimular}
+            style={ { width: "100%", minHeight: 44, background: "transparent", border: "1px solid #D3DCEC", borderRadius: 12, color: C.navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } }
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8.5 7.5h7M8.5 12h2M13.5 12h2M8.5 16h2M13.5 16h2" /></svg>
+            Simular clientes nuevos
+          </button>
+        </div>
+
+        <details style={ { marginTop: 8, borderTop: "1px solid " + C.bd } }>
           <summary style={filaBoton}><span>Ver detalle del cálculo</span><span style={ { color: C.mu, fontSize: 14 } }>▾</span></summary>
           <div style={ { paddingBottom: 8 } }>
             <div style={tit}>Clientes</div>
@@ -8430,9 +8420,12 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
             <div style={ { fontSize: 13, color: C.mu, padding: "14px 0" } }>Aún es temprano para proyectar tu cierre</div>
           ) : proyeccion ? (
             <details>
-              <summary style={ { ...filaBoton, minHeight: 56, gap: 10 } }>
-                <span style={ { flex: 1 } }>Proyección al cierre ▾<span style={ { display: "block", fontSize: 11, fontWeight: 400, color: C.mu } }>Si sigues a este ritmo</span></span>
-                <span style={ { fontSize: 14, fontWeight: 700, color: C.mu } }>~{fmtMiles(proyeccion.comision, 0)}</span>
+              <summary style={ { ...filaBoton, minHeight: 48, gap: 10 } }>
+                <span style={ { flex: 1 } }>Proyección al cierre<span style={ { display: "block", fontSize: 11, fontWeight: 400, color: C.mu } }>Si sigues a este ritmo</span></span>
+                <span style={ { display: "flex", alignItems: "center", gap: 8 } }>
+                  <span style={ { fontSize: 14, fontWeight: 700, color: C.mu } }>~{fmtMiles(proyeccion.comision, 0)}</span>
+                  <span style={ { color: C.mu, fontSize: 14 } }>▾</span>
+                </span>
               </summary>
               <div style={ { marginBottom: 8, borderRadius: 10, padding: "6px 12px", background: C.pn } }>
                 {[
@@ -8450,17 +8443,8 @@ function ComisionCardNueva({ periodoVisto, comision, hogarN, movilN, metaCliente
           ) : null}
         </div>
 
-        <div style={ { borderTop: "1px solid " + C.bd, padding: "12px 0 8px" } }>
-          <button
-            type="button"
-            onClick={onSimular}
-            style={ { width: "100%", minHeight: 44, background: "transparent", border: "1px solid #D3DCEC", borderRadius: 12, color: C.navy, fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 } }
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8.5 7.5h7M8.5 12h2M13.5 12h2M8.5 16h2M13.5 16h2" /></svg>
-            Simular clientes nuevos
-          </button>
-        </div>
       </div>
+      )}
     </div>
   );
 }
