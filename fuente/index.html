@@ -11305,9 +11305,9 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 </div>
                 <div className="pl-4 pt-0.5 pb-2.5 flex items-baseline justify-between gap-2.5" style={ { paddingRight: 30 } }>
                   {comisionMaximaHoy.completo ? (
-                    <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Posible", true)}<b className="font-mono" style={ { color: "#B45309", fontSize: 17 } }>{fmtMonto(comisionMaximaHoy.total).replace(/\.00$/, "")}</b></span>
+                    <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Posible", true)}<b className="font-mono" style={ { color: "#B45309", fontSize: 22 } }>{fmtMonto(comisionMaximaHoy.total).replace(/\.00$/, "")}</b></span>
                   ) : <span />}
-                  <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Seguro", false)}<b className="font-mono" style={ { color: "#001E62", fontSize: 17 } }>{fmtMonto(comisionConfirmadaHoy.total).replace(/\.00$/, "")}</b></span>
+                  <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Seguro", false)}<b className="font-mono" style={ { color: "#001E62", fontSize: 22 } }>{fmtMonto(comisionConfirmadaHoy.total).replace(/\.00$/, "")}</b></span>
                 </div>
                 <button type="button" onClick={onAbrirComision} className="rounded-lg text-white font-bold text-[13px] flex items-center justify-center" style={ { minHeight: 44, background: "#001E62", margin: "0 12px 10px", width: "calc(100% - 24px)" } }>{nPorCobrar} por cobrar · Abrir herramienta de cobro ›</button>
               </div>
