@@ -12302,9 +12302,15 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
     return () => window.removeEventListener("resize", medir);
   }, []);
   function elegirDia(i) {
+    if (diaSel === i) { quitarDia(); return; }
     memoriaDashboard.dia = i;
     memoriaDashboard.diaPeriodo = periodoKey;
     setDiaSel(i);
+    setDetalleOculto(true);
+  }
+  function quitarDia() {
+    memoriaDashboard.dia = null;
+    setDiaSel(null);
     setDetalleOculto(true);
   }
 
@@ -12536,7 +12542,10 @@ function AvanceMetasCard({ onMarcarInstalado, onReprogramar, onCopiarMensaje, co
               <span className="font-semibold">Día {sel + 1} · {nombreDia(dias[sel])} · <span className="font-mono font-bold" style={ { color: "#001E62" } }>{fmtMonto(dineroDe(A[sel]) + dineroDe(B[sel]))}</span>
                 <span className="block text-xs font-normal" style={ { color: "#5A6680" } }>{A[sel].length + B[sel].length === 0 ? "No entró nada" : [A[sel].length ? A[sel].length + " Hogar" : "", B[sel].length ? B[sel].length + " Móvil" : ""].filter(Boolean).join(", ")}</span>
               </span>
+              <span className="flex items-center gap-1.5 shrink-0">
               {A[sel].length + B[sel].length === 0 ? null : <button type="button" onClick={() => setDetalleOculto((v) => !v)} aria-expanded={!detalleOculto} className="shrink-0 rounded-[10px] text-xs font-bold px-3" style={ { height: 38, background: "#E3EDFA", color: "#001E62", border: "1px solid #C9D9F0" } }>{detalleOculto ? "Ver clientes ▾" : "Ocultar ▴"}</button>}
+              <button type="button" onClick={quitarDia} aria-label="Quitar selección del día" className="shrink-0 rounded-[10px] text-base font-bold" style={ { width: 38, height: 38, background: "white", color: "#001E62", border: "1px solid #C9D9F0" } }>✕</button>
+              </span>
             </div>
             {detalleOculto ? null : <>
             {A[sel].length + B[sel].length === 0 ? <div className="mt-2 text-xs" style={ { color: "#5A6680" } }>No entró nada ese día.</div> : null}
