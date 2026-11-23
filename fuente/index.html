@@ -11402,7 +11402,14 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                           <b className="font-mono" style={ { color: "#001E62" } }>{d.completo ? fmtMonto(d.total) : "—"}</b>
                           <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{abierto ? "▴" : "▾"}</span>
                         </button>
-                        {abierto ? cuadroDetalle(d, [["Clientes hogar", String(d.cantidad)]]) : null}
+                        {abierto ? (() => {
+                          const rg = rangoCiclo(d.key);
+                          const totalCiclo = clientes.filter((c) => c.fechaInstalacion && periodoDelCliente(c) === d.key).length;
+                          return cuadroDetalle(d, [
+                            ["Clientes que cuentan", d.cantidad + " de " + Math.max(totalCiclo, d.cantidad)],
+                            ["Ciclo", nombreMes(d.key) + " · " + fmtFecha(fechaLocalISO(rg.inicio)) + " – " + fmtFecha(fechaLocalISO(rg.fin))],
+                          ]);
+                        })() : null}
                       </div>
                     );
                   })}
