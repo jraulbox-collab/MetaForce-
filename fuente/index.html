@@ -11303,11 +11303,11 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                   <span className="text-xs font-bold uppercase tracking-wide" style={ { color: "#B45309" } }>{mesPagoNombre}</span>
                   <span className="text-xs" style={ { color: "#5A6680" } }> · ventas de {nombreMes(periodoRescateActivo)}{rescateDiasRestantes !== null ? " · " + (rescateDiasRestantes <= 0 ? "hoy es el último día" : "quedan " + rescateDiasRestantes + " día" + (rescateDiasRestantes === 1 ? "" : "s")) : ""}</span>
                 </div>
-                <div className="pl-4 pt-0.5 pb-2.5 flex items-baseline justify-end gap-4" style={ { paddingRight: 30 } }>
+                <div className="pl-4 pt-0.5 pb-2.5 flex items-baseline justify-end gap-x-4 gap-y-1 flex-wrap" style={ { paddingRight: 30 } }>
                   {comisionMaximaHoy.completo ? (
                     <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Posible", true)}<b className="font-mono" style={ { color: "#B45309", fontSize: 16 } }>{fmtMonto(comisionMaximaHoy.total).replace(/\.00$/, "")}</b></span>
                   ) : <span />}
-                  <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Seguro", false)}<b className="font-mono" style={ { color: "#001E62", fontSize: 22 } }>{fmtMonto(comisionConfirmadaHoy.total).replace(/\.00$/, "")}</b></span>
+                  <span className="inline-flex items-baseline gap-1.5">{etiquetaChip("Seguro", false)}<b className="font-mono" style={ { color: "#001E62", fontSize: 30 } }>{fmtMonto(comisionConfirmadaHoy.total).replace(/\.00$/, "")}</b></span>
                 </div>
                 <button type="button" onClick={onAbrirComision} className="rounded-lg text-white font-bold text-[13px] flex items-center justify-center" style={ { minHeight: 44, background: "#001E62", margin: "0 12px 10px", width: "calc(100% - 24px)" } }>{nPorCobrar} por cobrar · Abrir herramienta de cobro ›</button>
               </div>
@@ -11342,7 +11342,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             filas.push(["Base", fmtMonto(com.montoBase) + " (" + com.pctIngreso.toFixed(1) + "% ingresos) × " + com.pctArpu.toFixed(1) + "% ARPU × " + com.pctClientes.toFixed(1) + "% clientes"]);
           }
           return (
-            <div className="mf-abrir mx-3 mb-3 rounded-[10px] px-3" style={ { background: "#F3F6FB" } }>
+            <div className="mf-abrir mx-3 mb-3 rounded-[10px] px-3" style={ { background: "#F3F6FB", border: "1px solid #E1E7F1" } }>
               {filas.map((f, i) => (
                 <div key={i} className="flex justify-between gap-2.5 py-1.5 text-xs" style={ i ? { borderTop: "1px solid #E1E7F1" } : undefined }>
                   <span style={ { color: "#5A6680" } }>{f[0]}</span>
@@ -11370,7 +11370,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               )}
               {filaRescate && <div style={ { borderTop: "1px solid #DFE5EF" } }>{filaRescate}</div>}
               {mostrarCobroMes && (
-                <div style={ { borderTop: "1px solid #DFE5EF" } }>
+                <div style={ { borderTop: "1px solid #DFE5EF", background: "#EEF4FC", borderLeft: "4px solid #001E62" } }>
                   <button type="button" onClick={() => setCobroMesAbierto((v) => !v)} aria-expanded={cobroMesAbierto} className="w-full text-left flex items-center justify-between gap-2 px-4" style={ { minHeight: 68 } }>
                     <span className="min-w-0">
                       <span className="block text-xs font-bold uppercase tracking-wide" style={ { color: "#001E62" } }>Este mes · {nombreMes(periodoActual)}</span>
@@ -11401,15 +11401,17 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
               {mesesCobrados.length > 0 && (
                 <div style={ { borderTop: "1px solid #DFE5EF" } }>
                   <div className="px-4 pt-2 text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>Historial</div>
-                  {mesesVisibles.map((d) => {
+                  {mesesVisibles.map((d, idx) => {
+                    const tam = [14, 13, 12, 12, 12][idx] || 12;
+                    const colMes = ["#001E62", "#2C3B5C", "#4A5873", "#4A5873", "#4A5873"][idx] || "#4A5873";
                     const abierto = !!histMesAbierto[d.key];
                     const mesPago = nombreMesCap(sumarMesClave(d.key, 2));
                     return (
                       <div key={d.key}>
                         <button type="button" onClick={() => setHistMesAbierto((o) => ({ ...o, [d.key]: !o[d.key] }))} aria-expanded={abierto} className="w-full text-left flex items-center gap-2 px-4 text-[13px]" style={ { minHeight: 44 } }>
-                          <b className="w-[88px] shrink-0" style={ { color: "#001E62" } }>{mesPago}</b>
+                          <b className="w-[88px] shrink-0" style={ { color: colMes, fontSize: tam } }>{mesPago}</b>
                           <span className="flex-1 text-xs" style={ { color: "#5A6680" } }>ventas de {nombreMes(d.key)}</span>
-                          <b className="font-mono text-sm" style={ { color: "#001E62" } }>{d.completo ? fmtMonto(d.total).replace(/\.00$/, "") : "—"}</b>
+                          <b className="font-mono" style={ { color: colMes, fontSize: tam } }>{d.completo ? fmtMonto(d.total).replace(/\.00$/, "") : "—"}</b>
                           <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{abierto ? "▴" : "▾"}</span>
                         </button>
                         {abierto ? cuadroDetalle(d, [["Clientes hogar", String(d.cantidad)]]) : null}
