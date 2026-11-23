@@ -3140,6 +3140,8 @@ function App() {
       return "dashboard";
     }
   });
+  // Al salir de Clientes hacia otra pestaña, la vista vuelve a "Clientes" (así una tarjeta del Dashboard no abre Prospectos por haberlo dejado ahí).
+  useEffect(() => { if (tab !== "clientes") setVistaClientes("clientes"); }, [tab]);
   const [origenDetalle, setOrigenDetalle] = useState("clientes");
   const [periodoDash, setPeriodoDash] = useState(periodoActualApp);
   const [mesesTodosApp, setMesesTodosApp] = useState(false);
