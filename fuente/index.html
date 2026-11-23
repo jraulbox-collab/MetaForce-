@@ -11352,12 +11352,12 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
             </div>
           );
         };
-        const valorMes = cobroMes.confirmado.completo && !cobroMes.vacio ? fmtMonto(cobroMes.confirmado.total).replace(/\.00$/, "") : "—";
+        const valorMes = cobroMes.confirmado.completo && !cobroMes.vacio ? fmtMonto(cobroMes.confirmado.total) : "—";
         const mesesCobrados = historialComisiones
           .filter((d) => d.key <= sumarMesClave(periodoActual, -3) && (d.completo || d.cantidad > 0))
           .slice()
           .reverse();
-        const mesesVisibles = historialAbierto ? mesesCobrados : mesesCobrados.slice(0, 3);
+        const mesesVisibles = historialAbierto ? mesesCobrados : mesesCobrados.slice(0, 2);
         return (
           <div className="mb-6">
             <div className="bg-white rounded-xl border overflow-hidden" style={ { borderColor: "#DFE5EF" } }>
@@ -11369,56 +11369,44 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 <p className="px-4 pb-3 text-xs" style={ { color: "#5A6680" } }>Todavía no hay cobros por mostrar.</p>
               )}
               {filaRescate && <div style={ { borderTop: "1px solid #DFE5EF" } }>{filaRescate}</div>}
-              {mostrarCobroMes && (
-                <div style={ { borderTop: "1px solid #DFE5EF", background: "#EEF4FC", borderLeft: "4px solid #001E62" } }>
-                  <button type="button" onClick={() => setCobroMesAbierto((v) => !v)} aria-expanded={cobroMesAbierto} className="w-full text-left flex items-center justify-between gap-2 px-4" style={ { minHeight: 68 } }>
-                    <span className="min-w-0">
-                      <span className="block text-xs font-bold uppercase tracking-wide" style={ { color: "#001E62" } }>Este mes · {nombreMes(periodoActual)}</span>
-                      <span className="block text-xs mt-0.5" style={ { color: "#5A6680" } }>
-                        {cobroMes.vacio ? "Sin clientes en el ciclo de " + nombreMes(cobroMes.periodoCobro) : !cobroMes.confirmado.completo ? "Falta cargar meta de " + cobroMes.faltantes.join(", ") : "ventas de " + nombreMes(cobroMes.periodoCobro)}
-                      </span>
-                      {cobroMes.confirmado.completo && !cobroMes.vacio ? <span className="block mt-1">{etiquetaChip("Seguro", false)}</span> : null}
-                    </span>
-                    <span className="text-right shrink-0 flex items-center gap-1.5">
-                      <span>
-                        <span className="block font-mono font-extrabold" style={ { color: "#001E62", fontSize: 32, letterSpacing: "-0.03em", lineHeight: 1.1 } }>{valorMes}</span>
-                        {!definitivo && cobroMes.confirmado.completo && !cobroMes.vacio && cobroMes.siPagan.completo ? <span className="block text-[11px] font-bold" style={ { color: "#5A6680" } }>posible {fmtMonto(cobroMes.siPagan.total).replace(/\.00$/, "")} si pagan {cobroMes.nEnPlazo}</span> : null}
-                      </span>
-                      <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{cobroMesAbierto ? "▴" : "▾"}</span>
-                    </span>
-                  </button>
-                  {cobroMesAbierto && (
-                    cobroMes.vacio ? (
-                      <p className="mf-abrir px-4 pb-3 text-xs" style={ { color: "#5A6680" } }>No hay clientes ni Clientes Móvil en este ciclo.</p>
-                    ) : !cobroMes.confirmado.completo ? (
-                      <p className="mf-abrir px-4 pb-3 text-xs" style={ { color: "#5A6680" } }>Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.</p>
-                    ) : cuadroDetalle(cobroMes.confirmado, [
-                        ["Clientes que cuentan", cobroMes.nPagados + " de " + (cobroMes.nPagados + cobroMes.nEnPlazo + cobroMes.nVencidos) + (cobroMes.nEnPlazo > 0 ? " · " + cobroMes.nEnPlazo + " pendiente" + (cobroMes.nEnPlazo === 1 ? "" : "s") + " (vence el " + fmtFecha(fechaLocalISO(cobroMes.fechaLimite)) + ")" : "")],
-                      ].concat([["Ciclo", nombreMes(cobroMes.periodoCobro) + " · " + fmtFecha(fechaLocalISO(rango.inicio)) + " – " + fmtFecha(fechaLocalISO(rango.fin))]]))
-                  )}
-                </div>
-              )}
-              {mesesCobrados.length > 0 && (
+              {(mostrarCobroMes || mesesCobrados.length > 0) && (
                 <div style={ { borderTop: "1px solid #DFE5EF" } }>
                   <div className="px-4 pt-2 text-[11px] font-bold uppercase tracking-wide" style={ { color: "#5A6680" } }>Historial</div>
-                  {mesesVisibles.map((d, idx) => {
-                    const tam = [14, 13, 12, 12, 12][idx] || 12;
-                    const colMes = ["#001E62", "#2C3B5C", "#4A5873", "#4A5873", "#4A5873"][idx] || "#4A5873";
+                  {mostrarCobroMes && (
+                    <div style={ { background: "#EEF4FC", borderLeft: "4px solid #001E62" } }>
+                      <button type="button" onClick={() => setCobroMesAbierto((v) => !v)} aria-expanded={cobroMesAbierto} className="w-full text-left flex items-center gap-2 px-3 text-[14px]" style={ { minHeight: 44 } }>
+                        <b className="w-[88px] shrink-0" style={ { color: "#001E62" } }>{nombreMesCap(periodoActual)}</b>
+                        <span className="flex-1 text-xs" style={ { color: "#5A6680" } }>{cobroMes.vacio ? "sin clientes en el ciclo" : "ventas de " + nombreMes(cobroMes.periodoCobro)}</span>
+                        <b className="font-mono" style={ { color: "#001E62" } }>{valorMes}</b>
+                        <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{cobroMesAbierto ? "▴" : "▾"}</span>
+                      </button>
+                      {cobroMesAbierto && (
+                        cobroMes.vacio ? (
+                          <p className="mf-abrir px-3 pb-3 text-xs" style={ { color: "#5A6680" } }>No hay clientes ni Clientes Móvil en este ciclo.</p>
+                        ) : !cobroMes.confirmado.completo ? (
+                          <p className="mf-abrir px-3 pb-3 text-xs" style={ { color: "#5A6680" } }>Falta cargar la meta de {cobroMes.faltantes.join(", ")} del ciclo de {nombreMes(cobroMes.periodoCobro)}. Se cargan en el Dashboard, en ese período.</p>
+                        ) : cuadroDetalle(cobroMes.confirmado, [
+                            ["Clientes que cuentan", cobroMes.nPagados + " de " + (cobroMes.nPagados + cobroMes.nEnPlazo + cobroMes.nVencidos) + (cobroMes.nEnPlazo > 0 ? " · " + cobroMes.nEnPlazo + " pendiente" + (cobroMes.nEnPlazo === 1 ? "" : "s") + " (vence el " + fmtFecha(fechaLocalISO(cobroMes.fechaLimite)) + ")" : "")],
+                          ].concat(!definitivo && cobroMes.siPagan.completo ? [["Posible si pagan", fmtMonto(cobroMes.siPagan.total)]] : []).concat([["Ciclo", nombreMes(cobroMes.periodoCobro) + " · " + fmtFecha(fechaLocalISO(rango.inicio)) + " – " + fmtFecha(fechaLocalISO(rango.fin))]]))
+                      )}
+                    </div>
+                  )}
+                  {mesesVisibles.map((d) => {
                     const abierto = !!histMesAbierto[d.key];
                     const mesPago = nombreMesCap(sumarMesClave(d.key, 2));
                     return (
                       <div key={d.key}>
-                        <button type="button" onClick={() => setHistMesAbierto((o) => ({ ...o, [d.key]: !o[d.key] }))} aria-expanded={abierto} className="w-full text-left flex items-center gap-2 px-4 text-[13px]" style={ { minHeight: 44 } }>
-                          <b className="w-[88px] shrink-0" style={ { color: colMes, fontSize: tam } }>{mesPago}</b>
+                        <button type="button" onClick={() => setHistMesAbierto((o) => ({ ...o, [d.key]: !o[d.key] }))} aria-expanded={abierto} className="w-full text-left flex items-center gap-2 px-4 text-[14px]" style={ { minHeight: 44 } }>
+                          <b className="w-[88px] shrink-0" style={ { color: "#001E62" } }>{mesPago}</b>
                           <span className="flex-1 text-xs" style={ { color: "#5A6680" } }>ventas de {nombreMes(d.key)}</span>
-                          <b className="font-mono" style={ { color: colMes, fontSize: tam } }>{d.completo ? fmtMonto(d.total).replace(/\.00$/, "") : "—"}</b>
+                          <b className="font-mono" style={ { color: "#001E62" } }>{d.completo ? fmtMonto(d.total) : "—"}</b>
                           <span aria-hidden="true" className="text-xs" style={ { color: "#5A6680" } }>{abierto ? "▴" : "▾"}</span>
                         </button>
                         {abierto ? cuadroDetalle(d, [["Clientes hogar", String(d.cantidad)]]) : null}
                       </div>
                     );
                   })}
-                  {mesesCobrados.length > 3 && (
+                  {mesesCobrados.length > 2 && (
                     <button type="button" onClick={() => setHistorialAbierto((v) => !v)} aria-expanded={historialAbierto} className="w-full text-sm font-bold" style={ { minHeight: 44, color: "#0072CE", borderTop: "1px solid #EEF1F7" } }>{historialAbierto ? "Ver menos ▴" : "Ver más meses ▾"}</button>
                   )}
                 </div>
