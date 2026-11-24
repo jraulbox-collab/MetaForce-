@@ -2515,8 +2515,13 @@ function conSalida(e, fn) {
 // duplicado invisible) y borra todo con un toque.
 function CampoBuscar({ value, onChange, placeholder, ariaLabel, wrapperClassName, inputClassName, inputStyle, fontSize = 16, padIzq = 12 }) {
   const v = value || "";
+  // La lupa va fija dentro del campo (no en el texto de ayuda, que desaparece al escribir).
+  const conLupa = typeof placeholder === "string" && placeholder.indexOf("🔍") === 0;
+  const textoAyuda = conLupa ? placeholder.replace(/^🔍\s*/, "") : placeholder;
+  const padL = conLupa ? padIzq + 28 : padIzq;
   return (
     <div className={"relative " + (wrapperClassName || "")}>
+      {conLupa && <span aria-hidden="true" style={ { position: "absolute", left: padIzq, top: 0, bottom: 0, display: "flex", alignItems: "center", fontSize: 16, pointerEvents: "none", zIndex: 1 } }>🔍</span>}
       <input
         type="text"
         inputMode="search"
@@ -2525,13 +2530,13 @@ function CampoBuscar({ value, onChange, placeholder, ariaLabel, wrapperClassName
         autoCorrect="off"
         value={v}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        aria-label={ariaLabel || placeholder}
+        placeholder={textoAyuda}
+        aria-label={ariaLabel || textoAyuda}
         className={inputClassName}
-        style={ { ...(inputStyle || {}), fontSize, fontFamily: "inherit", paddingLeft: padIzq, paddingRight: 44 } }
+        style={ { ...(inputStyle || {}), fontSize, fontFamily: "inherit", paddingLeft: padL, paddingRight: 44 } }
       />
       {v ? (
-        <div className="mf-fade" aria-hidden="false" style={ { position: "absolute", top: 0, bottom: 0, left: padIzq + 2, right: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" } }>
+        <div className="mf-fade" aria-hidden="false" style={ { position: "absolute", top: 0, bottom: 0, left: padL + 2, right: 0, display: "flex", alignItems: "center", pointerEvents: "none", overflow: "hidden" } }>
           <span style={ { visibility: "hidden", whiteSpace: "pre", fontSize, fontFamily: "inherit", maxWidth: "calc(100% - 44px)", overflow: "hidden", flex: "0 1 auto" } }>{v}</span>
           <button
             type="button"
@@ -8032,7 +8037,7 @@ function BarriosPantalla({ clientes, clientesMovil, onVolver, onVerCliente, ajus
 
           {vista === "buscar" && (
             <>
-              <input type="search" value={busca} onChange={(e) => { setBusca(e.target.value); setSoloId(null); setVerMas(30); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" className="w-full rounded-xl border outline-none px-3 mb-2" style={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
+              <CampoBuscar value={busca} onChange={(t) => { setBusca(t); setSoloId(null); setVerMas(30); }} placeholder="🔍 Buscar barrio, corregimiento o distrito" wrapperClassName="mb-2" inputClassName="w-full rounded-xl border outline-none" inputStyle={ { borderColor: "#DFE5EF", height: 44, background: "#fff" } } />
               {formNuevo ? <FormBarrioNuevo datos={datos} inicial={formNuevo} onGuardar={guardarNuevo} onCancelar={() => setFormNuevo(null)} /> : (
                 <button type="button" onClick={() => setFormNuevo({})} className="w-full rounded-xl border font-bold text-sm mb-3" style={ { minHeight: 44, borderColor: "#001E62", color: "#001E62", background: "#fff" } }>＋ Agregar barrio</button>
               )}
