@@ -2513,14 +2513,14 @@ function conSalida(e, fn) {
 // ---------- Campo de búsqueda con ✕ pegada al final del texto ----------
 // La ✕ aparece justo a la derecha de lo que se está escribiendo (se mide el texto con un
 // duplicado invisible) y borra todo con un toque.
-function CampoBuscar({ value, onChange, placeholder, ariaLabel, wrapperClassName, inputClassName, inputStyle, fontSize = 16, padIzq = 12 }) {
+function CampoBuscar({ value, onChange, placeholder, ariaLabel, wrapperClassName, inputClassName, inputStyle, fontSize = 16, padIzq = 12, marca }) {
   const v = value || "";
   // La lupa va fija dentro del campo (no en el texto de ayuda, que desaparece al escribir).
   const conLupa = typeof placeholder === "string" && placeholder.indexOf("🔍") === 0;
   const textoAyuda = conLupa ? placeholder.replace(/^🔍\s*/, "") : placeholder;
   const padL = conLupa ? padIzq + 28 : padIzq;
   return (
-    <div className={"relative " + (wrapperClassName || "")}>
+    <div className={"relative " + (wrapperClassName || "")} data-buscador={marca || undefined}>
       {conLupa && <span aria-hidden="true" style={ { position: "absolute", left: padIzq, top: 0, bottom: 0, display: "flex", alignItems: "center", fontSize: 16, pointerEvents: "none", zIndex: 1 } }>🔍</span>}
       <input
         type="text"
@@ -13512,6 +13512,22 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
   const [tiposBusq, setTiposBusq] = useState({ h: true, m: true, p: true, e: true });
   const [movilDesdeBusqueda, setMovilDesdeBusqueda] = useState(false);
   const buscando = search.trim().length > 0;
+  // En PC, al escribir la primera letra la pantalla pasa a "resultados" y el campo cambia de lugar:
+  // se le devuelve el cursor al campo que queda visible (y al revés al borrar todo).
+  const buscandoAntes = useRef(buscando);
+  useEffect(() => {
+    const antes = buscandoAntes.current;
+    buscandoAntes.current = buscando;
+    if (antes === buscando) return;
+    try {
+      if (!window.matchMedia || !window.matchMedia("(min-width: 768px)").matches) return;
+      const el = document.querySelector('[data-buscador="' + (buscando ? "superior" : "pc") + '"] input');
+      if (!el || document.activeElement === el) return;
+      el.focus();
+      const n = el.value.length;
+      el.setSelectionRange(n, n);
+    } catch (e) {}
+  }, [buscando]);
   const resultadosBusq = useMemo(
     () => (buscando ? armarResultadosBusqueda({ q: search.trim(), hogares: clientes, moviles: clientesMovil, todosHogares: clientesCompletos || clientes, prospectos, clientesActivos: clientesActivos || clientesTodos, eliminados, movilesEliminados }) : []),
     [buscando, search, clientes, clientesMovil, clientesCompletos, prospectos, clientesActivos, clientesTodos, eliminados, movilesEliminados]
@@ -13942,10 +13958,11 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
     <div>
       {!fichaMovilAbierta && (
       <>
-      <div className="md:hidden mb-3" data-no-swipe="" style={ { paddingTop: 4 } }>
+      <div className={"mb-3" + (buscando ? "" : " md:hidden")} data-no-swipe="" style={ { paddingTop: 4 } }>
         <div className="flex items-center gap-2">
           <div className="relative flex-1 min-w-0">
             <CampoBuscar
+              marca="superior"
               value={search}
               onChange={setSearch}
               placeholder="🔍 Buscar nombre, teléfono…"
@@ -14248,7 +14265,8 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
       <CampoBuscar
         value={search}
         onChange={setSearch}
-        placeholder="Buscar en Hogar y Móvil: nombre, teléfono, suscriptor o plan…"
+        marca="pc"
+        placeholder="🔍 Buscar en Hogar y Móvil: nombre, teléfono, suscriptor o plan…"
         wrapperClassName="mb-3 hidden md:block"
         inputClassName="w-full py-2 rounded-md border text-sm outline-none"
         inputStyle={ { borderColor: "#DFE5EF" } }
@@ -16913,7 +16931,8 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
       <CampoBuscar
         value={busquedaMovil}
         onChange={setBusquedaMovil}
-        placeholder="Buscar en Hogar y Móvil: nombre, teléfono…"
+        marca="pc"
+        placeholder="🔍 Buscar en Hogar y Móvil: nombre, teléfono…"
         wrapperClassName="hidden md:block mb-3"
         inputClassName="w-full py-2 rounded-md border text-sm outline-none bg-white"
         inputStyle={ { borderColor: "#DFE5EF" } }
