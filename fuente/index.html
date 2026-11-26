@@ -19051,6 +19051,23 @@ function VerificarOrdenes({ clientes, convergencias, verif, setVerif, onAgregar,
 
 function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCancel, clientes = [], onAbrirExistente, movilesTodos = [] }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  // Planes de TV: los fijos + los que ya usa algún cliente + el actual. "Otro…" permite escribir uno nuevo.
+  const [tvOtro, setTvOtro] = useState(false);
+  const [tvNuevo, setTvNuevo] = useState("");
+  const tvOpciones = useMemo(() => {
+    const extra = [];
+    [...clientes.map((c) => c.planTV), form.planTV].forEach((t) => {
+      const v = String(t || "").trim();
+      if (v && !TIPOS_TV.includes(v) && !extra.includes(v)) extra.push(v);
+    });
+    return [...TIPOS_TV, ...extra];
+  }, [clientes, form.planTV]);
+  const guardarTvNuevo = () => {
+    const v = tvNuevo.trim().toUpperCase().replace(/\s+/g, " ");
+    if (v) setForm((f) => ({ ...f, planTV: v }));
+    setTvOtro(false);
+    setTvNuevo("");
+  };
   const inputClass = "w-full px-3 py-2 rounded-md border text-sm outline-none focus:ring-2";
   const inputStyle = { borderColor: "#DFE5EF" };
   const lockedStyle = { borderColor: "#DFE5EF", background: "#F3F4F6", color: "#5A6680", cursor: "not-allowed" };
@@ -19259,10 +19276,26 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
             {form.planTipo === "DOBLE" && (
               <div className="col-span-2">
                 <Field label="Plan de TV *">
-                  <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
+                  <select required value={form.planTV} onChange={(e) => { if (e.target.value === "__otro") { setTvOtro(true); } else { setTvOtro(false); set("planTV")(e); } }} className={inputClass} style={inputStyle}>
                     <option value="">Seleccionar…</option>
-                    {TIPOS_TV.map((t) => <option key={t} value={t}>{t}</option>)}
+                    {tvOpciones.map((t) => <option key={t} value={t}>{t}</option>)}
+                    <option value="__otro">＋ Otro…</option>
                   </select>
+                  {tvOtro && (
+                    <div className="flex items-center gap-2 mt-2">
+                      <input
+                        autoFocus
+                        type="text"
+                        value={tvNuevo}
+                        onChange={(e) => setTvNuevo(e.target.value)}
+                        onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); guardarTvNuevo(); } }}
+                        placeholder="Nombre del plan de TV"
+                        className={inputClass}
+                        style={inputStyle}
+                      />
+                      <button type="button" onClick={guardarTvNuevo} aria-label="Usar este plan" className="font-bold rounded-md px-3" style={ { minHeight: 40, background: "#E3EDFA", color: "#0072CE" } }>✓</button>
+                    </div>
+                  )}
                 </Field>
               </div>
             )}
