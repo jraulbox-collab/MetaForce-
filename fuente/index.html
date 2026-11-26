@@ -19276,11 +19276,15 @@ function FormularioCliente({ form, setForm, onSubmit, editing, editingId, onCanc
             {form.planTipo === "DOBLE" && (
               <div className="col-span-2">
                 <Field label="Plan de TV *">
-                  <select required value={form.planTV} onChange={(e) => { if (e.target.value === "__otro") { setTvOtro(true); } else { setTvOtro(false); set("planTV")(e); } }} className={inputClass} style={inputStyle}>
+                  <select required value={form.planTV} onChange={set("planTV")} className={inputClass} style={inputStyle}>
                     <option value="">Seleccionar…</option>
                     {tvOpciones.map((t) => <option key={t} value={t}>{t}</option>)}
-                    <option value="__otro">＋ Otro…</option>
                   </select>
+                  {!tvOtro && (
+                    <div className="flex justify-end">
+                      <button type="button" onClick={() => setTvOtro(true)} className="text-xs" style={ { color: "#8A94A8", padding: "6px 2px", minHeight: 28 } }>＋ otro</button>
+                    </div>
+                  )}
                   {tvOtro && (
                     <div className="flex items-center gap-2 mt-2">
                       <input
