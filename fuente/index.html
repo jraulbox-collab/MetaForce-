@@ -2154,6 +2154,21 @@ ${bloquePagoHogar()}
 
 Una vez realizado el pago, compárteme el comprobante para validar el ingreso. Cualquier consulta sobre su plan, con gusto le ayudo.`;
 }
+function textoD3(c, n) {
+  const nombre = primerNombre(c);
+  const ordinal = { 2: "segunda", 3: "tercera", 4: "cuarta" }[n] || "";
+  return `Hola ${nombre}, le habla José Severino de Tigo Panamá.
+
+Le recuerdo que ya salió la ${ordinal ? `*${ordinal} factura*` : "factura"} de su *servicio residencial*:
+💳 Vence: *${fmtFechaLarga(c._venc)}*
+🔢 N° de suscriptor: *${c.numeroSuscriptor}*
+
+Puede pagarla antes de esa fecha para evitar la suspensión del servicio.
+
+${bloquePagoHogar()}
+
+Cuando pague, compárteme el comprobante. Quedo atento si necesita ayuda.`;
+}
 function textoT3(c, n) {
   const nombre = primerNombre(c);
   const dias = daysFromToday(c._venc);
@@ -2339,6 +2354,7 @@ const MILESTONE_TYPES = [
   { type: "d1", tag: "🧾", corto: "Factura lista", label: "Nueva factura", color: "#001E62", bg: "#EAF0FB", getTexto: textoD1 },
   { type: "t15", tag: "⏰", corto: "Aviso previo", label: "15 días", color: "#B45309", bg: "#FFF3DC", getTexto: textoT15 },
   { type: "t3", tag: "⏰", corto: "Último aviso", label: "3 días", color: "#B45309", bg: "#FFF6E3", getTexto: textoT3 },
+  { type: "d3", tag: "🔔", corto: "Recordatorio", label: "Recordatorio de pago", color: "#0072CE", bg: "#E3EDFA", getTexto: textoD3 },
 ];
 
 // Igual que MILESTONE_TYPES pero incluye también los avisos preventivos de abono
@@ -2415,15 +2431,17 @@ function calcularFacturas(cliente, umbralProrrateo) {
     const especial = n === 1 && !cliente.cancelado && esEsquemaEspecial(cliente, umbralProrrateo);
     // Clientes nuevos con ciclo sin confirmar: sus mensajes esperan hasta que lo confirmes en Tigo.
     const espera = cicloHogarEspera(cliente);
-    const tiposParaEstaFactura = cliente.cancelado || n === 4 ? [] : n === 1 ? (especial ? MILESTONE_TYPES.filter((mt) => mt.type === "t3") : MILESTONE_TYPES) : MILESTONE_TYPES.filter((mt) => mt.type === "t3");
+    const tiposParaEstaFactura = cliente.cancelado || n === 4 ? [] : n === 1 ? (especial ? MILESTONE_TYPES.filter((mt) => mt.type === "t3") : MILESTONE_TYPES.filter((mt) => mt.type !== "d3")) : MILESTONE_TYPES.filter((mt) => mt.type === "d3");
     const milestones = tiposParaEstaFactura.map((mt) => {
       const key = `f${n}_${mt.type}`;
       const triggerDate =
         mt.type === "d1" ? addDays(generada, 1) :
+        mt.type === "d3" ? addDays(generada, 3) :
         mt.type === "t15" ? addDays(vencimiento, -15) :
         addDays(vencimiento, -3);
-      const enviado = !!cliente[key];
-      const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado && !espera;
+      // Recordatorio de las facturas 2 y 3: no sale si ya se mandó el aviso anterior de 3 días antes ni si ya venció.
+      const enviado = !!cliente[key] || (mt.type === "d3" && !!cliente[`f${n}_t3`]);
+      const pendienteHoy = daysFromToday(triggerDate) <= 0 && !enviado && !espera && (mt.type !== "d3" || daysFromToday(vencimiento) >= 0);
       const texto = mt.getTexto({ ...cliente, _venc: vencimiento, plan: planLabelMensaje(cliente) }, n);
       return { ...mt, key, n, triggerDate, enviado, pendienteHoy, texto };
     });
@@ -4294,6 +4312,7 @@ function App() {
         [`f${n}_d1`]: parcial ? !!c[`f${n}_d1`] : marcarEnviado,
         [`f${n}_t15`]: parcial ? !!c[`f${n}_t15`] : marcarEnviado,
         [`f${n}_t3`]: parcial ? !!c[`f${n}_t3`] : marcarEnviado,
+        [`f${n}_d3`]: parcial ? !!c[`f${n}_d3`] : marcarEnviado,
       };
       if (n === 1) {
         nuevo.f1_saldoPendiente = parcial;
@@ -12981,6 +13000,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   // Agrupa por urgencia para que se puedan escanear las más críticas primero.
   const GRUPOS = [
     { type: "t3", titulo: "⏰ 3 días (urgente)" },
+    { type: "d3", titulo: "🔔 Recordatorio de pago" },
     { type: "t15", titulo: "⏰ 15 días" },
     { type: "d1", titulo: "🧾 Nueva factura" },
     { type: "toque3", titulo: "🔔 Segundo recordatorio (otra mitad)" },
@@ -16092,7 +16112,7 @@ function ClienteDetalle({
         const ms = [];
         (cliente.facturas || []).filter((f) => f.n <= 3).forEach((f) => (f.milestones || []).forEach((m) => { if (f.n === 1 || m.pendienteHoy || m.enviado) ms.push({ ...m, fn: f.n }); }));
         if (ms.length === 0) return null;
-        const ordT = (t) => { const k = ["d1", "t15", "t3"].indexOf(t); return k < 0 ? 9 : k; };
+        const ordT = (t) => { const k = ["d1", "d3", "t15", "t3"].indexOf(t); return k < 0 ? 9 : k; };
         ms.sort((a, b) => (a.fn - b.fn) || (ordT(a.type) - ordT(b.type)) || String(a.triggerDate).localeCompare(String(b.triggerDate)));
         const espera = cicloHogarEspera(cliente);
         const chipM = (t, bg, col) => <span className="inline-block text-xs font-medium rounded-full px-2.5 py-0.5 whitespace-nowrap" style={ { background: bg, color: col } }>{t}</span>;
