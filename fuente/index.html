@@ -8879,7 +8879,7 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
 const TOPE_DIARIO_VENTAS = 100000;          // mensajes de venta por día (protege tu número de WhatsApp)
 const ESPERA_ENTRE_MENSAJES_S = 0;     // segundos entre un mensaje y el siguiente
 const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factura
-const DIAS_OFERTA_CONTACTO_MOVIL = 7;  // días después de presentarte a un teléfono extra de un cliente móvil para escribirle la oferta
+const DIAS_OFERTA_CONTACTO_MOVIL = 3;  // días después de presentarte a un teléfono extra de un cliente móvil para escribirle la pregunta
 const DIAS_PARA_REFERIDOS = 30;       // días después del 1er mensaje a un contacto para pedirle referidos
 const SALTOS_PARA_DESCARTAR = 3;        // "Hoy no" seguidos antes de sacarlo de la lista
 const DIAS_OFERTA_INTERNET_MOVIL = 15; // días después de la 1ra factura pagada para ofrecer internet a un cliente móvil
@@ -8936,9 +8936,7 @@ Quiero ponerme a su orden: si me guarda en sus contactos y cuando necesite algú
 function mensajeVentaOfertaContactoMovil(m) {
   return `${saludoSegunHora()}, le habla José Severino de Tigo Panamá.
 
-Esta semana tengo precios especiales en internet y celular, sin pagar nada por adelantado.
-
-¿Le cuento?`;
+Una pregunta rápida: ¿su línea de celular es de tarjeta o tiene un plan contratado?`;
 }
 function mensajeVentaContacto(c) {
   return `${saludoSegunHora()}. Soy José Severino, asesor de ventas en Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
@@ -9179,7 +9177,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     }
     items.forEach((it) => { it.ultimoISO = [e.abiertoEn, e.refAbiertoEn].filter(Boolean).sort().pop() || ""; });
     if (items.length) filas.push({ cliente: m, numeros: items, diasDesde, zona: 0, pagada, esMovil: true, plan: m.planNombre || "", barrio: (m.barrio || "").trim(), instalacion: m.fechaActivacion || "", otros: [] });
-    // Teléfonos extra de su ficha: contactos nuevos. 1º mensaje de presentación; 2º a los 7 días con la oferta.
+    // Teléfonos extra de su ficha: contactos nuevos. 1º mensaje de presentación; 2º a los 3 días: ¿tarjeta o plan?
     [m.telefonoAdicional, m.telefonoAdicional2].forEach((te) => {
       const kx = d8(te);
       if (kx.length < 7 || kx === k || refGlobal.has(kx) || conocidos.has(kx) || hogarTels.has(kx) || dueno[kx]) return;
@@ -9357,7 +9355,7 @@ function tipoMensajeVenta(n) {
 }
 // Resumen de lo que se le ofrece o se le pide, para verlo sin abrir el mensaje.
 function ofertaVenta(n, f) {
-  if (n.deMovil) return n.ronda === "referido" ? "Oferta de internet y celular" : "Presentarte y que te guarde";
+  if (n.deMovil) return n.ronda === "referido" ? "Preguntar: ¿tarjeta o plan?" : "Presentarte y que te guarde";
   if (n.tipo === "referido") return "Ofertas de internet";
   if (n.ronda === "referido") {
     const conMovil = n.tipo === "movil" || (n.tipo === "ficha" && f.tieneMovil);
