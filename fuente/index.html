@@ -8879,6 +8879,7 @@ function PanelPorInstalar({ porInstalar, onMarcarInstalado, onReprogramar, onCop
 const TOPE_DIARIO_VENTAS = 100000;          // mensajes de venta por día (protege tu número de WhatsApp)
 const ESPERA_ENTRE_MENSAJES_S = 0;     // segundos entre un mensaje y el siguiente
 const DIAS_ESPERA_VENTA = 2;            // días después de pagar la 1ra factura
+const DIAS_OFERTA_CONTACTO_MOVIL = 7;  // días después de presentarte a un teléfono extra de un cliente móvil para escribirle la oferta
 const DIAS_PARA_REFERIDOS = 30;       // días después del 1er mensaje a un contacto para pedirle referidos
 const SALTOS_PARA_DESCARTAR = 3;        // "Hoy no" seguidos antes de sacarlo de la lista
 const DIAS_OFERTA_INTERNET_MOVIL = 15; // días después de la 1ra factura pagada para ofrecer internet a un cliente móvil
@@ -8920,6 +8921,24 @@ function ofertaMovil4Lista(c) {
   if (!f4) return false;
   const d = daysFromToday(addDays(f4.vencimiento, -3));
   return d <= 0 && d >= -30;
+}
+function mensajeVentaPresentacionMovil(m) {
+  const t = tipoClienteMovil(m);
+  const servicio = t === "convergencia" ? "internet y celular Pospago" : "celular Pospago";
+  return `${saludoSegunHora()}, mucho gusto, soy José Severino de Tigo Panamá.
+
+Recientemente le hice un contrato de ${servicio} a ${tituloEs(m.nombre || "")}.
+
+Quiero ponerme a su orden: si me guarda en sus contactos y cuando necesite algún servicio de internet o celular, me puede escribir con confianza.
+
+¿Me regala su nombre para guardarlo yo también?`;
+}
+function mensajeVentaOfertaContactoMovil(m) {
+  return `${saludoSegunHora()}, le habla José Severino de Tigo Panamá.
+
+Esta semana tengo precios especiales en internet y celular, sin pagar nada por adelantado.
+
+¿Le cuento?`;
 }
 function mensajeVentaContacto(c) {
   return `${saludoSegunHora()}. Soy José Severino, asesor de ventas en Tigo, el que le instaló el internet a ${tituloEs(c.nombre || "")}.
@@ -9160,6 +9179,26 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     }
     items.forEach((it) => { it.ultimoISO = [e.abiertoEn, e.refAbiertoEn].filter(Boolean).sort().pop() || ""; });
     if (items.length) filas.push({ cliente: m, numeros: items, diasDesde, zona: 0, pagada, esMovil: true, plan: m.planNombre || "", barrio: (m.barrio || "").trim(), instalacion: m.fechaActivacion || "", otros: [] });
+    // Teléfonos extra de su ficha: contactos nuevos. 1º mensaje de presentación; 2º a los 7 días con la oferta.
+    [m.telefonoAdicional, m.telefonoAdicional2].forEach((te) => {
+      const kx = d8(te);
+      if (kx.length < 7 || kx === k || refGlobal.has(kx) || conocidos.has(kx) || hogarTels.has(kx) || dueno[kx]) return;
+      refGlobal.add(kx);
+      const ex = vm[kx] || {};
+      if (ex.noEscribir) return;
+      const nx = { k: kx, tel: String(te).trim(), tipo: "contacto", deMovil: true, etiqueta: "Teléfono extra de su ficha móvil", frio: true };
+      const ult = [ex.abiertoEn, ex.refAbiertoEn].filter(Boolean).sort().pop() || "";
+      const fila = (n) => filas.push({ cliente: m, numeros: [{ ...n, ultimoISO: ult }], diasDesde, zona: 0, pagada, esMovil: true });
+      if (!ex.abiertoEn) { fila({ ...nx, estado: "pendiente" }); return; }
+      const t = new Date(ex.abiertoEn).getTime();
+      const esHoy = fechaLocalISO(new Date(t)) === hoyISO;
+      if (esHoy) { hechosHoy += 1; if (t > ultimaApertura) ultimaApertura = t; }
+      if (ex.respondio) { if (!ex.cerrado) seguimiento.push({ cliente: m, ...nx, respondioEn: ex.respondioEn || ex.abiertoEn }); return; }
+      if (ex.refAbiertoEn) { if (fechaLocalISO(new Date(ex.refAbiertoEn)) === hoyISO) fila({ ...nx, ronda: "referido", estado: "abierto", abiertoEn: ex.refAbiertoEn }); return; }
+      const dias = -daysFromToday(fechaLocalISO(new Date(ex.abiertoEn)));
+      if (!ex.refDescartado && dias >= DIAS_OFERTA_CONTACTO_MOVIL && ex.refSaltoDia !== hoyISO) { fila({ ...nx, ronda: "referido", estado: "pendiente", saltos: ex.refSaltos || 0 }); return; }
+      if (esHoy) fila({ ...nx, estado: "abierto", abiertoEn: ex.abiertoEn });
+    });
     // Contactos que este cliente móvil te dio
     (m.referidos || []).forEach((r) => {
       const kr = d8(r.tel);
@@ -9309,6 +9348,7 @@ function FormReferido({ existe, onGuardar, onGuardarVarios, onCancelar }) {
 
 // Tipo de mensaje de una fila (para los filtros del panel)
 function tipoMensajeVenta(n) {
+  if (n.deMovil) return "contactos";
   if (n.tipo === "referido") return "nuevos";
   if (n.ronda === "referido") return "pedir";
   if (n.tipo === "movil") return "internet";
@@ -9317,6 +9357,7 @@ function tipoMensajeVenta(n) {
 }
 // Resumen de lo que se le ofrece o se le pide, para verlo sin abrir el mensaje.
 function ofertaVenta(n, f) {
+  if (n.deMovil) return n.ronda === "referido" ? "Oferta de internet y celular" : "Presentarte y que te guarde";
   if (n.tipo === "referido") return "Ofertas de internet";
   if (n.ronda === "referido") {
     const conMovil = n.tipo === "movil" || (n.tipo === "ficha" && f.tieneMovil);
@@ -9407,7 +9448,7 @@ function ListaMisReferidos({ clientes, convergencias }) {
 }
 
 // Texto del mensaje de venta de un número (lo usan el panel de Ventas y el envío en cadena de Mensajes).
-const mensajeVentaDe = (n, c, f) => (n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : n.ronda === "movil4" ? mensajeVentaMovil4(c) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
+const mensajeVentaDe = (n, c, f) => (n.deMovil ? (n.ronda === "referido" ? mensajeVentaOfertaContactoMovil(c) : mensajeVentaPresentacionMovil(c)) : n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : n.ronda === "movil4" ? mensajeVentaMovil4(c) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
 
 function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
