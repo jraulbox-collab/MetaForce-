@@ -1771,6 +1771,13 @@ function BotonWaChico({ tel, fondo }) {
     </a>
   );
 }
+function BotonLlamarChico({ tel }) {
+  const d = String(tel || "").replace(/\D/g, "").slice(-8);
+  if (d.length < 7) return null;
+  return (
+    <a href={"tel:+507" + d} onClick={(e) => e.stopPropagation()} aria-label={"Llamar a " + tel} title="Llamar" className="shrink-0 inline-flex items-center justify-center rounded-full text-sm" style={ { width: 28, height: 28, background: "#E3EDFA", color: "#0B4A99" } }>📞</a>
+  );
+}
 function telefonoWhatsapp(telefono) {
   const texto = (telefono || "").trim();
   const digits = texto.replace(/\D/g, "");
@@ -16378,7 +16385,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
       <TarjetaApareceComoContacto lista={apareceComoContacto([c.telefono, c.whatsapp], { movilId: c.id }, hogarClientes, movilesTodos)} onAbrirHogar={onAbrirHogar} onAbrirMovil={onAbrirMovil} />
 
       {hayContacto && tarjeta("Contacto", filas([
-        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", <span className="inline-flex flex-col items-end gap-1">{extras.map((t) => <span key={t} className="inline-flex flex-col items-end"><span className="inline-flex items-center gap-2">{t}<BotonWaChico tel={t} /></span><EtiquetaNumero tel={t} clientes={hogarClientes} moviles={movilesTodos} excluir={{ movilId: c.id }} onAbrirHogar={onAbrirHogar} onAbrirMovil={onAbrirMovil} /></span>)}</span>],
+        extras.length > 0 && [extras.length > 1 ? "Teléfonos extra" : "Teléfono extra", <span className="inline-flex flex-col items-end gap-1">{extras.map((t) => <span key={t} className="inline-flex flex-col items-end"><span className="inline-flex items-center gap-2">{t}<BotonWaChico tel={t} /><BotonLlamarChico tel={t} /></span><EtiquetaNumero tel={t} clientes={hogarClientes} moviles={movilesTodos} excluir={{ movilId: c.id }} onAbrirHogar={onAbrirHogar} onAbrirMovil={onAbrirMovil} /></span>)}</span>],
         !!c.correo && ["Correo del cliente", c.correo],
         !!c.barrio && ["Barrio", c.barrio],
       ]))}
