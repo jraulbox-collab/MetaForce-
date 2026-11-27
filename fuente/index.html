@@ -13189,14 +13189,15 @@ function CicloHogarConfirmar({ cliente, onConfirmar }) {
     const elegir = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${cliente.nombre} es el ${String(n).padStart(2, "0")}?`, () => onConfirmar(cliente.id, n), { si: "✓ Sí, es ese ciclo" });
     return (
       <div className="mt-2 rounded-xl px-2.5 py-2" style={ { background: "#FFF3DC", border: "1.5px dashed #B45309" } }>
-        <div className="text-xs font-bold" style={ { color: "#92400E" } }>🔄 Ciclo sin confirmar · ¿cuál ves en Tigo?{cliente.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO ? " Sus mensajes esperan." : ""}</div>
-        <div className="flex flex-wrap gap-1.5 mt-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-bold shrink-0" style={ { color: "#92400E" } }>🔄 Ciclo en Tigo</span>
           {[1, 6, 15, 21].map((n) => (
-            <button key={n} type="button" onClick={() => elegir(n)} className="text-xs font-bold px-3 py-1.5 rounded-full" style={ { background: "#fff", color: "#001E62", border: "1.5px solid #001E62", minHeight: 36 } }>
-              Ciclo {String(n).padStart(2, "0")}{actual === n ? " · en la app" : ""}
+            <button key={n} type="button" onClick={() => elegir(n)} aria-label={"Ciclo " + String(n).padStart(2, "0") + (actual === n ? " sugerido" : "")} className="text-sm font-bold rounded-full" style={ { minHeight: 36, minWidth: 44, background: actual === n ? "#001E62" : "#fff", color: actual === n ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
+              {String(n).padStart(2, "0")}
             </button>
           ))}
         </div>
+        {cliente.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO && <div className="text-xs mt-1" style={ { color: "#92400E" } }>Sus mensajes esperan · azul = sugerido</div>}
       </div>
     );
   }
@@ -16193,10 +16194,12 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
           ])}
           {vencidoPlazo && <div className="mt-2">{chip("⛔ No cuenta (venció el plazo)", AMBAR)}</div>}
           {sinConfirmarCiclo && (
-            <div className="flex gap-2 mt-2">
+            <div className="flex items-center gap-1.5 mt-2">
+              <span className="text-xs shrink-0" style={ { color: "#5A6680" } }>Ciclo en Tigo</span>
               {[4, 19].map((n) => (
-                <button key={n} type="button" onClick={() => elegirCiclo(n)} className="flex-1 text-sm font-bold rounded-lg" style={ { minHeight: 40, border: "1.5px solid #001E62", background: "#fff", color: "#001E62" } }>Ciclo {pad(n)}{fch.ciclo === n ? " · sugerido" : ""}</button>
+                <button key={n} type="button" onClick={() => elegirCiclo(n)} aria-label={"Ciclo " + pad(n) + (fch.ciclo === n ? " sugerido" : "")} className="text-sm font-bold rounded-full" style={ { minHeight: 36, minWidth: 44, border: "1.5px solid #001E62", background: fch.ciclo === n ? "#001E62" : "#fff", color: fch.ciclo === n ? "#fff" : "#001E62" } }>{pad(n)}</button>
               ))}
+              <span className="text-xs" style={ { color: "#5A6680" } }>azul = sugerido</span>
             </div>
           )}
           <button
