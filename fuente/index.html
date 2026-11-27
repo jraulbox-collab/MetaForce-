@@ -13597,8 +13597,10 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
   const vistaCiclos = modoCiclos && !buscando && !(subVista === "movil" && (movilDesdeBusqueda || fichaMovilAbierta));
   const itemsCiclos = useMemo(() => {
     if (!modoCiclos) return [];
-    const hs = (clientesTodos || []).filter(cicloHogarPorConfirmar).map((c) => ({ tipo: "h", id: "h" + c.id, nombre: c.nombre, sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : ""].filter(Boolean).join(" · "), razon: "🔄 Falta confirmar el ciclo en Tigo", razonDirecta: true, p: 0, ref: c, f: c.fechaInstalacion || "" }));
-    const ms = (clientesMovil || []).filter(cicloPorConfirmar).map((c) => ({ tipo: "m", id: "m" + c.id, nombre: c.nombre, sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c))].filter(Boolean).join(" · "), razon: "🔄 Falta confirmar el ciclo en Tigo", razonDirecta: true, p: 0, ref: c, f: fechaActivacionMovil(c) || "" }));
+    // Orden por urgencia: primero a quien antes se le vence el plazo de la 1ra factura (de ahí depende tu comisión).
+    const limiteISO = (periodo) => { try { const l = periodo ? fechaLimitePrimeraFactura(periodo) : null; return l ? fechaLocalISO(l) : ""; } catch (e) { return ""; } };
+    const hs = (clientesTodos || []).filter(cicloHogarPorConfirmar).map((c) => { const lim = limiteISO(periodoDelCliente(c)); return { tipo: "h", id: "h" + c.id, nombre: c.nombre, sub: [c.telefono, c.fechaInstalacion ? "Instalado " + fmtFechaDia(c.fechaInstalacion) : "", lim ? "Plazo " + fmtFechaDia(lim) : ""].filter(Boolean).join(" · "), p: 0, ref: c, f: lim || "9999" + (c.fechaInstalacion || "") }; });
+    const ms = (clientesMovil || []).filter(cicloPorConfirmar).map((c) => { const lim = limiteISO(periodoDelMovil(c)); return { tipo: "m", id: "m" + c.id, nombre: c.nombre, sub: [c.telefono, "Activada " + fmtFechaDia(fechaActivacionMovil(c)), lim ? "Plazo " + fmtFechaDia(lim) : ""].filter(Boolean).join(" · "), p: 0, ref: c, f: lim || "9999" + (fechaActivacionMovil(c) || "") }; });
     return [...hs, ...ms].sort((a, b) => String(a.f).localeCompare(String(b.f)));
   }, [modoCiclos, clientesTodos, clientesMovil]);
   useEffect(() => { if (fichaMovilAbierta) setMovilDesdeBusqueda(false); }, [fichaMovilAbierta]);
