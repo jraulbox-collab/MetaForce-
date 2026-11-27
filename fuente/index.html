@@ -13476,7 +13476,6 @@ function FilaCicloPendiente({ item, onAbrir, onConfirmar }) {
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(valor).then(listo).catch(respaldo); else respaldo();
   };
   const elegir = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${c.nombre} es el ${pad2(n)}?`, () => onConfirmar(item, n, sugerido), { si: "✓ Sí, es ese ciclo" });
-  const espera = esH ? cicloHogarEspera(c) : true;
   return (
     <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 mb-2">
       <button type="button" onClick={() => onAbrir(item)} className="w-full text-left flex items-start gap-2" style={ { background: "transparent", border: 0, padding: 0 } }>
@@ -13487,16 +13486,16 @@ function FilaCicloPendiente({ item, onAbrir, onConfirmar }) {
         </span>
         <span className="shrink-0" aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
       </button>
-      {espera && <div className="text-xs mt-1.5" style={ { color: "#92400E" } }>⏳ Sus recordatorios esperan hasta confirmar</div>}
-      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+      <div className="flex items-center gap-1.5 mt-2">
+        <span className="text-xs shrink-0" style={ { color: "#5A6680" } }>Ciclo</span>
         {opciones.map((n) => (
-          <button key={n} type="button" onClick={() => elegir(n)} className="text-xs font-bold px-3 rounded-full" style={ { minHeight: 36, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
-            Ciclo {pad2(n)}{sugerido === n ? " · sugerido" : ""}
+          <button key={n} type="button" onClick={() => elegir(n)} aria-label={"Ciclo " + pad2(n) + (sugerido === n ? " sugerido" : "")} className="text-sm font-bold rounded-full" style={ { minHeight: 36, minWidth: 44, background: sugerido === n ? "#001E62" : "#fff", color: sugerido === n ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
+            {pad2(n)}
           </button>
         ))}
         {valor && (
           <button type="button" onClick={copiar} aria-label={esH ? "Copiar la cuenta" : "Copiar el número"} className="text-xs font-bold px-3 rounded-full ml-auto" style={ { minHeight: 36, background: "#E3EDFA", color: "#0072CE", border: 0 } }>
-            {copiado ? "✓ Copiado" : (esH ? "📋 Cuenta" : "📋 Número")}
+            {copiado ? "✓" : "📋"}
           </button>
         )}
       </div>
@@ -14230,7 +14229,7 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 text-center"><p className="text-sm" style={ { color: "#5A6680" } }>✅ No hay ciclos por confirmar.</p></div>
           ) : (
             <div>
-              <div className="text-xs mb-1.5" style={ { color: "#5A6680" } }>{itemsCiclos.length} {itemsCiclos.length === 1 ? "cliente" : "clientes"} · confirma el ciclo que ves en Tigo</div>
+              <div className="text-xs mb-1.5" style={ { color: "#5A6680" } }>{itemsCiclos.length} {itemsCiclos.length === 1 ? "cliente" : "clientes"} · confirma el ciclo que ves en Tigo · el azul es el sugerido</div>
               {itemsCiclos.map((it) => (
                 <FilaCicloPendiente
                   key={it.id}
