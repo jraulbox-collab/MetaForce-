@@ -4713,8 +4713,17 @@ function App() {
     try { if (l.length) sessionStorage.setItem("mf-revisar", JSON.stringify(l)); else sessionStorage.removeItem("mf-revisar"); } catch (e) {}
   }
   // Abre WhatsApp y anota la apertura ANTES de salir de la app.
+  // En la cadena de varios mensajes, al abrir WhatsApp la app ya pasa al siguiente cliente y deja el anterior arriba
+  // como "enviado" (se confirma solo al seguir; hay botones para corregirlo).
+  function avanzarAlAbrir(it) {
+    if (!(cadena && cadena.items.length > 1 && cadena.pausa)) return false;
+    let env = cadena.env || 0;
+    if (cadena.prev) { marcarItemCadena(cadena.prev); env += 1; }
+    guardarCadena({ ...cadena, i: cadena.i + 1, env, prev: it, pausa: true });
+    return true;
+  }
   function abrirWhatsapp(it) {
-    if (cadena && cadena.pausa) guardarCadena({ ...cadena, pausa: false });
+    if (!avanzarAlAbrir(it) && cadena && cadena.pausa) guardarCadena({ ...cadena, pausa: false });
     anotarApertura(it);
     registrarEnvio({ tipo: "abrir", clienteId: it.id, nombre: it.nombre || "", key: it.key || it.k || it.t, origen: "app" });
     window.location.href = it.link;
@@ -4723,7 +4732,7 @@ function App() {
   function abrirVentaCopiando(it) {
     anotarApertura(it);
     registrarEnvio({ tipo: "abrir", clienteId: it.id, nombre: it.nombre || "", key: it.key || it.k || it.t, origen: "app" });
-    if (cadena && cadena.pausa) guardarCadena({ ...cadena, pausa: false });
+    if (!avanzarAlAbrir(it) && cadena && cadena.pausa) guardarCadena({ ...cadena, pausa: false });
     const abrir = () => { window.location.href = linkSoloChat(it.link); };
     try {
       Promise.resolve(navigator.clipboard.writeText(textoDeLink(it.link))).catch(() => {}).then(abrir);
@@ -4836,17 +4845,37 @@ function App() {
   function avanzarCadena(marcar) {
     const c = cadena;
     if (!c) return;
-    if (marcar) marcarItemCadena(c.items[c.i]);
-    else quitarApertura(c.items[c.i]); // dijiste que no se envió: no cuenta como abierto
-    const env = c.env + (marcar ? 1 : 0);
-    const sal = c.sal + (marcar ? 0 : 1);
+    let env = c.env;
+    if (c.prev) { marcarItemCadena(c.prev); env += 1; } // seguir adelante da por enviado el anterior
+    const cur = c.items[c.i];
+    if (cur) {
+      if (marcar) { marcarItemCadena(cur); env += 1; }
+      else quitarApertura(cur); // dijiste que no se envió: no cuenta como abierto
+    }
+    const sal = c.sal + (cur && !marcar ? 1 : 0);
     const i = c.i + 1;
     if (i >= c.items.length) {
       guardarCadena(null);
       if (c.items.length > 1) setResumenCadena({ total: c.items.length, env });
       return;
     }
-    guardarCadena({ ...c, i, env, sal, pausa: true });
+    guardarCadena({ ...c, i, env, sal, prev: null, pausa: true });
+  }
+  // El anterior NO se envió: se desmarca y queda pendiente en su lista.
+  function prevNoEnviado() {
+    const c = cadena;
+    if (!c || !c.prev) return;
+    quitarApertura(c.prev);
+    guardarCadena({ ...c, prev: null, sal: c.sal + 1 });
+  }
+  // Volver a abrir el chat del anterior (por si no alcanzaste a enviar).
+  function reabrirPrev() {
+    const c = cadena;
+    if (!c || !c.prev) return;
+    const it = c.prev;
+    if (it.t === "v") {
+      try { Promise.resolve(navigator.clipboard.writeText(textoDeLink(it.link))).catch(() => {}).then(() => { window.location.href = linkSoloChat(it.link); }); } catch (e) { window.location.href = linkSoloChat(it.link); }
+    } else window.location.href = it.link;
   }
   // Toca el nombre en la barra de envío: abre la ficha del cliente y la barra se queda visible.
   function abrirFichaCadena(it) {
@@ -4865,7 +4894,9 @@ function App() {
   }
   function detenerCadena() {
     if (!cadena) return;
-    setResumenCadena({ total: cadena.items.length, env: cadena.env });
+    let env = cadena.env;
+    if (cadena.prev) { marcarItemCadena(cadena.prev); env += 1; }
+    setResumenCadena({ total: cadena.items.length, env });
     guardarCadena(null);
   }
   function tocarPestana(key) {
@@ -5234,7 +5265,7 @@ function App() {
           ))}
         </div>
       )}
-      {cadena && cadena.items[cadena.i] && ((cadena.items.length === 1 ? (x) => x : (x) => ReactDOM.createPortal(x, document.body))(
+      {cadena && (cadena.items[cadena.i] || cadena.prev) && ((cadena.items.length === 1 ? (x) => x : (x) => ReactDOM.createPortal(x, document.body))(
         <div className={cadena.items.length === 1 ? "fixed z-50 left-3 right-3 rounded-xl p-3" : "fixed inset-0 flex flex-col"} style={ cadena.items.length === 1 ? { bottom: "calc(12px + env(safe-area-inset-bottom))", background: "#001E62", boxShadow: "0 6px 20px rgba(0,30,98,0.4)" } : { zIndex: 9999, background: "#001E62", paddingTop: "calc(16px + env(safe-area-inset-top))", paddingBottom: "calc(16px + env(safe-area-inset-bottom))", paddingLeft: 16, paddingRight: 16 } }>
           {cadena.items.length === 1 ? (
             <React.Fragment>
@@ -5250,6 +5281,31 @@ function App() {
               {(() => {
                 const it = cadena.items[cadena.i];
                 const pct = Math.round((cadena.i / cadena.items.length) * 100);
+                const tarjetaPrev = cadena.prev ? (
+                  <div className="mt-4 rounded-xl p-3" style={ { background: "#0E3A8C", border: "1.5px solid #7CD992" } }>
+                    <div className="text-xs font-extrabold" style={ { color: "#7CD992" } }>✓ Enviado (anterior)</div>
+                    <button type="button" onClick={() => abrirFichaCadena(cadena.prev)} className="text-left font-extrabold underline underline-offset-2 block" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 17, lineHeight: 1.25 } }>{tituloEs(cadena.prev.nombre || "")}</button>
+                    <div className="text-xs mt-0.5" style={ { color: "#B9C4E0" } }>{cadena.prev.et}</div>
+                    <div className="flex gap-2 mt-2 items-stretch">
+                      <button type="button" onClick={prevNoEnviado} className="flex-1 font-extrabold rounded-lg" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 14 } }>↩ No lo envié</button>
+                      <button type="button" onClick={reabrirPrev} className="flex-1 font-extrabold rounded-lg" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 14 } }>💬 Abrir otra vez</button>
+                    </div>
+                  </div>
+                ) : null;
+                if (!it) {
+                  return (
+                    <React.Fragment>
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="text-sm font-extrabold text-white">📤 Último mensaje abierto</div>
+                        <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Terminar</button>
+                      </div>
+                      <div className="rounded-full mt-3" style={ { height: 8, background: "#2B4585" } }><div className="rounded-full" style={ { height: 8, width: "100%", background: "#7CD992" } } /></div>
+                      {tarjetaPrev}
+                      <div style={ { flex: "1 1 0" } } />
+                      <button type="button" onClick={() => avanzarCadena(false)} className="w-full mt-3 rounded-xl font-extrabold" style={ { minHeight: 56, background: "#fff", color: "#001E62", border: 0, fontSize: 16 } }>✅ Terminar y ver resumen</button>
+                    </React.Fragment>
+                  );
+                }
                 const msg = textoDeLink(it.link);
                 if (cadena.pausa) {
                   const esV = it.t === "v";
@@ -5261,6 +5317,7 @@ function App() {
                         <button type="button" onClick={detenerCadena} className="text-sm font-extrabold rounded-lg px-3 whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff" } }>⏹ Detener</button>
                       </div>
                       <div className="rounded-full mt-3" style={ { height: 8, background: "#2B4585" } }><div className="rounded-full" style={ { height: 8, width: Math.max(4, pct) + "%", background: "#7CD992" } } /></div>
+                      {tarjetaPrev}
                       <div className="mt-5">
                         <div className="text-xs font-bold" style={ { color: "#B9C4E0" } }>{it.et}</div>
                         <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
