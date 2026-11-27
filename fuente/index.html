@@ -5347,11 +5347,7 @@ function App() {
                         <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{esV && (hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía")}</div>
                       </div>
                       {franjaCobro(it)}
-                      <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !true ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !true ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden" } }>{msg || "Mensaje listo."}</div></div>
-                      {true && (
-                        <button type="button" onClick={() => setMsgAbiertoI(msgAbiertoI === cadena.i ? -1 : cadena.i)} className="mt-1 text-xs font-extrabold" style={ { color: "#B9C4E0", background: "transparent", border: 0, minHeight: 28 } }>{msgAbiertoI === cadena.i ? "Ocultar mensaje ▴" : "Ver mensaje completo ▾"}</button>
-                      )}
-                      {true && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
+                      <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: "1 1 0", minHeight: 0 } }><div>{msg || "Mensaje listo."}</div></div>
                       <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Al abrir WhatsApp, el chat se abre con este mensaje escrito, listo para enviar.</div>
                       <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
                       <div className="flex gap-2 mt-3 items-stretch">
@@ -5373,11 +5369,7 @@ function App() {
                       <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
                     </div>
                     {franjaCobro(it)}
-                    <div className="mt-3 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 5, overflow: "hidden" } }>{msg || "Mensaje listo en WhatsApp."}</div></div>
-                    {(it.info || lazyInfo(it)) && (
-                      <button type="button" onClick={() => setMsgAbiertoI(msgAbiertoI === cadena.i ? -1 : cadena.i)} className="mt-1 text-xs font-extrabold" style={ { color: "#B9C4E0", background: "transparent", border: 0, minHeight: 28 } }>{msgAbiertoI === cadena.i ? "Ocultar mensaje ▴" : "Ver mensaje completo ▾"}</button>
-                    )}
-                    {(it.info || lazyInfo(it)) && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
+                    <div className="mt-3 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: "1 1 0", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 5, overflow: "hidden" } }>{msg || "Mensaje listo en WhatsApp."}</div></div>
                     <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Se abrió WhatsApp con este mensaje. ¿Lo enviaste?</div>
                     <button type="button" onClick={() => (it.t === "v" ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp de nuevo</button>
                     <div className="flex gap-2 mt-3 items-stretch">
