@@ -3776,9 +3776,9 @@ function App() {
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
-  // Ciclos automáticos: Hogar nuevo (suscriptor 97+) por día de instalación; Móvil por fecha de activación.
+  // Ciclo automático: solo Hogar nuevo (suscriptor 97+) por día de instalación. Móvil sigue manual (sugiere y confirmas).
   useEffect(() => {
-    if (!loaded || !convergenciasLoaded) return;
+    if (!loaded) return;
     const hogar = clientes.filter((c) => cicloHogarPorConfirmar(c) && suscriptorNuevo(c) && cicloAutomaticoHogar(c.fechaInstalacion));
     if (hogar.length) {
       actualizarClientes((prev) => prev.map((c) => {
@@ -3787,12 +3787,8 @@ function App() {
         return n ? aplicarCambios(c, c, cicloHogarAplicado(c, n, { cicloAuto: true, cicloAutoCorregido: false })) : c;
       }));
     }
-    const moviles = convergencias.filter((c) => cicloPorConfirmar(c) && movilFechasPrimeraFactura({ ...c, cicloManual: null }));
-    if (moviles.length) {
-      setConvergencias((prev) => prev.map((c) => (cicloPorConfirmar(c) ? { ...c, cicloConfirmado: true, cicloAuto: true, cicloAutoCorregido: false } : c)));
-    }
     // eslint-disable-next-line
-  }, [clientes, convergencias]);
+  }, [clientes]);
 
   // Desde "Verificar órdenes" (móviles): abre Clientes Móvil con el formulario de nuevo
   // cliente ya con el nombre y la fecha de activación de Tigo. Al guardar vuelve al Precierre.
