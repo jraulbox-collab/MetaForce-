@@ -1839,6 +1839,7 @@ const APERTURAS_KEY = "mf_aperturas";
 function textoDeLink(link) {
   try { return decodeURIComponent((String(link || "").split("text=")[1] || "").replace(/\+/g, " ")); } catch (e) { return ""; }
 }
+const PRIO_GRUPO = { f1: 0, cobro: 1, inst: 2, ventas: 3 };
 function claveEnvio(it) { return [it.t, it.id, it.key || it.k || "", it.ronda || ""].join("|"); }
 function leerAperturas() {
   try {
@@ -4715,6 +4716,16 @@ function App() {
   // Abre WhatsApp y anota la apertura ANTES de salir de la app.
   // En la cadena de varios mensajes, al abrir WhatsApp la app ya pasa al siguiente cliente y deja el anterior arriba
   // como "enviado" (se confirma solo al seguir; hay botones para corregirlo).
+  function cambiarGrupoCadena(g) {
+    const c = cadena;
+    if (!c) return;
+    const hechos = c.items.slice(0, c.i);
+    const resto = c.items.slice(c.i);
+    const elegidos = resto.filter((x) => x.grupo === g).sort((a, b) => a.o - b.o);
+    const otros = resto.filter((x) => x.grupo !== g).sort((a, b) => (PRIO_GRUPO[a.grupo] - PRIO_GRUPO[b.grupo]) || (a.o - b.o));
+    setMsgAbiertoI(-1);
+    guardarCadena({ ...c, items: [...hechos, ...elegidos, ...otros] });
+  }
   function avanzarAlAbrir(it) {
     if (!(cadena && cadena.items.length > 1 && cadena.pausa)) return false;
     let env = cadena.env || 0;
@@ -4800,7 +4811,7 @@ function App() {
     const enComision = (a, mov) => (mov ? a.cliente.f1_estado !== "pagada" && movilCuentaParaComision(a.cliente) : a.cliente.f1_estado !== "pagada" && clienteCuentaParaComision(a.cliente));
     const cobros = [...alertasCobroVis.map((a) => ({ a, mov: false })), ...alertasMovilVis.map((a) => ({ a, mov: true }))];
     cobros.sort((x, y) => (enComision(x.a, x.mov) ? 0 : 1) - (enComision(y.a, y.mov) ? 0 : 1));
-    cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + (mov ? a.milestone.tag : a.milestone.label), info: infoCobro(a, mov) }));
+    cobros.forEach(({ a, mov }) => items.push({ t: mov ? "cm" : "ch", id: a.cliente.id, key: a.milestone.key, link: whatsappLink(a.cliente, a.milestone), nombre: a.cliente.nombre, et: "💵 Cobro · " + (mov ? a.milestone.tag : a.milestone.label), info: infoCobro(a, mov), grupo: (mov ? ["m1", "m2", "m3"].includes(a.milestone.key) : a.milestone.n === 1) ? "f1" : "cobro" }));
     [...instalacionesVis].sort((x, y) => String(x.instalacionProgramada || x.fechaInstalacion).localeCompare(String(y.instalacionProgramada || y.fechaInstalacion)))
       .forEach((c) => items.push(itemInstalacion(c)));
     const dv = calcularVentasHoy(clientesActivos, convergencias, Date.now());
@@ -4810,6 +4821,9 @@ function App() {
       items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta", ultimo: n.ultimoISO || "" }));
     if (!items.length) return;
     setResumenCadena(null);
+    // Grupos para poder elegir en cualquier momento qué tipo enviar; la 1ra factura va primero.
+    items.forEach((it, k) => { it.o = k; if (!it.grupo) it.grupo = it.t === "v" ? "ventas" : it.t === "in" ? "inst" : "cobro"; });
+    items.sort((a, b) => (PRIO_GRUPO[a.grupo] - PRIO_GRUPO[b.grupo]) || (a.o - b.o));
     // Los que ya se abrieron antes no entran a la cadena: se revisan al final.
     const nuevos = items.filter((it) => !aperturaDe(it));
     guardarRevisar(items.filter((it) => aperturaDe(it) && it.t !== "ch" && it.t !== "cm"));
@@ -5284,6 +5298,21 @@ function App() {
                     </div>
                   </div>
                 ) : null;
+                const NOM_GRUPO = { f1: "⭐ 1ra", cobro: "💵 Cobros", inst: "🔧 Instal.", ventas: "💬 Ventas" };
+                const restoG = cadena.items.slice(cadena.i);
+                const gActual = it ? it.grupo : null;
+                const chipsGrupo = (
+                  <div className="flex gap-2 mt-3" style={ { overflowX: "auto", paddingBottom: 2 } }>
+                    {["f1", "cobro", "inst", "ventas"].map((g) => {
+                      const n = restoG.filter((x) => x.grupo === g).length;
+                      if (!n) return null;
+                      const on = g === gActual;
+                      return (
+                        <button key={g} type="button" onClick={() => cambiarGrupoCadena(g)} className="font-extrabold rounded-full whitespace-nowrap shrink-0" style={ { minHeight: 36, padding: "0 12px", fontSize: 13, background: on ? "#fff" : "transparent", color: on ? "#001E62" : "#fff", border: "1.5px solid " + (on ? "#fff" : "#6F86C0") } }>{NOM_GRUPO[g]} {n}</button>
+                      );
+                    })}
+                  </div>
+                );
                 if (!it) {
                   return (
                     <React.Fragment>
@@ -5310,21 +5339,22 @@ function App() {
                       </div>
                       <div className="rounded-full mt-3" style={ { height: 8, background: "#2B4585" } }><div className="rounded-full" style={ { height: 8, width: Math.max(4, pct) + "%", background: "#7CD992" } } /></div>
                       {tarjetaPrev}
-                      <div className="mt-5">
+                      {chipsGrupo}
+                      <div className="mt-4">
                         <div className="text-xs font-bold" style={ { color: "#B9C4E0" } }>{it.et}</div>
                         <button type="button" onClick={() => abrirFichaCadena(it)} className="font-extrabold text-left underline underline-offset-2" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 24, lineHeight: 1.2, overflowWrap: "anywhere" } }>{tituloEs(it.nombre || "")}</button>
                         <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{esV && (hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía")}</div>
                       </div>
                       {franjaCobro(it)}
-                      <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !(it.info || lazyInfo(it)) ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 5, overflow: "hidden" } }>{msg || "Mensaje listo."}</div></div>
-                      {(it.info || lazyInfo(it)) && (
+                      <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: msgAbiertoI === cadena.i || !true ? "1 1 0" : "0 0 auto", minHeight: 0 } }><div style={ msgAbiertoI === cadena.i || !true ? undefined : { display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: 3, overflow: "hidden" } }>{msg || "Mensaje listo."}</div></div>
+                      {true && (
                         <button type="button" onClick={() => setMsgAbiertoI(msgAbiertoI === cadena.i ? -1 : cadena.i)} className="mt-1 text-xs font-extrabold" style={ { color: "#B9C4E0", background: "transparent", border: 0, minHeight: 28 } }>{msgAbiertoI === cadena.i ? "Ocultar mensaje ▴" : "Ver mensaje completo ▾"}</button>
                       )}
-                      {(it.info || lazyInfo(it)) && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
+                      {true && msgAbiertoI !== cadena.i && <div style={ { flex: "1 1 0", minHeight: 0 } } />}
                       <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Al abrir WhatsApp, el chat se abre con este mensaje escrito, listo para enviar.</div>
                       <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
                       <div className="flex gap-2 mt-3 items-stretch">
-                        <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>⏭ Saltar por ahora</button>
+                        <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 44, background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 13 } }>⏭ Saltar por ahora</button>
                         {esV && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 56, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 15 } }>🚫 No escribirle más</button>}
                       </div>
                     </React.Fragment>
@@ -5665,6 +5695,7 @@ function App() {
                 {quedan !== null && <span>📋 Pendientes ahora: <b>{quedan}</b></span>}
               </div>
               {quedan === 0 && <p className="text-sm mt-1">No te queda ningún mensaje pendiente.</p>}
+              {quedan > 0 && <button type="button" onClick={iniciarCadena} className="w-full mt-3 rounded-xl font-extrabold" style={ { minHeight: 48, background: "#166534", color: "#fff", border: 0, fontSize: 15 } }>▶ Seguir con los que quedan ({quedan})</button>}
             </div>
             );
           })()}
