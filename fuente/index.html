@@ -8921,9 +8921,9 @@ function ofertaMovil4Lista(c) {
   const d = daysFromToday(addDays(f4.vencimiento, -3));
   return d <= 0 && d >= -30;
 }
-function mensajeVentaPresentacionMovil(m) {
-  const t = tipoClienteMovil(m);
-  const servicio = t === "convergencia" ? "internet y celular Pospago" : "celular Pospago";
+function mensajeVentaPresentacionMovil(m, deHogar) {
+  const t = deHogar ? "hogar" : tipoClienteMovil(m);
+  const servicio = deHogar ? "internet" : t === "convergencia" ? "internet y celular Pospago" : "celular Pospago";
   return `${saludoSegunHora()}, mucho gusto, soy José Severino de Tigo Panamá.
 
 Recientemente le hice un contrato de ${servicio} a ${tituloEs(m.nombre || "")}.
@@ -8942,6 +8942,7 @@ const TEMPORADAS_CONTACTO = [
 ];
 const MIN_DIAS_ENTRE_TOQUES = 20;
 const DIAS_ENTRE_TIPS = 45;
+const DIAS_ANTES_CONTACTO_HOGAR = 2; // los contactos de un cliente Hogar empiezan 2 días después de instalar
 const TIPS_CONTACTO = [
   { corto: "Router en buen lugar", texto: "Un tip para que su Wi-Fi llegue mejor: ponga el router en un lugar alto y en el centro de la casa, lejos del microondas y de paredes gruesas. Muchas veces el internet «no sirve» solo por dónde está el equipo." },
   { corto: "Reiniciar el router", texto: "Un tip: si su internet va lento, apague el router, espere 30 segundos y préndalo de nuevo. Con eso se resuelven la mayoría de los problemas." },
@@ -8963,7 +8964,7 @@ function siguienteToqueContacto(ex, hoyISO) {
     if (fechaLocalISO(new Date(ex[k])) === hoyISO) return { ronda: k.slice(0, -2), estado: "abierto", abiertoEn: ex[k] };
   }
   const base = dd(ex.abiertoEn);
-  const ult = [ex.abiertoEn, ...claves.map((k) => ex[k])].filter(Boolean).sort().pop();
+  const ult = [ex.abiertoEn, ex.refAbiertoEn, ...claves.map((k) => ex[k])].filter(Boolean).sort().pop();
   const hueco = dd(ult) >= MIN_DIAS_ENTRE_TOQUES;
   const hecho = (r) => !!ex[r + "En"];
   const salto = (r) => ex[r + "SaltoDia"] === hoyISO;
@@ -9133,6 +9134,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     cand.forEach((n) => {
       const e = vm[n.k] || {};
       if (e.noEscribir) return;
+      if (n.tipo === "contacto") return; // los contactos 1 y 2 de Tigo siguen la secuencia nueva (más abajo)
       if (n.tipo === "ficha" && tieneMovil && !e.abiertoEn) {
         if (e.refAbiertoEn) {
           if (fechaLocalISO(new Date(e.refAbiertoEn)) === hoyISO) numeros.push({ ...n, ronda: "referido", estado: "abierto", abiertoEn: e.refAbiertoEn });
@@ -9222,6 +9224,44 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
   // Clientes móvil: a los 15 días se les ofrece internet (si no tienen Hogar tuyo) y a los 60 se les piden referidos.
   const hogarTels = new Set();
   (clientes || []).forEach((c) => { const k = d8(c.telefono); if (k.length >= 7) hogarTels.add(k); });
+  // Un teléfono de contacto (extra de un móvil, o Contacto 1/2 de un Hogar) que entra a la secuencia de presentación, preguntas, tips y saludos.
+  const contactoConSecuencia = (dueno1, te, kPropio, etiqueta, extraFila) => {
+    const kx = d8(te);
+    if (kx.length < 7 || kx === kPropio || refGlobal.has(kx) || conocidos.has(kx) || hogarTels.has(kx)) return;
+    refGlobal.add(kx);
+    const vm1 = dueno1.ventaMsg || {};
+    const ex = vm1[kx] || {};
+    if (ex.noEscribir) return;
+    const esH = !extraFila.esMovil;
+    const nx = { k: kx, tel: String(te).trim(), tipo: "contacto", deMovil: true, deHogar: esH, etiqueta, frio: true };
+    const ult = [ex.abiertoEn, ex.refAbiertoEn].filter(Boolean).sort().pop() || "";
+    const fila = (n) => filas.push({ cliente: dueno1, numeros: [{ ...n, ultimoISO: ult }], zona: 0, otros: [], tieneMovil: false, ...extraFila });
+    if (!ex.abiertoEn) { fila({ ...nx, estado: "pendiente" }); return; }
+    const t = new Date(ex.abiertoEn).getTime();
+    const abiertoHoy1 = fechaLocalISO(new Date(t)) === hoyISO;
+    if (ex.respondio) {
+      if (abiertoHoy1) { hechosHoy += 1; if (t > ultimaApertura) ultimaApertura = t; }
+      if (!ex.cerrado) seguimiento.push({ cliente: dueno1, ...nx, respondioEn: ex.respondioEn || ex.abiertoEn });
+      return;
+    }
+    const toque = siguienteToqueContacto(ex, hoyISO);
+    if (toque) {
+      const tt = toque.abiertoEn ? new Date(toque.abiertoEn).getTime() : 0;
+      if (toque.estado === "abierto" && tt) { hechosHoy += 1; if (tt > ultimaApertura) ultimaApertura = tt; }
+      fila({ ...nx, ronda: toque.ronda, estado: toque.estado, ...(toque.abiertoEn ? { abiertoEn: toque.abiertoEn } : { saltos: 0 }) });
+      return;
+    }
+    if (abiertoHoy1) { hechosHoy += 1; if (t > ultimaApertura) ultimaApertura = t; fila({ ...nx, estado: "abierto", abiertoEn: ex.abiertoEn }); }
+  };
+  // Contactos 1 y 2 de Tigo de cada cliente Hogar: empiezan 2 días después de instalar (si no está cancelado).
+  (clientes || []).forEach((c) => {
+    if (c.cancelado || c.penalizado || !c.fechaInstalacion) return;
+    if (-daysFromToday(c.fechaInstalacion) < DIAS_ANTES_CONTACTO_HOGAR) return;
+    let bl = {};
+    try { bl = leerBloqueTigo(c.observaciones) || {}; } catch (e) {}
+    const kTit = d8(c.telefono);
+    [bl.voz1, bl.voz2].forEach((te) => contactoConSecuencia(c, te, kTit, "Contacto de Tigo de su ficha", { esMovil: false, diasDesde: -daysFromToday(c.fechaInstalacion), pagada: c.f1_pagadaEn ? fechaLocalISO(new Date(c.f1_pagadaEn)) : "", plan: planParaCliente(c), barrio: (bl.barrio || "").trim(), instalacion: c.fechaInstalacion || "" }));
+  });
   (convergencias || []).forEach((m) => {
     const tipo = tipoClienteMovil(m);
     if (tipo !== "pospago" && tipo !== "matchdigital" && tipo !== "convergencia") return;
@@ -9260,32 +9300,7 @@ function calcularVentasHoy(clientes, convergencias, ahoraMs) {
     items.forEach((it) => { it.ultimoISO = [e.abiertoEn, e.refAbiertoEn].filter(Boolean).sort().pop() || ""; });
     if (items.length) filas.push({ cliente: m, numeros: items, diasDesde, zona: 0, pagada, esMovil: true, plan: m.planNombre || "", barrio: (m.barrio || "").trim(), instalacion: m.fechaActivacion || "", otros: [] });
     // Teléfonos extra de su ficha: contactos nuevos con una secuencia (ver siguienteToqueContacto).
-    [m.telefonoAdicional, m.telefonoAdicional2].forEach((te) => {
-      const kx = d8(te);
-      if (kx.length < 7 || kx === k || refGlobal.has(kx) || conocidos.has(kx) || hogarTels.has(kx) || dueno[kx]) return;
-      refGlobal.add(kx);
-      const ex = vm[kx] || {};
-      if (ex.noEscribir) return;
-      const nx = { k: kx, tel: String(te).trim(), tipo: "contacto", deMovil: true, etiqueta: "Teléfono extra de su ficha móvil", frio: true };
-      const ult = [ex.abiertoEn, ex.refAbiertoEn].filter(Boolean).sort().pop() || "";
-      const fila = (n) => filas.push({ cliente: m, numeros: [{ ...n, ultimoISO: ult }], diasDesde, zona: 0, pagada, esMovil: true });
-      if (!ex.abiertoEn) { fila({ ...nx, estado: "pendiente" }); return; }
-      const t = new Date(ex.abiertoEn).getTime();
-      const abiertoHoy1 = fechaLocalISO(new Date(t)) === hoyISO;
-      if (ex.respondio) {
-        if (abiertoHoy1) { hechosHoy += 1; if (t > ultimaApertura) ultimaApertura = t; }
-        if (!ex.cerrado) seguimiento.push({ cliente: m, ...nx, respondioEn: ex.respondioEn || ex.abiertoEn });
-        return;
-      }
-      const toque = siguienteToqueContacto(ex, hoyISO);
-      if (toque) {
-        const tt = toque.abiertoEn ? new Date(toque.abiertoEn).getTime() : 0;
-        if (toque.estado === "abierto" && tt) { hechosHoy += 1; if (tt > ultimaApertura) ultimaApertura = tt; }
-        fila({ ...nx, ronda: toque.ronda, estado: toque.estado, ...(toque.abiertoEn ? { abiertoEn: toque.abiertoEn } : { saltos: 0 }) });
-        return;
-      }
-      if (abiertoHoy1) { hechosHoy += 1; if (t > ultimaApertura) ultimaApertura = t; fila({ ...nx, estado: "abierto", abiertoEn: ex.abiertoEn }); }
-    });
+    [m.telefonoAdicional, m.telefonoAdicional2].forEach((te) => contactoConSecuencia(m, te, k, "Teléfono extra de su ficha móvil", { esMovil: true, diasDesde, pagada }));
     // Contactos que este cliente móvil te dio
     (m.referidos || []).forEach((r) => {
       const kr = d8(r.tel);
@@ -9535,7 +9550,7 @@ function ListaMisReferidos({ clientes, convergencias }) {
 }
 
 // Texto del mensaje de venta de un número (lo usan el panel de Ventas y el envío en cadena de Mensajes).
-const mensajeVentaDe = (n, c, f) => (n.deMovil ? (n.ronda ? mensajeVentaToqueContacto(n.ronda) : mensajeVentaPresentacionMovil(c)) : n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : n.ronda === "movil4" ? mensajeVentaMovil4(c) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
+const mensajeVentaDe = (n, c, f) => (n.deMovil ? (n.ronda ? mensajeVentaToqueContacto(n.ronda) : mensajeVentaPresentacionMovil(c, n.deHogar)) : n.tipo === "movil" ? (n.ronda === "referido" ? mensajeVentaReferidosMovil(c) : mensajeVentaInternetMovil(c)) : n.tipo === "ficha" ? (n.ronda === "referido" ? (f.tieneMovil ? mensajeVentaReferidosMovil(c) : mensajeVentaReferidosCliente(c)) : n.ronda === "movil4" ? mensajeVentaMovil4(c) : mensajeVentaFicha(c)) : n.tipo === "referido" ? mensajeVentaReferido(n.nombreRef) : n.ronda === "referido" ? mensajeVentaReferidos(c) : mensajeVentaContacto(c));
 
 function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, convergencias, onAbrir, onDeshacer, onNoEscribir, onRespondio, onCerrar, onSaltar, onAgregarReferido, onVerCliente, onVerMovil }) {
   const [ahora, setAhora] = useState(Date.now());
