@@ -13461,6 +13461,49 @@ function BusquedaGlobalClientes({ items, tipos, onHogar, onMovil, onProspecto, o
   );
 }
 
+// Fila de la lista "Ciclos por confirmar": abre la ficha, copia la cuenta y confirma el ciclo ahí mismo.
+function FilaCicloPendiente({ item, onAbrir, onConfirmar }) {
+  const c = item.ref;
+  const esH = item.tipo === "h";
+  const [copiado, setCopiado] = useState(false);
+  const valor = esH ? String(c.cuentaTigo || (leerBloqueTigo(c.observaciones || "") || {}).cuenta || c.numeroSuscriptor || "") : String(c.telefono || "");
+  const opciones = esH ? [1, 6, 15, 21] : [4, 19];
+  const sugerido = esH ? (parseInt(c.cicloFacturacion, 10) || null) : ((movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo || null);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const copiar = () => {
+    const listo = () => { setCopiado(true); setTimeout(() => setCopiado(false), 2000); };
+    const respaldo = () => { try { const ta = document.createElement("textarea"); ta.value = valor; ta.style.position = "fixed"; ta.style.opacity = "0"; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); listo(); } catch (e) {} };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(valor).then(listo).catch(respaldo); else respaldo();
+  };
+  const elegir = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${c.nombre} es el ${pad2(n)}?`, () => onConfirmar(item, n, sugerido), { si: "✓ Sí, es ese ciclo" });
+  const espera = esH ? cicloHogarEspera(c) : true;
+  return (
+    <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-3 mb-2">
+      <button type="button" onClick={() => onAbrir(item)} className="w-full text-left flex items-start gap-2" style={ { background: "transparent", border: 0, padding: 0 } }>
+        <span className="shrink-0 text-xs font-bold rounded-full px-2 py-0.5 mt-0.5" style={ esH ? { background: "#E3EDFA", color: "#0B4A99" } : { background: "#E3F5EA", color: "#0F5A2B" } }>{esH ? "🏠 Hogar" : "📱 Móvil"}</span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-bold break-words" style={ { color: "#001E62" } }>{c.nombre}</span>
+          <span className="block text-xs mt-0.5" style={ { color: "#5A6680" } }>{item.sub}</span>
+        </span>
+        <span className="shrink-0" aria-hidden="true" style={ { color: "#5A6680" } }>›</span>
+      </button>
+      {espera && <div className="text-xs mt-1.5" style={ { color: "#92400E" } }>⏳ Sus recordatorios esperan hasta confirmar</div>}
+      <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+        {opciones.map((n) => (
+          <button key={n} type="button" onClick={() => elegir(n)} className="text-xs font-bold px-3 rounded-full" style={ { minHeight: 36, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
+            Ciclo {pad2(n)}{sugerido === n ? " · sugerido" : ""}
+          </button>
+        ))}
+        {valor && (
+          <button type="button" onClick={copiar} aria-label={esH ? "Copiar la cuenta" : "Copiar el número"} className="text-xs font-bold px-3 rounded-full ml-auto" style={ { minHeight: 36, background: "#E3EDFA", color: "#0072CE", border: 0 } }>
+            {copiado ? "✓ Copiado" : (esH ? "📋 Cuenta" : "📋 Número")}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospectos, clientesActivos, onVerProspecto, clientesTodos, search, setSearch, onEdit, onDelete, onMarcarPagada, onActualizarEstadoFactura, onVerDetalle, onNuevo, eliminados, onRecuperar, saltarAMes, onSaltoAplicado, columnasClientes, setColumnasClientes, periodoActual, mesActivo, setMesActivo, filtrosClientes, setFiltrosClientes, clientesMovil, onAgregarMovil, onEditarMovil, onEliminarMovil, onVolverAPrecierre, metas, onMarcarAbono, onEnviarInfoInstalacion, onConfirmarCiclo, onAbrirComision }) {
   const meses = useMemo(() => periodosRecientes(4), []);
   const mesActualKey = meses[0].key;
@@ -14186,21 +14229,29 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
           {itemsCiclos.length === 0 ? (
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 text-center"><p className="text-sm" style={ { color: "#5A6680" } }>✅ No hay ciclos por confirmar.</p></div>
           ) : (
-            <BusquedaGlobalClientes
-              items={itemsCiclos}
-              tipos={ { h: true, m: true, p: true, e: true } }
-              onHogar={(c) => onVerDetalle(c)}
-              onMovil={(m) => {
-                setModoCiclos(false);
-                setMesActivo(periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())));
-                setSubVista("movil");
-                setPrefillMovil({ editarId: m.id, volverA: null, ficha: true });
-                setMovilDesdeBusqueda(true);
-                setAbrirFormMovil(true);
-              } }
-              onRecuperar={onRecuperar}
-              onProspecto={() => {}}
-            />
+            <div>
+              <div className="text-xs mb-1.5" style={ { color: "#5A6680" } }>{itemsCiclos.length} {itemsCiclos.length === 1 ? "cliente" : "clientes"} · confirma el ciclo que ves en Tigo</div>
+              {itemsCiclos.map((it) => (
+                <FilaCicloPendiente
+                  key={it.id}
+                  item={it}
+                  onAbrir={(x) => {
+                    if (x.tipo === "h") { onVerDetalle(x.ref); return; }
+                    const m = x.ref;
+                    setModoCiclos(false);
+                    setMesActivo(periodoComision(fechaActivacionMovil(m) || fechaLocalISO(new Date())));
+                    setSubVista("movil");
+                    setPrefillMovil({ editarId: m.id, volverA: null, ficha: true });
+                    setMovilDesdeBusqueda(true);
+                    setAbrirFormMovil(true);
+                  } }
+                  onConfirmar={(x, n, sug) => {
+                    if (x.tipo === "h") { if (onConfirmarCiclo) onConfirmarCiclo(x.ref.id, n); }
+                    else if (onEditarMovil) onEditarMovil(x.ref.id, { cicloConfirmado: true, cicloManual: n === sug ? null : n });
+                  } }
+                />
+              ))}
+            </div>
           )}
         </div>
       )}
