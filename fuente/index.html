@@ -2307,6 +2307,23 @@ const FECHA_INICIO_ESPERA_CICLO = "2026-10-30";
 function cicloHogarPorConfirmar(c) {
   return !!c && !c.cicloConfirmado && !!c.fechaInstalacion && c.fechaInstalacion >= "2026-10-01" && c.f1_estado !== "pagada" && !c.cancelado && !c.penalizado;
 }
+// Ciclo automático de Hogar: los suscriptores nuevos (número 97 en adelante; sube con el tiempo) toman el
+// ciclo según el día de instalación. Los antiguos (96 hacia abajo) conservan su ciclo viejo: ahí la app pregunta.
+const SUSCRIPTOR_NUEVO_DESDE = 97;
+function suscriptorNuevo(c) {
+  const n = parseInt(String((c && c.numeroSuscriptor) || "").trim().slice(0, 2), 10);
+  return Number.isFinite(n) && n >= SUSCRIPTOR_NUEVO_DESDE;
+}
+function cicloAutomaticoHogar(fechaISO) {
+  const d = parseInt(String(fechaISO || "").slice(8, 10), 10);
+  if (!d) return null;
+  return d <= 13 ? 15 : d <= 19 ? 21 : 1;
+}
+// Si los 2 últimos ciclos automáticos (por fecha) fueron corregidos a mano, Tigo pudo cambiar su regla.
+function reglaCicloSospechosa(lista, fechaDe) {
+  const autos = (lista || []).filter((c) => c && (c.cicloAuto || c.cicloAutoCorregido)).sort((a, b) => String(fechaDe(b) || "").localeCompare(String(fechaDe(a) || "")));
+  return autos.length >= 2 && !!autos[0].cicloAutoCorregido && !!autos[1].cicloAutoCorregido;
+}
 function cicloHogarEspera(c) {
   return cicloHogarPorConfirmar(c) && c.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO;
 }
@@ -3733,10 +3750,8 @@ function App() {
 
   // Confirma en Tigo el ciclo de un cliente Hogar: recalcula la 1ra factura y desbloquea sus mensajes.
   // ciclo = null quita la confirmación.
-  function confirmarCicloHogar(clienteId, ciclo) {
-    const antes = clientes.find((c) => c.id === clienteId);
-    if (!antes) return;
-    let despues = { ...antes, cicloConfirmado: !!ciclo };
+  function cicloHogarAplicado(antes, ciclo, extra) {
+    let despues = { ...antes, cicloConfirmado: !!ciclo, ...(extra || {}) };
     if (ciclo) {
       despues.cicloFacturacion = String(ciclo);
       const r = antes.fechaInstalacion ? calcularPrimeraFactura(antes.fechaInstalacion, parseInt(ciclo, 10), antes.montoMensual) : null;
@@ -3745,9 +3760,39 @@ function App() {
         despues = { ...despues, fecha1raFactura: r.fecha1raFactura, monto1raFactura: total };
       }
     }
+    return despues;
+  }
+  function confirmarCicloHogar(clienteId, ciclo) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes) return;
+    let extra = null;
+    if (antes.cicloAuto) {
+      // Corregiste un ciclo automático: se anota (si pasa 2 veces seguidas se avisa).
+      if (ciclo && parseInt(ciclo, 10) !== parseInt(antes.cicloFacturacion, 10)) extra = { cicloAuto: false, cicloAutoCorregido: true };
+      else if (ciclo) extra = { cicloAuto: false };
+      else extra = { cicloAuto: false };
+    }
+    const despues = cicloHogarAplicado(antes, ciclo, extra);
     actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
     registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
   }
+  // Ciclos automáticos: Hogar nuevo (suscriptor 97+) por día de instalación; Móvil por fecha de activación.
+  useEffect(() => {
+    if (!loaded || !convergenciasLoaded) return;
+    const hogar = clientes.filter((c) => cicloHogarPorConfirmar(c) && suscriptorNuevo(c) && cicloAutomaticoHogar(c.fechaInstalacion));
+    if (hogar.length) {
+      actualizarClientes((prev) => prev.map((c) => {
+        if (!(cicloHogarPorConfirmar(c) && suscriptorNuevo(c))) return c;
+        const n = cicloAutomaticoHogar(c.fechaInstalacion);
+        return n ? aplicarCambios(c, c, cicloHogarAplicado(c, n, { cicloAuto: true, cicloAutoCorregido: false })) : c;
+      }));
+    }
+    const moviles = convergencias.filter((c) => cicloPorConfirmar(c) && movilFechasPrimeraFactura({ ...c, cicloManual: null }));
+    if (moviles.length) {
+      setConvergencias((prev) => prev.map((c) => (cicloPorConfirmar(c) ? { ...c, cicloConfirmado: true, cicloAuto: true, cicloAutoCorregido: false } : c)));
+    }
+    // eslint-disable-next-line
+  }, [clientes, convergencias]);
 
   // Desde "Verificar órdenes" (móviles): abre Clientes Móvil con el formulario de nuevo
   // cliente ya con el nombre y la fecha de activación de Tigo. Al guardar vuelve al Precierre.
@@ -3860,7 +3905,8 @@ function App() {
 
   function editarConvergencia(id, datos) {
     const antes = convergencias.find((c) => c.id === id);
-    const normalizados = datos.tipo ? { ...datos, fullTigo: datos.tipo === "fulltigo" } : datos;
+    let normalizados = datos.tipo ? { ...datos, fullTigo: datos.tipo === "fulltigo" } : datos;
+    if (antes && antes.cicloAuto && datos.cicloConfirmado === true) normalizados = { ...normalizados, cicloAuto: false, cicloAutoCorregido: !!datos.cicloManual };
     const despues = antes ? { ...antes, ...normalizados } : null;
     setConvergencias((prev) => prev.map((c) => (c.id === id ? { ...c, ...normalizados } : c)));
     if (antes && despues) {
@@ -11113,6 +11159,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayCiclo = sinCiclo.length > 0;
         const sinCicloHogar = onVerClientes ? clientes.filter(cicloHogarPorConfirmar) : [];
         const hayCicloHogar = sinCicloHogar.length > 0;
+        const hayReglaCiclo = !!onVerClientes && (reglaCicloSospechosa(clientes, (c) => c.fechaInstalacion) || reglaCicloSospechosa(convergencias, (c) => fechaActivacionMovil(c)));
         const vh = onIrAVentas ? calcularVentasHoy(clientes, convergencias, Date.now()) : null;
         const nVentas = vh ? Math.min(vh.pendientes, Math.max(0, TOPE_DIARIO_VENTAS - vh.hechosHoy)) + vh.pendientesCalientes : 0;
         const nSeg = 0; // "por cerrar" ya no se muestra
@@ -11126,7 +11173,7 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
         const hayArriba = hayCobros || hayVentas || hayMsg;
         const visitasPend = (visitasBarrios || []).filter((v) => v && v.estado === "en curso");
         const hayVisita = visitasPend.length > 0 && !!onReportarVisita;
-        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayVentas && !hayPorInst && !hayMsg && !hayVisita) return null;
+        if (!hayCobros && !hayAbono && !hayMatch && !hayCiclo && !hayCicloHogar && !hayReglaCiclo && !hayVentas && !hayPorInst && !hayMsg && !hayVisita) return null;
         const matchVencido = hayMatch && (convergencias || []).some((c) => { const i = matchInfo(c); return i && i.nivel === "vencido"; });
         const lineaMatch = (sep) => hayMatch ? (
           <LineaMatchPendiente
@@ -11202,6 +11249,15 @@ function Dashboard({ onMarcarInstalado, onReprogramarInstalacion, onCopiarMensaj
                 </span>
                 <span className="shrink-0" style={ { fontSize: 18 } } aria-hidden="true">›</span>
               </button>
+            )}
+            {hayReglaCiclo && (
+              <div className="w-full flex items-center gap-3 px-4 py-3" style={ { borderTop: (hayArriba || hayAbono || hayInfo || hayMatch || hayCiclo || hayCicloHogar) ? "1px solid rgba(255,255,255,.18)" : 0, color: "#fff" } }>
+                <span className="shrink-0" style={ { fontSize: 22 } } aria-hidden="true">⚠️</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-bold">Corregiste 2 ciclos automáticos seguidos</span>
+                  <span className="block text-xs mt-0.5" style={ { color: "#B9C4E0" } }>Tigo pudo cambiar su regla. Revisa los últimos ciclos.</span>
+                </span>
+              </div>
             )}
             {hayVisita && (
               <button
@@ -13185,6 +13241,7 @@ function FiltroCampo({ label, children }) {
 function CicloHogarConfirmar({ cliente, onConfirmar }) {
   if (!onConfirmar || !cliente) return null;
   const actual = parseInt(cliente.cicloFacturacion, 10) || null;
+  const sugerible = suscriptorNuevo(cliente);
   if (cicloHogarPorConfirmar(cliente)) {
     const elegir = (n) => confirmarAccion(null, `¿Confirmas que en Tigo el ciclo de ${cliente.nombre} es el ${String(n).padStart(2, "0")}?`, () => onConfirmar(cliente.id, n), { si: "✓ Sí, es ese ciclo" });
     return (
@@ -13192,20 +13249,33 @@ function CicloHogarConfirmar({ cliente, onConfirmar }) {
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-xs font-bold shrink-0" style={ { color: "#92400E" } }>🔄 Ciclo en Tigo</span>
           {[1, 6, 15, 21].map((n) => (
-            <button key={n} type="button" onClick={() => elegir(n)} aria-label={"Ciclo " + String(n).padStart(2, "0") + (actual === n ? " sugerido" : "")} className="text-sm font-bold rounded-full" style={ { minHeight: 36, minWidth: 44, background: actual === n ? "#001E62" : "#fff", color: actual === n ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
+            <button key={n} type="button" onClick={() => elegir(n)} aria-label={"Ciclo " + String(n).padStart(2, "0") + (actual === n && sugerible ? " sugerido" : "")} className="text-sm font-bold rounded-full" style={ { minHeight: 36, minWidth: 44, background: actual === n && sugerible ? "#001E62" : "#fff", color: actual === n && sugerible ? "#fff" : "#001E62", border: "1.5px solid #001E62" } }>
               {String(n).padStart(2, "0")}
             </button>
           ))}
         </div>
-        {cliente.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO && <div className="text-xs mt-1" style={ { color: "#92400E" } }>Sus mensajes esperan · azul = sugerido</div>}
+        {cliente.fechaInstalacion >= FECHA_INICIO_ESPERA_CICLO && <div className="text-xs mt-1" style={ { color: "#92400E" } }>Sus mensajes esperan{sugerible ? " · azul = sugerido" : " · cliente antiguo: mira su ciclo en Tigo"}</div>}
       </div>
     );
   }
   if (cliente.cicloConfirmado && cliente.f1_estado !== "pagada" && cliente.fechaInstalacion && cliente.fechaInstalacion >= "2026-10-01") {
+    const p2 = (n) => String(n).padStart(2, "0");
+    if (cliente.cicloAuto) {
+      const elegirAuto = (n) => confirmarAccion(null, `¿En Tigo el ciclo de ${cliente.nombre} es el ${p2(n)}? (el automático era el ${p2(actual)})`, () => onConfirmar(cliente.id, n), { si: "✓ Sí, corregirlo" });
+      return (
+        <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+          <span className="text-xs font-bold rounded-full px-2.5 py-1" style={ { background: "#E3EDFA", color: "#0B4A99" } }>⚙️ Ciclo {p2(actual)} · automático</span>
+          <span className="text-xs" style={ { color: "#5A6680" } }>¿Otro?</span>
+          {[1, 6, 15, 21].filter((n) => n !== actual).map((n) => (
+            <button key={n} type="button" onClick={() => elegirAuto(n)} aria-label={"Corregir al ciclo " + p2(n)} className="text-xs font-bold rounded-full" style={ { minHeight: 32, minWidth: 36, border: "1.5px solid #5A6680", background: "#fff", color: "#001E62" } }>{p2(n)}</button>
+          ))}
+        </div>
+      );
+    }
     return (
       <div className="mt-2">
-        <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${cliente.nombre}?`, () => onConfirmar(cliente.id, null), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
-          ✅ Ciclo {String(actual || "").padStart(2, "0")}
+        <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${cliente.nombre}?`, () => onConfirmar(cliente.id, null), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#E3EDFA", color: "#0B4A99" } }>
+          ✅ Ciclo {p2(actual)}{cliente.cicloAutoCorregido ? " · corregido" : ""}
         </button>
       </div>
     );
@@ -13469,7 +13539,7 @@ function FilaCicloPendiente({ item, onAbrir, onConfirmar }) {
   const [copiado, setCopiado] = useState(false);
   const valor = esH ? String(c.cuentaTigo || (leerBloqueTigo(c.observaciones || "") || {}).cuenta || c.numeroSuscriptor || "") : String(c.telefono || "");
   const opciones = esH ? [1, 6, 15, 21] : [4, 19];
-  const sugerido = esH ? (parseInt(c.cicloFacturacion, 10) || null) : ((movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo || null);
+  const sugerido = esH ? (suscriptorNuevo(c) ? parseInt(c.cicloFacturacion, 10) || null : null) : ((movilFechasPrimeraFactura({ ...c, cicloManual: null }) || {}).ciclo || null);
   const pad2 = (n) => String(n).padStart(2, "0");
   const copiar = () => {
     const listo = () => { setCopiado(true); setTimeout(() => setCopiado(false), 2000); };
@@ -14232,7 +14302,7 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
             <div className="bg-white rounded-lg border border-gray-200 shadow-sm p-8 text-center"><p className="text-sm" style={ { color: "#5A6680" } }>✅ No hay ciclos por confirmar.</p></div>
           ) : (
             <div>
-              <div className="text-xs mb-1.5" style={ { color: "#5A6680" } }>{itemsCiclos.length} {itemsCiclos.length === 1 ? "cliente" : "clientes"} · confirma el ciclo que ves en Tigo · el azul es el sugerido</div>
+              <div className="text-xs mb-1.5" style={ { color: "#5A6680" } }>{itemsCiclos.length} {itemsCiclos.length === 1 ? "cliente" : "clientes"} · confirma el ciclo que ves en Tigo{itemsCiclos.some((x) => x.tipo === "m" || suscriptorNuevo(x.ref)) ? " · el azul es el sugerido" : ""}</div>
               {itemsCiclos.map((it) => (
                 <FilaCicloPendiente
                   key={it.id}
@@ -16183,7 +16253,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
       {nuevo && fch && tarjeta("Facturación", (
         <>
           {filas([
-            ["Ciclo", sinConfirmarCiclo ? chip("Sin confirmar · sugerido " + pad(fch.ciclo), AMBAR) : c.cicloConfirmado ? chip("✅ " + pad(fch.ciclo), VERDE) : pad(fch.ciclo)],
+            ["Ciclo", sinConfirmarCiclo ? chip("Sin confirmar · sugerido " + pad(fch.ciclo), AMBAR) : c.cicloAuto ? chip("⚙️ " + pad(fch.ciclo) + " · automático", GRIS) : c.cicloConfirmado ? chip("✅ " + pad(fch.ciclo) + (c.cicloAutoCorregido ? " · corregido" : ""), VERDE) : pad(fch.ciclo)],
             ["1ra factura", pagada ? chip("Pagada", VERDE) : sinSalir ? chip("Aún no sale · ~" + fmtFechaDia(fch.llegaISO), GRIS) : chip("Pendiente", AMBAR)],
             !!calc1ra && ["Monto 1ra factura (aprox.)", <span className="font-medium">{fmtMonto(calc1ra.total)}</span>],
           ])}
@@ -16193,9 +16263,9 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
             !pagada && ["Pedirle el pago antes del", fmtFechaDia(fch.metaISO)],
           ])}
           {vencidoPlazo && <div className="mt-2">{chip("⛔ No cuenta (venció el plazo)", AMBAR)}</div>}
-          {sinConfirmarCiclo && (
+          {(sinConfirmarCiclo || (c.cicloAuto && !pagada)) && (
             <div className="flex items-center gap-1.5 mt-2">
-              <span className="text-xs shrink-0" style={ { color: "#5A6680" } }>Ciclo en Tigo</span>
+              <span className="text-xs shrink-0" style={ { color: "#5A6680" } }>{c.cicloAuto ? "¿Otro ciclo?" : "Ciclo en Tigo"}</span>
               {[4, 19].map((n) => (
                 <button key={n} type="button" onClick={() => elegirCiclo(n)} aria-label={"Ciclo " + pad(n) + (fch.ciclo === n ? " sugerido" : "")} className="text-sm font-bold rounded-full" style={ { minHeight: 36, minWidth: 44, border: "1.5px solid #001E62", background: fch.ciclo === n ? "#001E62" : "#fff", color: fch.ciclo === n ? "#fff" : "#001E62" } }>{pad(n)}</button>
               ))}
@@ -16208,7 +16278,7 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
             className={botonCls}
             style={botonEstilo}
           >{pagada ? "Quitar marca de 1ra factura pagada" : "Marcar 1ra factura pagada"}</button>
-          {c.cicloConfirmado && !pagada && (
+          {c.cicloConfirmado && !c.cicloAuto && !pagada && (
             <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${c.nombre}?`, () => onEditar(c.id, { cicloConfirmado: false }), { si: "Sí, quitarla" })} className="block w-full text-center text-xs font-semibold mt-2" style={ { color: "#5A6680", minHeight: 32 } }>Quitar confirmación del ciclo</button>
           )}
         </>
@@ -17214,7 +17284,7 @@ function ClientesMovilPanel({ clientesMovil, onAgregar, onEditar, onEliminar, me
                             </div>
                           );
                         })()}
-                        {c.cicloConfirmado && c.f1_estado !== "pagada" && esquemaNuevo(m.key) && (
+                        {c.cicloConfirmado && !c.cicloAuto && c.f1_estado !== "pagada" && esquemaNuevo(m.key) && (
                           <div className="mt-1.5">
                             <button type="button" onClick={() => confirmarAccion(null, `¿Quitar la confirmación del ciclo de ${c.nombre}?`, () => onEditar(c.id, { cicloConfirmado: false }), { si: "Sí, quitarla" })} className="text-xs font-semibold px-2.5 py-1 rounded-full" style={ { background: "#EAF0FB", color: "#001E62", border: "1px solid #C9D2E3" } }>
                               ✅ Ciclo {String((movilFechasPrimeraFactura(c) || {}).ciclo || "").padStart(2, "0")}
