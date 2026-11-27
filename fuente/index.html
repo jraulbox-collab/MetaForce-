@@ -8988,13 +8988,14 @@ Que disfrute mucho los Carnavales con su familia. Cualquier cosa que necesite de
 Le deseo unas felices Fiestas Patrias a usted y su familia. Sigo a su orden para cualquier cosa de internet o celular.`;
   return `${s}
 
-¿Cómo le va con su servicio? Cualquier cosa que necesite de internet o celular, estoy a su orden.`;
+Una pregunta: ¿ya tiene su internet en casa con nosotros?`;
 }
 function textoOfertaToqueContacto(ronda) {
   if (ronda === "x3") return "Preguntar: ¿tarjeta o plan?";
   if (ronda === "x30") return "Recordarle que estás a su orden";
   if (ronda === "x60") return "Pedir recomendados";
   const t = TEMPORADAS_CONTACTO.find((x) => String(ronda).endsWith("-" + x.tag));
+  if (String(ronda).endsWith("-med")) return "Preguntar: ¿ya tiene internet con nosotros?";
   return "Saludo: " + (t ? t.nombre : "fecha especial");
 }
 function mensajeVentaContacto(c) {
