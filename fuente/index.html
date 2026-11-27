@@ -8941,6 +8941,15 @@ const TEMPORADAS_CONTACTO = [
   { tag: "nav", ini: 1201, fin: 1231, nombre: "Navidad y Año Nuevo" },
 ];
 const MIN_DIAS_ENTRE_TOQUES = 20;
+const DIAS_ENTRE_TIPS = 45;
+const TIPS_CONTACTO = [
+  { corto: "Router en buen lugar", texto: "Un tip para que su Wi-Fi llegue mejor: ponga el router en un lugar alto y en el centro de la casa, lejos del microondas y de paredes gruesas. Muchas veces el internet «no sirve» solo por dónde está el equipo." },
+  { corto: "Reiniciar el router", texto: "Un tip: si su internet va lento, apague el router, espere 30 segundos y préndalo de nuevo. Con eso se resuelven la mayoría de los problemas." },
+  { corto: "Batería del celular", texto: "Un tip para que la batería de su celular le dure más: baje el brillo de la pantalla y cierre las apps que no esté usando. Se nota desde el primer día." },
+  { corto: "Apps pesadas", texto: "Un tip: si su celular va lento o se le llena el espacio, vaya a Ajustes, revise cuáles apps ocupan más y desinstale las que no usa. Se nota enseguida." },
+  { corto: "Reiniciar el celular", texto: "Un tip: apague y prenda su celular una vez por semana. Libera memoria y arregla fallas pequeñas sin gastar nada." },
+  { corto: "Pagar sin filas", texto: "Un tip: puede pagar su factura de Tigo desde la app Mi Tigo, sin hacer filas ni salir de su casa. Si no la tiene, se la descarga gratis." },
+];
 function temporadasVigentes(hoyISO) {
   const y = hoyISO.slice(0, 4);
   const md = parseInt(hoyISO.slice(5, 7), 10) * 100 + parseInt(hoyISO.slice(8, 10), 10);
@@ -8963,7 +8972,11 @@ function siguienteToqueContacto(ex, hoyISO) {
   if (!hecho("x60") && base < 120) return base >= 60 && hueco && !salto("x60") ? { ronda: "x60", estado: "pendiente" } : null;
   if (!hueco) return null;
   const t = temporadasVigentes(hoyISO).find((x) => !hecho(x.ronda) && !salto(x.ronda));
-  return t ? { ronda: t.ronda, estado: "pendiente" } : null;
+  if (t) return { ronda: t.ronda, estado: "pendiente" };
+  if (dd(ult) < DIAS_ENTRE_TIPS) return null;
+  const nTips = claves.filter((k) => /^xt\d+En$/.test(k)).length;
+  const rt = "xt" + nTips;
+  return salto(rt) ? null : { ronda: rt, estado: "pendiente" };
 }
 function mensajeVentaToqueContacto(ronda) {
   const s = saludoSegunHora() + ", le habla José Severino de Tigo Panamá.";
@@ -8976,6 +8989,14 @@ Le escribo para recordarle que estoy a su orden. Si necesita algo de internet o 
   if (ronda === "x60") return `${s}
 
 Si conoce a algún familiar, amigo o vecino que necesite internet en casa o un plan de celular, con gusto lo atiendo con un buen precio. Solo tiene que pasarme su número o decirle que me escriba.`;
+  if (/^xt\d+$/.test(ronda)) {
+    const tp = TIPS_CONTACTO[parseInt(ronda.slice(2), 10) % TIPS_CONTACTO.length];
+    return `${s}
+
+${tp.texto}
+
+Cualquier cosa, estoy a su orden.`;
+  }
   const tag = String(ronda).split("-")[1];
   if (tag === "nav") return `${s}
 
@@ -8994,6 +9015,7 @@ function textoOfertaToqueContacto(ronda) {
   if (ronda === "x3") return "Preguntar: ¿tarjeta o plan?";
   if (ronda === "x30") return "Recordarle que estás a su orden";
   if (ronda === "x60") return "Pedir recomendados";
+  if (/^xt\d+$/.test(ronda)) return "Tip útil: " + TIPS_CONTACTO[parseInt(ronda.slice(2), 10) % TIPS_CONTACTO.length].corto;
   const t = TEMPORADAS_CONTACTO.find((x) => String(ronda).endsWith("-" + x.tag));
   if (String(ronda).endsWith("-med")) return "Preguntar: ¿ya tiene internet con nosotros?";
   return "Saludo: " + (t ? t.nombre : "fecha especial");
