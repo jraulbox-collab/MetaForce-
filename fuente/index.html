@@ -1198,7 +1198,7 @@ ${bloquePagoMovil()}
 
 Si ya la pagó, me envía por favor el *comprobante de pago* para confirmarlo. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
 }
-// 2ª y 3ª factura de un cliente Móvil: recordatorio 3 días después de que se genera (sin necesidad de marcar pagos).
+// 2ª y 3ª factura de un cliente Móvil: recordatorio 3 días después de que se genera (nadie paga tan pronto, no hace falta marcar pagos).
 function facturasPosterioresMovil(c) {
   const f = movilFechasPrimeraFactura(c);
   if (!f) return [];
@@ -1219,7 +1219,7 @@ Puede pagarla antes de esa fecha para evitar la suspensión del servicio.
 
 ${bloquePagoMovil()}
 
-Si ya la pagó, ignore este mensaje. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
+Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
 }
 const HITOS_MOVIL = [
   { key: "m1", tag: "1 · Bienvenida", label: "Explicar cómo será su factura", color: "#0072CE", bg: "#E3EDFA", fecha: "m1", texto: textoMovil1 },
@@ -2198,7 +2198,7 @@ Puede pagarla antes de esa fecha para evitar la suspensión del servicio.
 
 ${bloquePagoHogar()}
 
-Cuando pague, compárteme el comprobante. Si ya la pagó, ignore este mensaje. Quedo atento si necesita ayuda.`;
+Cuando pague, compárteme el comprobante. Quedo atento si necesita ayuda.`;
 }
 function textoT3(c, n) {
   const nombre = primerNombre(c);
