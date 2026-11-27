@@ -1198,6 +1198,29 @@ ${bloquePagoMovil()}
 
 Si ya la pagó, me envía por favor el *comprobante de pago* para confirmarlo. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
 }
+// 2ª y 3ª factura de un cliente Móvil: recordatorio 3 días después de que se genera (sin necesidad de marcar pagos).
+function facturasPosterioresMovil(c) {
+  const f = movilFechasPrimeraFactura(c);
+  if (!f) return [];
+  const [y, m] = f.facturaISO.split("-").map(Number);
+  return [2, 3].map((n) => {
+    const generada = fechaLocalISO(new Date(y, m - 1 + (n - 1), f.ciclo));
+    const siguiente = fechaLocalISO(new Date(y, m - 1 + n, f.ciclo));
+    return { n, key: `f${n}d3`, generada, trigger: addDays(generada, 3), vence: addDays(siguiente, -1) };
+  });
+}
+function textoMovilFacturaN(c, n, vence) {
+  const ord = n === 2 ? "segunda" : "tercera";
+  return `${saludoSegunHora()} ${primerNombre(c)}. Le recuerdo que ya salió la *${ord} factura* de su *plan pospago* (línea Tigo *#${c.telefono}*).
+
+💳 Vence: *${fmtFecha(vence)}*
+
+Puede pagarla antes de esa fecha para evitar la suspensión del servicio.
+
+${bloquePagoMovil()}
+
+Si ya la pagó, ignore este mensaje. Si tiene problemas para pagar, dígame y con gusto le ayudo.`;
+}
 const HITOS_MOVIL = [
   { key: "m1", tag: "1 · Bienvenida", label: "Explicar cómo será su factura", color: "#0072CE", bg: "#E3EDFA", fecha: "m1", texto: textoMovil1 },
   { key: "m2", tag: "2 · Factura lista", label: "Ya se generó su 1ra factura", color: "#B45309", bg: "#FFF3DC", fecha: "m2", texto: textoMovil2 },
@@ -1223,6 +1246,14 @@ function alertasMovilPendientes(lista) {
     const h = yaToca[yaToca.length - 1];
     if (c[`aviso_${h.key}`]) return;
     out.push({ cliente: c, milestone: { key: h.key, tag: h.tag, label: h.label, color: h.color, bg: h.bg, triggerDate: f[h.fecha], texto: h.texto(c, f) }, fechas: f });
+  });
+  // Recordatorio de la 2ª y 3ª factura (clientes que ya pagaron la 1ra y siguen activos).
+  (lista || []).forEach((c) => {
+    if (c.f1_estado !== "pagada" || !c.telefono || c.cancelado || c.penalizado || !c.cicloConfirmado) return;
+    facturasPosterioresMovil(c).forEach((fp) => {
+      if (hoyISO < fp.trigger || hoyISO > fp.vence || c[`aviso_${fp.key}`]) return;
+      out.push({ cliente: c, milestone: { key: fp.key, tag: `🔔 Recordatorio · ${fp.n === 2 ? "2ª" : "3ª"} factura`, label: `Ya salió su ${fp.n === 2 ? "2ª" : "3ª"} factura`, n: fp.n, color: "#0072CE", bg: "#E3EDFA", triggerDate: fp.trigger, texto: textoMovilFacturaN(c, fp.n, fp.vence) }, fechas: movilFechasPrimeraFactura(c) });
+    });
   });
   return out.sort((a, b) => a.milestone.triggerDate.localeCompare(b.milestone.triggerDate));
 }
@@ -2167,7 +2198,7 @@ Puede pagarla antes de esa fecha para evitar la suspensión del servicio.
 
 ${bloquePagoHogar()}
 
-Cuando pague, compárteme el comprobante. Quedo atento si necesita ayuda.`;
+Cuando pague, compárteme el comprobante. Si ya la pagó, ignore este mensaje. Quedo atento si necesita ayuda.`;
 }
 function textoT3(c, n) {
   const nombre = primerNombre(c);
@@ -12907,7 +12938,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
   const [posAbierto, setPosAbierto] = useState(null);
   // Los recordatorios de Clientes Móvil se mezclan con los de Hogar: 1 Bienvenida,
   // 2 Nueva factura y 3 Recordatorio caen en los mismos grupos que sus equivalentes de Hogar.
-  const TIPO_POR_HITO = { m1: "toque1", m2: "d1", m3: "t3" };
+  const TIPO_POR_HITO = { m1: "toque1", m2: "d1", m3: "t3", f2d3: "d3", f3d3: "d3" };
   const alertasHoy = [
     ...alertasHogar,
     ...(alertasMovil || []).map((a) => ({ ...a, esMovil: true, factura: null, milestone: { ...a.milestone, type: TIPO_POR_HITO[a.milestone.key] } })),
@@ -13219,7 +13250,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                             <div className="flex items-center gap-2 min-w-0">
                               <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{esMovil ? "Móvil" : "Hogar"}</span>
                               <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(cliente.nombre || "")}</span>
-                              {(esMovil || milestone.n === 1)
+                              {((esMovil && !milestone.n) || milestone.n === 1)
                                 ? <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#001E62", color: "#FFFFFF", border: "1.5px solid #001E62" } }>1ª factura</span>
                                 : milestone.n ? <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#FFFFFF", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>{milestone.n}ª factura</span> : null}
                             </div>
@@ -16586,6 +16617,39 @@ function FichaClienteMovil({ c, volverLabel, onVolver, onEditarForm, onEditar, o
           })}
         </div>
       ))}
+      {pagada && !!c.telefono && !c.cancelado && !c.penalizado && !!c.cicloConfirmado && (() => {
+        const fps = facturasPosterioresMovil(c);
+        if (!fps.length) return null;
+        return tarjeta("Mensajes de sus próximas facturas", (
+          <div>
+            {fps.map((fp, i) => {
+              const enviado = !!c[`aviso_${fp.key}`];
+              const disponible = fp.trigger <= hoyISO && hoyISO <= fp.vence;
+              const vencido = hoyISO > fp.vence;
+              const texto = textoMovilFacturaN(c, fp.n, fp.vence);
+              const url = whatsappLink(c, { texto });
+              const estado = enviado ? chip("Enviado", VERDE) : vencido ? chip("Ya venció", GRIS) : disponible ? chip(fp.trigger === hoyISO ? "Toca hoy" : "Listo para enviar", AZUL) : chip("Programado · " + fmtFechaDia(fp.trigger), GRIS);
+              return (
+                <div key={fp.key} className="py-2.5" style={ { borderTop: i ? "1px solid #EEF2F9" : "none" } }>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-semibold" style={ { color: "#001E62" } }>🔔 Recordatorio · {fp.n === 2 ? "2ª" : "3ª"} factura</span>
+                    {estado}
+                  </div>
+                  <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>3 días después de que se genera · vence {fmtFechaDia(fp.vence)}</div>
+                  {!enviado && disponible && (
+                    <>
+                      <div className="flex gap-2 mt-2">
+                        <a href={url} onClick={irWa(url)} className="flex-1 text-center text-sm font-bold rounded-lg text-white" style={ { minHeight: 40, lineHeight: "40px", background: "#128C4A" } }>Enviar por WhatsApp</a>
+                      </div>
+                      <button type="button" onClick={() => onEditar(c.id, { [`aviso_${fp.key}`]: true })} className="block w-full text-center text-xs font-semibold mt-1" style={ { color: "#5A6680", minHeight: 32 } }>Marcar como enviado</button>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ));
+      })()}
     </div>
   );
 }
