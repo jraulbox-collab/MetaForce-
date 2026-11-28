@@ -4501,6 +4501,26 @@ function App() {
 
   // Guarda en un cliente existente lo que viene en el texto de Tigo: fecha y horario de
   // instalación (sigue pendiente de instalación) y los datos extra en Observaciones.
+  // Guarda solo los contactos de Tigo (voz 1 y 2) en las observaciones, sin tocar fechas ni lo demás.
+  function guardarContactosTigo(clienteId, d) {
+    const antes = clientes.find((c) => c.id === clienteId);
+    if (!antes || !d || (!d.voz1 && !d.voz2)) return;
+    const poner = (obs, n, valor) => {
+      if (!valor) return obs;
+      const linea = `• Teléfono de contacto ${n}: ${valor}`;
+      const re = new RegExp("•\\s*Teléfono de contacto " + n + ":[ \\t]*[^\\n]*");
+      if (re.test(obs)) return obs.replace(re, linea);
+      if (obs.includes(MARCA_BLOQUE_TIGO)) return obs.replace(MARCA_BLOQUE_TIGO, MARCA_BLOQUE_TIGO + "\n" + linea);
+      return (obs.trim() ? obs.trim() + "\n\n" : "") + MARCA_BLOQUE_TIGO + "\n" + linea;
+    };
+    let obs = String(antes.observaciones || "");
+    obs = poner(obs, 1, d.voz1);
+    obs = poner(obs, 2, d.voz2);
+    const despues = { ...antes, observaciones: obs };
+    actualizarClientes((prev) => prev.map((c) => (c.id === clienteId ? aplicarCambios(c, antes, despues) : c)));
+    registrarCambio({ entidad: "cliente", tipo: "editar", etiqueta: despues.nombre, antes, despues, refId: clienteId });
+  }
+
   async function guardarOrdenInstalacion(clienteId, d) {
     const antes = clientes.find((c) => c.id === clienteId);
     if (!antes || !d || !d.fecha) return;
@@ -5677,6 +5697,7 @@ function App() {
             onPenalizar={penalizarCliente}
             historialCambios={historialCambios}
             onGuardarOrden={guardarOrdenInstalacion}
+            onGuardarContactos={guardarContactosTigo}
             onMarcarInstalado={cambiarFechaInstalacionDesdeOrden}
             onCopiarMensajeInstalacion={copiarMensajeInstalacion}
             onMarcarAbono={marcarAbonoInicial}
@@ -15430,6 +15451,48 @@ function ClientesTab({ movilesEliminados, clientes, clientesCompletos, prospecto
 // Pegar el texto que Tigo da para la instalación: lo lee, muestra qué va a guardar y espera confirmación.
 // Con "cliente" (ficha existente) solo agrega fecha, horario y datos extra; sin "cliente" (formulario
 // de cliente nuevo) avisa si ese cliente ya existe y, si no, deja que el formulario se llene.
+// Pegar solo los contactos que da Tigo ("Preferencia de Contacto Voz 1 / Voz 2") en un cliente que ya existe.
+function PegarContactosTigo({ cliente, onGuardar }) {
+  const [abierto, setAbierto] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [d, setD] = useState(null);
+  const [error, setError] = useState("");
+  const cerrar = () => { setAbierto(false); setTexto(""); setD(null); setError(""); };
+  const leer = () => {
+    let r = {};
+    try { r = leerOrdenInstalacionTigo(texto); } catch (e) {}
+    if (!r.voz1 && !r.voz2) { setD(null); setError("No encontré los contactos. Pega el mensaje que dice «Preferencia de Contacto Voz 1»."); return; }
+    setError(""); setD({ voz1: r.voz1 || "", voz2: r.voz2 || "" });
+  };
+  if (!abierto) {
+    return <button type="button" onClick={() => setAbierto(true)} className="w-full mt-2 text-sm font-bold rounded-md border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#001E62", background: "#fff" } }>📋 Pegar contactos de Tigo</button>;
+  }
+  return (
+    <div className="mt-2 rounded-lg border p-3" style={ { borderColor: "#DFE5EF", background: "#F3F6FB" } }>
+      {!d ? (
+        <React.Fragment>
+          <p className="text-xs mb-2" style={ { color: "#5A6680" } }>Pega aquí el mensaje con «Preferencia de Contacto Voz 1 y 2».</p>
+          <textarea value={texto} onChange={(e) => { setTexto(e.target.value); setError(""); } } rows={5} className="w-full px-3 py-2 rounded-md border text-sm outline-none" style={ { borderColor: "#DFE5EF", background: "#fff" } } />
+          {error && <p className="text-xs mt-1" style={ { color: "#9B1C1C" } }>{error}</p>}
+          <div className="flex gap-2 mt-2">
+            <button type="button" onClick={cerrar} className="flex-1 text-sm font-bold rounded-md border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#5A6680", background: "#fff" } }>Cancelar</button>
+            <button type="button" onClick={leer} disabled={!texto.trim()} className="flex-1 text-sm font-extrabold rounded-md" style={ { minHeight: 44, background: "#001E62", color: "#fff", opacity: texto.trim() ? 1 : 0.5 } }>Leer</button>
+          </div>
+        </React.Fragment>
+      ) : (
+        <React.Fragment>
+          <div className="text-xs font-semibold mb-1" style={ { color: "#001E62" } }>Esto se va a guardar</div>
+          {d.voz1 && <div className="text-sm py-1">📞 Contacto 1: <b>{d.voz1}</b></div>}
+          {d.voz2 && <div className="text-sm py-1">📞 Contacto 2: <b>{d.voz2}</b></div>}
+          <div className="flex gap-2 mt-2">
+            <button type="button" onClick={cerrar} className="flex-1 text-sm font-bold rounded-md border" style={ { minHeight: 44, borderColor: "#DFE5EF", color: "#5A6680", background: "#fff" } }>Cancelar</button>
+            <button type="button" onClick={() => { onGuardar(cliente.id, d); cerrar(); } } className="flex-1 text-sm font-extrabold rounded-md" style={ { minHeight: 44, background: "#001E62", color: "#fff" } }>✓ Guardar</button>
+          </div>
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
 function PegarOrdenTigo({ cliente, clientes = [], onAplicar, onAbrirExistente, etiqueta = "Pegar texto de Tigo", permitirSinFecha = false }) {
   const [abierto, setAbierto] = useState(false);
   const [texto, setTexto] = useState("");
@@ -15805,6 +15868,7 @@ function ClienteDetalle({
   onPenalizar,
   historialCambios,
   onGuardarOrden,
+  onGuardarContactos,
   onCopiarMensajeInstalacion,
   onEnviarInfoInstalacion,
   onMarcarInstalacionEnviada,
@@ -16184,6 +16248,7 @@ function ClienteDetalle({
               </div>
             ))}
             {filaBarrio}
+            {onGuardarContactos && <PegarContactosTigo cliente={cliente} onGuardar={onGuardarContactos} />}
           </div>
         );
       })()}
