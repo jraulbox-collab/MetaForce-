@@ -5352,7 +5352,7 @@ function App() {
                       <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="w-full mt-3 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
                       <div className="flex gap-2 mt-3 items-stretch">
                         <button type="button" onClick={() => avanzarCadena(false)} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 44, background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 13 } }>⏭ Saltar por ahora</button>
-                        
+                        {esV && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="flex-1 font-extrabold rounded-xl" style={ { minHeight: 44, background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 13 } }>🚫 No escribirle más</button>}
                       </div>
                     </React.Fragment>
                   );
