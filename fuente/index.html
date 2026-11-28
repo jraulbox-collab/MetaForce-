@@ -9896,6 +9896,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
       {!sinCabecera && lista.length === 0 && filtroEf !== "respondieron" && (
         <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtroEf === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
       )}
+      {(() => { window.__nCont = new Map(); lista.forEach(({ f, n }) => { if (n.estado === "pendiente" && n.tipo !== "referido") window.__nCont.set(f.cliente.id, (window.__nCont.get(f.cliente.id) || 0) + 1); }); return null; })()}
       {lista.map(({ f, n }) => {
         const c = f.cliente;
         const key = `vta-${c.id}-${n.k}`;
@@ -9923,9 +9924,9 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ f.esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{f.esMovil ? "Móvil" : "Hogar"}</span>
                   <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{nombreFila}</span>
+                  {!esRef && (window.__nCont.get(c.id) || 0) > 1 && <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#FFFFFF", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>{window.__nCont.get(c.id)} contactos</span>}
                 </div>
-                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>{n.etiqueta} · …{String(n.tel).replace(/\D/g, "").slice(-4)}{n.frio && !esRef ? " · número nuevo" : ""}</div>
-                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>🎯 {ofertaVenta(n, f)}</div>
+                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>🎯 {ofertaVenta(n, f)} · …{String(n.tel).replace(/\D/g, "").slice(-4)}{n.frio && !esRef ? " 🆕" : ""}</div>
               </div>
 {n.estado === "pendiente" && (
                 <div className="shrink-0 flex flex-col items-end gap-2">
