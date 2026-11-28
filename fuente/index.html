@@ -4701,7 +4701,6 @@ function App() {
   });
   const [resumenCadena, setResumenCadena] = useState(null);
   const [msgAbiertoI, setMsgAbiertoI] = useState(-1);
-  const [menuMas, setMenuMas] = useState(null);
   function guardarCadena(c) {
     setCadena(c);
     try { if (c) sessionStorage.setItem("mf-cadena", JSON.stringify(c)); else sessionStorage.removeItem("mf-cadena"); } catch (e) {}
@@ -5289,17 +5288,16 @@ function App() {
                 const it = cadena.items[cadena.i];
                 const pct = Math.round((cadena.i / cadena.items.length) * 100);
                 const tarjetaPrev = cadena.prev ? (
-                  <div className="mt-3 rounded-xl p-2" style={ { background: "#0E3A8C", border: "1.5px solid #7CD992" } }>
-                    <div className="flex items-center gap-1.5">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-extrabold" style={ { color: "#7CD992" } }>✓ Enviado</div>
-                        <button type="button" onClick={() => abrirFichaCadena(cadena.prev)} className="text-left font-extrabold underline underline-offset-2 block truncate w-full" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 14, lineHeight: 1.25 } }>{tituloEs(cadena.prev.nombre || "")}</button>
-                      </div>
-                      <button type="button" onClick={prevNoEnviado} className="font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 44, padding: "0 8px", background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 12 } }>↩ No envié</button>
-                      <button type="button" onClick={reabrirPrev} className="font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 44, padding: "0 8px", background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 12 } }>💬 Otra vez</button>
-                      {cadena.prev.t === "v" && <button type="button" aria-label="Más opciones" onClick={() => setMenuMas(menuMas === "prev" ? null : "prev")} className="font-extrabold rounded-lg" style={ { minHeight: 44, width: 40, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 16 } }>⋯</button>}
+                  <div className="mt-3 rounded-xl p-2.5" style={ { background: "#0E3A8C", border: "1.5px solid #7CD992" } }>
+                    <div className="flex items-baseline gap-2 min-w-0">
+                      <span className="text-[11px] font-extrabold shrink-0" style={ { color: "#7CD992" } }>✓ Enviado</span>
+                      <button type="button" onClick={() => abrirFichaCadena(cadena.prev)} className="text-left font-extrabold underline underline-offset-2 truncate min-w-0" style={ { color: "#fff", background: "transparent", border: 0, padding: 0, fontSize: 15, lineHeight: 1.25 } }>{tituloEs(cadena.prev.nombre || "")}</button>
                     </div>
-                    {menuMas === "prev" && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(cadena.prev.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(cadena.prev.id, cadena.prev.k, { noEscribir: true }); setMenuMas(null); guardarCadena({ ...cadena, prev: null }); }, { si: "✕ Sí, no escribirle más" })} className="w-full mt-2 font-extrabold rounded-lg" style={ { minHeight: 40, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 13 } }>🚫 No escribirle más</button>}
+                    <div className="flex gap-1.5 mt-2 items-stretch">
+                      <button type="button" onClick={prevNoEnviado} className="flex-1 font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 12 } }>↩ No envié</button>
+                      <button type="button" onClick={reabrirPrev} className="flex-1 font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 12 } }>💬 Otra vez</button>
+                      {cadena.prev.t === "v" && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(cadena.prev.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(cadena.prev.id, cadena.prev.k, { noEscribir: true }); guardarCadena({ ...cadena, prev: null }); }, { si: "✕ Sí, no escribirle más" })} className="flex-1 font-extrabold rounded-lg whitespace-nowrap" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 12 } }>🚫 No más</button>}
+                    </div>
                   </div>
                 ) : null;
                 const NOM_GRUPO = { f1: "⭐ 1ra", cobro: "💵 Cobros", inst: "🔧 Instal.", ventas: "💬 Ventas" };
@@ -5352,11 +5350,10 @@ function App() {
                       {franjaCobro(it)}
                       <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: "1 1 0", minHeight: 0 } }><div>{msg || "Mensaje listo."}</div></div>
                       <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Al abrir WhatsApp, el chat se abre con este mensaje escrito, listo para enviar.</div>
-                      {menuMas === "cur" && esV && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); setMenuMas(null); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="w-full mt-3 font-extrabold rounded-xl" style={ { minHeight: 44, background: "transparent", color: "#fff", border: "1.5px solid #fff", fontSize: 14 } }>🚫 No escribirle más</button>}
                       <div className="flex gap-2 mt-3 items-stretch">
-                        <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="flex-1 rounded-xl text-white font-extrabold" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 16 } }>💬 Abrir WhatsApp</button>
-                        <button type="button" onClick={() => avanzarCadena(false)} className="font-extrabold rounded-xl" style={ { minHeight: 52, padding: "0 12px", background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 13 } }>⏭ Saltar</button>
-                        {esV && <button type="button" aria-label="Más opciones" onClick={() => setMenuMas(menuMas === "cur" ? null : "cur")} className="font-extrabold rounded-xl" style={ { minHeight: 52, width: 44, background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 18 } }>⋯</button>}
+                        <button type="button" onClick={() => (esV ? abrirVentaCopiando(it) : abrirWhatsapp(it))} className="flex-1 rounded-xl text-white font-extrabold whitespace-nowrap" style={ { minHeight: 52, background: "#1FA855", border: 0, fontSize: 15 } }>💬 Abrir WhatsApp</button>
+                        <button type="button" onClick={() => avanzarCadena(false)} className="font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 52, padding: "0 10px", background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 12 } }>⏭ Saltar</button>
+                        {esV && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 52, padding: "0 10px", background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 12 } }>🚫 No más</button>}
                       </div>
                     </React.Fragment>
                   );
