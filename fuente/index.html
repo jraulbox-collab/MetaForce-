@@ -9707,6 +9707,7 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
   const [ahora, setAhora] = useState(Date.now());
   const [formKey, setFormKey] = useState(null);
   const [msgKey, setMsgKey] = useState(null);
+  const [gruposAbiertos, setGruposAbiertos] = useState(() => new Set());
   const [guardadoMsg, setGuardadoMsg] = useState("");
   const [filtro, setFiltro] = useState("todos");
   const [visibles, setVisibles] = useState(LOTE_VENTAS);
@@ -9747,7 +9748,8 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
     if (pendC[i]) mezcla.push(pendC[i]);
   }
   // Los referidos nuevos van primero: son los que más responden y se enfrían rápido.
-  const pendientes = [...mezcla.filter((x) => x.n.tipo === "referido"), ...mezcla.filter((x) => x.n.tipo !== "referido")];
+  const porOferta = (a, b) => { let x = "", y = ""; try { x = ofertaVenta(a.n, a.f); y = ofertaVenta(b.n, b.f); } catch (e) {} return x < y ? -1 : x > y ? 1 : 0; };
+  const pendientes = [...mezcla.filter((x) => x.n.tipo === "referido"), ...mezcla.filter((x) => x.n.tipo !== "referido").sort(porOferta)];
   const cuenta = { todos: pendientes.length, respondieron: 0, nuevos: 0, plan: 0, contactos: 0, internet: 0, pedir: 0 };
   pendientes.forEach((x) => { cuenta[tipoMensajeVenta(x.n)] += 1; });
   const filtroEf = filtro !== "todos" && !(cuenta[filtro] > 0) ? "todos" : filtro;
@@ -9896,8 +9898,8 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
       {!sinCabecera && lista.length === 0 && filtroEf !== "respondieron" && (
         <p className="px-4 py-4 text-sm" style={ { color: "#5A6680" } }>{filtroEf === "todos" ? "Nadie por escribir hoy. Aquí van a salir tus clientes 2 días después de pagar su 1ra factura." : "Nadie por escribir en este filtro."}</p>
       )}
-      {(() => { window.__nCont = new Map(); lista.forEach(({ f, n }) => { if (n.estado === "pendiente" && n.tipo !== "referido") window.__nCont.set(f.cliente.id, (window.__nCont.get(f.cliente.id) || 0) + 1); }); return null; })()}
-      {lista.map(({ f, n }) => {
+      {(() => {
+      const renderFila = ({ f, n }) => {
         const c = f.cliente;
         const key = `vta-${c.id}-${n.k}`;
         const msg = mensajeDe(n, c, f);
@@ -9924,9 +9926,9 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ f.esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{f.esMovil ? "Móvil" : "Hogar"}</span>
                   <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{nombreFila}</span>
-                  {!esRef && (window.__nCont.get(c.id) || 0) > 1 && <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#FFFFFF", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>{window.__nCont.get(c.id)} contactos</span>}
+                  
                 </div>
-                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>🎯 {ofertaVenta(n, f)} · …{String(n.tel).replace(/\D/g, "").slice(-4)}{n.frio && !esRef ? " 🆕" : ""}</div>
+                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>🎯 {ofertaVenta(n, f)}{n.frio && !esRef ? " · nuevo" : ""}</div>
               </div>
 {n.estado === "pendiente" && (
                 <div className="shrink-0 flex flex-col items-end gap-2">
@@ -10011,7 +10013,38 @@ function PanelVentasHoy({ resumen, busqueda, onVerTodos, onEnviarUno, clientes, 
             </div>
           </div>
         );
-      })}
+      };
+      const porCliente = new Map();
+      lista.forEach((x) => { if (x.n.tipo !== "referido") { const a = porCliente.get(x.f.cliente.id) || []; a.push(x); porCliente.set(x.f.cliente.id, a); } });
+      const hechos = new Set();
+      return lista.map((x) => {
+        const g = x.n.tipo !== "referido" ? porCliente.get(x.f.cliente.id) : null;
+        if (!g || g.length < 2) return renderFila(x);
+        if (hechos.has(x.f.cliente.id)) return null;
+        hechos.add(x.f.cliente.id);
+        const cid = x.f.cliente.id;
+        const abierto = gruposAbiertos.has(cid);
+        const cuentaOf = new Map();
+        g.forEach((y) => { let t = ""; try { t = ofertaVenta(y.n, y.f); } catch (e) {} cuentaOf.set(t, (cuentaOf.get(t) || 0) + 1); });
+        const resumenOf = [...cuentaOf.entries()].map(([t, k]) => (k > 1 ? t + " ×" + k : t)).join(" · ");
+        return (
+          <div key={"grp-" + cid} className="border-t" style={ { borderColor: "#EEF1F6" } }>
+            <div role="button" tabIndex={0} aria-expanded={abierto} onClick={() => setGruposAbiertos((prev) => { const nx = new Set(prev); if (nx.has(cid)) nx.delete(cid); else nx.add(cid); return nx; })} className="flex items-center gap-2.5 cursor-pointer" style={ { minHeight: 60, padding: "8px 12px" } }>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-[11px] font-bold px-1.5 py-0.5 rounded flex-shrink-0" style={ x.f.esMovil ? { background: "#0E7C66", color: "#FFFFFF" } : { background: "#001E62", color: "#FFFFFF" } }>{x.f.esMovil ? "Móvil" : "Hogar"}</span>
+                  <span className="font-bold text-sm truncate" style={ { color: "#001E62" } }>{tituloEs(x.f.cliente.nombre || "")}</span>
+                  <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#FFFFFF", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>{g.length} contactos</span>
+                </div>
+                <div className="text-xs mt-0.5" style={ { color: "#5A6680" } }>🎯 {resumenOf}</div>
+              </div>
+              <span className="shrink-0 font-extrabold" style={ { color: "#001E62", fontSize: 18, width: 32, textAlign: "center" } }>{abierto ? "▴" : "▾"}</span>
+            </div>
+            {abierto && <div style={ { background: "#F7F9FC", borderTop: "1px solid #EEF1F6" } }>{g.map((y) => renderFila(y))}</div>}
+          </div>
+        );
+      });
+      })()}
       {restantes > 0 && (
         <div className="px-4 py-3 border-t text-center" style={ { borderColor: "#EEF1F6" } }>
           <button type="button" onClick={() => (resumen ? onVerTodos() : setVisibles((v) => v + LOTE_VENTAS))} className="w-full text-sm font-extrabold rounded-lg px-4" style={ { minHeight: 44, background: "#fff", color: "#001E62", border: "1.5px solid #001E62" } }>
