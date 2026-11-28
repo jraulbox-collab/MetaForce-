@@ -16243,9 +16243,9 @@ function ClienteDetalle({
                   <div className="font-bold text-sm" style={ { color: "#001E62" } }>{ORDINAL[f.n]} factura</div>
                   <div className="text-xs" style={ { color: "#5A6680" } }>Vence <strong>{fmtFecha(f.vencimiento)}</strong> · generada {fmtFecha(f.generada)}</div>
                 </div>
-                <span className="text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap" style={ estadoFactura === "pagada" ? { background: "#E3EDFA", color: "#001E62" } : { background: "#FFF3DC", color: "#B45309" } }>
+                {(f.n === 1 || estadoFactura === "pagada") && <span className="text-xs font-bold px-3 py-1 rounded-full whitespace-nowrap" style={ estadoFactura === "pagada" ? { background: "#E3EDFA", color: "#001E62" } : { background: "#FFF3DC", color: "#B45309" } }>
                   {estadoFactura === "pagada" ? "✓ Pagada" : "⏳ Pendiente"}
-                </span>
+                </span>}
               </div>
               {f.n === 1 && <div className="text-xs font-semibold mt-1.5" style={ { color: "#001E62" } }>💰 Esta cuenta para tu comisión</div>}
               {estadoFactura === "pagada" ? (
@@ -16258,7 +16258,7 @@ function ClienteDetalle({
                   </span>
                   <button onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "")} className="text-xs font-bold underline px-1" style={ { color: "#0072CE", minHeight: 32 } }>Desmarcar</button>
                 </div>
-              ) : (
+              ) : f.n === 1 && (
                 <button onClick={() => onActualizarEstadoFactura(cliente.id, f.n, "pagada")} className="w-full mt-2.5 text-sm font-bold rounded-md text-white" style={ { background: "#001E62", minHeight: 44 } }>
                   Marcar como pagada
                 </button>
