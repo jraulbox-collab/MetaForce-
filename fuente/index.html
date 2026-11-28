@@ -4818,7 +4818,7 @@ function App() {
     const pv = [];
     dv.filas.forEach((f) => f.numeros.forEach((n) => { if (n.estado === "pendiente") pv.push({ f, n }); }));
     [...pv.filter((x) => x.n.tipo === "referido"), ...pv.filter((x) => x.n.tipo !== "referido")].forEach(({ f, n }) =>
-      items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta", ultimo: n.ultimoISO || "" }));
+      items.push({ t: "v", id: f.cliente.id, k: n.k, ronda: n.ronda, link: `https://wa.me/${telefonoWhatsapp(n.tel)}?text=${encodeURIComponent(mensajeVentaDe(n, f.cliente, f))}`, nombre: n.tipo === "referido" ? (n.nombreRef || "Referido nuevo") : f.cliente.nombre, et: "💬 Venta", ultimo: n.ultimoISO || "", det: detalleVentaCadena(n, f) }));
     if (!items.length) return;
     setResumenCadena(null);
     // Grupos para poder elegir en cualquier momento qué tipo enviar; la 1ra factura va primero.
@@ -5348,7 +5348,12 @@ function App() {
                         <div className="text-sm mt-1" style={ { color: "#FFD98A" } }>{esV && (hace ? "Último mensaje tuyo: " + hace : "Sin mensajes todavía")}</div>
                       </div>
                       {franjaCobro(it)}
-                      <div className="mt-4 rounded-xl p-4" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 15, lineHeight: 1.45, overflow: "auto", flex: "1 1 0", minHeight: 0 } }><div>{msg || "Mensaje listo."}</div></div>
+                      {esV && it.det && it.det.length > 0 && (
+                        <div className="mt-3 rounded-xl px-3 py-2" style={ { background: "#0A2C7A", color: "#fff", fontSize: 13, lineHeight: 1.5 } }>
+                          {it.det.map((x, k) => <div key={k}>{x}</div>)}
+                        </div>
+                      )}
+                      <div className="mt-3 rounded-xl p-3" style={ { background: "#fff", color: "#111827", whiteSpace: "pre-wrap", fontSize: 14, lineHeight: 1.4, overflow: "auto", flex: "1 1 0", minHeight: 90 } }><div>{msg || "Mensaje listo."}</div></div>
                       <div className="text-xs mt-3 text-center" style={ { color: "#B9C4E0" } }>Al abrir WhatsApp, el chat se abre con este mensaje escrito, listo para enviar.</div>
                       <div className="flex gap-2 mt-3 items-stretch">
                         {esV && <button type="button" onClick={() => confirmarAccion(null, `¿No escribirle más a ${tituloEs(it.nombre || "este número")}? Sale de todas las listas.`, () => { cambiarVentaMsg(it.id, it.k, { noEscribir: true }); avanzarCadena(false); }, { si: "✕ Sí, no escribirle más" })} className="font-extrabold rounded-xl whitespace-nowrap" style={ { minHeight: 52, padding: "0 10px", background: "transparent", color: "#B9C4E0", border: "1px solid #3C5A9C", fontSize: 12 } }>🚫 No más</button>}
@@ -9582,6 +9587,22 @@ function tipoMensajeVenta(n) {
   return "plan";
 }
 // Resumen de lo que se le ofrece o se le pide, para verlo sin abrir el mensaje.
+function detalleVentaCadena(n, f) {
+  const esRef = n.tipo === "referido";
+  const L = [];
+  L.push("📞 " + n.tel + (n.etiqueta ? " · " + n.etiqueta : "") + (n.frio && !esRef ? " · número nuevo" : ""));
+  try { L.push("🎯 " + ofertaVenta(n, f)); } catch (e) {}
+  if (esRef) L.push("🤝 Recomendado por un contacto de " + tituloEs(f.cliente.nombre || ""));
+  else {
+    if (f.diasDesde !== null && f.diasDesde !== undefined) L.push("💵 Pagó su 1ra factura " + (f.diasDesde === 0 ? "hoy" : f.diasDesde === 1 ? "hace 1 día" : "hace " + f.diasDesde + " días"));
+    if (f.plan) L.push("📶 " + f.plan);
+    if (f.barrio) L.push("📍 Barrio " + tituloEs(f.barrio));
+    if (f.tieneMovil) L.push("✓ Ya tiene móvil contigo");
+  }
+  const otros = (f.otros || []).filter((o) => o.k !== n.k);
+  if (otros.length) L.push("También: " + otros.map((o) => o.etiqueta + " (" + o.estado + ")").join(" · "));
+  return L;
+}
 function ofertaVenta(n, f) {
   if (n.deMovil) return n.ronda ? textoOfertaToqueContacto(n.ronda) : "Presentarte y que te guarde";
   if (n.tipo === "referido") return "Ofertas de internet";
