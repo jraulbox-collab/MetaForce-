@@ -9590,17 +9590,10 @@ function tipoMensajeVenta(n) {
 function detalleVentaCadena(n, f) {
   const esRef = n.tipo === "referido";
   const L = [];
-  L.push("📞 " + n.tel + (n.etiqueta ? " · " + n.etiqueta : "") + (n.frio && !esRef ? " · número nuevo" : ""));
+  L.push("📞 " + n.tel + (n.etiqueta ? " · " + n.etiqueta : ""));
   try { L.push("🎯 " + ofertaVenta(n, f)); } catch (e) {}
   if (esRef) L.push("🤝 Recomendado por un contacto de " + tituloEs(f.cliente.nombre || ""));
-  else {
-    if (f.diasDesde !== null && f.diasDesde !== undefined) L.push("💵 Pagó su 1ra factura " + (f.diasDesde === 0 ? "hoy" : f.diasDesde === 1 ? "hace 1 día" : "hace " + f.diasDesde + " días"));
-    if (f.plan) L.push("📶 " + f.plan);
-    if (f.barrio) L.push("📍 Barrio " + tituloEs(f.barrio));
-    if (f.tieneMovil) L.push("✓ Ya tiene móvil contigo");
-  }
-  const otros = (f.otros || []).filter((o) => o.k !== n.k);
-  if (otros.length) L.push("También: " + otros.map((o) => o.etiqueta + " (" + o.estado + ")").join(" · "));
+  else if (f.diasDesde !== null && f.diasDesde !== undefined) L.push("💵 Pagó su 1ra factura " + (f.diasDesde === 0 ? "hoy" : f.diasDesde === 1 ? "hace 1 día" : "hace " + f.diasDesde + " días"));
   return L;
 }
 function ofertaVenta(n, f) {
