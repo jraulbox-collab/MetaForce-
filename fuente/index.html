@@ -13102,7 +13102,9 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
     );
 
   // Agrupa por urgencia para que se puedan escanear las más críticas primero.
+  const grupoCobro = ({ milestone, esMovil }) => ((esMovil && !milestone.n) || milestone.n === 1) ? "f1" : milestone.type;
   const GRUPOS = [
+    { type: "f1", titulo: "⭐ 1ra factura (cuenta para tu comisión)" },
     { type: "t3", titulo: "⏰ 3 días (urgente)" },
     { type: "d3", titulo: "🔔 Recordatorio de pago" },
     { type: "t15", titulo: "⏰ 15 días" },
@@ -13111,12 +13113,12 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
     { type: "toque2", titulo: "🔔 Recordatorio de la otra mitad" },
     { type: "toque1", titulo: "👋 Bienvenida (pedir la otra mitad)" },
   ];
-  const ordenFlat = GRUPOS.flatMap((g) => alertasFiltradas.filter(({ milestone }) => milestone.type === g.type));
+  const ordenFlat = GRUPOS.flatMap((g) => alertasFiltradas.filter((x) => grupoCobro(x) === g.type));
   const visiblesLista = typeof limite === "number" ? ordenFlat.slice(0, limite) : ordenFlat;
   const restantes = ordenFlat.length - visiblesLista.length;
   const gruposConDatos = GRUPOS.map((g) => ({
     ...g,
-    items: visiblesLista.filter(({ milestone }) => milestone.type === g.type),
+    items: visiblesLista.filter((x) => grupoCobro(x) === g.type),
   })).filter((g) => g.items.length > 0);
 
   function toggleExpandido(id) {
@@ -13327,7 +13329,7 @@ function AlertasTab({ alertasHoy: alertasHogar, alertasMovil, onMarcarMovil, onP
                                 ? <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#001E62", color: "#FFFFFF", border: "1.5px solid #001E62" } }>1ª factura</span>
                                 : milestone.n ? <span className="text-[11px] font-extrabold px-1.5 py-0.5 rounded flex-shrink-0" style={ { background: "#FFFFFF", color: "#5A6680", border: "1.5px solid #9AA5BD" } }>{milestone.n}ª factura</span> : null}
                             </div>
-                            <div className="text-xs mt-0.5 truncate" style={ { color: "#5A6680" } }>
+                            <div className="text-xs mt-0.5" style={ { color: "#5A6680", lineHeight: 1.35 } }>
                               {esMovil ? milestone.tag : `${milestone.tag} ${milestone.label}`} · <span style={ { fontWeight: 700, color: atrasada || dias === 0 ? "#9B1C1C" : "#9A4A06" } }>{atrasada ? "⚠ " : dias === 0 ? "📅 " : ""}{diasTexto(milestone.triggerDate)}</span>
                             </div>
                           </div>
